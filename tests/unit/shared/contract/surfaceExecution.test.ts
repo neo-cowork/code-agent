@@ -3,6 +3,7 @@ import {
   canTransitionSurfaceSessionV1,
   getSurfaceTargetRevisionV1,
   isSurfaceEvidenceCardV1,
+  isSurfaceLiveFrameV1,
   isSurfaceExecutionEventV1,
   isSurfaceOutputPayloadV1,
   sameSurfaceTargetV1,
@@ -19,6 +20,14 @@ const browserTarget: SurfaceTargetRefV1 = {
 };
 
 describe('Surface Execution V1 contract', () => {
+  it('accepts old live frames and optional boolean page overflow metadata', () => {
+    const frame = { version: 1, conversationId: 'conversation', surfaceSessionId: 'surface',
+      mimeType: 'image/jpeg', dataUrl: 'data:image/jpeg;base64,AAAA', width: 320, height: 600, capturedAtMs: 42 };
+    expect(isSurfaceLiveFrameV1(frame)).toBe(true);
+    expect(isSurfaceLiveFrameV1({ ...frame, pageOverflowX: true })).toBe(true);
+    expect(isSurfaceLiveFrameV1({ ...frame, pageOverflowX: false })).toBe(true);
+    expect(isSurfaceLiveFrameV1({ ...frame, pageOverflowX: 'true' })).toBe(false);
+  });
   it('allows only declared session transitions and keeps terminal states immutable', () => {
     expect(canTransitionSurfaceSessionV1('preparing', 'running')).toBe(true);
     expect(canTransitionSurfaceSessionV1('running', 'waiting_human')).toBe(true);

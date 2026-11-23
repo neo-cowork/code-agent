@@ -1,8 +1,9 @@
 import type { AppSettings, ModelProvider } from '@shared/contract';
 import { getRuntimeModelLabel, type RuntimeModelOption } from '@shared/modelRuntime';
-import { getProviderDisplayName } from '@shared/constants';
+import { getModelDisplayLabel, getProviderDisplayName } from '@shared/constants';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import { languages, type Language } from '../../i18n';
+import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
 
 function providerName(provider: string, settings: AppSettings | null | undefined, language: Language): string {
@@ -14,8 +15,9 @@ function providerName(provider: string, settings: AppSettings | null | undefined
 export function formatModelSwitcherLabel(
   model: string, provider: ModelProvider, settings: AppSettings | null,
   options: RuntimeModelOption[], language: Language,
+  modelLabel = getRuntimeModelLabel(model, provider, settings),
 ): string {
-  const label = getRuntimeModelLabel(model, provider, settings);
+  const label = localizeModelLabel(model, modelLabel, language);
   if (!options.some((option) => option.model === model && option.provider !== provider)) return label;
   const selected = options.find((option) => option.model === model && option.provider === provider);
   const sourceLabel = selected?.providerSourceLabel || settings?.models?.providers?.[provider]?.displayName || selected?.providerLabel;
@@ -43,15 +45,16 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
-  const identity = (provider: string, model: string) => `${providerName(provider, args.settings, language)}/${model}`;
+  const shownModelLabel = (model: string) => localizeModelLabel(model, getModelDisplayLabel(model), language);
+  const identity = (provider: string, model: string) => `${providerName(provider, args.settings, language)}/${shownModelLabel(model)}`;
   const modelLine = args.switchedFrom
     ? labels.switched
         .replace('{shown}', identity(args.shownProvider ?? args.displayProvider, args.shownModel ?? args.displayModel))
         .replace('{original}', identity(args.switchedFrom.provider, args.switchedFrom.model))
     : args.adaptive
-      ? labels.adaptive.replace('{model}', args.currentModel)
+      ? labels.adaptive.replace('{model}', shownModelLabel(args.currentModel, language))
       : args.overridden
-        ? labels.overridden.replace('{model}', identity(args.displayProvider, args.displayModel)).replace('{original}', args.currentModel)
+        ? labels.overridden.replace('{model}', identity(args.displayProvider, args.displayModel)).replace('{original}', shownModelLabel(args.currentModel))
         : labels.model.replace('{model}', identity(args.displayProvider, args.displayModel));
   return [
     modelLine,

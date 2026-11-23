@@ -355,16 +355,16 @@ describe('ModelSwitcher Agent Engine selection', () => {
       displayProvider: 'custom-tokenrhythm' as const, displayModel: 'mimo-v2.5-pro',
       adaptive: false, overridden: true };
     expect(formatNativeModelSwitcherTooltip(base)).toBe(language === 'zh'
-      ? '已覆盖: 基元/mimo-v2.5-pro (原主任务: main)'
-      : 'Selected: 基元/mimo-v2.5-pro (original task model: main)');
+      ? '已覆盖: 基元/MiMo v2.5 Pro (原主任务: main)'
+      : 'Selected: 基元/MiMo v2.5 Pro (original task model: main)');
     expect(formatNativeModelSwitcherTooltip({ ...base, overridden: false })).toBe(language === 'zh'
-      ? '主任务模型: 基元/mimo-v2.5-pro' : 'Task model: 基元/mimo-v2.5-pro');
+      ? '主任务模型: 基元/MiMo v2.5 Pro' : 'Task model: 基元/MiMo v2.5 Pro');
     const switched = formatNativeModelSwitcherTooltip({ ...base,
       switchedFrom: { provider: 'custom-tokenrhythm', model: 'mimo-v2.5-pro', reason: 'fallback' },
       shownProvider: 'xiaomi', shownModel: 'mimo-v2.6-flash' });
     expect(switched).toBe(language === 'zh'
-      ? '这一轮实际在用: 小米 MiMo/mimo-v2.6-flash（你选的是 基元/mimo-v2.5-pro，已自动换过）'
-      : 'Actually in use this turn: Xiaomi MiMo/mimo-v2.6-flash (you selected 基元/mimo-v2.5-pro, switched automatically)');
+      ? '这一轮实际在用: 小米 MiMo/MiMo v2.6 Flash（你选的是 基元/MiMo v2.5 Pro，已自动换过）'
+      : 'Actually in use this turn: Xiaomi MiMo/MiMo v2.6 Flash (you selected 基元/MiMo v2.5 Pro, switched automatically)');
     expect(switched).not.toContain('custom-');
     expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'custom-tokenrhythm', settings, options, language))
       .toBe('MiMo v2.5 Pro · 基元');
@@ -388,7 +388,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       effort: { label: 'High', shortLabel: '高' },
       thinkingLabel: '思考',
     })).toBe(
-      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
+      '自动路由（按任务、成本和能力切换，当前主任务 MiMo v2.5 Pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
     );
   });
 
@@ -404,7 +404,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
-      '已覆盖: Zhipu GLM/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
+      '已覆盖: Zhipu GLM/glm-4.5v (原主任务: Kimi K2.5) · 计费: 计费未知 · 推理强度: 默认',
     );
   });
 

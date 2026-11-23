@@ -512,8 +512,8 @@ export const zhSettingsWork = {
         daysAgoSuffix: '天前',
       },
       sourceLabels: {
-        light_file: 'Light 文件',
-        db_memory: 'DB memory',
+        light_file: '记忆文件',
+        db_memory: '应用内记忆',
         unknown: '未知来源',
       },
       typeLabels: {
@@ -627,7 +627,7 @@ export const zhSettingsWork = {
       },
       entries: {
         sectionTitle: '全部记忆',
-        description: '统一查看 Light Memory 和 DB memory，编辑后会同步对应 source of truth。',
+        description: '在这里统一查看、编辑和归档 Neo 记住的内容，修改后立即生效。',
         loadFailed: '加载统一记忆失败',
         updateSuccess: '记忆已更新',
         updateFailed: '更新失败',
@@ -660,6 +660,7 @@ export const zhSettingsWork = {
         stats: {
           total: '总数',
           currentMatched: '当前匹配',
+          totalCaption: '{files} 条来自记忆文件 · {db} 条来自应用内记忆',
           filteredCaption: '受搜索和筛选影响',
           active: '启用',
           activeCaption: '会进入注入候选',
@@ -701,6 +702,7 @@ export const zhSettingsWork = {
         delete: '删除',
         evidence: '证据',
         noEvidence: '无证据记录',
+        evidenceCount: '共 {count} 条来源记录',
         sourceSession: {
           open: '打开来源会话',
           missing: '来源会话已不存在，无法跳转',

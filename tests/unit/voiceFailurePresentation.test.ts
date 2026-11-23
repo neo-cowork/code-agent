@@ -4,6 +4,7 @@ import {
   resolveVoiceErrorTitle,
   resolveVoiceMessage,
 } from '../../src/renderer/components/features/voice/resolveVoiceMessage';
+import { formatSessionTaskSlotRecoveryDetail } from '../../src/shared/i18n/sessionTaskSlot';
 import { describeWorkFailure } from '../../src/host/services/voice/workFailureDescription';
 
 describe('语音上游错误展示', () => {
@@ -49,7 +50,7 @@ describe('语音派活失败文案出口', () => {
     expect(zhResult.screen).toContain('已释放它占用的任务队列');
     expect(zhResult.spoken).toContain('请重试');
     expect(zhResult.detail).toContain('report lane');
-    expect(enResult.screen).toContain('queue slot was released');
+    expect(enResult.screen).toBe('The task has made no progress for a long time. Please retry');
     expect(enResult.spoken).toContain('Please retry');
     expect(enResult.detail).toContain('terminal event');
   });
@@ -119,5 +120,18 @@ describe('语音派活失败文案出口', () => {
 
     expect(result.screen).toBe('执行时出了问题，没有完成');
     expect(result.screen).not.toContain('API Key');
+  });
+});
+
+
+describe('task recovery detail has human copy in both languages', () => {
+  it.each([
+    ['zh', '「删文件」已经 2 小时没有进展，可能中途异常退出，我已把它标记为失败。'],
+    ['en', '“删文件” has made no progress for 2 hours and may have stopped unexpectedly. I’ve marked it as failed.'],
+  ] as const)('%s contains no scheduling jargon', (locale, expected) => {
+    const detail = formatSessionTaskSlotRecoveryDetail({ taskLabel: '删文件', occupiedMs: 7_200_000, locale });
+    expect(detail).toBe(expected);
+    expect(detail).not.toMatch(/lane|slot|terminal|终态|槽位|车道/i);
+    console.log('[task-recovery-detail]', locale, detail);
   });
 });

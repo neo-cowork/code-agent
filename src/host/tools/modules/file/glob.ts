@@ -29,7 +29,8 @@ import type {
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
-import { resolveInputPath } from '../../utils/resolveInputPath';
+import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
+import { appDataRootDiscoveryFilter, refuseAppDataDiscovery } from '../../utils/refuseAppDataDiscovery';
 import { applyPartialToOutput } from '../shell/partialResults';
 import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
@@ -184,7 +185,10 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
       };
     }
 
-    const inputPath = (args.path as string | undefined) || ctx.workingDir;
+    const requestedPath = args.path as string | undefined;
+    const noWorkingFolder = guardUnattendedInputPath(requestedPath, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
+    const inputPath = requestedPath || ctx.workingDir;
     const offset = parsePositiveInteger(args.offset, 0, Number.MAX_SAFE_INTEGER);
     const limit = parsePositiveInteger(args.limit, MAX_RESULTS, MAX_LIMIT) || MAX_RESULTS;
     const sort = parseSort(args.sort);
@@ -203,6 +207,8 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const searchPath = resolveInputPath(inputPath, ctx.workingDir);
+    const refused = refuseAppDataDiscovery(searchPath, ctx.logger);
+    if (refused) return refused;
     if (isChatUploadPath(searchPath)) {
       try {
         await fs.access(searchPath);
@@ -211,6 +217,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
       }
     }
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
+    const appDataRootFilter = appDataRootDiscoveryFilter(searchPath);
 
     onProgress?.({ stage: 'starting', detail: `glob ${pattern}` });
 
@@ -263,9 +270,13 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
         nodir: true,
         ignore,
         fs: traversalFs,
-      })).filter((match) => (
-        !isListedPathInsideForeignSlot(path.resolve(searchPath, match), slotExcludes.roots)
-      ));
+      })).filter((match) => {
+        const resolvedMatch = path.resolve(searchPath, match);
+        return (
+          !isListedPathInsideForeignSlot(resolvedMatch, slotExcludes.roots)
+          && !appDataRootFilter?.(resolvedMatch)
+        );
+      });
       const sortedMatches = await sortMatches(matches, searchPath, sort);
 
       if (sortedMatches.length === 0) {

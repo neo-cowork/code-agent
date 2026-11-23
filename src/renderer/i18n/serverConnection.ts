@@ -12,8 +12,9 @@ export const serverConnectionZh = {
     retry: '重试',
     checking: '正在检查…',
     retryFailed: '仍未恢复',
-    // Tauri 模式：重试只检查连接；退出后重新打开 Neo 才会重新启动服务
+    // Tauri 模式：「重试」只重新检查连接；macOS 壳按 ⌘R 会重启服务并重新载入窗口；退出后重新打开 Neo 是兜底
     unavailableHintTauri: '可点击「重试」，或退出后重新打开 Neo。',
+    unavailableHintTauriMac: '可点击「重试」，或按 ⌘R 重新载入；仍不行再退出后重新打开 Neo。',
     // Web 模式：自己刷新页面
     unavailableHintWeb: '也可以刷新页面再试。',
     // /api/run 网络失败时替代裸 `Load failed` 的发送反馈
@@ -29,6 +30,7 @@ export const serverConnectionEn = {
     checking: 'Checking…',
     retryFailed: 'Still not recovered',
     unavailableHintTauri: 'Press Retry, or quit and reopen Neo.',
+    unavailableHintTauriMac: "Press Retry, or press ⌘R to reload; if that still doesn't help, quit and reopen Neo.",
     unavailableHintWeb: 'You can also refresh the page to try again.',
     sendRetryHint: 'Reconnecting to the background service — please try again in a moment',
   },

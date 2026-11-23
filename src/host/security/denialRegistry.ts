@@ -227,7 +227,7 @@ class DenialRegistry {
         }
       }
       const guidance = userDeniedGoalStickyError(input.toolName).modelText;
-      // A responder-supplied reason must not hide the instruction to stop and ask;
+      // A responder-supplied reason must not hide the instruction to end the turn without a question;
       // an in-handler sticky refusal already carries `guidance` verbatim.
       result.message = !result.message
         ? permissionDenialError(input.toolName, 'user', input.app).modelText

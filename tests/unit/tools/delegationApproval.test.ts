@@ -8,6 +8,11 @@ const resolverState = vi.hoisted(() => ({
   getDefinition: vi.fn(),
   execute: vi.fn(),
 }));
+const language = vi.hoisted(() => ({ value: 'zh' as string | undefined }));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: language.value } }) }),
+}));
 
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
@@ -67,6 +72,7 @@ const reference = { candidateSetId: projection.candidateSetId, candidateRef: pro
 
 beforeEach(() => {
   vi.clearAllMocks();
+  language.value = 'zh';
   db = new Database(':memory:');
   applySchema(db, createLogger('test'));
   runtime.getDb.mockReturnValue(db);
@@ -92,6 +98,20 @@ async function capture(params: Record<string, unknown>) {
   return requestPermission.mock.calls[0][0];
 }
 
+function allowDefaultActionForPreview() {
+  resolverState.getDefinition.mockReturnValue({
+    ...delegateSessionSchema,
+    requiresPermission: true,
+    inputSchema: {
+      ...delegateSessionSchema.inputSchema,
+      properties: {
+        ...delegateSessionSchema.inputSchema.properties,
+        action: { type: 'string' },
+      },
+    },
+  });
+}
+
 describe('delegation approval production entries', () => {
   it.each([
     ['delegate_existing', '把这句话转给会话「购物清单」'],
@@ -106,6 +126,45 @@ describe('delegation approval production entries', () => {
     expect(request.type).toBe('command');
     expect(request.boundary?.id).toBe('command.shell');
     expect(JSON.stringify([request.reason, request.details.preview])).not.toContain('delegate_session');
+  });
+
+  it('keeps the default action Chinese through the production entry', async () => {
+    allowDefaultActionForPreview();
+    const request = await capture({ action: 'update', ...reference, delegationId: 'delegation', text: '加上果酱' });
+    expect(request.reason).toBe('更新转给会话「购物清单」的任务');
+    expect(request.details.preview).toEqual({
+      type: 'generic', summary: '更新转给会话「购物清单」的任务', diff: '内容：加上果酱',
+    });
+  });
+
+  it.each([
+    ['delegate_existing', 'Hand this message to the session "shopping list"'],
+    ['create_new', 'Start a new session to handle this message'],
+    ['correct', 'Correct the task handed to the session "shopping list"'],
+    ['stop', 'Stop the task handed to the session "shopping list"'],
+    ['resume', 'Resume the task handed to the session "shopping list"'],
+    ['update', 'Update the task handed to the session "shopping list"'],
+  ])('en: %s uses English action and detail copy', async (action, summary) => {
+    language.value = 'en';
+    runtime.getSessionRow.mockReturnValue({ ...target, title: 'shopping list' });
+    if (action === 'update') allowDefaultActionForPreview();
+    const request = await capture({ action, ...reference, delegationId: 'delegation', text: 'add milk' });
+    expect(request.reason).toBe(summary);
+    expect(request.details.preview).toEqual({ type: 'generic', summary, diff: 'Content: add milk' });
+    expect(request.type).toBe('command');
+    expect(request.boundary?.id).toBe('command.shell');
+    expect(JSON.stringify([request.reason, request.details.preview])).not.toContain('delegate_session');
+  });
+
+  it('en: unresolved target uses the English fallback', async () => {
+    language.value = 'en';
+    const request = await capture({
+      action: 'delegate_existing', ...reference, candidateSetId: 'stale', text: 'add milk',
+    });
+    expect(request.reason).toBe('Hand this message to another session');
+    expect(request.details.preview).toEqual({
+      type: 'generic', summary: 'Hand this message to another session', diff: 'Content: add milk',
+    });
   });
 
   it.each([

@@ -9,6 +9,7 @@
 // interrupted，显示已中断。
 // ============================================================================
 
+import type { RoleWakeRunStatus } from '@shared/contract/sessionAutomation';
 import type { CronJobExecution } from '@shared/contract/cron';
 import type { TraceTurn } from '@shared/contract/trace';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
@@ -18,7 +19,7 @@ export interface CronRunAwaitingApproval {
   /** requestId；批准/拒绝走 IPC_CHANNELS.AGENT_PERMISSION_RESPONSE。 */
   id: string;
   requestedAt: number;
-  /** 工具名 / 脱敏参数预览（有才显示「等你批准：在干什么」）。 */
+  /** 工具名 / 脱敏参数预览（有才显示「等你确认：在干什么」）。 */
   label?: string;
   command?: string;
   /** Host-owned origin copied from the parked row (scheduled-task flag/name). */
@@ -28,6 +29,7 @@ export interface CronRunAwaitingApproval {
 export type CronRunStatusLine =
   | { kind: 'running'; startedAt: number }
   | { kind: 'awaiting'; approval: CronRunAwaitingApproval }
+  | { kind: 'approval-expired' }
   | { kind: 'interrupted' }
   | { kind: 'failed-denied' }
   | { kind: 'failed-generic' }
@@ -71,8 +73,19 @@ export function isCronExecutionPermissionDenialError(error: string | undefined |
 export function deriveCronRunStatusLine(input: {
   execution: CronJobExecution | null;
   pendingApproval: CronRunAwaitingApproval | null;
+  wakeRun?: RoleWakeRunStatus | null;
 }): CronRunStatusLine | null {
   if (input.pendingApproval) return { kind: 'awaiting', approval: input.pendingApproval };
+  if (input.wakeRun) {
+    const { run, approvalTimedOut } = input.wakeRun;
+    if (approvalTimedOut) return { kind: 'approval-expired' };
+    if (run.status === 'running') return { kind: 'running', startedAt: run.createdAt };
+    if (run.status === 'failed') return { kind: 'failed-generic' };
+    if (run.status === 'cancelled') return { kind: 'cancelled' };
+    if (['completed', 'pending_review', 'skipped', 'archived'].includes(run.status)) {
+      return { kind: 'finished', durationMs: Math.max(0, (run.lastRunAt ?? run.updatedAt) - run.createdAt) };
+    }
+  }
   const execution = input.execution;
   if (!execution) return null;
   if (execution.status === 'running' || execution.status === 'pending' || execution.status === 'paused') {

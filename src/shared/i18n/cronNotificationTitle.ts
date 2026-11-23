@@ -1,24 +1,20 @@
-// ============================================================================
-// 定时任务系统通知标题（zh/en）
-// host 用 buildScheduledSessionTitle 生成「[定时] 名称 / [Scheduled] name」，
-// renderer 用 parseScheduledJobName 从任意一种前缀还原任务名——两端同源，改前缀只改这里。
-// ============================================================================
-export type CronNotificationLocale = 'zh' | 'en';
+import { cronSessionTitlePrefixes } from '../cronSessionTitle';
 
-const SCHEDULED_PREFIX: Record<CronNotificationLocale, string> = {
-  zh: '[定时]',
-  en: '[Scheduled]',
-};
+export type CronNotificationLocale = keyof typeof cronSessionTitlePrefixes;
 
 export function buildScheduledSessionTitle(locale: CronNotificationLocale, jobName: string): string {
-  return `${SCHEDULED_PREFIX[locale]} ${jobName}`;
+  return `${cronSessionTitlePrefixes[locale].schedule} ${jobName}`;
 }
 
+const scheduledPrefixes = [
+  ...Object.values(cronSessionTitlePrefixes).map(({ schedule }) => schedule),
+  '[Scheduled]',
+];
 const SCHEDULED_TITLE_PATTERN = new RegExp(
-  `(?:${Object.values(SCHEDULED_PREFIX).map((p) => p.replace(/[[\]]/g, '\\$&')).join('|')})\\s*(.+)$`,
+  `(?:${scheduledPrefixes.map((prefix) => prefix.replace(/[[\]]/g, '\\$&')).join('|')})\\s*(.+)$`,
 );
 
-/** 从 host 通知标题里取任务名；兼容两种前缀与「任务完成 - 」之类外壳，名称本身可含方括号。 */
+/** Extract a job name from a notification title, including previously emitted titles. */
 export function parseScheduledJobName(title: string): string | undefined {
   const name = title.match(SCHEDULED_TITLE_PATTERN)?.[1]?.trim();
   return name || undefined;

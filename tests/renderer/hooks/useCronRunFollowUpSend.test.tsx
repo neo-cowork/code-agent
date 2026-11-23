@@ -131,6 +131,27 @@ describe('useCronRunFollowUpSend', () => {
     expect(arg.content).not.toContain('【当前时间】');
   });
 
+  it('无锚点分支：新会话继承运行会话的工作文件夹（不再自动建空文件夹）', async () => {
+    useSessionStore.setState({
+      sessions: [{ ...cronRunSession, workingDirectory: '/Users/me/notes' } as SessionWithMeta],
+    } as never);
+    const send = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() => useCronRunFollowUpSend(send, () => [userMessage('总结笔记')]));
+    await act(async () => { await result.current(envelope('后来呢？')); });
+
+    const createSession = useSessionStore.getState().createSession as unknown as ReturnType<typeof vi.fn>;
+    expect(createSession.mock.calls[0][1]).toEqual({ workingDirectory: '/Users/me/notes' });
+  });
+
+  it('无锚点分支：运行会话没有文件夹时不传 workingDirectory 选项', async () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() => useCronRunFollowUpSend(send, () => [userMessage('总结笔记')]));
+    await act(async () => { await result.current(envelope('后来呢？')); });
+
+    const createSession = useSessionStore.getState().createSession as unknown as ReturnType<typeof vi.fn>;
+    expect(createSession.mock.calls[0][1]).toBeUndefined();
+  });
+
   it('failed 或 cancelled 且无助手回复：不冒充「中断了，没有留下结果」，改用「那次运行没有跑完。」', async () => {
     const messages = [
       userMessage('查一下今天的日程\n\n【当前时间】2026-11-04T08:27:33.512Z（UTC）。今天本地日期是 2026-11-04。'),

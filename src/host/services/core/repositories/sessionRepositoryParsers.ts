@@ -127,6 +127,34 @@ export function parseJsonObject(value: unknown): Record<string, unknown> {
   }
 }
 
+/**
+ * 路由决策随消息落库：Message.modelDecision 存进 messages.metadata.modelDecision（无新列/迁移），
+ * 与其他 metadata key 合并而不覆盖；既有决策在后续只改 metadata 的更新里保留（existingJson）。
+ */
+export function serializeMessageMetadata(
+  metadata: Message['metadata'] | null | undefined,
+  modelDecision: Message['modelDecision'] | undefined,
+  existingJson?: unknown,
+): string | null {
+  const { modelDecision: storedDecision, ...storedRest } = parseStoredJson<Record<string, unknown>>(existingJson) ?? {};
+  const base = metadata === undefined ? (Object.keys(storedRest).length > 0 ? storedRest : undefined) : metadata;
+  const decision = modelDecision ?? storedDecision;
+  if (!base && !decision) return null;
+  return JSON.stringify(decision ? { ...base, modelDecision: decision } : base);
+}
+
+function splitStoredMessageMetadata(raw: unknown): Pick<Message, 'metadata' | 'modelDecision'> {
+  const parsed = parseStoredJson<Record<string, unknown>>(raw);
+  if (!parsed || typeof parsed !== 'object' || !('modelDecision' in parsed)) {
+    return { metadata: parsed as Message['metadata'] };
+  }
+  const { modelDecision, ...rest } = parsed;
+  return {
+    metadata: Object.keys(rest).length > 0 ? (rest as Message['metadata']) : undefined,
+    ...(modelDecision && typeof modelDecision === 'object' ? { modelDecision: modelDecision as Message['modelDecision'] } : {}),
+  };
+}
+
 export function rowToMessage(row: SQLiteRow): Message {
   const content = stripInlineAttachmentBlocks((row.content as string) || '');
   const artifacts = row.role === 'assistant' ? extractArtifacts(content) : [];
@@ -145,7 +173,7 @@ export function rowToMessage(row: SQLiteRow): Message {
     thinking: (row.thinking as string) || undefined,
     effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
     contentParts: parseStoredJson<Message['contentParts']>(row.content_parts),
-    metadata: parseStoredJson<Message['metadata']>(row.metadata),
+    ...splitStoredMessageMetadata(row.metadata),
     ...(row.is_meta ? { isMeta: true } : {}),
     compaction: parseStoredJson<Message['compaction']>(row.compaction),
     ...(artifacts.length > 0 ? { artifacts } : {}),

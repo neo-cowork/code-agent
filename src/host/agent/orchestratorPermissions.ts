@@ -3,13 +3,11 @@
 // ============================================================================
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
-import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
-import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
@@ -30,20 +28,20 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
-import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
-import { getConfirmationGate } from './confirmationGate';
-import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
-import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
+import { matchToolGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
 import { holdStallClock } from './stallObserver';
-import { toolUserLabel } from '../../shared/utils/toolUserLabel';
+import { buildApprovalNotification } from '../services/infra/approvalNotification';
 
+// 放在其余 import 之后：humanGrantPolicy 的依赖链经环路回到本模块，靠前会让依赖本模块的
+// 通知链测试（parkedApprovalBannerClickRoute）装载顺序错乱。
+import { recordHumanGrant } from '../permissions/humanGrantPolicy';
 const logger = createLogger('AgentOrchestrator');
 
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
@@ -103,72 +101,6 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
   return redacted.length > PARKED_APPROVAL_PREVIEW_MAX_CHARS
     ? `${redacted.slice(0, PARKED_APPROVAL_PREVIEW_MAX_CHARS - 1)}…`
     : redacted;
-}
-
-/** 真人点的会话/始终/两档工具授权。带 targetApp 时只记该应用，不记工具级放行。
- * plain allow 不记。allow_run/allow_24h 铸进 toolGrantStore（target 取透传的
- * standingGrantTarget，无 target 的工具级授权不放大到任何去向）。
- * 带 updatedArgs 的非 allow 应答会被 toAskResult 整体 fail-closed 拒——那种应答
- * 不铸造任何记忆：用户审的是改后内容，拒绝它不能换算成对原稿的任何档位授权。 */
-function recordHumanGrant(
-  response: PermissionResponse,
-  request: PermissionRequest,
-  updatedArgs?: Record<string, unknown>,
-): void {
-  // ADR-088 §4 三层保证之 3（host 侧永不铸造）：敏感步骤交回的应答**整体**跳过铸造——
-  // 包括 allow_session 在无 targetApp 时回落 recordApproval 的会话级工具放行记录
-  // （那同样是本流程不许产生的授权）。任何形态的记住应答都降级为一次性语义。
-  if (
-    request.reasonCode === PermissionRequestReason.SensitiveStepHandback
-    || request.details?.sensitiveStep
-  ) {
-    logger.info('Sensitive step hand-back answer never mints a grant', {
-      tool: request.tool,
-      response,
-    });
-    return;
-  }
-  if (updatedArgs && response !== 'allow') return;
-  // 与聊天卡 hideStandingGrants 等价的收口：可编辑写回工具 / forceConfirm / 无 target 的 external
-  // 只能一次性放行，两档工具授权（run/24h）一律不铸，避免收件箱点击放大成全局免审。
-  if (
-    (response === 'allow_run' || response === 'allow_24h')
-    && (
-      isEditableTool(request.tool)
-      || request.forceConfirm === true
-      || (isExternalSideEffectTool(request.tool) && !request.details?.standingGrantTarget)
-    )
-  ) {
-    logger.warn('Tier grant refused for editable/forceConfirm/untargeted-external request: treated as allow once', {
-      tool: request.tool,
-      requestId: request.id,
-      response,
-    });
-    return;
-  }
-  if (recordBrowserSessionGrant(response, request)) return;
-  const identity = connectorToolGrantIdentity(request.tool, request.details?.standingGrantTarget ?? null);
-  if (!identity) return;
-  const app = request.details?.targetApp;
-  if (response === 'allow_session' && request.sessionId) {
-    if (app?.name) mintAppGrantSession(request.sessionId, app);
-    else getConfirmationGate().recordApproval(request.sessionId, request.tool);
-  } else if (response === 'allow_standing' && app?.name) {
-    mintAppGrantStanding(app);
-  } else if (response === 'allow_run' && !app?.name) {
-    // run 档没有会话就无处归属（重启恢复/无会话应答）：不落任何记忆，warn 留痕，
-    // 下一次同类调用照常询问——fail-safe 而非静默放大成全局。
-    if (!request.sessionId) {
-      logger.warn('allow_run response without sessionId: run-tier grant not minted, next call will ask again', {
-        tool: request.tool,
-        requestId: request.id,
-      });
-    } else {
-      mintToolRunGrant(request.sessionId, identity.tool, identity.target);
-    }
-  } else if (response === 'allow_24h' && !app?.name) {
-    mintTool24hGrant(identity.tool, identity.target);
-  }
 }
 
 /**
@@ -296,8 +228,46 @@ export class OrchestratorPermissionIsland {
         },
       });
     }
+    // 前台卡被人答了也要撤回已投递的「需要授权」补提醒：否则 renderer 离开期间的提醒队列
+    // 留着已处理的条目，用户回来看到「有 N 条提醒」点进去什么都没有（11-17 真机）。
+    try {
+      notificationService.retractNeedsInput(requestId);
+    } catch (err) {
+      logger.warn('Answered approval notification retract failed', err);
+    }
     pending.resolve(response, undefined, updatedArgs);
+    if (response === 'allow_run' || response === 'allow_24h' || response === 'allow_session') {
+      this.settleSiblingsCoveredByGrant(pending.request);
+    }
     return 'delivered';
+  }
+
+  /**
+   * 模型一次并发发出几个同类调用时，卡是同时弹的：用户在第一张上点「本次任务内允许」，
+   * 其余几张已在授权之前问出，preAsk 碰不到它们（11-17 真机：连弹三张查看日程）。
+   * 只放行 host 标过 grantEligible（询问时无任何强制确认）且现在确能命中授权的同会话请求，
+   * 按一次性 allow 结、不再铸权，并告诉界面这张已在别处裁决。
+   */
+  private settleSiblingsCoveredByGrant(answered: PermissionRequest): void {
+    const sessionId = answered.sessionId;
+    if (!sessionId) return;
+    for (const [id, sibling] of [...this.pendingPermissions]) {
+      const req = sibling.request;
+      if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
+      const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
+      if (!identity || !matchToolGrant(sessionId, identity.tool, identity.target)) continue;
+      // 与 preAsk 同判据：本会话刚被拒过的同目标动作不因授权顺带放行。
+      if (getDenialRegistry().refuseIfGoalDenied(req, { log: false })) continue;
+      logger.info('Pending approval settled by a grant answered on a sibling card', { requestId: id, tool: req.tool, via: answered.id });
+      this.pendingPermissions.delete(id);
+      try {
+        notificationService.retractNeedsInput(id);
+      } catch (err) {
+        logger.warn('Sibling approval notification retract failed', err);
+      }
+      this.onEvent({ type: 'permission_request', data: { ...req, resolved: true } });
+      sibling.resolve('allow');
+    }
   }
 
   /**
@@ -858,6 +828,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...(hasBackgroundRunIdentity(fullRequest) ? { backgroundLane: true as const } : {}),
         ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
@@ -885,6 +856,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.targetApp ? { targetApp: fullRequest.details.targetApp } : {}),
         ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
@@ -902,12 +874,18 @@ export class OrchestratorPermissionIsland {
       }
 
       if (fullRequest.sessionId) {
+        // 用户自己的聊天只是页面断线（detached）：卡仍在聊天原位，点通知回该会话（#3585），
+        // 不能再写「到运行记录处理」把人指错地方（11-17 mini 真机）。无人值守/语音照旧。
+        const modes = getPermissionModeManager();
+        const ownChat = this.isDetachedRun()
+          && !modes.isUnattendedSession(fullRequest.sessionId)
+          && !modes.isLiveVoiceSession(fullRequest.sessionId);
+        const noticeContext = modes.isFirstWakeSession(fullRequest.sessionId) ? 'first_wake' : ownChat ? 'approval' : 'parked';
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
+            ...buildApprovalNotification(fullRequest.tool, noticeContext),
             tool: fullRequest.tool,
-            title: '有操作等你确认',
-            body: `无人值守任务需要确认「${toolUserLabel(fullRequest.tool)}」，已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,

@@ -1,4 +1,5 @@
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 
 export const workbenchTabsZh = {
   workbenchTabs: {
@@ -24,6 +25,8 @@ export const workbenchTabsZh = {
     expandPanel: '展开面板',
     // 专注模式（2026-08-01 工单①）：一个按钮一个位置两个状态，Esc 退出
     focusEnter: '专注模式：面板占满窗口',
+    pageOverflowHint: '这个网页比面板宽，右侧一部分被挡住了',
+    enlargePanel: '放大面板',
     overviewLabel: '任务',
     overviewTitle: '任务工作台',
     logsLabel: '日志',
@@ -58,7 +61,7 @@ export const workbenchTabsZh = {
     // 概览四模块（2026-08-04 拍板二/三）：细进度线三态 + 步骤计数 + 人话结局
     overviewRunStepProgress: '第 {current} 步 / 共 {total} 步',
     overviewRunStepsDone: '已完成 · 共 {total} 步',
-    overviewRunWaitingApproval: '等你确认',
+    overviewRunWaitingApproval: WAITING_ON_USER_LABELS.zh.approval,
     overviewRunOutcomeCancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
     overviewRunOutcomeError: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
     overviewRunDotLabel: '任务状态：{status}',
@@ -108,7 +111,7 @@ export const workbenchTabsZh = {
       },
       foreignSessionTitle: '这个浏览器现场属于另一个会话',
       foreignSessionHint: '当前会话只能看状态，操作请回到启动它的那个会话。',
-      openLocalOps: '高级设置',
+      openLocalOps: '电脑操作与授权',
       moreActions: '更多操作',
       // P1 账号态：地址栏 ⋯ 导入 Cookie（对标 Codex）
       importCookies: '导入 Cookie…',
@@ -144,9 +147,9 @@ export const workbenchTabsZh = {
       // N-BROWSER-KEEP-RESULT-PAGE：终态条（结果页保留 / 已关闭可重开）
       keptResult: {
         keptTitle: '结果页已保留',
-        keptHint: 'Neo 把这一页留给你了，提交状态原样保留，可以直接继续操作。',
+        keptHint: 'Neo 把这一页留给你了，可以继续操作。连续 30 分钟没有任何操作，窗口会自动关闭。每次操作都会重新计时。',
         keptOpen: '在 Neo 中打开',
-        keptClosedHint: '这页窗已关闭（闲置回收或浏览器被关）。重新打开只恢复网址，不恢复表单里已填的内容。',
+        keptClosedHint: '这个窗口已关闭，可能是因为有一段时间没人操作，或是浏览器被关了。重新打开只恢复网址，不恢复表单里已填的内容。',
         closedTitle: '结果页已关闭',
         reopen: '重新打开',
         reopenFailed: '打不开这一页：{error}',
@@ -233,6 +236,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     collapsePanel: 'Collapse panel',
     expandPanel: 'Expand panel',
     focusEnter: 'Focus mode: panel fills the window',
+    pageOverflowHint: 'This page is wider than the panel, so part of it is hidden.',
+    enlargePanel: 'Enlarge panel',
     overviewLabel: 'Task',
     overviewTitle: 'Task workspace',
     logsLabel: 'Logs',
@@ -263,7 +268,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewRunInterrupt: 'Interrupt',
     overviewRunStepProgress: 'Step {current} of {total}',
     overviewRunStepsDone: 'Done · {total} steps',
-    overviewRunWaitingApproval: 'Waiting for your confirmation',
+    overviewRunWaitingApproval: WAITING_ON_USER_LABELS.en.approval,
     overviewRunOutcomeCancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
     overviewRunOutcomeError: outcomeWordsEn.outcomeWords['failed-unknown'].timeline.label,
     overviewRunDotLabel: 'Task status: {status}',
@@ -310,7 +315,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       },
       foreignSessionTitle: 'This browser belongs to another conversation',
       foreignSessionHint: 'This conversation can only watch its status. Go back to the conversation that started it to act on it.',
-      openLocalOps: 'Advanced settings',
+      openLocalOps: 'Computer control & permissions',
       moreActions: 'More actions',
       // P1 auth-state: address-bar ⋯ cookie import (Codex-style)
       importCookies: 'Import cookies…',
@@ -346,9 +351,9 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       // N-BROWSER-KEEP-RESULT-PAGE: terminal bar (result page kept / closed, reopen)
       keptResult: {
         keptTitle: 'Result page kept',
-        keptHint: 'Neo left this page for you — the submitted state is intact, keep working right here.',
+        keptHint: 'Neo left this page open so you can keep working. The window closes automatically after 30 minutes without any activity. Any action restarts the timer.',
         keptOpen: 'Open in Neo',
-        keptClosedHint: 'This window was closed (idle reclaim or the browser was closed). Reopening restores the address only, not anything typed into forms.',
+        keptClosedHint: 'This window closed because it hadn’t been used for a while or because the browser was closed. Reopening restores the address only, not anything typed into forms.',
         closedTitle: 'Result page closed',
         reopen: 'Reopen',
         reopenFailed: 'Could not open this page: {error}',

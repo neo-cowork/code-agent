@@ -6,6 +6,7 @@
 // 原生层每次读写前自己重查「完全访问」，这里不传、也不信任何授权状态。
 // ============================================================================
 
+import type { NativeConnectorDetailCode } from '../../../shared/ipc';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import type { CalendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
 import { calendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
@@ -61,6 +62,8 @@ function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
   switch (bridgeErrorCode(error)) {
     case 'calendar_not_authorized': return new CalendarFailure('not_authorized');
     case 'event_not_found': case 'calendar_not_found': return new CalendarFailure('not_found');
+    case 'event_end_not_after_start':
+      return new CalendarFailure('read_failed', 'The new end time must be later than the start time. Nothing was changed. （新的结束时间必须晚于开始时间，日程没有被修改。）');
     case 'no_writable_calendar':
       return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.');
     // 写操作超时 / 桥断开：改没改成不知道，不能劝模型重试
@@ -105,22 +108,22 @@ async function readCalendarAccess(): Promise<CalendarAccess> {
   return lastAccess;
 }
 
-const ACCESS_DETAIL: Record<Exclude<CalendarAccess, 'granted'>, string> = {
-  undecided: '还没有允许 Neo 访问日历；用到日历时会请你允许一次。',
-  denied: '日历访问被拒绝了：请在「系统设置 → 隐私与安全性 → 日历」里允许 Neo。',
-  write_only: '日历只给了「仅添加事件」：请在「系统设置 → 隐私与安全性 → 日历」里改成「完全访问」。',
-  restricted: '日历访问被系统限制（家长控制或公司管理），Neo 改不了。',
-  unavailable: '日历只能在 macOS 的 Agent Neo 桌面版里使用。',
+const ACCESS_DETAIL_CODE: Record<Exclude<CalendarAccess, 'granted'>, NativeConnectorDetailCode> = {
+  undecided: 'calendar_undecided',
+  denied: 'calendar_denied',
+  write_only: 'calendar_write_only',
+  restricted: 'calendar_restricted',
+  unavailable: 'calendar_desktop_only',
 };
 
 function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
   if (process.platform !== 'darwin') {
-    return { connected: false, readiness: 'unavailable', detail: 'Calendar connector 仅在 macOS 可用。', actions: [], capabilities };
+    return { connected: false, readiness: 'unavailable', detailCode: 'platform_unsupported', actions: [], capabilities };
   }
   if (lastAccess === 'granted') {
     return {
       connected: true, readiness: 'ready', checkedAt: lastCheckedAt,
-      detail: 'Calendar connector 已允许访问日历。', noAccessibleItems: lastListEmpty,
+      detailCode: 'ready', noAccessibleItems: lastListEmpty,
       actions: ['disconnect', 'remove'], capabilities,
     };
   }
@@ -129,7 +132,8 @@ function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
     // 未授权不是「坏了」：按需探测口径算 unchecked，工具照常可用，调用时出授权卡（不写 failed，免得整轮摘掉工具）
     readiness: 'unchecked',
     checkedAt: lastCheckedAt,
-    detail: lastAccess ? ACCESS_DETAIL[lastAccess] : 'Calendar connector 已启用，用到时才检查日历授权。',
+    detailCode: lastAccess ? ACCESS_DETAIL_CODE[lastAccess] : 'unchecked',
+    ...(lastAccess === 'denied' || lastAccess === 'write_only' ? { settingsPane: 'calendars' as const } : {}),
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities,
   };
@@ -219,7 +223,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   const startMs = finite(payload.start_ms);
   const endMs = finite(payload.end_ms) ?? (startMs !== undefined ? startMs + 30 * 60 * 1000 : undefined);
   const location = str(payload.location);
-  // notes：只有撤销删除时用快照重建会带（聊天工具的 schema 没有这个字段）
+  // notes：聊天建日程的可选备注，以及撤销删除时用快照重建都会带；非空才下发给 EventKit
   const notes = str(payload.notes);
   if (!title) throw new Error('title is required for create_event');
   if (startMs === undefined) throw new Error('start_ms is required for create_event');
@@ -233,6 +237,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }));
 }
 
+// Start only: the native layer keeps the event's duration (end moves with it). To change the length give both.
 async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
   const { uid } = requireEventArgs(payload, 'update_event');
   const title = typeof payload.title === 'string' ? payload.title.trim() : undefined;
@@ -276,7 +281,7 @@ async function probe(): Promise<number | null> {
 }
 
 function probeSummary(count: number | null): string {
-  if (count === null) return `Calendar 还没有允许访问：${ACCESS_DETAIL[(lastAccess ?? 'undecided') as Exclude<CalendarAccess, 'granted'>]}`;
+  if (count === null) return 'Calendar 还没有允许访问。';
   return count > 0 ? `Calendar 授权/可用性检查通过，可访问 ${count} 个日历` : 'Calendar 授权/可用性检查通过，但没有找到可访问的日历';
 }
 

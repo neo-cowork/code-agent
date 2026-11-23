@@ -911,7 +911,7 @@ mod tests {
     }
 
     #[test]
-    fn attach_sites_keep_the_pid_and_quit_arms_detach_before_exit() {
+    fn attach_sites_keep_the_pid_for_cleanup() {
         let main = include_str!("main.rs");
         let needle = "let Some(record) = attach_daemon";
         let mut rest = main;
@@ -933,19 +933,6 @@ mod tests {
         assert!(
             main.contains("stop_attached_daemon("),
             "cleanup 必须走到按 pid 发信号的路径"
-        );
-
-        let dialog = main
-            .find("fn show_quit_confirm_dialog")
-            .expect("quit dialog");
-        let dialog_body = &main[dialog..];
-        let arm_at = dialog_body
-            .find("arm_background_continue_detach(")
-            .expect("后台继续在 Windows 上必须先 arm detach");
-        let exit_at = dialog_body.find("app.exit(0)").expect("dialog exits");
-        assert!(
-            arm_at < exit_at,
-            "arm 必须发生在退壳之前，否则 EOF 先到、通知还没落地"
         );
     }
 

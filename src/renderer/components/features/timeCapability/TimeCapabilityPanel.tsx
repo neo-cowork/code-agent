@@ -40,7 +40,7 @@ import {
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from '../cron/types';
-import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
+import { getJobDisplayName } from '../cron/builtinJobDisplay';
 import { CronJobEditor } from '../cron/CronJobEditor';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
@@ -325,6 +325,11 @@ const TimeCapabilityPanel: React.FC = () => {
   }), [calendarInventory, calendarStatuses]);
   const calendarStatus = getCalendarStatusLabel(calendarState);
   const calendarCapabilityRows = getCalendarCapabilityRows(calendarState);
+  const calendarDetailCode = calendarState.status?.detailCode;
+  const calendarDetailText = calendarDetailCode
+    ? t.settings.nativeConnectors.grid.detailCode[calendarDetailCode]
+        .replaceAll('{name}', t.settings.nativeConnectors.grid.labels.calendar)
+    : undefined;
   const calendarRepairActions = getCalendarRepairActions(calendarState);
 
   const fixItems = useMemo(
@@ -365,9 +370,9 @@ const TimeCapabilityPanel: React.FC = () => {
 
   const renderCronJobRow = (job: CronJobDefinition, options?: { showError?: boolean }) => {
     const latest = latestExecutions[job.id];
-    const latestMeta = getLatestExecutionStatus(latest, t.cronCenter);
+    const latestMeta = getLatestExecutionStatus(latest, t.cronCenter, t.cronWakeCadence);
     const isTriggering = triggeringJobId === job.id;
-    const displayName = getBuiltinJobDisplay(job, language)?.name ?? job.name;
+    const displayName = getJobDisplayName(job, language);
     const scheduleSummary = job.schedule.type === 'cron'
       ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
       : formatScheduleSummary(job, language);
@@ -509,7 +514,7 @@ const TimeCapabilityPanel: React.FC = () => {
                     <CapabilityStatusCell
                       label="权限"
                       ready={calendarState.status?.readiness === 'ready'}
-                      detail={calendarState.status?.detail || calendarState.status?.error || formatCheckedAt(calendarState.status?.checkedAt)}
+                      detail={calendarDetailText || formatCheckedAt(calendarState.status?.checkedAt)}
                     />
                     {calendarCapabilityRows.map((row) => (
                       <CapabilityStatusCell

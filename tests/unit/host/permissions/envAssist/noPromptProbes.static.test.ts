@@ -63,9 +63,9 @@ const legacyLines: Record<string, string[]> = {
   // Existing connector failure logging and safety guidance.
   "src/host/tools/modules/connectors/appleScriptWriteFailure.ts": ["} from '../../../connectors/native/osascript';", "'Do not work around this by running osascript or AppleScript through Bash or any script; tell the user what failed.';", "logger.warn(`${toolName} osascript failed`, {"],
   // Reminders connector execution/failure translation (S4).
-  "src/host/tools/modules/connectors/reminders.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "code: osascriptFailure ? failure.code : 'connector_error',", "error: osascriptFailure", "...(osascriptFailure ? { code: failure.code } : {}),"],
+  "src/host/tools/modules/connectors/reminders.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "code: osascriptFailure ? failure.code : 'connector_error',", "error: osascriptFailure", "code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',"],
   // Mail connector execution/failure translation (S4).
-  "src/host/tools/modules/connectors/mail.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "code: osascriptFailure ? failure.code : 'connector_error',", "error: osascriptFailure", "...(osascriptFailure ? { code: failure.code } : {}),"],
+  "src/host/tools/modules/connectors/mail.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "code: osascriptFailure ? failure.code : 'connector_error',", "error: osascriptFailure", "code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',"],
   // Photos connector executes user-requested Apple Events (S4).
   "src/host/connectors/native/photos.ts": ["import { escapeAppleScriptString, runAppleScript } from './osascript';", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(scriptLines);"],
   // Reminders connector execution/failure translation (S4).

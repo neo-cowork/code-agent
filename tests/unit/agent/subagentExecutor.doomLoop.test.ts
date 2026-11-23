@@ -267,7 +267,7 @@ describe('SubagentExecutor doom-loop guard', () => {
 
     const result = await new SubagentExecutor().execute(request);
 
-    expect(result).toMatchObject({ success: false, error: 'Max iterations reached', iterations: 1, toolsUsed: ['Read'], failureCode: 'budget-exhausted' });
+    expect(result).toMatchObject({ success: false, error: 'Max iterations reached', iterations: 1, toolsUsed: ['Read'], failureCode: 'step-cap-reached' });
     expect(mocks.pipeline.completeContext).toHaveBeenCalledWith('pipeline-agent', false, 'Max iterations reached');
     expect(events.find((event) => event.type === 'subagent_run_end')?.data.status).toBe('failed');
   });
@@ -325,7 +325,7 @@ describe('SubagentExecutor doom-loop guard', () => {
         success: false,
         error: 'Max iterations reached',
         iterations: 1,
-        failureCode: 'budget-exhausted',
+        failureCode: 'step-cap-reached',
       });
       expect(grandchildAbort.signal.aborted).toBe(true);
       expect(grandchildAbort.signal.reason).toBe('parent-cancel');

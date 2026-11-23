@@ -11,6 +11,8 @@ import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
 import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 
+import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
+
 const logger = createLogger('SessionUIStore');
 
 async function deleteSession(id: string): Promise<void> {
@@ -18,6 +20,8 @@ async function deleteSession(id: string): Promise<void> {
   if (!response?.success) {
     throw new Error(response?.error?.message || 'Failed to delete session');
   }
+  // 乐观移除早于落库（softDelete 5 秒后才删）：落库后再通知侧栏空空间目录重拉。
+  notifyProjectSpaceList('sessions');
   // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
   useSurfaceExecutionStore.getState().clearConversation(id);
   // 已删会话的未发送草稿（含 base64 附件）不再占 localStorage 配额

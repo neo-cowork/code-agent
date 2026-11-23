@@ -14,6 +14,9 @@ import type { AgentErrorMetadata } from '../contract';
 import { RESPONSES_FEATURE_REJECTION, RUN_ERROR_CODE_MAX_ITERATIONS } from '../constants';
 import { hasInsufficientBalanceSignal } from './providerError';
 
+/** 只有 statusText、没有任何字段/原因的 400（可带 AI SDK 的 `AI_APICallError:` 前缀）。 */
+const EMPTY_BAD_REQUEST_RE = /^(?:ai_apicallerror:\s*)?(?:bad request|invalid request)\.?$/;
+
 type AgentErrorPayload = Record<string, unknown>;
 
 function isRecord(value: unknown): value is AgentErrorPayload {
@@ -185,6 +188,10 @@ export function classifyAgentError(
       return { ...base, category: 'forbidden', httpStatus: explicitStatus ?? 403 };
     }
 
+    if (EMPTY_BAD_REQUEST_RE.test(normalized)) {
+      return { ...base, category: 'bad_request', httpStatus: explicitStatus ?? 400 };
+    }
+
     if (normalized === 'not found' || normalized === 'ai_apicallerror: not found' || hasStatus(404)) {
       return { ...base, category: 'model_not_found', httpStatus: explicitStatus ?? 404 };
     }
@@ -208,6 +215,13 @@ export function classifyAgentError(
       normalized.includes('enotfound')
     ) {
       return { ...base, category: 'network', httpStatus: explicitStatus };
+    }
+
+    // 更具体的类都没接住的 HTTP 400/422（含非空 JSON 正文）：沿用 bad_request，
+    // 卡片是「这个模型可能用不了」，而不是 generic 的「运行失败，重试一次」。
+    // 只认结构化状态码，不扫正文里的数字。
+    if (explicitStatus === 400 || explicitStatus === 422) {
+      return { ...base, category: 'bad_request', httpStatus: explicitStatus };
     }
   }
 

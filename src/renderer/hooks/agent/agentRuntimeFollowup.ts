@@ -6,7 +6,7 @@ import type { SessionStatus as TaskSessionStatus } from '../../stores/taskStore'
 import { useSessionStore } from '../../stores/sessionStore';
 import { environmentProtocolUnsupportedMessage } from '../../i18n/executionEnvironment';
 import { rejectedRequestMessage } from '../../i18n/agentRunErrors';
-import { httpFailureMessage } from '../../utils/httpFailureMessage';
+import { httpFailureMessage, isSessionConflictFailure } from '../../utils/httpFailureMessage';
 import { getServerReconnectingMessage } from '../../utils/serverConnectionMonitor';
 import { getApiBaseUrl } from '../../api/transport';
 
@@ -66,7 +66,7 @@ export function getAgentSendFailureMessage(error: unknown): string {
   // （domainFailureMessage），直接用；否则会落到下面的通用句，丢掉「旧任务占着会话」这类可操作提示。
   // （按 transport 的 HTTP_<status> 码判，不 import DomainInvokeError：很多测试整块 mock 掉 ipcService。）
   const domainCode = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
-  if (typeof domainCode === 'string' && /^HTTP_\d+$/.test(domainCode) && message) {
+  if (typeof domainCode === 'string' && (/^HTTP_\d+$/.test(domainCode) || isSessionConflictFailure(error)) && message) {
     console.warn('[AgentSend] domain http failure:', domainCode);
     return message;
   }

@@ -1,13 +1,10 @@
 import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
-import { cronCloudEn, cronCloudZh } from './cronCloud';
-import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
+import { cronCloudEn, cronCloudZh } from './cronCloud'; import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
-// ============================================================================
-import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels'; import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
-import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
-import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied'; import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome'; import { cronEventLimitsEn, cronEventLimitsZh } from './cronEventLimits';
 import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
@@ -18,7 +15,7 @@ import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCop
 export const cronCenterZh = {
   ...automationPresentationZh,
   cronCenter: {
-    ...cronEditorChromeZh,
+    ...cronEditorChromeZh, ...cronEventLimitsZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
     ...parkedApprovalInboxZh,
@@ -39,7 +36,8 @@ export const cronCenterZh = {
     close: '关闭自动化面板',
     // 页首三格状态条（数据：cronStore.stats + 收件箱待过目数）
     statRunning: '运行中',
-    statPendingReview: '待过目',
+    statPendingReview: '待审批',
+    statResultsToView: '结果待看',
     statRate: '成功率',
     budgetSummaryLabel: '无人值守预算',
     budgetSummaryUnlimited: '已用 {cost} · 未设上限',
@@ -61,10 +59,10 @@ export const cronCenterZh = {
     enabled: '启用',
     disabled: '停用',
     latest: '最近: {label}',
-    awaitingApprovalBadge: '等你批准',
-    awaitingApprovalHint: '有一个运行中的任务正等你批准操作，处理前它会一直停在这里。',
+    awaitingApprovalBadge: WAITING_ON_USER_LABELS.zh.approval,
+    awaitingApprovalHint: '有一个运行中的任务正等你确认操作，处理前它会一直停在这里。',
     awaitingApprovalAction: '去处理',
-    awaitingApprovalWithPreview: '等你批准：{preview}',
+    awaitingApprovalWithPreview: WAITING_ON_USER_LABELS.zh.approvalWithLabel.replace('{label}', '{preview}'),
     nextRun: '下次 {time}',
     localNextRun: '你本机的时间 {time}',
     locationFilterAll: '全部',
@@ -121,6 +119,7 @@ export const cronCenterZh = {
     failureAuth: '模型账号没通过授权（密钥错误或已过期）',
     failureNetwork: '暂时连不上模型服务',
     failureCloudUnavailable: '云端定时服务暂时连不上，这次任务没有执行。',
+    failureRuntimeStarting: 'Neo 刚启动还没准备好，这次运行没能开始。',
     failureOther: '运行失败',
     failureActionSwitchModel: '换个模型',
     failureActionRunAgain: '立即重跑',
@@ -196,7 +195,6 @@ export const cronCenterZh = {
     colScheduledAt: '计划时间',
     colStartedAt: '开始时间',
     colDuration: '耗时',
-    colRetry: '重试',
     colExitCode: '退出码',
     execSession: '运行会话',
     execLocation: '执行位置',
@@ -206,6 +204,9 @@ export const cronCenterZh = {
     triggerSourceMail: '邮件',
     execCompletedAt: '完成时间',
     execRetryCount: '重试次数',
+    // 默认层的重试一句话（N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT）：只说发生了什么，不出现工程字段名。
+    execRetryFailedNote: { one: '自动重试了 {count} 次后仍然失败', other: '自动重试了 {count} 次后仍然失败' },
+    execRetrySucceededNote: { one: '自动重试 {count} 次后成功', other: '自动重试 {count} 次后成功' },
     // 运行成本（N-CRON-RUN-LEDGER-VISIBLE）：单次成本 + 每日小计 + 唤醒未运行原因
     colCost: '成本',
     wakeSkipTitle: '未运行原因',
@@ -229,7 +230,7 @@ export const cronCenterZh = {
     roleWakeRecentDescription: '该角色定时唤醒的运行成本与未运行原因',
     roleWakeRecentEmpty: '还没有唤醒记录',
     roleWakeNoModel: '成本未记录',
-    dailyCostIncomplete: '成本未完整记录',
+    dailyCostIncomplete: '成本未完整记录', costFlatFee: '不按美元计费',
     execError: '错误',
     execResult: '结果',
     resultNoText: '本次运行未产生文字结果。',
@@ -275,7 +276,7 @@ export const cronCenterZh = {
     manualEditor: {
       oneTimeScheduleOption: '一次性',
       intervalScheduleOption: '间隔循环',
-      cronScheduleOption: '按固定时间重复（Cron 表达式）',
+      cronScheduleOption: '按计划重复（每天 / 每周 / 自定义）',
       retryDelayLabel: '重试间隔',
       timeoutLabel: '执行超时',
       retryDelayPlaceholder: '自动',
@@ -423,7 +424,7 @@ export const cronCenterZh = {
     parkedReject: '拒绝',
     parkedExternalBadge: '对外操作',
     parkedOrphaned: '已过期（应用重启）',
-    parkedVoidedLabel: '已作废',
+    parkedVoidedLabel: '已作废：',
     parkedResolveStale: '该审批已失效（发起它的运行已结束），已标记过期',
     parkedResolveFailed: '操作没有生效，请重试',
     parkedWaiting: '等待 {duration}',
@@ -525,7 +526,7 @@ export const cronCenterZh = {
       notAllowed: '不允许。需要保存文件时会停下来等你确认。',
       allow: '允许在 {folder} 里保存文件',
       revoke: '撤销',
-      noFolderHint: '先在对话里给这个任务选一个工作文件夹，才能授权它保存文件。',
+      noFolderHint: '先编辑任务，给它选一个工作文件夹，才能授权它保存文件。',
     },
     // 执行状态（键 = CronJobStatus + none）
     status: {
@@ -544,7 +545,7 @@ export const cronCenterZh = {
 export const cronCenterEn: typeof cronCenterZh = {
   ...automationPresentationEn,
   cronCenter: {
-    ...cronEditorChromeEn,
+    ...cronEditorChromeEn, ...cronEventLimitsEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
     ...parkedApprovalInboxEn,
@@ -564,7 +565,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     tabRuns: 'Run history',
     close: 'Close automations',
     statRunning: 'Running',
-    statPendingReview: 'To review',
+    statPendingReview: 'To approve',
+    statResultsToView: 'Results to view',
     statRate: 'Success rate',
     budgetSummaryLabel: 'Unattended budget',
     budgetSummaryUnlimited: '{cost} used · no limit',
@@ -585,10 +587,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     enabled: 'Enabled',
     disabled: 'Disabled',
     latest: 'Last: {label}',
-    awaitingApprovalBadge: 'Needs your approval',
+    awaitingApprovalBadge: WAITING_ON_USER_LABELS.en.approval,
     awaitingApprovalHint: 'A running task is waiting for your approval; it stays parked until you review it.',
     awaitingApprovalAction: 'Review',
-    awaitingApprovalWithPreview: 'Needs your approval: {preview}',
+    awaitingApprovalWithPreview: WAITING_ON_USER_LABELS.en.approvalWithLabel.replace('{label}', '{preview}'),
     nextRun: 'Next {time}',
     localNextRun: 'Your local time {time}',
     locationFilterAll: 'All',
@@ -644,6 +646,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     failureAuth: 'The model account was not authorized (the key is wrong or expired).',
     failureNetwork: "The model service can't be reached right now.",
     failureCloudUnavailable: "The cloud scheduler can't be reached right now, so this run didn't happen.",
+    failureRuntimeStarting: "Neo was still starting up, so this run couldn't start.",
     failureOther: 'The run failed.',
     failureActionSwitchModel: 'Switch model',
     failureActionRunAgain: 'Run again now',
@@ -714,7 +717,6 @@ export const cronCenterEn: typeof cronCenterZh = {
     colScheduledAt: 'Scheduled',
     colStartedAt: 'Started',
     colDuration: 'Duration',
-    colRetry: 'Retries',
     colExitCode: 'Exit code',
     execSession: 'Session',
     execLocation: 'Execution location',
@@ -723,6 +725,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     triggerSourceMail: 'Mail',
     execCompletedAt: 'Completed',
     execRetryCount: 'Retry count',
+    execRetryFailedNote: { one: 'Retried automatically {count} time, then failed', other: 'Retried automatically {count} times, then failed' },
+    execRetrySucceededNote: { one: 'Succeeded after {count} automatic retry', other: 'Succeeded after {count} automatic retries' },
     // Run cost ledger (N-CRON-RUN-LEDGER-VISIBLE): per-run cost + daily subtotals + wake skip reasons
     colCost: 'Cost',
     wakeSkipTitle: 'Why it did not run',
@@ -746,7 +750,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     roleWakeRecentDescription: "Cost and skip reasons for this role's scheduled wakes",
     roleWakeRecentEmpty: 'No wakes yet',
     roleWakeNoModel: 'Cost not recorded',
-    dailyCostIncomplete: 'Cost not fully recorded',
+    dailyCostIncomplete: 'Cost not fully recorded', costFlatFee: 'Not billed in USD',
     execError: 'Error',
     execResult: 'Result',
     resultNoText: 'This run produced no text result.',
@@ -790,7 +794,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     manualEditor: {
       oneTimeScheduleOption: 'One-time',
       intervalScheduleOption: 'Repeat at an interval',
-      cronScheduleOption: 'Repeat at fixed times (Cron expression)',
+      cronScheduleOption: 'Repeat on a schedule (daily / weekly / custom)',
       retryDelayLabel: 'Retry interval',
       timeoutLabel: 'Execution timeout',
       retryDelayPlaceholder: 'Auto',
@@ -935,7 +939,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedReject: 'Reject',
     parkedExternalBadge: 'External',
     parkedOrphaned: 'Expired (app restarted)',
-    parkedVoidedLabel: 'Voided',
+    parkedVoidedLabel: 'Voided: ',
     parkedResolveStale: 'This approval is stale (its run has ended) and was marked expired',
     parkedResolveFailed: 'That did not go through — please retry',
     parkedWaiting: 'Waiting {duration}',
@@ -1030,7 +1034,7 @@ export const cronCenterEn: typeof cronCenterZh = {
       notAllowed: 'Not allowed. It will stop and wait for you when it needs to save a file.',
       allow: 'Allow saving files in {folder}',
       revoke: 'Revoke',
-      noFolderHint: 'Pick a working folder for this task in chat first.',
+      noFolderHint: 'Edit the task and pick a working folder first.',
     },
     status: {
       pending: 'Pending',

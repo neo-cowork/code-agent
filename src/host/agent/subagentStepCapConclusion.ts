@@ -6,6 +6,8 @@
 // 不再多调一次模型。文案不出现工具名、id 或英文状态。
 // ============================================================================
 
+import { formatBackgroundTaskStop } from '../../shared/i18n/backgroundTaskStop';
+
 interface CapMessage {
   role: string;
   content?: unknown;
@@ -59,7 +61,8 @@ export function buildStepCapConclusion(input: {
   maxIterations: number;
   messages: readonly CapMessage[];
 }): string {
-  const page = findLastPage(input.messages);
-  const where = page ? `最后停留在页面${page}，` : '';
-  return `后台任务做到第 ${input.iterations} 步（上限 ${input.maxIterations} 步）就用完了步数，${where}还没有得出最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
+  return formatBackgroundTaskStop({
+    lastPage: findLastPage(input.messages),
+    stepCap: { iterations: input.iterations, maxIterations: input.maxIterations },
+  });
 }

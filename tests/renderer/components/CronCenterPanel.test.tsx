@@ -7,12 +7,15 @@
 // 2) 工作台 grid 不再 flex-1 min-h-0（会被压到 0），而是 flex-[1_0_420px]
 //    （高屏占满、矮屏保底可滚）。
 import React from 'react';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
 const openBudgetSettings = vi.hoisted(() => vi.fn());
 const countPendingReview = vi.hoisted(() => vi.fn());
+const realInbox = vi.hoisted(() => ({ enabled: false }));
+const listParkedApprovals = vi.hoisted(() => vi.fn());
+const listPendingReview = vi.hoisted(() => vi.fn());
 const inboxProps = vi.hoisted(() => ({
   notify: (() => undefined) as (n: number) => void,
   notifyParked: (() => undefined) as (n: number) => void,
@@ -39,18 +42,24 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
     countPendingReview: () => countPendingReview(),
     listAwaitingApprovalRuns: () => Promise.resolve([]),
+    listParkedApprovals: () => listParkedApprovals(),
+    listPendingReview: () => listPendingReview(),
   },
 }));
-vi.mock('../../../src/renderer/components/features/cron/AutomationReviewInbox', () => ({
-  AutomationReviewInbox: ({ onPendingCountChange, onParkedPendingChange }: {
-    onPendingCountChange?: (n: number) => void;
-    onParkedPendingChange?: (n: number) => void;
-  }) => {
-    inboxProps.notify = (n) => onPendingCountChange?.(n);
-    inboxProps.notifyParked = (n) => onParkedPendingChange?.(n);
-    return <div data-testid="stub-inbox" />;
-  },
-}));
+vi.mock('../../../src/renderer/components/features/cron/AutomationReviewInbox', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/components/features/cron/AutomationReviewInbox')>();
+  return {
+    AutomationReviewInbox: ({ onPendingCountChange, onParkedPendingChange }: {
+      onPendingCountChange?: (n: number) => void;
+      onParkedPendingChange?: (n: number) => void;
+    }) => {
+      if (realInbox.enabled) return <actual.AutomationReviewInbox onPendingCountChange={onPendingCountChange} onParkedPendingChange={onParkedPendingChange} />;
+      inboxProps.notify = (n) => onPendingCountChange?.(n);
+      inboxProps.notifyParked = (n) => onParkedPendingChange?.(n);
+      return <div data-testid="stub-inbox" />;
+    },
+  };
+});
 vi.mock('../../../src/renderer/components/features/cron/CronFeaturedTemplates', () => ({
   CronFeaturedTemplates: () => <div data-testid="stub-templates" />,
 }));
@@ -73,6 +82,9 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 beforeEach(() => {
+  realInbox.enabled = false;
+  listParkedApprovals.mockResolvedValue([]);
+  listPendingReview.mockResolvedValue([]);
   invokeDomain.mockReset();
   invokeDomain.mockResolvedValue({
     scopes: {
@@ -319,20 +331,20 @@ describe('pending review tile (N-CRON-REVIEW-COUNT-LIVE)', () => {
     countPendingReview.mockReset();
     countPendingReview.mockRejectedValueOnce(new Error('Load failed'));
     render(<CronCenterPanel onClose={() => undefined} />);
-    expect(screen.getByTestId('cron-status-pending').textContent).toContain('—');
+    expect(screen.getByTestId('cron-status-review').textContent).toContain('—');
 
     // 首次失败（收件箱回报 0 条也不能变成 0）
     await act(async () => { inboxProps.notify(0); });
-    expect(screen.getByTestId('cron-status-pending').textContent).toContain('—');
+    expect(screen.getByTestId('cron-status-review').textContent).toContain('—');
 
     countPendingReview.mockResolvedValueOnce(3);
     await act(async () => { inboxProps.notify(3); });
-    await waitFor(() => expect(screen.getByTestId('cron-status-pending').textContent).toContain('3'));
+    await waitFor(() => expect(screen.getByTestId('cron-status-review').textContent).toContain('3'));
 
     countPendingReview.mockRejectedValueOnce(new Error('Load failed'));
     await act(async () => { inboxProps.notify(0); });
-    expect(screen.getByTestId('cron-status-pending').textContent).toContain('3');
-    expect(screen.getByTestId('cron-status-pending').textContent).not.toContain('0');
+    expect(screen.getByTestId('cron-status-review').textContent).toContain('3');
+    expect(screen.getByTestId('cron-status-review').textContent).not.toContain('0');
   });
 });
 
@@ -351,15 +363,71 @@ describe('状态条数字与列表/卡片同源（N-FIX-STATUS-WORD-CONTRADICTIO
     expect(screen.getByTestId('cron-status-running').textContent).toContain('2');
   });
 
-  it('「待过目」= 任务折算数 + 卡片里「N 个操作等你确认」的 N', async () => {
+  it('结果数保持任务折算口径，审批变化只更新审批 tile', async () => {
     countPendingReview.mockReset();
     countPendingReview.mockResolvedValue(1);
     render(<CronCenterPanel onClose={() => undefined} />);
     await act(async () => { inboxProps.notify(1); });
     await act(async () => { inboxProps.notifyParked(5); });
-    await waitFor(() => expect(screen.getByTestId('cron-status-pending').textContent).toContain('6'));
+    await waitFor(() => expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('5'));
     // 批准后卡片数下降，tile 随之变
     await act(async () => { inboxProps.notifyParked(4); });
-    await waitFor(() => expect(screen.getByTestId('cron-status-pending').textContent).toContain('5'));
+    await waitFor(() => expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('4'));
+    expect(screen.getByTestId('cron-status-review').querySelector('.text-2xl')?.textContent).toBe('1');
+  });
+});
+
+describe('approval and result tiles with the real AutomationReviewInbox', () => {
+  beforeEach(() => {
+    listPendingReview.mockResolvedValue(Array.from({ length: 3 }, (_, i) => ({
+      id: `result-${i}`, sourceSessionId: `source-${i}`, type: 'cron', status: 'active',
+      title: 'Weekly report', config: { pendingReview: { at: 1 } }, createdAt: 1, updatedAt: 1,
+    })));
+  });
+  it.each(['zh', 'en'] as const)('① %s: two parked approvals match the real card title; three results stay separate', async (language) => {
+    realInbox.enabled = true;
+    useAppStore.setState({ language });
+    countPendingReview.mockResolvedValue(3);
+    listParkedApprovals.mockResolvedValue(Array.from({ length: 2 }, (_, i) => ({
+      id: `approval-${i}`, sessionId: `session-${i}`, tool: 'Write',
+      status: 'pending', requestedAt: 1, sessionTitle: 'Weekly report',
+    })));
+    render(<CronCenterPanel onClose={() => undefined} />);
+    screen.getByTestId('cron-center-tab-runs').click();
+    const bar = within(screen.getByTestId('cron-status-bar'));
+    const approvals = bar.getByTestId('cron-status-pending');
+    const results = bar.getByTestId('cron-status-review');
+    const cardTitle = await screen.findByText(language === 'zh' ? '2 个操作等你确认' : /2 actions waiting for you to confirm/);
+    await waitFor(() => {
+      const tileNumber = Number(approvals.querySelector('.text-2xl')?.textContent);
+      const cardNumber = Number(cardTitle.textContent?.match(/\d+/)?.[0]);
+      expect(tileNumber).toBe(2);
+      expect(tileNumber).toBe(cardNumber);
+      expect(results.querySelector('.text-2xl')?.textContent).toBe('3');
+    });
+    expect(approvals.textContent).toContain(language === 'zh' ? '待审批' : 'To approve');
+    expect(results.textContent).toContain(language === 'zh' ? '结果待看' : 'Results to view');
+    expect(approvals.className).toContain('border-badge-warning/30');
+    expect(results.className).toContain('border-badge-warning/30');
+    expect(screen.getByTestId('cron-status-bar').className).toContain('grid-cols-4');
+    for (const tile of [approvals, results]) {
+      expect(tile.lastElementChild?.className).toContain('whitespace-nowrap');
+    }
+  });
+
+  it.each(['zh', 'en'] as const)('② %s: zero approvals stay quiet with three results to view', async (language) => {
+    realInbox.enabled = true;
+    useAppStore.setState({ language });
+    countPendingReview.mockResolvedValue(3);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    const bar = within(screen.getByTestId('cron-status-bar'));
+    await waitFor(() => expect(bar.getByTestId('cron-status-review').querySelector('.text-2xl')?.textContent).toBe('3'));
+    const approvals = bar.getByTestId('cron-status-pending');
+    expect(approvals.querySelector('.text-2xl')?.textContent).toBe('0');
+    expect(approvals.className).not.toContain('border-badge-warning/30');
+    expect(approvals.className).not.toContain('bg-amber-500/10');
+    expect(screen.queryByTestId('parked-approval-group')).toBeNull();
+    expect(approvals.textContent).toContain(language === 'zh' ? '待审批' : 'To approve');
+    expect(bar.getByTestId('cron-status-review').textContent).toContain(language === 'zh' ? '结果待看' : 'Results to view');
   });
 });

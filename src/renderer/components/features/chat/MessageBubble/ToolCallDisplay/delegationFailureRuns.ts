@@ -1,12 +1,7 @@
 import type { Message, ToolCall } from '@shared/contract';
 import { isDelegationTool } from '../../../../../utils/agentActivity';
 import type { DelegationPresentation } from './delegationPresentation';
-
-interface Run {
-  cause: string;
-  latestId: string;
-  endedAt: number;
-}
+import { failureRunStep, isSuccessfulAssistantReply, type FailureRun } from '../../../../../utils/failureRun';
 
 /**
  * Consecutive same-cause failed delegations: only the newest keeps the red card.
@@ -19,23 +14,22 @@ export function projectSupersededDelegationFailures(
   derive: (toolCall: ToolCall) => DelegationPresentation | null,
 ): Set<string> {
   const superseded = new Set<string>();
-  let run: Run | undefined;
+  let run: FailureRun | undefined;
+  let endedAt = 0;
   for (const message of messages) {
-    const successfulReply = message.role === 'assistant' && !message.isMeta
-      && !message.metadata?.agentError && !message.metadata?.backgroundTaskPreannounce
-      && !message.toolCalls?.length && Boolean(message.content?.trim());
-    if (successfulReply && run && message.timestamp > run.endedAt) run = undefined;
+    if (isSuccessfulAssistantReply(message) && run && message.timestamp > endedAt) {
+      run = failureRunStep(run, { type: 'reset' }).run;
+    }
     for (const toolCall of message.toolCalls ?? []) {
       if (!isDelegationTool(toolCall.name)) continue;
       const presentation = derive(toolCall);
       if (!presentation) continue;
-      if (presentation.state === 'completed') run = undefined;
+      if (presentation.state === 'completed') run = failureRunStep(run, { type: 'reset' }).run;
       else if (presentation.state === 'failed') {
-        const cause = presentation.failureCause;
-        if (!cause) { run = undefined; continue; }
-        const endedAt = presentation.endedAt ?? message.timestamp;
-        if (run?.cause === cause) superseded.add(run.latestId);
-        run = { cause, latestId: toolCall.id, endedAt };
+        const step = failureRunStep(run, { type: 'failure', cause: presentation.failureCause || undefined, id: toolCall.id });
+        if (step.supersededId !== undefined) superseded.add(step.supersededId);
+        run = step.run;
+        endedAt = presentation.endedAt ?? message.timestamp;
       }
     }
   }

@@ -403,10 +403,12 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
           onClick={onConfirm}
           disabled={confirmDisabled}
           data-modal-autofocus={confirmAutoFocus || undefined}
-          className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
             confirmDisabled
-              ? 'bg-zinc-600 text-zinc-500 cursor-not-allowed'
-              : confirmColorClass
+              // 与 Button 的禁用态同一对 token：浅色 7.03:1 / 深色 5.81:1。
+              // 旧的 zinc 组合在浅色主题里字底同色（--zinc-500/--zinc-600 同为 113 113 122，1:1）。
+              ? 'bg-btn-secondary-disabled text-btn-secondary-disabled cursor-not-allowed'
+              : `text-white ${confirmColorClass}`
           }`}
         >
           {confirmLabel}

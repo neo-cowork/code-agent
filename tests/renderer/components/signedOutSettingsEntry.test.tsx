@@ -65,7 +65,15 @@ describe('signed-out settings entries', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
-  it.each(['default', 'other'] as const)('keeps plain Model settings when a usable %s model exists', async (kind) => {
+  it('renders the skip-sign-in exit as a secondary (filled) button, not ghost', () => {
+    useAuthStore.setState({ showAuthModal: true });
+    render(<AuthModal />);
+    const skip = screen.getByRole('button', { name: languages.zh.sidebar.skipSignInSetup });
+    expect(skip.className).toContain('bg-btn-secondary');
+    expect(skip.className).not.toContain('bg-transparent');
+  });
+
+  it.each(['default', 'other'] as const)('opens Model settings when a usable %s model exists', async (kind) => {
     vi.mocked(ipcService.invokeDomain).mockResolvedValue({
       models: { default: kind === 'default' ? DEFAULT_PROVIDER : 'zhipu', providers: { [DEFAULT_PROVIDER]: { enabled: true, apiKeyConfigured: true } } },
     });
@@ -75,7 +83,11 @@ describe('signed-out settings entries', () => {
     await waitFor(() => expect(useAppStore.getState().showSettings).toBe(true));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(useAppStore.getState().settingsInitialTab).toBe('model');
-    expect(useAppStore.getState().settingsModelFocus).toBeNull();
+    if (kind === 'other') {
+      expect(useAppStore.getState().settingsModelFocus).toEqual({ provider: 'zhipu', nonce: expect.any(Number) });
+    } else {
+      expect(useAppStore.getState().settingsModelFocus).toBeNull();
+    }
     expect(useToastStore.getState().toasts).toEqual([]);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });

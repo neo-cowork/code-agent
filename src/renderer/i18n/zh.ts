@@ -1,4 +1,4 @@
-import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels';
+import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels'; import { authZh } from './auth';
 // ============================================================================
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
@@ -9,7 +9,7 @@ import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
-import { voiceZh } from './voice';
+import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder'; import { cronWakeCadenceZh } from './cronWakeCadence';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { deliveryExperienceZh } from './deliveryExperience';
@@ -21,7 +21,7 @@ import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { serverConnectionZh } from './serverConnection';
-import { envAssistZh } from './envAssist';
+import { envAssistZh } from './envAssist'; import { guiTakeoverZh } from './guiTakeover';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -46,7 +46,7 @@ import { workbenchTabsZh } from './workbenchTabs';
 import { activityPanelZh, canvasActorZh } from './domains';
 import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
-import { voiceAuditZh } from './voiceAudit';
+import { voiceAuditZh } from './voiceAudit'; import { memorySourceZh } from './memorySource';
 import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
@@ -62,9 +62,9 @@ import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
 
 export const zh = {
-  ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
+  ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh, ...authZh,
   ...imageNarrationZh, ...mermaidZh,
-  ...voiceAuditZh,
+  ...voiceAuditZh, ...memorySourceZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,
@@ -601,7 +601,7 @@ export const zh = {
       engineCountLabel: 'Engine 数量',
       engineCountCaption: 'Codex / Claude',
       // 引擎行
-      remoteDefaultLabel: '远程默认',
+      remoteDefaultLabel: '远程默认：',
       localDefaultLabel: '本机默认选择',
       modelSelectableSummary: '{enabled}/{total} 个模型可选',
       loading: '正在读取模型目录…',
@@ -952,7 +952,7 @@ export const zh = {
   ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
-  ...cronCenterZh,
+  ...cronCenterZh, ...cronWorkingFolderZh, ...cronWakeCadenceZh,
   ...previewWorkspaceZh,
   ...deliveryExperienceZh,
   ...modalPrimitivesZh,
@@ -961,7 +961,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
-  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh,
+  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh, guiTakeover: guiTakeoverZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,

@@ -252,6 +252,8 @@ export const BROWSER_TIMEOUTS = {
   /** Reject oversized or malformed owner metadata without an unbounded read. */
   ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
   ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
+  /** Minimum idle age before an empty, login-free managed-browser-profile-surface-* dir is reclaimed. */
+  SURFACE_PROFILE_SWEEP_RETENTION: 7 * 24 * 60 * 60_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
@@ -310,6 +312,8 @@ export const TEST_TIMEOUTS = {
 
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Replace unchanged send/startup feedback with an honest, static slow-start notice. */
+  SLOW_START_NOTICE_MS: 10_000,
   /** Warn once when an accepted send has not dispatched its first main-model request. */
   FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,
@@ -554,6 +558,8 @@ export const RENDERER_POLLING = {
    * 退避重试到这个次数仍失败，才认定状态确实读不出来。
    */
   BACKGROUND_TASK_READ_FAILURE_THRESHOLD: 3,
+  /** 已交接后台的调用出现后，等后台任务进入渲染端台账的最长时间；超时仍无任务则放回通用信号 */
+  HANDOFF_LEDGER_GRACE: 5_000,
   /** 任务状态同步轮询基础间隔 */
   TASK_SYNC_BASE: 5_000,
   /** 本地桥接健康检查轮询基础间隔 */
@@ -591,6 +597,8 @@ export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
  * 失败处置分档：transient → 指数退避重试 → 连败停用；permanent → 首次即停用并告知用户。
  */
 export const CRON_GUARDRAILS = {
+  /** 启动期 agent 运行时（TaskManager.initialize）就绪的最长等待 (ms)；超时按「Neo 仍在启动」失败。 */
+  RUNTIME_READY_WAIT_MS: 60_000,
   /** 跨 webServer 进程重新读取 cron_jobs 的周期；只对账，不创建第二套调度器。 */
   JOB_RECONCILE_TICK_MS: 5_000,
   /**
@@ -717,4 +725,9 @@ export const CRON_REVIEW_INBOX_TIMEOUTS = {
 export const OS_NOTIFICATION_TIMEOUTS = {
   /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
   PERMISSION_READ_MS: 3_000,
+} as const;
+
+/** 首轮任务目录命名：最多等待小模型 3 秒，再用规则名继续。 */
+export const SESSION_WORK_DIRECTORY_TIMEOUTS = {
+  TITLE_WAIT_MS: 3_000,
 } as const;

@@ -125,18 +125,8 @@ function isMarkedBashForTaskAdvance(
 function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
   const trimmed = message.trim();
   if (!trimmed) return;
-  if (ctx.turn.currentTurnId) {
-    ctx.onEvent({
-      type: 'stream_reasoning',
-      data: {
-        content: `\n[runtime] ${trimmed}\n`,
-        turnId: ctx.turn.currentTurnId,
-        ...(ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
-      },
-    });
-    return;
-  }
-  ctx.stats.queueDiagnostic(trimmed);
+  // 仅写日志，不进 reasoning 流
+  logger.info(`[RuntimeDiagnostic] checklist: ${trimmed}`);
 }
 
 function hasCheckboxChecklist(content: string | undefined): boolean {
@@ -391,6 +381,7 @@ export class RunFinalizer {
     // Handle loop exit conditions
     if (terminalStatus === 'failed') {
       const errorMessage = formatTerminalError(terminalError);
+      const httpStatus = getModelErrorStatus(terminalError);
       if (this.ctx.goalMode?.isPending()) {
         const reason = `运行失败：${errorMessage}`;
         emitGoalAbort(this.ctx, {
@@ -417,6 +408,7 @@ export class RunFinalizer {
           details: {
             provider: this.ctx.modelConfig.provider,
             model: this.ctx.modelConfig.model,
+            ...(typeof httpStatus === 'number' ? { httpStatus } : {}),
           },
           goalAbort: this.ctx.goalMode?.getStatus() === 'aborted',
           // 引擎内吞掉的推理失败只从这里出去：不挂鉴权/停用/余额标记，手机/renderer 只能说
@@ -747,7 +739,7 @@ export class RunFinalizer {
   emitTaskProgress(
     phase: AgentTaskPhase,
     step?: string,
-    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; target?: string; parallel?: boolean }
+    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; toolCallId?: string; target?: string; action?: string; description?: string; parallel?: boolean }
   ): void {
     this.ctx.onEvent({
       type: 'task_progress',

@@ -62,6 +62,7 @@ import { resolveAdoptedRecoveryWorkspace } from './adoptedRecoveryWorkspace';
 import { createLogger } from '../services/infra/logger';
 
 import { settleParentRunTerminal } from './parentRunTerminalSettlement';
+import { settleDetachedToolOperations } from './detachedToolOperations';
 const logger = createLogger('RunRegistry');
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
@@ -649,6 +650,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         throw new Error(`Durable Run terminal fenced by stale handle: ${runId}`);
       }
       const live = this.requireDurableOwner(runId);
+      if (input.status === 'completed') await settleDetachedToolOperations(this.durableEnvelopes.get(runId), (cp) => this.checkpointDurable(runId, { ...cp, state: this.durableCheckpointStates.get(runId) }));
       const envelope = await this.requireKernel().terminal({
         ...input,
         runId,

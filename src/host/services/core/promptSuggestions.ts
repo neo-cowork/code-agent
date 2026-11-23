@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
+import { stripTelemetryRecoveryNotice } from '../../../shared/telemetryRecovery';
 
 const logger = createLogger('PromptSuggestions');
 
@@ -66,7 +67,7 @@ export async function generateContextSuggestions(
     const recentMessages = windowed
       .map(m => {
         const limit = m.role === 'user' ? USER_MESSAGE_MAX_CHARS : ASSISTANT_MESSAGE_MAX_CHARS;
-        return `${m.role === 'user' ? '用户' : '助手'}: ${(m.content || '').slice(0, limit)}`;
+        return `${m.role === 'user' ? '用户' : '助手'}: ${stripTelemetryRecoveryNotice(m.content || '').slice(0, limit)}`;
       })
       .join('\n');
 

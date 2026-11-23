@@ -80,6 +80,19 @@ pub fn pick_occurrence(candidates: &[(String, i64)], event_id: &str, occurrence_
         .position(|(id, start)| id == event_id && occurrence_ms.is_none_or(|occ| *start == occ))
 }
 
+/// Which endpoints to write on update. Start only → the event keeps its duration (end moves with it);
+/// end only must stay after the old start; both given must be ordered. Never lets EventKit see end < start.
+pub fn resolve_update_range(old_start: i64, old_end: i64, new_start: Option<i64>, new_end: Option<i64>) -> Result<(Option<i64>, Option<i64>), String> {
+    match (new_start, new_end) {
+        (None, None) => Ok((None, None)),
+        (Some(s), None) => Ok((Some(s), Some(s + (old_end - old_start)))),
+        (None, Some(e)) if e <= old_start => Err("event_end_not_after_start".to_string()),
+        (None, Some(e)) => Ok((None, Some(e))),
+        (Some(s), Some(e)) if e < s => Err("event_end_not_after_start".to_string()),
+        (Some(s), Some(e)) => Ok((Some(s), Some(e))),
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use super::{CalendarInfo, CalendarItem, EventFields, WriteOp, WriteOutcome};
@@ -214,16 +227,25 @@ mod imp {
             .ok_or_else(|| "event_not_found".to_string())
     }
 
-    fn apply(ev: &AnyObject, fields: &EventFields) -> Result<(), String> {
+    /// `update`: the event already has a range, so resolve the endpoints against it (before any setter runs).
+    /// Create has no old range and the host always sends both endpoints, so it writes them as given.
+    fn apply(ev: &AnyObject, fields: &EventFields, update: bool) -> Result<(), String> {
+        let (start_ms, end_ms) = if update {
+            let old_start = date_ms(unsafe { msg_send![ev, startDate] });
+            let old_end = date_ms(unsafe { msg_send![ev, endDate] });
+            super::resolve_update_range(old_start, old_end, fields.start_ms, fields.end_ms)?
+        } else {
+            (fields.start_ms, fields.end_ms)
+        };
         if let Some(title) = &fields.title {
             let title = NSString::from_str(title);
             let _: () = unsafe { msg_send![ev, setTitle: &*title] };
         }
-        if let Some(ms) = fields.start_ms {
+        if let Some(ms) = start_ms {
             let d = date(ms)?;
             let _: () = unsafe { msg_send![ev, setStartDate: &*d] };
         }
-        if let Some(ms) = fields.end_ms {
+        if let Some(ms) = end_ms {
             let d = date(ms)?;
             let _: () = unsafe { msg_send![ev, setEndDate: &*d] };
         }
@@ -267,7 +289,7 @@ mod imp {
                     let cls = class(c"EKEvent")?;
                     let ev: Retained<AnyObject> = unsafe { msg_send![cls, eventWithEventStore: &*store] };
                     let _: () = unsafe { msg_send![&*ev, setCalendar: &*cal] };
-                    apply(&ev, &fields)?;
+                    apply(&ev, &fields, false)?;
                     let ok: bool = unsafe {
                         msg_send![&*store, saveEvent: &*ev, span: SPAN_THIS_EVENT, commit: true, error: &mut err as *mut *mut AnyObject]
                     };
@@ -276,7 +298,7 @@ mod imp {
                 }
                 WriteOp::Update { event_id, occurrence_ms, fields } => {
                     let ev = find_event(&store, &event_id, occurrence_ms)?;
-                    apply(&ev, &fields)?;
+                    apply(&ev, &fields, true)?;
                     let ok: bool = unsafe {
                         msg_send![&*store, saveEvent: &*ev, span: SPAN_THIS_EVENT, commit: true, error: &mut err as *mut *mut AnyObject]
                     };
@@ -335,6 +357,53 @@ pub fn list_items(_from_ms: i64, _to_ms: i64, _calendar_id: Option<&str>, _limit
 #[cfg(not(target_os = "macos"))]
 pub fn write(_op: WriteOp) -> Result<WriteOutcome, String> {
     Err("env_assist_calendar_items is only supported on macOS".to_string())
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::resolve_update_range;
+    const H: i64 = 3_600_000;
+    const ERR: &str = "event_end_not_after_start";
+
+    #[test]
+    fn resolve_update_range_start_only_keeps_duration() {
+        assert_eq!(resolve_update_range(10 * H, 11 * H, Some(16 * H), None), Ok((Some(16 * H), Some(17 * H))));
+    }
+
+    #[test]
+    fn resolve_update_range_start_past_old_end_never_inverts() {
+        let (s, e) = resolve_update_range(10 * H, 11 * H, Some(20 * H), None).unwrap();
+        assert!(e.unwrap() > s.unwrap());
+    }
+
+    #[test]
+    fn resolve_update_range_start_earlier_shifts_end() {
+        assert_eq!(resolve_update_range(10 * H, 11 * H, Some(8 * H), None), Ok((Some(8 * H), Some(9 * H))));
+    }
+
+    #[test]
+    fn resolve_update_range_all_day_shifts_by_same_delta() {
+        let day = 24 * H;
+        assert_eq!(resolve_update_range(0, day, Some(3 * day), None), Ok((Some(3 * day), Some(4 * day))));
+    }
+
+    #[test]
+    fn resolve_update_range_end_only_not_after_start_is_error() {
+        assert_eq!(resolve_update_range(10 * H, 11 * H, None, Some(10 * H)), Err(ERR.into()));
+        assert_eq!(resolve_update_range(10 * H, 11 * H, None, Some(9 * H)), Err(ERR.into()));
+        assert_eq!(resolve_update_range(10 * H, 11 * H, None, Some(12 * H)), Ok((None, Some(12 * H))));
+    }
+
+    #[test]
+    fn resolve_update_range_both_inverted_is_error_valid_unchanged() {
+        assert_eq!(resolve_update_range(10 * H, 11 * H, Some(16 * H), Some(15 * H)), Err(ERR.into()));
+        assert_eq!(resolve_update_range(10 * H, 11 * H, Some(16 * H), Some(18 * H)), Ok((Some(16 * H), Some(18 * H))));
+    }
+
+    #[test]
+    fn resolve_update_range_neither_is_noop() {
+        assert_eq!(resolve_update_range(10 * H, 11 * H, None, None), Ok((None, None)));
+    }
 }
 
 #[cfg(test)]

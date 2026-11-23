@@ -113,7 +113,7 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
     });
     Object.defineProperty(window, 'domainAPI', { configurable: true, value: { invoke } });
     render(<Harness />);
-    await waitFor(() => expect(trigger().title).toContain('基元/mimo-v2.5-pro'));
+    await waitFor(() => expect(trigger().title).toContain('基元/MiMo v2.5 Pro'));
     expect(trigger().textContent).toBe('MiMo v2.5 Pro · 基元');
     expect(trigger().getAttribute('aria-expanded')).toBe('false');
     expect(trigger().title).not.toContain('custom-');
@@ -180,7 +180,7 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
 
     await waitFor(() => expect(trigger().textContent).toContain('（已换）'));
     expect(trigger().textContent).toContain('GLM');
-    expect(trigger().getAttribute('title')).toContain('你选的是 基元/mimo-v2.6-flash');
+    expect(trigger().getAttribute('title')).toContain('你选的是 基元/MiMo v2.6 Flash');
   });
 });
 

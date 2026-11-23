@@ -26,7 +26,7 @@ import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { useBackgroundTaskStore } from '../../stores/backgroundTaskStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
-import { isAgentRowQuiet } from '../../utils/agentRowStall';
+import { agentRowStallLevel } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
@@ -85,7 +85,7 @@ export const SessionAgentsPanel: React.FC = () => {
     const timer = window.setInterval(() => setHintNow(Date.now()), AGENT_STALL_HINT_TICK_MS);
     return () => window.clearInterval(timer);
   }, [anyWorking]);
-  // 审批放行时刻（按行 key）：hold 从 approval 掉下来的那一刻记下，isAgentRowQuiet 据此重开窗口。
+  // 审批放行时刻（按行 key）：hold 从 approval 掉下来的那一刻记下，agentRowStallLevel 据此重开窗口。
   // 在渲染期维护（幂等：只由「上一渲染 held → 本渲染不 held」触发），避免 effect 晚一拍导致放行 tick 闪提示。
   const heldKeysRef = useRef<Set<string>>(new Set());
   const releasedAtRef = useRef<Map<string, number>>(new Map());
@@ -103,7 +103,7 @@ export const SessionAgentsPanel: React.FC = () => {
     : null;
 
   const nameOf = (agentId: string): string =>
-    rows.find((row) => row.key === agentId)?.name ?? agentId;
+    (() => { const row = rows.find((item) => item.key === agentId); return row ? row.displayName ?? row.name : agentId; })();
 
   // standby ×：把该成员从本次预选排除（启动时少起这个人）；
   // × 到最后一个不剩 = 整团取消，清掉配方预选本身（排除标记随 setSelectedTeamRecipeId 一并复位）
@@ -252,6 +252,7 @@ export const SessionAgentsPanel: React.FC = () => {
         )}
         {rows.map((row) => {
           const voiceActive = voiceCallLive && (row.key === voiceActiveAgentId || row.roleId === voiceActiveAgentId);
+          const stallLevel = agentRowStallLevel(row, hintNow, releasedAtRef.current.get(row.key));
           return (
             <div
               key={row.key}
@@ -272,7 +273,7 @@ export const SessionAgentsPanel: React.FC = () => {
                 {row.kind === 'expert' ? (
                   <RoleInitialAvatar
                     roleId={row.roleId ?? row.name}
-                    name={row.name}
+                    name={row.displayName ?? row.name}
                     icon={row.icon}
                     className="h-6 w-6 shrink-0 text-[10px]"
                   />
@@ -283,7 +284,7 @@ export const SessionAgentsPanel: React.FC = () => {
                 )}
                 <span className="flex min-w-0 flex-1 flex-col leading-tight">
                   <span className="flex items-center gap-1">
-                    <span className="truncate text-xs font-medium text-zinc-100">{row.name}</span>
+                    <span className="truncate text-xs font-medium text-zinc-100">{row.displayName ?? row.name}</span>
                     {row.isLead && (
                       <span
                         data-testid={`member-lead-badge-${row.roleId ?? row.key}`}
@@ -319,14 +320,22 @@ export const SessionAgentsPanel: React.FC = () => {
                         · {text.panel.stopFailedHint}
                       </span>
                     )}
-                    {/* N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级软提示， */}
-                    {/* 文案复用 workflowStall.quiet（与 composer 工具条 90s 提示同一词条）。 */}
-                    {isAgentRowQuiet(row, hintNow, releasedAtRef.current.get(row.key)) && (
+                    {/* spawn_agent 静默子代理的行级两档提示：quiet 复用 workflowStall.quiet； */}
+                    {/* long 用 rowLong（不复用 long：它声称已提醒 Neo，行级并没有）。 */}
+                    {stallLevel === 'quiet' && (
                       <span
                         data-testid={`agents-panel-quiet-${row.key}`}
                         className="truncate text-[10px] text-badge-warning"
                       >
                         · {t.workflowStall.quiet}
+                      </span>
+                    )}
+                    {stallLevel === 'long' && (
+                      <span
+                        data-testid={`agents-panel-long-${row.key}`}
+                        className="truncate text-[10px] text-badge-warning"
+                      >
+                        · {t.workflowStall.rowLong}
                       </span>
                     )}
                   </span>
@@ -337,7 +346,7 @@ export const SessionAgentsPanel: React.FC = () => {
                   type="button"
                   data-testid={`member-standby-remove-${row.roleId ?? row.key}`}
                   onClick={() => removeStandbyMember(row)}
-                  aria-label={text.standbyRemoveAria.replace('{name}', row.name)}
+                  aria-label={text.standbyRemoveAria.replace('{name}', row.displayName ?? row.name)}
                   className="shrink-0 rounded-full p-0.5 text-zinc-500 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                 >
                   <X className="h-3 w-3" aria-hidden />
@@ -349,7 +358,9 @@ export const SessionAgentsPanel: React.FC = () => {
                   data-testid={`agents-panel-stop-${row.key}`}
                   onClick={() => { void stopRow(row); }}
                   disabled={stoppingKey === row.key}
-                  className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] transition-colors hover:bg-zinc-800 hover:text-badge-danger disabled:cursor-not-allowed disabled:opacity-50 ${
+                    stallLevel === 'long' ? 'text-badge-danger' : 'text-zinc-400'
+                  }`}
                 >
                   <Square className="mr-0.5 inline h-2.5 w-2.5" aria-hidden />
                   {stoppingKey === row.key ? text.stopAllStopping : text.panel.stopRow}

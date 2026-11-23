@@ -680,8 +680,14 @@ describe('AutomationReviewInbox', () => {
       expect(card.querySelector('button')).toBeNull();
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
     });
-    expect(screen.getAllByTestId('parked-args-preview')).toHaveLength(2);
-    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Details: ' : '操作内容：'}invoice-export --token=***REDACTED***`);
+    expect(screen.getAllByTestId('parked-shell-preview')).toHaveLength(2);
+    const folded = cards[0].querySelector('details');
+    expect(folded?.hasAttribute('open')).toBe(false);
+    expect(folded?.querySelector('summary')?.textContent).toBe(language === 'en' ? 'View command' : '查看命令');
+    expect(folded?.querySelector('[data-testid="parked-shell-preview"]')?.textContent).toBe('invoice-export --token=***REDACTED***');
+    const outside = cards[0].cloneNode(true) as HTMLElement;
+    outside.querySelectorAll('details').forEach((node) => node.remove());
+    expect(outside.textContent).not.toContain('invoice-export');
     // Same tool, reason and session; only requestedAt differs (indices 0 and 3).
     expect(cards[0].textContent).not.toBe(cards[3].textContent);
   });
@@ -715,6 +721,8 @@ describe('AutomationReviewInbox', () => {
     const { en } = await import('../../../src/renderer/i18n/en');
     expect(zh.cronCenter.parkedVoidedLabel).toBeTruthy();
     expect(en.cronCenter.parkedVoidedLabel).toBeTruthy();
+    // N-FIX-EN-MEMBER-NOTE-FULLWIDTH-COLON：分隔符进词条，en 不得带全角冒号。
+    expect(en.cronCenter.parkedVoidedLabel).not.toContain('：');
   });
 
   // voidReason 持久化的是中文收口原句（含重启前落库的老行）；英文 UI 按原句查表翻出英文句，
@@ -749,7 +757,7 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
-    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided：${enSentence}`);
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided: ${enSentence}`);
     expect(screen.getByTestId('parked-approval-voided').textContent).not.toContain(zhSentence);
   });
 
@@ -762,7 +770,7 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
-    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided：已手动取消');
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided: 已手动取消');
   });
 
   // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）
@@ -798,7 +806,7 @@ describe('AutomationReviewInbox', () => {
     listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
     render(<AutomationReviewInbox />);
     const card = await screen.findByTestId('parked-approval-item');
-    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run command');
     expect(card.textContent).not.toContain('Bash');
     const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
     expect(summary.closest('details')?.open).toBe(false);
@@ -1054,7 +1062,7 @@ describe('pending review count parity', () => {
     expect(countPendingReviewByTask(parityRecords, paritySessionsById)).toBe(1);
     render(<CronCenterPanel onClose={() => undefined} />);
     await waitFor(() => {
-      expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('1');
+      expect(screen.getByTestId('cron-status-review').querySelector('.text-2xl')?.textContent).toBe('1');
       expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1 条待过目');
     });
     expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);

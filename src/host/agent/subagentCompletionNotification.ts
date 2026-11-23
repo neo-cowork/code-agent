@@ -69,7 +69,7 @@ function buildCompletionAckInstruction(
   title: string,
   delivery: SubagentCompletionDelivery = 'inline',
 ): string {
-  const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。回复中不要提及内部角色名、工具名或标识符。`;
+  const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。回复中不要提及内部角色名、工具名或标识符；不要原样引用 agent_ 开头的内部编号，也不要写带这类编号的临时目录路径。`;
   if (kind === 'user_visible') {
     const report = '用用户的语言写一份简明汇报，只写一遍，不要照抄通知原文；子代理改了文件且通知里有分支名时，写出分支名并说明需要合并才会生效；不要出现任务编号、工具名、信封标签或绝对路径。';
     if (delivery === 'wake') {

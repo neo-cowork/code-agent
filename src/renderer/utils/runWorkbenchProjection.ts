@@ -1,3 +1,5 @@
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
+import { classifyToolSteps, type DelegationLedgerTask } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
@@ -17,6 +19,7 @@ import type {
 } from '../types/runWorkbench';
 import { getToolCapabilitySource } from './toolExecutionPresentation';
 import { mentionsRawToolName } from './humanizeToolStep';
+import { toolProgressLabel } from '@shared/utils/toolProgressLabel';
 import { hasCancelledRunMarker, isIdleReapedRun } from './streamingStatePresentation';
 import {
   isReadOnlyArtifactOwnershipItem,
@@ -30,6 +33,10 @@ export interface BuildRunWorkbenchModelInput {
   taskProgress?: TaskProgressData | null;
   todos?: TodoItem[];
   pendingApprovalId?: string | null;
+  /** 只影响等待审批标签（取共享文案源）；缺省 zh。 */
+  language?: 'zh' | 'en';
+  /** Ledger tasks: a completed delegate_task naming a failed file recovers that failure. */
+  backgroundTasks?: readonly DelegationLedgerTask[];
 }
 
 function latestTurn(projection: TraceProjection): TraceTurn | null {
@@ -85,14 +92,29 @@ function statusFromInput(args: BuildRunWorkbenchModelInput, turn: TraceTurn | nu
   return 'planning';
 }
 
-function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null): string {
-  if (taskProgress?.step?.trim()) return taskProgress.step.trim();
-  if (taskProgress?.tool?.trim()) return `工具 ${taskProgress.tool.trim()}`;
+const TASK_PHASE_WORDS = new Set(['thinking', 'tool_pending', 'tool_running', 'generating', 'completed', 'failed']);
+
+/** 工具阶段的 step 若带着工具 id 或阶段枚举词，换成人话进行时；其余阶段与已是人话的 step 原样返回。 */
+function humanTaskStep(progress: TaskProgressData | null | undefined, language: 'zh' | 'en'): string | undefined {
+  if (!progress) return undefined;
+  const step = progress.step?.trim();
+  const tool = progress.tool?.trim();
+  if (progress.phase !== 'tool_pending' && progress.phase !== 'tool_running') return step || undefined;
+  if (!step) return tool ? toolProgressLabel(tool, language) : undefined;
+  const mentionsTool = Boolean(tool) && mentionsRawToolName(step, tool as string);
+  if (mentionsTool || TASK_PHASE_WORDS.has(step)) return toolProgressLabel(tool, language);
+  return step;
+}
+
+function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string {
+  const humanStep = humanTaskStep(taskProgress, language);
+  if (humanStep) return humanStep;
+  if (taskProgress?.tool?.trim()) return toolProgressLabel(taskProgress.tool, language);
 
   const labels: Record<RunUiStatus, string> = {
     planning: '规划任务',
     running: '执行中',
-    waiting_approval: '等你确认',
+    waiting_approval: WAITING_ON_USER_LABELS[language].approval,
     using_tools: '调用工具',
     verifying: '验证结果',
     completed: '已完成',
@@ -140,17 +162,14 @@ function completionSignal(turn: TraceTurn | null): string | undefined {
   return undefined;
 }
 
-function toolStepOutcome(turn: TraceTurn | null): { failed: number; total: number } | undefined {
+function toolStepOutcome(turn: TraceTurn | null, tasks?: readonly DelegationLedgerTask[]): { failed: number; total: number } | undefined {
   if (!turn) return undefined;
-  let failed = 0;
-  let total = 0;
-  for (const node of latestUserTurnItems(turn.nodes, (item) => item.type === 'user')) {
+  const steps = latestUserTurnItems(turn.nodes, (item) => item.type === 'user').flatMap((node) => {
     const call = node.toolCall;
-    if (!call || call._streaming || call.result === undefined) continue;
-    total += 1;
-    if (call.success === false) failed += 1;
-  }
-  return total > 0 ? { failed, total } : undefined;
+    if (!call || call._streaming || call.result === undefined) return [];
+    return [{ id: call.id, name: call.name, arguments: call.args, success: call.success }];
+  });
+  return classifyToolSteps(steps, tasks);
 }
 
 export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
@@ -169,13 +188,13 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     },
     title: userInstructionTitle(turn),
     status,
-    phase: phaseFromStatus(status, args.taskProgress),
+    phase: phaseFromStatus(status, args.taskProgress, args.language),
     activeToolName: toolCall?.name,
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
     ...(status === 'cancelled' && turn ? { terminalReason: turn.nodes.some((node) => node.metadata?.workbench?.runCancellation?.reason === 'client_disconnect') ? 'client_disconnect' as const : isIdleReapedRun(turn) ? 'idle_reaped' as const : undefined } : {}),
-    toolStepOutcome: toolStepOutcome(turn),
+    toolStepOutcome: toolStepOutcome(turn, args.backgroundTasks),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };
@@ -631,6 +650,7 @@ function buildSessionTaskRecordFromSessionTasks(args: {
   runId: string | null;
   sessionTasks: SessionTask[];
   taskProgress?: TaskProgressData | null;
+  language?: 'zh' | 'en';
 }): TaskRecord | null {
   const tasks = args.sessionTasks.filter((task) => task.subject?.trim() || task.description?.trim());
   if (tasks.length === 0) return null;
@@ -707,19 +727,18 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     steps,
     ownerRunId: args.runId,
     sourceThreadId: args.sessionId,
-    resumeHint: taskProgressHint(args.taskProgress),
+    resumeHint: taskProgressHint(args.taskProgress, args.language),
   };
 }
 
-function taskProgressHint(progress?: TaskProgressData | null): string | undefined {
+function taskProgressHint(progress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string | undefined {
   if (!progress) return undefined;
   const details: string[] = [];
-  if (progress.tool?.trim()) details.push(`工具：${progress.tool.trim()}`);
   if (progress.toolTotal && progress.toolTotal > 1) {
     const index = Math.min((progress.toolIndex ?? 0) + 1, progress.toolTotal);
-    details.push(`第 ${index}/${progress.toolTotal} 个工具`);
+    details.push(language === 'en' ? `Action ${index} of ${progress.toolTotal}` : `第 ${index}/${progress.toolTotal} 项操作`);
   }
-  const step = progress.step?.trim();
+  const step = humanTaskStep(progress, language);
   if (step) details.unshift(step);
   return details.length > 0 ? details.join(' · ') : undefined;
 }
@@ -731,6 +750,7 @@ export function buildSessionTaskRecord(args: {
   sessionTasks?: SessionTask[];
   todos?: TodoItem[];
   taskProgress?: TaskProgressData | null;
+  language?: 'zh' | 'en';
 }): TaskRecord | null {
   if (args.sessionTasks && args.sessionTasks.length > 0) {
     return buildSessionTaskRecordFromSessionTasks({
@@ -738,6 +758,7 @@ export function buildSessionTaskRecord(args: {
       runId: args.runId,
       sessionTasks: args.sessionTasks,
       taskProgress: args.taskProgress,
+      language: args.language,
     });
   }
 
@@ -769,6 +790,6 @@ export function buildSessionTaskRecord(args: {
     })),
     ownerRunId: args.runId,
     sourceThreadId: args.sessionId,
-    resumeHint: taskProgressHint(args.taskProgress),
+    resumeHint: taskProgressHint(args.taskProgress, args.language),
   };
 }

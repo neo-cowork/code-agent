@@ -11,17 +11,19 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import type { Connector, ConnectorStatus } from '../../../connectors/base';
 import {
   appleScriptFailureLogDetail,
   describeAppleScriptFailure,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
-import { formatConnectorTime } from './connectorTime';
+import { describeStatusDetail, formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
+const pendingAccessProbes = new WeakMap<Connector, Promise<unknown>>();
 
 interface ReminderItem {
   id: string | number;
@@ -31,11 +33,16 @@ interface ReminderItem {
   remindAtMs?: number | null;
 }
 
-function formatReminder(reminder: ReminderItem): string {
-  const remindAt = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs)
-    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs)}`
+function formatReminder(reminder: ReminderItem, now: number = Date.now()): string {
+  const hasTime = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs);
+  const remindAt = hasTime
+    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs as number)}`
     : '无提醒时间';
-  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}`;
+  // 到点状态由宿主按时刻比较给出，模型只转述，不自行推断。
+  const dueState = hasTime && !reminder.completed
+    ? ((reminder.remindAtMs as number) > now ? '（未到点）' : '（已过点）')
+    : '';
+  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}${dueState}`;
 }
 
 function buildRemindersMeta(
@@ -109,12 +116,38 @@ async function executeReminders(
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'read'), code: 'NOT_INITIALIZED' };
   }
 
+  let probingAccess = false;
   try {
+    if (connector.getCachedStatus?.().readiness === 'unchecked') {
+      probingAccess = true;
+      let probe = pendingAccessProbes.get(connector);
+      if (!probe) {
+        ctx.logger.debug('reminders', { action: 'probe_access', requestedAction: action });
+        probe = connector.execute('probe_access', {}).finally(() => {
+          pendingAccessProbes.delete(connector);
+        });
+        pendingAccessProbes.set(connector, probe);
+      }
+      await probe;
+      probingAccess = false;
+      if (ctx.abortSignal.aborted) {
+        return { ok: false, error: 'aborted', code: 'ABORTED' };
+      }
+    }
+
     const result = await connector.execute(action, args);
     ctx.logger.debug('reminders', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const status = result.data as ConnectorStatus;
+      if (status.errorCode === 'not_authorized') {
+        return {
+          ok: false,
+          code: status.errorCode,
+          error: describeStatusDetail(status) || 'Reminders access denied',
+          meta: { accessProbeDenied: true },
+        };
+      }
       const output = formatConnectorStatusOutput('reminders', status);
       return {
         ok: true,
@@ -137,8 +170,9 @@ async function executeReminders(
 
     // list_reminders
     const reminders = result.data as ReminderItem[];
+    const now = Date.now();
     const output = reminders.length > 0
-      ? `提醒事项 (${reminders.length})：\n${reminders.map(formatReminder).join('\n')}`
+      ? `${formatConnectorNow(now)}\n提醒事项 (${reminders.length})：\n${reminders.map((r) => formatReminder(r, now)).join('\n')}`
       : '没有找到匹配的提醒。';
     return {
       ok: true,
@@ -149,22 +183,24 @@ async function executeReminders(
     const osascriptFailure = isAppleScriptFailure(error);
     const failure = describeAppleScriptFailure(
       'Reminders', error,
-      action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
+      !probingAccess && action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
     );
     ctx.logger.warn('reminders connector failed', {
       connector: 'reminders',
       code: osascriptFailure ? failure.code : 'connector_error',
       detail: appleScriptFailureLogDetail(error),
     });
-    return {
+    const result: ToolResult<string> = {
       ok: false,
       error: osascriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
-      // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
-      // 判据读 metadata.code，缺了它 reminders 的授权被拒永远发不出环境卡片）。
-      ...(osascriptFailure ? { code: failure.code } : {}),
+      code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
+    if (result.code === 'not_authorized') {
+      result.meta = { accessProbeDenied: true };
+    }
+    return result;
   }
 }
 

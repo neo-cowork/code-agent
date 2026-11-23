@@ -2,6 +2,7 @@
 // RoleDetailPage - 角色详情（设置页与专家面板共用）
 // ============================================================================
 
+import { stripKeywordsTail } from './memoryDescriptionDisplay';
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
@@ -30,6 +31,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
+import { useLocalizeRole } from "../../../hooks/useLocalizeRole";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
@@ -395,10 +397,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             ) : null}
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {memory.description}
-          </div>
-          <div className="mt-0.5 text-[10px] text-zinc-600">
-            {memory.filename}
+            {stripKeywordsTail(memory.description)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -835,6 +834,7 @@ function initialRoleDetailTab(): RoleDetailTab {
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const roleText = t.settings.roles;
   const expertText = t.expert;
   const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
@@ -870,14 +870,15 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   }, [loadDetail]);
   // 头像资产按 roleId 查表，命中就替掉页头的 lucide 图标（未命中的自建角色仍走图标）
   const detailAvatar = getRoleAvatarAsset(roleId);
+  const shownRole = localizeRole(roleId, { name: detail?.visual.displayName ?? '', profession: detail?.visual.profession });
   return (
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
         icon={detailAvatar
-          ? <img src={detailAvatar} alt={detail?.visual.displayName || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          ? <img src={detailAvatar} alt={shownRole.name || roleId} className="h-7 w-7 rounded-lg object-cover" />
           : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
-        title={detail?.visual.displayName || roleId}
-        description={detail?.visual.profession || roleText.detail.subtitle}
+        title={shownRole.name || roleId}
+        description={shownRole.profession || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.capabilityHub.title}
         actions={<div className="flex items-center gap-2">

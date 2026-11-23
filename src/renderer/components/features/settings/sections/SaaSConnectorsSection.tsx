@@ -581,7 +581,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               </div>
             )}
 
-            {!isCli && <SaaSConnectorCardFooter status={status} badge={presentation.badge} text={text} busy={rowBusy} connecting={showConnecting} onCancel={cancelConnect} />}
+            {!isCli && <SaaSConnectorCardFooter status={status} text={text} connecting={showConnecting} onCancel={cancelConnect} />}
           </div>
         );
       })}

@@ -136,6 +136,8 @@ function makeSessionManager(overrides: Record<string, unknown> = {}) {
   return {
     getOrCreateCurrentSession: vi.fn().mockResolvedValue({ id: 'sess-1' }),
     getSession: vi.fn().mockResolvedValue({ id: 'sess-1', metadata: undefined }),
+    getSessionMetadata: vi.fn().mockReturnValue(undefined),
+    getSessionTitle: vi.fn().mockReturnValue(undefined),
     addMessage: vi.fn().mockResolvedValue(undefined),
     restoreSession: vi.fn(),
     updateSession: vi.fn().mockResolvedValue(undefined),
@@ -505,9 +507,8 @@ describe('CLIAgent', () => {
       systemPrompt: '专家提示词',
       deniedToolNames: [],
     };
-    sessionManager.getSession.mockResolvedValue({
-      id: 'sess-1',
-      metadata: { expertThread: { roleId: '牧之', setAt: 42 } },
+    sessionManager.getSessionMetadata.mockReturnValue({
+      expertThread: { roleId: '牧之', setAt: 42 },
     });
     mocks.resolveExplicitAgentOverride.mockReturnValue(override);
     installLoop(async (ctl) => {
@@ -530,6 +531,19 @@ describe('CLIAgent', () => {
       expect.objectContaining({ sessionId: 'sess-1' }),
       expect.objectContaining({ sessionId: 'sess-1' }),
     );
+    expect(sessionManager.getSessionMetadata).toHaveBeenCalledExactlyOnceWith('sess-1');
+    expect(sessionManager.getSession).not.toHaveBeenCalled();
+  });
+
+  it('reads the terminal title through the read-only accessor', async () => {
+    const agent = new CLIAgent();
+    await agent.initSession();
+    sessionManager.getSessionTitle.mockReturnValue('Persisted title');
+
+    await expect(agent.getSessionTitle()).resolves.toBe('Persisted title');
+
+    expect(sessionManager.getSessionTitle).toHaveBeenCalledExactlyOnceWith('sess-1');
+    expect(sessionManager.getSession).not.toHaveBeenCalled();
   });
 
   it('error event before agent_complete marks run failed and keeps error message', async () => {

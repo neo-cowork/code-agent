@@ -62,6 +62,7 @@ export function createFakeCalendarBridge() {
             const item: FakeItem = {
               id: `ev-${state.nextId++}`, calendarId: cal.id, calendar: cal.title, title: String(body.title),
               startMs: Number(body.startMs), endMs: Number(body.endMs), location: typeof body.location === 'string' ? body.location : '',
+              notes: typeof body.notes === 'string' ? body.notes : '',
             };
             state.items.push(item);
             return { event: full(item) } as T;
@@ -72,9 +73,16 @@ export function createFakeCalendarBridge() {
             return { deleted: true, title: removed.title } as T;
           }
           const item = state.items[i];
+          // mirrors resolve_update_range in env_assist_calendar_items.rs
+          const ns = typeof body.startMs === 'number' ? body.startMs : undefined;
+          const ne = typeof body.endMs === 'number' ? body.endMs : undefined;
+          const wStart = ns; let wEnd = ne;
+          if (ns !== undefined && ne === undefined) wEnd = ns + (item.endMs - item.startMs);
+          else if (ns === undefined && ne !== undefined && ne <= item.startMs) throw bridgeError('env_assist_bridge:bridge_http_400', 'event_end_not_after_start');
+          else if (ns !== undefined && ne !== undefined && ne < ns) throw bridgeError('env_assist_bridge:bridge_http_400', 'event_end_not_after_start');
           if (typeof body.title === 'string') item.title = body.title;
-          if (typeof body.startMs === 'number') item.startMs = body.startMs;
-          if (typeof body.endMs === 'number') item.endMs = body.endMs;
+          if (wStart !== undefined) item.startMs = wStart;
+          if (wEnd !== undefined) item.endMs = wEnd;
           if (typeof body.location === 'string') item.location = body.location;
           return { event: full(item) } as T;
         }

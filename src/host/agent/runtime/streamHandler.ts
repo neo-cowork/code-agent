@@ -93,14 +93,8 @@ export class StreamHandler {
   private flushRuntimeDiagnostics(): void {
     const diagnostics = this.ctx.stats.drainDiagnostics();
     for (const diagnostic of diagnostics) {
-      this.ctx.onEvent({
-        type: 'stream_reasoning',
-        data: {
-          content: `\n[runtime] ${diagnostic}\n`,
-          turnId: this.ctx.turn.currentTurnId,
-          ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
-        },
-      });
+      // 仅写日志：内部诊断（含 env 变量名、置信度）不得进入用户可见的 reasoning 流
+      logger.info(`[RuntimeDiagnostic] ${diagnostic}`);
     }
   }
 

@@ -28,6 +28,8 @@ const labels = {
   savedRolePrefix: '由 {role} 执行：',
   savedStatusLabel: '状态',
   savedStatusPaused: '当前已停用，点启用后才会按时跑',
+  archiveLabel: '产出归档到',
+  archiveUnknown: '所选项目（名称暂时读不到）',
 };
 
 function agentJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
@@ -408,5 +410,41 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
     const rows = buildSavedRoutineRestateRows({ job: input, channelLabel: '', labels, notifyWhenRow: true });
     expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'notifyWhen', 'result']);
     expect(rows[1].value).toBe('每天 09:00');
+  });
+});
+
+describe('buildSavedRoutineRestateRows · 归档项目行', () => {
+  const withArchive = (id: string) => agentJob({
+    action: { type: 'agent', agentType: 'default', prompt: '看一圈邮件并汇总重点', libraryProjectId: id },
+  });
+
+  it('有归档项目：result 之后出 archive 行，值是项目名而非 id', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: withArchive('proj-123'), channelLabel: '', labels, archiveProjectName: ' 季度复盘 ',
+    });
+    expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result', 'archive']);
+    expect(rows[3]).toEqual({ key: 'archive', label: '产出归档到', value: '季度复盘' });
+  });
+
+  it('名称读不到（缺省/空白）：落兜底文案，绝不透出 id；停用状态行仍排在最后', () => {
+    for (const name of [undefined, '  ']) {
+      const rows = buildSavedRoutineRestateRows({
+        job: { ...withArchive('proj-123'), enabled: false }, channelLabel: '', labels, archiveProjectName: name,
+      });
+      expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result', 'archive', 'status']);
+      expect(rows[3].value).toBe('所选项目（名称暂时读不到）');
+      expect(JSON.stringify(rows)).not.toContain('proj-123');
+    }
+  });
+
+  it('没有归档项目（缺省/空白 id/非 agent）：不出 archive 行', () => {
+    for (const job of [
+      agentJob(),
+      withArchive('  '),
+      agentJob({ action: { type: 'role-wake', roleId: 'role-x' }, scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'days' } }),
+    ]) {
+      const rows = buildSavedRoutineRestateRows({ job, channelLabel: '', labels, archiveProjectName: '不该出现' });
+      expect(rows.map((row) => row.key)).not.toContain('archive');
+    }
   });
 });

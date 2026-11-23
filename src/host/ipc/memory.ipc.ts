@@ -38,6 +38,10 @@ import {
 } from '../memory/memoryEntryRuntime';
 import { batchReviewMemoryEntries } from '../memory/memoryEntryReview';
 import {
+  listConsolidationRuns,
+  restoreConsolidationRun,
+} from '../lightMemory/consolidationHistory';
+import {
   deleteProjectScopedMemoryEntry,
   isProjectScopedEntryId,
   overlayProjectScopedEntries,
@@ -78,12 +82,16 @@ import type {
   MemoryChangeJournalRequest,
   MemoryChangeJournalResult,
   MemoryChangeJournalContext,
+  MemoryTidyRestoreRequest,
+  MemoryTidyRestoreResult,
 } from '../../shared/contract/memory';
 import type {
   ExternalImportSetClaudeLegacySkillsRequest,
   ExternalSkillsApplyRequest,
   ExternalSkillsPreviewRequest,
 } from '../../shared/contract/externalImport';
+import type { MemoryEntryCreateRequest } from '../../shared/contract/memory';
+import { createManualMemoryEntry } from '../memory/memoryEntryCreate';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
 const logger = createLogger('MemoryIPC');
@@ -620,6 +628,29 @@ async function handleMemoryEntryBatchReview(payload: MemoryEntryBatchReviewReque
   return batchReviewMemoryEntries(getDatabase(), payload);
 }
 
+/** 「最近整理」列表（N-MEM-CONSOLIDATION-HISTORY-UNDO）：审计行 + 最近一次演练预览。 */
+async function handleMemoryTidyList(): Promise<Awaited<ReturnType<typeof listConsolidationRuns>>> {
+  return listConsolidationRuns();
+}
+
+/** 一键恢复一次整理。拒绝走 typed code 返回（不向 UI 抛异常）；镜像库不可用时同样 typed 拒绝。 */
+async function handleMemoryTidyRestore(payload: MemoryTidyRestoreRequest): Promise<MemoryTidyRestoreResult> {
+  const auditId = payload?.auditId?.trim();
+  if (!auditId) {
+    return { ok: false, code: 'run-not-found', message: 'memory tidy restore requires auditId' };
+  }
+  try {
+    return await restoreConsolidationRun({ auditId, db: getDatabase() });
+  } catch (error) {
+    logger.error('Memory tidy restore handler error', { error });
+    return {
+      ok: false,
+      code: 'restore-failed',
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function handleMemoryHarnessImportDryRun(payload: MemoryImportDryRunRequest): Promise<Awaited<ReturnType<typeof dryRunMemoryHarnessImport>>> {
   return dryRunMemoryHarnessImport(getDatabase(), { homeDir: getHomeDir(), ...(payload || {}) });
 }
@@ -902,6 +933,9 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryInboxResolve: (_ctx, payload) => handleMemoryInboxResolve(payload as MemoryInboxResolveRequest),
     memoryEntries: () => handleListMemoryEntries(),
     memoryRebuildMirror: () => handleRebuildMemoryMirror(),
+    memoryTidyList: () => handleMemoryTidyList(),
+    memoryTidyRestore: (_ctx, payload) => handleMemoryTidyRestore(payload as MemoryTidyRestoreRequest),
+    memoryEntryCreate: (_ctx, payload) => createManualMemoryEntry(getDatabase(), payload as MemoryEntryCreateRequest, PANEL_JOURNAL),
     memoryEntryUpdate: (_ctx, payload) => handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest),
     memoryEntryDelete: (_ctx, payload) => handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest),
     memoryEntryJournal: (_ctx, payload) => handleMemoryEntryJournal(payload as MemoryChangeJournalRequest),
@@ -993,6 +1027,15 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryRebuildMirror':
           data = await handleRebuildMemoryMirror();
+          break;
+        case 'memoryTidyList':
+          data = await handleMemoryTidyList();
+          break;
+        case 'memoryTidyRestore':
+          data = await handleMemoryTidyRestore(request as unknown as MemoryTidyRestoreRequest);
+          break;
+        case 'memoryEntryCreate':
+          data = await createManualMemoryEntry(getDatabase(), request as MemoryEntryCreateRequest, PANEL_JOURNAL);
           break;
         case 'memoryEntryUpdate':
           data = await handleMemoryEntryUpdate(request as unknown as MemoryEntryUpdateRequest);

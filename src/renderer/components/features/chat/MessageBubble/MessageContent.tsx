@@ -99,7 +99,7 @@ function plainText(value: React.ReactNode): string {
 }
 
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart, codeCollapseLines }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
@@ -244,12 +244,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           if (language === 'document') {
             return <DocumentBlock spec={codeContent} />;
           }
-          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} />;
+          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} collapseLines={codeCollapseLines} />;
         }
 
         // Block text retains a trailing newline; inline code normalizes newlines to spaces.
         if (!className && isCodeBlock && (codeContent === '' || codeText.endsWith('\n'))) {
-          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} />;
+          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} collapseLines={codeCollapseLines} />;
         }
 
         return (
@@ -564,7 +564,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [t, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [t, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId, codeCollapseLines]
   );
 
   // For user messages, render as plain text (no markdown processing)
@@ -573,7 +573,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     // cron/heartbeat 运行记录的首条用户消息存的是「任务 + host 注入的机器尾段」
     // （模型必须收到完整 prompt，存储不动）；气泡只显示任务本身。老记录同样带尾段，
     // 在渲染层切割即可新旧同治，fork 出的续聊子会话复制的前缀也一并干净。
-    const displayContent = stripCronPromptDecoration(content);
+    // /create-role、/create-team 的确定性种子前缀只给 host 触发 skill，气泡只显示用户自己的那句话（存储不动）。
+    const displayContent = stripCronPromptDecoration(content).replace(/^\/create-(?:role|team)\s+(?=\S)/, '');
     // 核心功能触发词（@neo / /goal / /workflow）上色，正文逐字符不变
     const trigger = parseLeadingTriggerToken(displayContent);
     return (

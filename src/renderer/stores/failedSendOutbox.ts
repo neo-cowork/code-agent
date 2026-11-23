@@ -1,4 +1,5 @@
 import type { Message } from '@shared/contract';
+import { sanitizeAttachmentsForPersistence } from '@shared/utils/messageAttachments';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('FailedSendOutbox');
@@ -67,12 +68,35 @@ function read(sessionId: string): FailedTurn[] | undefined {
   }
 }
 
+// 先原样落盘（刷新后重试仍带完整图）；只有超配额写不下时才退到与 DB 同口径的瘦身附件
+// （大图去掉内联数据、保留文件名卡片），免得整条失败轮次连图带字一起丢。内存里始终是完整副本。
+function toStorable(entry: FailedTurn): FailedTurn {
+  const retryAttachments = entry.error.metadata?.retryAttachments;
+  return {
+    ...entry,
+    user: entry.user.attachments
+      ? { ...entry.user, attachments: sanitizeAttachmentsForPersistence(entry.user.attachments) }
+      : entry.user,
+    error: retryAttachments
+      ? { ...entry.error, metadata: { ...entry.error.metadata, retryAttachments: sanitizeAttachmentsForPersistence(retryAttachments) } }
+      : entry.error,
+  };
+}
+
 function write(sessionId: string, entries: FailedTurn[]): void {
   if (entries.length) memory.set(sessionId, entries);
   else memory.delete(sessionId);
   try {
-    if (entries.length) localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries));
-    else localStorage.removeItem(keyPrefix + sessionId);
+    if (!entries.length) {
+      localStorage.removeItem(keyPrefix + sessionId);
+      return;
+    }
+    try {
+      localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries));
+    } catch (fullError) {
+      if (!(fullError && typeof fullError === 'object' && 'name' in fullError && fullError.name === 'QuotaExceededError')) throw fullError;
+      localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries.map(toStorable)));
+    }
   } catch (error) {
     memory.set(sessionId, entries);
     storageFailure(error);

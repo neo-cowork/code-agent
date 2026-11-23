@@ -1,4 +1,5 @@
 import { resolveSkillName } from './resolveSkillName';
+import { toolUserLabel } from './utils/toolUserLabel';
 import {
   detectInternalTextLeaks, CATALOG_SLUG_GLOBAL_RE,
   ENGLISH_STATE_REGEXES,
@@ -23,11 +24,11 @@ export interface HumanizedInternalTextResult {
 }
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
-  read_file: { zh: '读取文件', en: 'Read file' },
-  write_file: { zh: '写入文件', en: 'Write file' },
-  edit_file: { zh: '编辑文件', en: 'Edit file' },
+  read_file: { zh: toolUserLabel('read', 'zh'), en: toolUserLabel('read', 'en') },
+  write_file: { zh: toolUserLabel('write', 'zh'), en: toolUserLabel('write', 'en') },
+  edit_file: { zh: toolUserLabel('edit', 'zh'), en: toolUserLabel('edit', 'en') },
   list_directory: { zh: '查看目录', en: 'List directory' },
-  web_fetch: { zh: '读取网页', en: 'Fetch web page' },
+  web_fetch: { zh: toolUserLabel('webfetch', 'zh'), en: toolUserLabel('webfetch', 'en') },
   todo_write: { zh: '更新待办清单', en: 'Update checklist' },
   spawn_agent: { zh: '启动协作助手', en: 'Start helper' },
   agent_message: { zh: '发送协作消息', en: 'Send helper message' },
@@ -36,7 +37,7 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   steer_task: { zh: '调整任务方向', en: 'Steer task' },
   cancel_task: { zh: '停止任务', en: 'Stop task' },
   memory_store: { zh: '保存记忆', en: 'Save memory' },
-  memory_search: { zh: '检索记忆', en: 'Search memory' },
+  memory_search: { zh: toolUserLabel('memorysearch', 'zh'), en: toolUserLabel('memorysearch', 'en') },
   tool_search: { zh: '查找可用工具', en: 'Find available tools' },
   computer_use: { zh: '操作桌面界面', en: 'Control desktop screen' },
   browser_action: { zh: '操作浏览器', en: 'Control browser' },

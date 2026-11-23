@@ -11,6 +11,7 @@
 
 import type { Language } from '../i18n';
 import { projectSourceTrustCopy } from '../i18n/agentRunErrors';
+import { sessionConflictLabels } from '../i18n/projectTrust';
 
 const genericFailure: Record<Language, string> = {
   zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
@@ -29,8 +30,8 @@ const busy: Record<Language, string> = {
 
 // 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
 const sessionHeldByOldRun: Record<Language, string> = {
-  zh: '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。',
-  en: 'This message was not sent: an earlier task in this conversation is still open. Abandon that task first, then retry.',
+  zh: `这条消息没发出去：这个会话里还有一个在等你确认的旧任务。点「${sessionConflictLabels.zh.retry}」会先结束旧任务，再把你的消息重新发送。`,
+  en: `This message was not sent: an earlier task in this conversation is still waiting for your confirmation. "${sessionConflictLabels.en.retry}" ends that task first, then sends your message again.`,
 };
 
 const tooManyRequests: Record<Language, string> = {
@@ -69,6 +70,16 @@ export function uploadFailureMessage(input: { status: number; retryAfterSeconds?
   }
   if (status === 413) return uploadCopy.tooLarge[lang];
   return uploadCopy.generic[lang];
+}
+
+/** getPathForFile 上传失败：userMessage 永远是人话一句，调用方直接展示，不要展示 err.message 以外的底层文本。 */
+export class UploadFailureError extends Error {
+  readonly userMessage: string;
+  constructor(userMessage: string) {
+    super(userMessage);
+    this.name = 'UploadFailureError';
+    this.userMessage = userMessage;
+  }
 }
 
 /** 读 Retry-After：优先响应头，其次 JSON 体的 retryAfterSeconds；都没有返回 undefined。 */
@@ -141,4 +152,64 @@ export function domainFailureMessage(input: { status: number; body: string; lang
 export function isProjectSourceTrustFailure(error: unknown): boolean {
   return typeof error === 'object' && error !== null
     && (error as { code?: unknown }).code === 'PROJECT_SOURCE_TRUST';
+}
+
+const PROJECT_SOURCE_TRUST_KINDS = new Set(['source_missing', 'identity_changed', 'not_trusted']);
+
+export interface ProjectSourceTrustHttpFields {
+  kind?: 'source_missing' | 'identity_changed' | 'not_trusted';
+  folderName?: string;
+}
+
+/** Basename only. A value that still looks like a path is dropped so it cannot reach the bubble. */
+function safeProjectFolderName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const name = value.trim();
+  if (!name || name === '.' || name === '..' || name === '/' || name === '\\') return undefined;
+  if (name.includes('/') || name.includes('\\')) return undefined;
+  return name;
+}
+
+function trustKind(value: unknown): ProjectSourceTrustHttpFields['kind'] {
+  return typeof value === 'string' && PROJECT_SOURCE_TRUST_KINDS.has(value)
+    ? value as ProjectSourceTrustHttpFields['kind']
+    : undefined;
+}
+
+/** 从 422 JSON 取出 kind 与文件夹名，供 transport 挂到抛出的错误上。非信任门响应返回空对象。 */
+export function readProjectSourceTrustHttpFields(errorBody: string): ProjectSourceTrustHttpFields {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(errorBody);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== 'object') return {};
+  const record = parsed as { code?: unknown; kind?: unknown; folderName?: unknown };
+  if (record.code !== 'PROJECT_SOURCE_TRUST') return {};
+  const kind = trustKind(record.kind);
+  const folderName = safeProjectFolderName(record.folderName);
+  return {
+    ...(kind ? { kind } : {}),
+    ...(folderName ? { folderName } : {}),
+  };
+}
+
+/** 读 transport 挂在错误对象上的 kind / 文件夹名。 */
+export function projectSourceTrustFieldsOf(error: unknown): ProjectSourceTrustHttpFields | undefined {
+  if (!isProjectSourceTrustFailure(error)) return undefined;
+  const record = error as { kind?: unknown; folderName?: unknown };
+  const kind = trustKind(record.kind);
+  const folderName = safeProjectFolderName(record.folderName);
+  if (!kind && !folderName) return undefined;
+  return {
+    ...(kind ? { kind } : {}),
+    ...(folderName ? { folderName } : {}),
+  };
+}
+
+/** 发送失败是不是会话被没结束的旧任务占着（失败说明下挂「放弃 / 重试」两个按钮）。 */
+export function isSessionConflictFailure(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && (error as { code?: unknown }).code === 'RUN_SESSION_CONFLICT';
 }

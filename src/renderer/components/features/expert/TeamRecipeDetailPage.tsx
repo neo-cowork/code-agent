@@ -6,6 +6,7 @@ import type { SkillCategory } from '@shared/contract/skillRepository';
 import { Button } from '../../primitives/Button';
 import { SettingsSection } from '../settings/SettingsLayout';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { updateTeamRecipe, type TeamRecipeWrite } from '../../../services/teamRecipeClient';
 
 const CATEGORIES: SkillCategory[] = ['docs-office', 'data-analysis', 'design-creative', 'content-marketing', 'product', 'research', 'automation', 'development'];
@@ -44,7 +45,11 @@ export const TeamRecipeDetailPage: React.FC<Props> = ({ recipe, entries, editabl
     setError(null);
   }, [recipe]);
 
-  const roleName = (roleId: string) => entries.find((entry) => entry.roleId === roleId)?.displayName || roleId;
+  const localizeRole = useLocalizeRole();
+  const roleName = (roleId: string) => {
+    const name = entries.find((entry) => entry.roleId === roleId)?.displayName;
+    return (name ? localizeRole(roleId, { name }).name : '') || roleId;
+  };
   const updateMember = (index: number, patch: Partial<TeamRecipeMember>) => {
     setDraft((current) => ({ ...current, members: current.members.map((member, memberIndex) => memberIndex === index ? { ...member, ...patch } : member) }));
   };

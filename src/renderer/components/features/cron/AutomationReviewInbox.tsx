@@ -38,6 +38,8 @@ import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+import { AutomationRoleChip } from './AutomationRoleChip';
+import { folderDisplayName, ParkedArgsDisclosure } from './parkedArgsDisclosure';
 
 const logger = createLogger('AutomationReviewInbox');
 
@@ -78,6 +80,11 @@ function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy, languag
   return `${restarted ? copy.parkedVoided.restartPrefix : ''}${displayName}`;
 }
 
+function ParkedSessionTitle({ item, language }: { item: ParkedApprovalInboxItem; language: 'zh' | 'en' }) {
+  const title = item.taskTitle ?? item.sessionTitle;
+  return title ? <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{getDisplaySessionTitle(title, language)}</div> : null;
+}
+
 function formatWaiting(requestedAt: number, copy: InboxCopy): string {
   const mins = Math.max(0, Math.floor((Date.now() - requestedAt) / 60_000));
   if (mins < 1) return copy.parkedWaitingLessThanMinute;
@@ -116,9 +123,9 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
     }
     const key = `${row.sessionId}\u0000${row.writeGrantFolder}`;
     const existing = groups.get(key);
-    if (existing) {
-      existing.groupIds!.push(row.id);
-      existing.groupPaths!.push(row.argsPreview ?? '');
+    if (existing?.groupIds && existing.groupPaths) {
+      existing.groupIds.push(row.id);
+      existing.groupPaths.push(row.argsPreview ?? '');
     } else {
       const group: ParkedDisplayItem = { ...row, groupIds: [row.id], groupPaths: [row.argsPreview ?? ''] };
       groups.set(key, group);
@@ -126,11 +133,6 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
     }
   }
   return out;
-}
-
-function folderDisplayName(folder: string): string {
-  const parts = folder.split(/[\\/]+/).filter(Boolean);
-  return parts[parts.length - 1] ?? folder;
 }
 
 export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
@@ -305,6 +307,18 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   };
   for (const record of items) urgencyGroups[recordUrgency(record)].push(record);
 
+  const parkedArgs = (item: { tool: string; argsPreview?: string; groupPaths?: string[] }) => (
+    <ParkedArgsDisclosure
+      tool={item.tool}
+      argsPreview={item.argsPreview}
+      groupPaths={item.groupPaths}
+      previewLabel={cc.parkedArgsPreviewLabel}
+      groupSeparator={cc.parkedGroupFileSep}
+      showCommand={t.automationPresentation.showCommand}
+      showLocation={cc.parkedShowLocation}
+    />
+  );
+
   return (
     <div className="shrink-0 px-5 pt-4" data-testid="automation-review-inbox">
       {!hasContent ? (
@@ -330,8 +344,6 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
-                  const isShell = item.tool.toLowerCase() === 'bash';
-                  const isFileWrite = item.tool.toLowerCase() === 'write';
                   // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
                   // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
                   if (item.sensitiveStep) {
@@ -343,7 +355,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh')}</div>
-                          {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
+                          <ParkedSessionTitle item={item} language={language} />
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
                             onRespond={(response) => { void handleResolveParked(item, response); }}
@@ -379,7 +391,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             </span>
                           )}
                         </div>
-                        {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
+                        {!isPairing && <ParkedSessionTitle item={item} language={language} />}
                         {!isPairing && <UserRequestQuote details={item} labels={t.decisionCard.permission} />}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
@@ -396,30 +408,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             {scopeNote}
                           </div>
                         )}
-                        {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
-                        {!isPairing && item.argsPreview && isShell && (
-                          <details className="text-[11px] text-zinc-400">
-                            <summary className="cursor-pointer">{t.automationPresentation.showCommand}</summary>
-                            <div className="whitespace-pre-wrap break-words" data-testid="parked-shell-preview">{item.argsPreview}</div>
-                          </details>
-                        )}
-                        {!isPairing && item.argsPreview && !isShell && (
-                          <div
-                            className="whitespace-pre-wrap break-words text-[11px] text-zinc-400"
-                            data-testid="parked-args-preview"
-                            title={item.groupPaths ? item.groupPaths.join('\n') : item.argsPreview}
-                          >
-                            {cc.parkedArgsPreviewLabel}{item.groupPaths && item.groupPaths.length > 1
-                              ? item.groupPaths.map((p) => folderDisplayName(p)).join(cc.parkedGroupFileSep)
-                              : isFileWrite ? folderDisplayName(item.argsPreview) : item.argsPreview}
-                          </div>
-                        )}
-                        {!isPairing && isFileWrite && item.argsPreview && (!item.groupPaths || item.groupPaths.length === 1) && (
-                          <details className="text-[11px] text-zinc-400">
-                            <summary className="cursor-pointer">{cc.parkedShowLocation}</summary>
-                            <div className="whitespace-pre-wrap break-words" data-testid="parked-file-location">{item.argsPreview}</div>
-                          </details>
-                        )}
+                        {/* 参数预览（host 已脱敏 + 截断）：命令与完整路径折在披露里；老行没有该字段不渲染 */}
+                        {!isPairing && parkedArgs(item)}
                         <div className="text-[11px] text-zinc-500">
                           {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt, cc))}
                         </div>
@@ -508,17 +498,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {(!foldVoided || voidedExpanded) && voided.map((item) => (
                   <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50" data-testid="parked-approval-voided">
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
-                    {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
+                    <ParkedSessionTitle item={item} language={language} />
                     <div className="text-[11px] text-zinc-500">
                       {cc.parkedVoided.startedAt.replace('{time}', formatDateTime(item.requestedAt, language))}
                     </div>
-                    {item.argsPreview && (
-                      <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">
-                        {cc.parkedArgsPreviewLabel}{item.argsPreview}
-                      </div>
-                    )}
+                    {parkedArgs(item)}
                     <div className="text-[11px] text-zinc-500">
-                      {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
+                      {cc.parkedVoidedLabel}{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                     </div>
                   </div>
                 ))}
@@ -568,6 +554,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                              <AutomationRoleChip roleId={record.config?.roleId} />
                               {isMustToday && (
                                 <span
                                   className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"

@@ -239,6 +239,7 @@ export async function handleUnavailableToolCalls(
       metadata: {
         // telemetry 与 UI 可据此判断失败源头是流程性收窄而非工具真坏
         skipped: !blocked,
+        bounced: true,
         narrowedBy: guard?.targetFile ? 'artifact_repair' : strictBoundary ? 'strict_skill' : 'unavailable',
         artifactRepairGuard: {
           blocked: true,

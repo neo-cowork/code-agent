@@ -19,9 +19,16 @@ export const userQuestionZh = {
     declineReasonLabel: '跳过原因（可选）',
     declineReasonPlaceholder: '如需说明为何暂不回答，可在此填写',
     declinedRecord: '已跳过',
+    composerHint: '上面的提问还在等你：点选一个选项，或在「其他」里写下答案。',
+    composerAnswerPlaceholder: '直接输入你的回答，Enter 提交给上面的提问',
     answeredSummary: (count: number) => `${count} 个问题已回答`,
     expandRecord: '展开查看',
     collapseRecord: '收起',
+    keyboardHint: (maxDigit: number) => (
+      maxDigit <= 1
+        ? '按 1 选择 · ↑↓ 移动 · Enter 确认 · Esc 收起'
+        : `按 1-${maxDigit} 选择 · ↑↓ 移动 · Enter 确认 · Esc 收起`
+    ),
   },
 };
 
@@ -41,8 +48,15 @@ export const userQuestionEn: typeof userQuestionZh = {
     declineReasonLabel: 'Reason for skipping (optional)',
     declineReasonPlaceholder: 'Let the agent know why you’re not answering right now',
     declinedRecord: 'Skipped',
+    composerHint: 'The question above is still waiting: pick an option, or write your answer under “Other”.',
+    composerAnswerPlaceholder: 'Type your answer and press Enter to reply to the question above',
     answeredSummary: (count: number) => `${count} questions answered`,
     expandRecord: 'Expand to view',
     collapseRecord: 'Collapse',
+    keyboardHint: (maxDigit: number) => (
+      maxDigit <= 1
+        ? 'Press 1 to choose · ↑↓ move · Enter confirm · Esc collapse'
+        : `Press 1-${maxDigit} to choose · ↑↓ move · Enter confirm · Esc collapse`
+    ),
   },
 };

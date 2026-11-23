@@ -16,6 +16,7 @@ import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifa
 import { calendarFailureCode, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
 import { formatConnectorTime } from './connectorTime';
+import { normalizeCalendarEventTime } from '../../calendarEventTime';
 
 async function executeCalendarCreateEvent(
   args: Record<string, unknown>,
@@ -26,8 +27,11 @@ async function executeCalendarCreateEvent(
   if (typeof args.title !== 'string' || args.title.length === 0) {
     return { ok: false, error: 'title must be a non-empty string', code: 'INVALID_ARGS' };
   }
+  const eventTime = normalizeCalendarEventTime(schema.name, args);
+  if (!eventTime.ok) return eventTime;
+  args = eventTime.args;
   if (typeof args.start_ms !== 'number') {
-    return { ok: false, error: 'start_ms must be a number', code: 'INVALID_ARGS' };
+    return { ok: false, error: 'start_local (YYYY-MM-DD HH:mm, host-local) or start_ms is required', code: 'INVALID_ARGS' };
   }
 
   const permit = await canUseTool(schema.name, args);
@@ -54,6 +58,7 @@ async function executeCalendarCreateEvent(
       startAtMs: number | null;
       endAtMs: number | null;
       location?: string;
+      notes?: string;
     };
     const undoMetadata = event.uid
       ? { undoable: true as const }
@@ -65,7 +70,7 @@ async function executeCalendarCreateEvent(
     const startText = event.startAtMs ? formatConnectorTime(event.startAtMs) : '未知';
     const endText = event.endAtMs ? formatConnectorTime(event.endAtMs) : '未知';
     // uid 必须给模型：真机第三轮模型拿不到它，照着别的日程拼了一个假 uid 去改（uid 与 list/update/delete 同一种形式）
-    const output = `已创建日历事件：\n- [${event.calendar}] ${event.title}${event.uid ? `\n- uid: ${event.uid}` : ''}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`;
+    const output = `已创建日历事件：\n- [${event.calendar}] ${event.title}${event.uid ? `\n- uid: ${event.uid}` : ''}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}${event.notes ? `\n- 备注：${event.notes}` : ''}`;
 
     return {
       ok: true,

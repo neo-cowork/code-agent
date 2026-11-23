@@ -3,9 +3,18 @@
 // ============================================================================
 // Prevents a text-only response from presenting desktop actions or observations
 // as facts when no Computer/Desktop tool call happened in the current run.
+import { getHostUiLocale } from '../../config/hostUiLocale';
+import { DESKTOP_CLAIM_GATE_WARNING } from '../../../shared/i18n/desktopClaimGateWarning';
+import { isBackgroundWakeMessage } from './backgroundWakeMessage';
 
+// 桌面上下文只认「明确点了桌面/系统目标」的说法：泛化动词/器物词（截图、点击、滚动、
+// 鼠标、关闭……）在浏览器网页任务里同样常用，会让纯浏览器轮次误吃桌面声明闸门
+// （N-FIX-DESKTOP-CLAIM-GATE-FALSE-WARN-RAW-TOOLNAME，realrun2 messages[2] 的
+// 委派计划里一句「截一张全屏截图」误命中裸「截图」）。要桌面证据，用户或任务指令
+// 得点名桌面本身（桌面/屏幕/截屏/computer use/desktop）或具体桌面 app（备忘录、
+// 记事本、Apple Notes、腾讯会议、TextEdit、Spotlight……）。
 const DESKTOP_REQUEST_RE =
-  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|\bscreenshot\b|\bscreen\b|桌面|屏幕|截图|截屏|截个屏|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)|关掉|关闭|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|notes|textedit|spotlight/i;
+  /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|桌面|屏幕|截屏|截个屏|打开(?:记事本|备忘录|应用|窗口|app)|备忘录|记事本|apple[\s_-]?notes|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|textedit|spotlight/i;
 
 const DESKTOP_OBSERVATION_RE =
   /(?:屏幕上|窗口|前台|后台|最前面|背后|当前打开|当前显示|显示的是|看到了|没看到|没有看到|找到|找到了|没有找到|搜索结果|Spotlight|腾讯会议|飞书会议|TextEdit|Notes|备忘录|记事本|最小化|最大化|打开了|关掉了|关闭了|点击了|进入了|登录|没有安装)/i;
@@ -24,20 +33,19 @@ const DESKTOP_CLAIM_GATE_REPAIR_PROMPT = [
   '</desktop-action-claim-guard>',
 ].join('\n');
 
-const DESKTOP_CLAIM_GATE_WARNING =
-  '【桌面证据不足】本轮没有成功的 Computer/桌面工具调用，所以下面的桌面操作或屏幕观察不能当作已执行事实。\n\n';
-
 // ponytail: fixed window of recent user turns; follow-ups like 「没看到吗？」 inherit
 // the desktop task from an earlier turn. Widen if longer desktop threads slip through.
 const RECENT_USER_TURNS = 3;
 
 export function collectRecentUserTexts(
-  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string }>,
+  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string; isMeta?: boolean; metadata?: { automation?: { automationId?: string } } | null }>,
 ): string[] {
   const texts: string[] = [];
   for (let i = messages.length - 1; i >= 0 && texts.length < RECENT_USER_TURNS; i--) {
     const message = messages[i];
     if (message.role !== 'user' || message.visibility === 'rewound') continue;
+    // 后台任务唤醒消息的正文是子任务结果，不是用户提的桌面请求；其它 isMeta 指令（任务指令/改道等）照常计入。
+    if (message.isMeta === true && isBackgroundWakeMessage(message)) continue;
     if (typeof message.content === 'string') texts.push(message.content);
   }
   return texts;
@@ -104,7 +112,7 @@ export function applyDesktopActionClaimGate(
 
   return {
     action: 'warn',
-    content: DESKTOP_CLAIM_GATE_WARNING + content,
+    content: `${DESKTOP_CLAIM_GATE_WARNING[getHostUiLocale()]}\n\n${content}`,
     reason,
   };
 }

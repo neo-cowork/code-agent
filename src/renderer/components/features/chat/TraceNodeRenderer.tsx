@@ -13,6 +13,7 @@ import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { normalizeSpokenFileName } from '@shared/utils/normalizeSpokenFileName';
 import { isTelemetryRecoveredMessage, stripTelemetryRecoveryNotice } from '@shared/telemetryRecovery';
@@ -32,10 +33,12 @@ import { TurnQualityStrip } from './TurnQualityStrip';
 import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
 import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
+import { SessionConflictCard } from './SessionConflictCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
 import { UI } from '@shared/constants';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
@@ -74,6 +77,10 @@ interface TraceNodeRendererProps {
   /** 旧项目待确认轮：用户气泡不挂「没发出去 · 编辑重发」（见 utils/projectTrustTurn）。 */
   suppressSendFailedBadge?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
+  /** 记忆芯片只挂在本轮 chip owner 上；不传则 TurnQualityStrip 按默认显示。 */
+  showMemoryChip?: boolean;
+  /** 本轮已有降级横幅时隐藏仅因降级而存在的路由 chip。 */
+  hideRouteChip?: boolean;
 }
 
 export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
@@ -88,6 +95,8 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   rewindDisabled,
   suppressSendFailedBadge,
   fileChangesByPath,
+  showMemoryChip,
+  hideRouteChip,
 }) => {
   const { t } = useI18n();
   let content: React.ReactNode;
@@ -126,6 +135,8 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           isStreaming={isStreaming}
           inVoiceDispatchCard={inVoiceDispatchCard}
           onStreamingDisplayUpdate={onStreamingDisplayUpdate}
+          showMemoryChip={showMemoryChip}
+          hideRouteChip={hideRouteChip}
         />
       );
       break;
@@ -199,7 +210,7 @@ const UserNode: React.FC<{
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const rawDisplayContent = restoreNeoTagTokenForDisplay(
-    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(stripTelemetryRecoveryNotice(content || '')))),
+    stripLegacyTeamRecipeSeed(stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(stripTelemetryRecoveryNotice(content || ''))))),
     Boolean(isNeoTagMessage),
   );
   const displayContent = sourceType === 'voice'
@@ -339,7 +350,9 @@ const AssistantTextNode: React.FC<{
   /** X5.5-D4/D6：语音任务卡内抑制节点级语音小标与派活 label（轮头已讲） */
   inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
-}> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
+  showMemoryChip?: boolean;
+  hideRouteChip?: boolean;
+}> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate, showMemoryChip, hideRouteChip }) => {
   const { t, language } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -421,7 +434,7 @@ const AssistantTextNode: React.FC<{
   // 在这条独立路径上正确地渲染成"无"，不是遗漏。
   const hasRenderableContent = Boolean(
     node.content
-    || (node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision))
+    || (node.modelDecision && !hideRouteChip && shouldRenderModelDecisionChip(node.modelDecision))
     || node.metadata?.turnQuality
     || node.metadata?.agentError
     || node.metadata?.envAssist
@@ -490,7 +503,7 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {node.modelDecision && shouldRenderModelDecisionChip(node.modelDecision) && (
+      {node.modelDecision && !hideRouteChip && shouldRenderModelDecisionChip(node.modelDecision) && (
         <div className="mb-2 flex min-w-0">
           <RouteTraceChip
             decision={node.modelDecision}
@@ -500,7 +513,7 @@ const AssistantTextNode: React.FC<{
       )}
 
       {node.metadata?.turnQuality && (
-        <TurnQualityStrip summary={node.metadata.turnQuality} />
+        <TurnQualityStrip summary={node.metadata.turnQuality} showMemoryChip={showMemoryChip} />
       )}
 
       {node.metadata?.source === 'voice' && !node.metadata?.voiceDispatch && !inVoiceDispatchCard && (
@@ -578,6 +591,11 @@ const AssistantTextNode: React.FC<{
       {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
       {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
         <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
+      )}
+
+      {/* 会话被没结束的旧任务占着：说明句点名的「放弃 / 重试」在这里真有按钮 */}
+      {node.metadata?.sendFailureCode === 'RUN_SESSION_CONFLICT' && (
+        <SessionConflictCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
@@ -670,7 +688,7 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 // ---- System Node ----
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   if (node.metadata?.backgroundWakeFailed) {
     return (
@@ -688,7 +706,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
     const unchanged = !receipt.addedTools.length && !receipt.removedTools.length
       && !receipt.descriptionChanged && !receipt.promptChanged;
     const title = (receipt.diffAvailable === false ? copy.unavailable : unchanged ? copy.unchanged : copy.updated)
-      .replace('{role}', receipt.roleId);
+      .replace('{role}', localizeBuiltinRole(receipt.roleId, { name: receipt.roleId }, language).name);
     const capabilities = (toolNames: string[]) => getRoleToolCapabilities({
       toolNames,
       capabilityLabels: t.receiptPresentation.roleCapabilityLabels,

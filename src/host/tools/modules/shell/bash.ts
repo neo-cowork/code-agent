@@ -25,6 +25,7 @@ import { generateBashDescription } from '../../shell/dynamicDescription';
 import {
   diagnoseBashFailure,
   appendFailureDiagnostics,
+  diagnoseCompletedBashTcc,
   sandboxDeniedWriteCreatesDirectory,
   sandboxDeniedWritePath,
 } from '../../shell/sandboxFailureDiagnostics';
@@ -38,6 +39,7 @@ import {
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { findChangedOfficeFiles, snapshotOfficeFiles } from './newOfficeFiles';
 import { createEvalSafeShellEnv } from './evalSafeShellEnv';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
@@ -932,6 +934,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       // 并行：生成动态描述（不阻塞命令执行）
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
+      const officeBefore = await snapshotOfficeFiles(workingDirectory).catch(() => null);
       const foregroundResult = await runForegroundAttempt();
 
       if (foregroundResult.handover) {
@@ -961,6 +964,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
       });
+      // exit 0 can still hide a macOS privacy refusal (`screencapture …; echo`): name the Settings page.
+      output = appendFailureDiagnostics(output, diagnoseCompletedBashTcc({ command: normalizedCommand, stdout, stderr }));
 
       const dynamicDesc = await descriptionPromise;
 
@@ -971,6 +976,13 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       }
 
       const cwdPrefix = `[cwd: ${workingDirectory}]\n`;
+
+      const changedOffice = officeBefore
+        ? await findChangedOfficeFiles(workingDirectory, officeBefore).catch(() => [])
+        : [];
+      const officeArtifacts = await Promise.all(
+        changedOffice.map((file) => createFileArtifact(file, schema.name, ctx, { role: 'deliverable' })),
+      );
 
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Bash done', { command: normalizedCommand.slice(0, 80), hasStderr: !!stderr });
@@ -999,6 +1011,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             preview: output.slice(0, 500),
             metadata: { cwd: workingDirectory, command: normalizedCommand.slice(0, 200) },
           }),
+          ...(officeArtifacts.length > 0 ? { artifacts: officeArtifacts } : {}),
         },
       };
     } catch (error: unknown) {

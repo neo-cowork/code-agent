@@ -46,7 +46,7 @@ describe('MemoryEntriesManager helpers', () => {
   it('labels entry status, kind, source, and updated time', () => {
     expect(getMemoryEntryStatusLabel('archived')).toBe('归档');
     expect(getMemoryEntryKindLabel('pattern')).toBe('经验');
-    expect(getMemoryEntrySourceLabel('db_memory')).toBe('DB memory');
+    expect(getMemoryEntrySourceLabel('db_memory')).toBe('应用内记忆');
     expect(formatMemoryEntryUpdatedAt(now, now)).toBe('今天');
     expect(formatMemoryEntryUpdatedAt(now - 24 * 60 * 60 * 1000, now)).toBe('昨天');
   });
@@ -91,7 +91,7 @@ describe('MemoryEntriesManager helpers', () => {
         title: 'DB Pattern',
         statusLabel: '归档',
         kindLabel: '经验',
-        sourceLabel: 'DB memory',
+        sourceLabel: '应用内记忆',
         selected: true,
       }),
     ]);

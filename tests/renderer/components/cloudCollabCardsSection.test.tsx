@@ -141,13 +141,13 @@ describe('CloudCollabCardsSection resync 反馈', () => {
   });
 
   it('失败：展示 host 真因，云卡列表不丢', async () => {
-    vi.mocked(resyncCloudCards).mockRejectedValue(new Error('请先登录后再使用协同空间。'));
+    vi.mocked(resyncCloudCards).mockRejectedValue(new Error('请先登录后再使用协作空间。'));
     render(<CloudCollabCardsSection projectId={PROJECT_ID} />);
     await screen.findByTestId('cloud-collab-list');
     fireEvent.click(screen.getByTestId('cloud-collab-resync'));
     const feedback = await screen.findByTestId('cloud-collab-resync-error');
     expect(feedback.textContent).toContain(ps.cloudCardsResyncFailed);
-    expect(feedback.textContent).toContain('请先登录后再使用协同空间。');
+    expect(feedback.textContent).toContain('请先登录后再使用协作空间。');
     expect(screen.getByTestId(`cloud-collab-card-${cardRunning.localCardId}`)).toBeTruthy();
   });
 

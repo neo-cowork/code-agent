@@ -18,12 +18,12 @@ import { toGenerativeUIExportSnapshot } from '../generativeUI/generativeUIExport
 import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositoryAccess';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
-import {
-  resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource,
-} from '../../../shared/sessionTitlePlaceholder';
+import { resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource } from '../../../shared/sessionTitlePlaceholder';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
+import { initMemorySessionTitle } from './sessionFolderName';
+import { pushSessionTitleToCloud } from './sessionTitleCloudPush';
 import { isCloudSessionListSkipped } from './cloudSessionListGate';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
@@ -76,6 +76,8 @@ export interface SessionCreateOptions {
 	  sourceRunId?: string;
 	  engine?: Session['engine'];
 	  metadata?: Session['metadata'];
+	  /** Explicit space ownership. Unknown, deleted, and archived ids throw. */
+	  projectId?: string;
 	  readOnly?: boolean;
   retryOfSessionId?: string;
   userId?: string | null; memoryMode?: Session['memoryMode'];
@@ -87,7 +89,7 @@ export interface SessionListOptions {
   searchQuery?: string;
   includeArchived?: boolean;
   /** 只取归档会话（侧栏「已归档」过滤器的独立分页路径，优先于 includeArchived） */
-  archivedOnly?: boolean;
+  archivedOnly?: boolean; projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope; // projectScope 仅 archivedOnly 路径生效
 }
 
 // ----------------------------------------------------------------------------
@@ -231,12 +233,8 @@ export class SessionManager implements Disposable {
     // transaction as the session row. Resolve that boundary before creation so
     // a later Project assignment cannot invalidate the first message append.
     try {
-      const { getProjectService } = await import('../project/projectService');
-      const project = await getProjectService().ensureProjectForWorkspace(
-        session.workingDirectory,
-        now,
-      );
-      session.projectId = project.id;
+      const { applySessionProjectOnCreate } = await import('./explicitSessionProject');
+      await applySessionProjectOnCreate(session, options.projectId, now);
     } catch (err) {
       logger.error(
         '[SessionManager] 会话 Project 边界解析失败，已在写入前中止:',
@@ -259,6 +257,7 @@ export class SessionManager implements Disposable {
         permissionManager.markUnattendedSession(session.id);
         markShortTierSession(session.id);
         if (originKind !== 'channel') permissionManager.markUnattendedApprovalDegrade(session.id);
+        if (originKind === 'cron' && session.origin?.metadata?.trigger === 'first_wake') permissionManager.markFirstWakeSession(session.id);
       }
       permissionManager.initSessionMode(session.id);
     } catch (err) {
@@ -458,7 +457,7 @@ export class SessionManager implements Disposable {
 
     // archivedOnly：归档过滤器的独立分页路径——直接在 SQL 层只取归档页，
     // 不再拉混合页回前端挑（混合分页下归档会话会被摊薄到翻不到）。
-    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId) : db.listSessions(limit, offset, includeArchived, ownerId);
+    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId, ...(options.projectScope ? [options.projectScope] as const : [])) : db.listSessions(limit, offset, includeArchived, ownerId);
 
     // 搜索过滤
     if (options.searchQuery) {
@@ -660,6 +659,7 @@ export class SessionManager implements Disposable {
       } catch (error) {
         logger.warn('[SessionManager] Telemetry title sync failed (ignored):', error);
       }
+      pushSessionTitleToCloud(sessionId, updates.title);
     }
 
     // 工作目录后补时，仅为未归桶/待整理会话重算项目归属；明确归属不覆盖。
@@ -866,13 +866,13 @@ export class SessionManager implements Disposable {
   /**
    * 取消归档会话
    */
-  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void): Promise<Session | null> {
+  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void, updatedAt?: number): Promise<Session | null> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
 
     // 取消归档
-    if (commit) commit(() => db.unarchiveSession(sessionId)); else db.unarchiveSession(sessionId);
+    if (commit) commit(() => db.unarchiveSession(sessionId, updatedAt)); else db.unarchiveSession(sessionId, updatedAt);
 
     // 清除缓存
     this.sessionCache.delete(sessionId);
@@ -1084,6 +1084,10 @@ export class SessionManager implements Disposable {
     return this.getAccessibleStoredSession(sessionId)?.metadata;
   }
 
+  getSessionTitle(sessionId: string): string | undefined {
+    return this.getAccessibleStoredSession(sessionId)?.title;
+  }
+
   /**
    * 只读存在性探测（记忆面板来源会话跳转）：不 restore、不切 currentSessionId、
    * 不动 toolCache、不写审计——探测方（如设置面板选中一条记忆）不该付 load 的副作用。
@@ -1276,7 +1280,7 @@ export class SessionManager implements Disposable {
     const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
-    const title = await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
+    const title = await initMemorySessionTitle(titleSource, session.workingDirectory) ?? await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。

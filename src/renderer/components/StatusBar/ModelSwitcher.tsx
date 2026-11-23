@@ -14,6 +14,7 @@ import type {
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { isAgenticVerifiedModel } from '@shared/constants';
+import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
@@ -53,7 +54,7 @@ import {
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
-  buildModelSwitcherEngineSelection,
+  buildModelSwitcherEngineSelection, narrowOptionsBeforeHydrate,
 } from './modelSwitcherHelpers';
 import {
   EngineScopedModelPanel,
@@ -216,14 +217,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     modelSettings,
     nativeHasConfiguredModels,
   );
-  const visibleModelOptions = showModelSettingsPrompt ? [] : modelOptions;
+  const displayModel = overrideModel || hostModel?.model || currentModel;
+  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
+  const visibleModelOptions = showModelSettingsPrompt ? [] : narrowOptionsBeforeHydrate(modelOptions, modelSettings !== null || settingsLoaded, displayProvider, displayModel);
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
     return visibleModelOptions.filter((opt) => {
       const providerName = resolveProviderLabel(opt.provider, opt.providerLabel, language).toLowerCase();
       return (
-        opt.label.toLowerCase().includes(q) ||
+        localizeModelLabel(opt.model, opt.label, language).toLowerCase().includes(q) ||
         opt.model.toLowerCase().includes(q) ||
         providerName.includes(q)
       );
@@ -559,9 +562,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   ]);
 
   // 没有会话 override 时显示 host 算出的下一轮模型；host 还没回话的首帧才用渲染层设置快照。
-  const displayModel = overrideModel || hostModel?.model || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
-  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
 
   // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
   // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
@@ -888,7 +889,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-medium">{formatModelSwitcherLabel(opt.model, opt.provider, modelSettings, modelOptions, language)}</span>
+                                <span className="font-medium">{formatModelSwitcherLabel(opt.model, opt.provider, modelSettings, modelOptions, language, opt.label)}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
                                     className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"

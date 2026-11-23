@@ -1,6 +1,7 @@
-import type { Message, AgentErrorCategory } from '@shared/contract';
+import type { Message } from '@shared/contract';
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import { classifyAgentError } from '@shared/utils/agentErrorClassification';
+import { failureRunStep, isSuccessfulAssistantReply, type FailureRun } from './failureRun';
 
 type Round = { userId?: string; messages: Message[]; childErrors: Set<string>; started: Set<string> };
 
@@ -69,8 +70,7 @@ export function projectAgentErrorRuns(messages: Message[], turns: TraceTurn[]) {
     }
   }
   let runNode: TraceNode | undefined;
-  let runCategory: AgentErrorCategory | undefined;
-  let runLength = 0;
+  let run: FailureRun | undefined;
   for (const current of rounds) {
     const results = resultsByRound.get(current);
     const background = Boolean(results?.size || current.started.size);
@@ -90,9 +90,7 @@ export function projectAgentErrorRuns(messages: Message[], turns: TraceTurn[]) {
         const result = message.metadata?.backgroundTaskResult;
         return result?.status === 'failed' && classifyAgentError({ message: result.summary })?.category === 'rate_limited';
       });
-    const successfulReply = current.messages.some(message => message.role === 'assistant' && !message.isMeta
-      && !message.metadata?.agentError && !message.metadata?.backgroundTaskPreannounce
-      && !message.toolCalls?.length && Boolean(message.content?.trim())
+    const successfulReply = current.messages.some(message => isSuccessfulAssistantReply(message)
       && (!lastResult || message.timestamp > lastResult.timestamp));
     const backgroundError = lastResult?.metadata?.backgroundTaskResult
       ? classifyAgentError({ message: lastResult.metadata.backgroundTaskResult.summary }) : null;
@@ -117,14 +115,20 @@ export function projectAgentErrorRuns(messages: Message[], turns: TraceTurn[]) {
     for (const node of errors) {
       const category = node.metadata?.agentError?.category;
       if (!category) continue;
-      if (runNode && runCategory === category) {
-        runNode.agentErrorRun = { runLength, latest: false, ...(!firstFailure ? { duplicate: true } : {}) };
-        if (firstFailure) runLength += 1;
-      } else { runCategory = category; runLength = 1; }
-      node.agentErrorRun = { runLength, latest: true };
+      const step = failureRunStep(run, { type: 'failure', cause: category, id: node.id });
+      if (step.supersededId !== undefined && runNode && run) {
+        runNode.agentErrorRun = { runLength: run.runLength, latest: false, ...(!firstFailure ? { duplicate: true } : {}) };
+        // Duplicate reports in one round still represent only one failure.
+        if (!firstFailure && step.run) step.run.runLength = run.runLength;
+      }
+      run = step.run;
+      if (run) node.agentErrorRun = { runLength: run.runLength, latest: true };
       runNode = node;
       firstFailure = false;
     }
-    if (!errors.length && successfulReply) { runNode = undefined; runCategory = undefined; runLength = 0; }
+    if (!errors.length && successfulReply) {
+      run = failureRunStep(run, { type: 'reset' }).run;
+      if (!run) runNode = undefined;
+    }
   }
 }

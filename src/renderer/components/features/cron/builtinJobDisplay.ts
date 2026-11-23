@@ -7,7 +7,7 @@ import { humanizeInternalText } from '@shared/humanizeInternalText';
 // ============================================================================
 
 import type { CronJobDefinition } from '@shared/contract';
-import { MEMORY_CONSOLIDATION, BUILTIN_MAINTENANCE_JOB_TAGS } from '@shared/constants/memory';
+import { MEMORY_CONSOLIDATION, BUILTIN_MAINTENANCE_JOB_TAGS, ROLE_PROACTIVITY } from '@shared/constants/memory';
 import type { Language } from '../../../i18n';
 
 const DREAM_CRON_JOB_TAG = BUILTIN_MAINTENANCE_JOB_TAGS.DREAM_MEMORY;
@@ -70,9 +70,14 @@ function findBuiltinTag(tags?: string[]): BuiltinJobTag | null {
   return tags?.find(isBuiltinTag) ?? null;
 }
 
+/** 内置维护任务（记忆整理/回顾沉淀/流程提炼）：host 启动时按 tag 自动补建，不是用户创建的。 */
+export function isBuiltinMaintenanceJob(job: Pick<CronJobDefinition, 'tags'>): boolean {
+  return findBuiltinTag(job.tags) !== null;
+}
+
 /** Internal classification tags stay in storage/search, never in display copy. */
 export function getVisibleJobTags(job: Pick<CronJobDefinition, 'tags'>): string[] {
-  return job.tags?.filter((tag) => !isBuiltinTag(tag)) ?? [];
+  return job.tags?.filter((tag) => !isBuiltinTag(tag) && tag !== ROLE_PROACTIVITY.CADENCE_JOB_TAG) ?? [];
 }
 
 export function getBuiltinJobDisplay(
@@ -91,5 +96,43 @@ export function getBuiltinJobDisplay(
 
 /** Names are display projections; keep the original identity in storage and edit forms. */
 export function getJobDisplayName(job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>, language: Language = 'zh'): string {
+  const roleWake = getRoleWakeJobLabel(job.name, language);
+  if (roleWake) return roleWake;
   return humanizeInternalText(getBuiltinJobDisplay(job, language)?.name ?? job.name, language, { omitIds: true }).text;
+}
+
+const ROLE_WAKE_NAME = /^\[Cadence\]\s+(.+)$/;
+
+/**
+ * 角色定时唤醒任务的存储名是 `[Cadence] <roleId>`（host 注册点写死，不改）。
+ * 展示成「定时唤醒 · <角色>」；withRole=false 给角色自己的页面用（上下文里已经是这个角色）。
+ */
+export function getRoleWakeJobLabel(name: string, language: Language, withRole = true): string | null {
+  const match = ROLE_WAKE_NAME.exec(name);
+  if (!match) return null;
+  const label = language === 'en' ? 'Scheduled wake-up' : '定时唤醒';
+  return withRole ? `${label} · ${match[1]}` : label;
+}
+
+/** 专家定时醒来任务的动作文案（存储的 action.type 是 role-wake，不外露）。 */
+export function roleWakeActionLabel(language: Language): string {
+  return language === 'en' ? 'Expert check-in' : '专家定时醒来';
+}
+
+const ROLE_WAKE_STORED_DESCRIPTION = /^角色主动性：/;
+
+/**
+ * 专家定时醒来任务的描述展示：旧任务存的是「角色主动性：x 定时醒来巡检（内部文档）」，
+ * 展示时重写成人话；用户自己改过的描述原样保留。
+ */
+export function getRoleWakeJobDescription(
+  job: Pick<CronJobDefinition, 'description' | 'action'>,
+  language: Language,
+): string | null {
+  if (job.action.type !== 'role-wake') return null;
+  if (job.description && !ROLE_WAKE_STORED_DESCRIPTION.test(job.description)) return job.description;
+  const roleId = job.action.roleId;
+  return language === 'en'
+    ? `${roleId} checks in on schedule and tells you when something is worth knowing`
+    : `${roleId} 定时醒来巡检，有值得你知道的事再告诉你`;
 }

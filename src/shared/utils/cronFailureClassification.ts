@@ -11,6 +11,7 @@
 import { parseCronLoginWallStop } from './browserLoginWall';
 import { classifyAgentError } from './agentErrorClassification';
 import { isCronCloudUnavailableError } from './cronCloudUnavailable';
+import { isCronRuntimeNotReadyError } from './cronRuntimeNotReady';
 
 export const CRON_FAILURE_CODE = 'CRON_FAILURE' as const;
 
@@ -22,6 +23,7 @@ export type CronFailurePresentationKind =
   | 'network'
   | 'login_wall'
   | 'cloud_unavailable'
+  | 'runtime_starting'
   | 'other';
 
 export interface CronFailureClassification {
@@ -98,6 +100,7 @@ export function classifyCronFailure(error?: string): CronFailureClassification {
   // 云端调度器不可用的固定句先于额度/鉴权/网络：executeJob 落库时会把 cause 报文
   // （fetch failed / 401 等）追加在句子后面，先认固定句才不会被底因冲掉。
   if (isCronCloudUnavailableError(text)) return { kind: 'cloud_unavailable' };
+  if (isCronRuntimeNotReadyError(text)) return { kind: 'runtime_starting' };
   if (CRON_TIME_LIMIT_TEXT.test(text)) return { kind: 'timeout' };
   // 额度报文经常带着 HTTP 429。先认额度，避免被 classifyAgentError 收成 rate_limited。
   if (QUOTA_TEXT.test(text)) return quotaResult(text);

@@ -122,6 +122,8 @@ export function useCronRunFollowUpSend(
       ).trim();
       const created = await useSessionStore.getState().createSession(
         copy.cronFollowUpNewSessionTitle.replace('{title}', sessionStore.sessions.find((item) => item.id === sessionId)?.title ?? ''),
+        // 继承运行会话的工作文件夹：不传的话新会话会自动建一个空的「任务_…」文件夹。
+        session?.workingDirectory ? { workingDirectory: session.workingDirectory } : undefined,
       );
       if (!created) {
         toast.error(copy.cronFollowUpCreateFailed);

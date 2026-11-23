@@ -877,4 +877,49 @@ describe('runWorkbenchProjection', () => {
       expect(run.blockedReasonCategory).toBe('unknown');
     });
   });
+
+  describe('进度行不外露工具 id 与阶段词（N-FIX-PROGRESS-STEP-RAW-TOOL-NAME）', () => {
+    const emptyProjection: TraceProjection = { sessionId: 's', turns: [], activeTurnIndex: -1 };
+    const phaseOf = (taskProgress: Parameters<typeof buildRunUiState>[0]['taskProgress'], language: 'zh' | 'en' = 'zh') =>
+      buildRunUiState({ projection: emptyProjection, sessionId: 's', taskProgress, language }).phase;
+    const hintOf = (taskProgress: NonNullable<Parameters<typeof buildRunUiState>[0]['taskProgress']>, language: 'zh' | 'en' = 'zh') =>
+      buildSessionTaskRecord({
+        sessionId: 's', runId: 'turn-1', runStatus: 'using_tools', language, taskProgress,
+        todos: [{ content: 'x', activeForm: 'x', status: 'in_progress' }],
+      })?.resumeHint;
+
+    it.each([
+      ['zh', '正在查看日历'],
+      ['en', 'Checking Calendar'],
+    ] as const)('旧式 step「执行 calendar」在 %s 下换成人话，无 calendar / tool_running', (language, expected) => {
+      const progress = { turnId: 't', phase: 'tool_running', step: '执行 calendar', tool: 'calendar' } as const;
+      expect(phaseOf(progress, language)).toBe(expected);
+      expect(hintOf(progress, language)).toBe(expected);
+      for (const text of [phaseOf(progress, language), hintOf(progress, language)]) {
+        expect(text).not.toMatch(/calendar|tool_running/);
+      }
+    });
+
+    it('step 是阶段枚举词或缺失时用工具人话；未知工具说「正在执行操作」', () => {
+      expect(phaseOf({ turnId: 't', phase: 'tool_running', step: 'tool_running', tool: 'calendar_create_event' })).toBe('正在创建日程');
+      expect(phaseOf({ turnId: 't', phase: 'tool_pending', tool: 'mystery_tool' })).toBe('正在执行操作');
+      expect(phaseOf({ turnId: 't', phase: 'tool_running', tool: 'mystery_tool' }, 'en')).toBe('Working on it');
+    });
+
+    it('多工具时的计数按界面语言，不带「工具」也不混入另一种语言', () => {
+      const progress = { turnId: 't', phase: 'tool_running', step: '正在同时执行 2 项操作', tool: 'calendar', toolIndex: 0, toolTotal: 2 } as const;
+      const zh = hintOf(progress, 'zh');
+      const en = hintOf({ ...progress, step: 'Running 2 actions at once' }, 'en');
+      expect(zh).toBe('正在同时执行 2 项操作 · 第 1/2 项操作');
+      expect(zh).not.toContain('工具');
+      expect(en).toBe('Running 2 actions at once · Action 1 of 2');
+      expect(en).not.toMatch(/[\u4e00-\u9fff]/);
+    });
+
+    it('非工具阶段的 step 与已是人话的 step 原样返回', () => {
+      expect(phaseOf({ turnId: 't', phase: 'generating', step: '回复完成', tool: 'calendar' })).toBe('回复完成');
+      expect(phaseOf({ turnId: 't', phase: 'tool_running', step: '正在修复网页预览', tool: 'write' })).toBe('正在修复网页预览');
+      expect(hintOf({ turnId: 't', phase: 'generating', step: '回复完成' })).toBe('回复完成');
+    });
+  });
 });

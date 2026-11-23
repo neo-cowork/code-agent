@@ -1,6 +1,7 @@
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   SessionAutomationRecord,
+  RoleWakeRunStatus,
   SessionAutomationSessionSummary,
 } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
@@ -21,6 +22,12 @@ export const sessionAutomationClient = {
       IPC_DOMAINS.SESSION_AUTOMATION,
       'summarizeSessions',
       { sessionIds },
+    );
+  },
+
+  getRoleWakeRun(sessionId: string) {
+    return ipcService.invokeDomain<RoleWakeRunStatus | null>(
+      IPC_DOMAINS.SESSION_AUTOMATION, 'getRoleWakeRun', { sessionId },
     );
   },
 

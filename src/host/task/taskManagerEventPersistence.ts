@@ -5,7 +5,7 @@
 import type { AgentEvent, Message, MessageSnapshotData, ToolCall } from '../../shared/contract';
 import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import { createLogger } from '../services/infra/logger';
-import { permissionNoticeBody } from '../../shared/utils/toolUserLabel';
+import { buildApprovalNotification } from '../services/infra/approvalNotification';
 import {
   closeBackgroundRunAtTerminal,
   settleBackgroundOnTaskComplete,
@@ -35,6 +35,7 @@ export interface TaskManagerEventPersistenceDeps {
   backgroundPermissionOwners: Map<string, string>;
   backgroundRunTerminalErrors: Map<string, BackgroundRunErrorRecord>;
   messageDeltaAccumulator: MessageDeltaAccumulator;
+  isPrimaryRunActive?: () => boolean;
 }
 
 /**
@@ -152,8 +153,7 @@ export async function persistTaskManagerEvent(
         }
         notificationService.notifyNeedsInput({
           sessionId,
-          title: '需要授权',
-          body: permissionNoticeBody(req.tool),
+          ...buildApprovalNotification(req.tool),
           tool: req.tool,
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
@@ -167,7 +167,7 @@ export async function persistTaskManagerEvent(
     // task_complete 收口 + 后台条目终态收线（逻辑在 backgroundTaskTerminal：本文件贴
     // effective-line 硬限；task_complete 与 agent 终态两收口点共用 running-guard 幂等）。
     if (event.type === 'task_complete' && event.data) {
-      await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data);
+      await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data, deps.isPrimaryRunActive);
     }
     // run 级终态 error 记账（可恢复 error 不记）；agent 终态到点仍 running → 收线（r4 决策表见 backgroundTaskTerminal）。
     if (event.type === 'error' && eventKey === sessionId) {

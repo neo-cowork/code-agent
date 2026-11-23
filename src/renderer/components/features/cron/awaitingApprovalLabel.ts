@@ -1,4 +1,5 @@
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
+import { approvalPreviewBasename } from '../../../utils/approvalPreviewBasename';
 
 const PREVIEW_MAX_CHARS = 28;
 
@@ -17,7 +18,7 @@ export function awaitingApprovalLabel(
     return copy.awaitingApprovalWithPreview.replace('{preview}', copy.parkedVoided.tools.bash);
   }
   if (tool !== 'write' && tool !== 'edit' && tool !== 'append') return null;
-  const name = run?.commandPreview?.split(/[\\/]+/).filter(Boolean).pop()?.replace(/\s+/g, ' ').trim();
+  const name = approvalPreviewBasename(run?.commandPreview)?.replace(/\s+/g, ' ').trim();
   if (!name) return null;
   const clipped = name.length > PREVIEW_MAX_CHARS ? `${name.slice(0, PREVIEW_MAX_CHARS - 1)}…` : name;
   return copy.awaitingApprovalWithPreview.replace('{preview}', clipped);

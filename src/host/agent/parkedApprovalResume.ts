@@ -36,6 +36,7 @@ import {
 } from './parkedApprovalSurvival';
 import { sanitizeToolCallsForHistory } from './messageHandling/converter';
 import { closeSessionParkedRun, sessionHasPendingToolApproval } from './parkedApprovalRunClosure';
+import { applyGrantAfterRestartClaim } from './parkedApprovalResumeGrant';
 import type { DurableRunRepository } from '../services/core/repositories/DurableRunRepository';
 
 const logger = createLogger('ParkedApprovalResume');
@@ -343,6 +344,15 @@ async function resumeWithPorts(
     logger.info('Parked approval already claimed by another responder', { requestId: input.requestId });
     return { handled: true, status: 'lost_race' };
   }
+  // 认领赢家才补铸档位授权（双击/输掉竞态的一方走不到这里，不会重复铸）。
+  applyGrantAfterRestartClaim({
+    response: input.response,
+    requestId: input.requestId,
+    payload,
+    sessionId,
+    ledgerArgs: ledgerCall.arguments,
+    now,
+  });
 
   let outcome;
   try {

@@ -190,7 +190,7 @@ describe('cross-session search hydration', () => {
 
     const result = await performCrossSessionSearch('zebra-quartz', undefined);
 
-    expect(mocks.database.getSessionSearchMeta).toHaveBeenCalledWith(['session-58'], null);
+    expect(mocks.database.getSessionSearchMeta).toHaveBeenCalledWith(['session-58'], null, undefined);
     expect(result.results[0]).toMatchObject({
       sessionId: 'session-58',
       sessionTitle: 'zebra-quartz 旧任务',
@@ -215,7 +215,7 @@ describe('cross-session search hydration', () => {
 
     const result = await performCrossSessionSearch('owner-needle', undefined);
 
-    expect(mocks.database.getSessionSearchMeta).toHaveBeenCalledWith(expect.any(Array), 'user-1');
+    expect(mocks.database.getSessionSearchMeta).toHaveBeenCalledWith(expect.any(Array), 'user-1', undefined);
     expect(result.results.map((item) => [item.sessionId, item.sessionArchived])).toEqual([['session-arch', true]]);
   });
 
@@ -224,7 +224,7 @@ describe('cross-session search hydration', () => {
       { sessionId: 'old-title', title: 'Browser 采集 任务', updatedAt: 9, createdAt: 1, archived: false },
     ]);
     const ok = await performCrossSessionSearch('采集', undefined);
-    expect(mocks.database.searchSessionTitles).toHaveBeenCalledWith('采集', null, 20);
+    expect(mocks.database.searchSessionTitles).toHaveBeenCalledWith('采集', null, 20, undefined);
     expect(ok.titleMatches).toEqual([{ sessionId: 'old-title', title: 'Browser 采集 任务', updatedAt: 9 }]);
 
     mocks.database.searchSessionTitles.mockImplementation(() => { throw new Error('title query broke'); });

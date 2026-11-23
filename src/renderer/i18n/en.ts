@@ -1,4 +1,4 @@
-import { toolCreateConfirmEn } from './toolCreateConfirm'; import { authModalEn } from './authModal'; import { modelSetupEn } from './modelSetup'; import { agentRoleLabelsEn } from './agentRoleLabels';
+import { toolCreateConfirmEn } from './toolCreateConfirm'; import { authModalEn } from './authModal'; import { modelSetupEn } from './modelSetup'; import { agentRoleLabelsEn } from './agentRoleLabels'; import { authEn } from './auth';
 // ============================================================================
 // English Translations
 // ============================================================================
@@ -9,7 +9,7 @@ import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
 import { backgroundPanelEn } from './backgroundPanel';
-import { voiceEn } from './voice';
+import { voiceEn } from './voice'; import { cronWorkingFolderEn } from './cronWorkingFolder'; import { cronWakeCadenceEn } from './cronWakeCadence';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { deliveryExperienceEn } from './deliveryExperience';
@@ -21,7 +21,7 @@ import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { serverConnectionEn } from './serverConnection';
-import { envAssistEn } from './envAssist';
+import { envAssistEn } from './envAssist'; import { guiTakeoverEn } from './guiTakeover';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -46,7 +46,7 @@ import { workbenchTabsEn } from './workbenchTabs';
 import { activityPanelEn, canvasActorEn } from './domains';
 import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
-import { voiceAuditEn } from './voiceAudit';
+import { voiceAuditEn } from './voiceAudit'; import { memorySourceEn } from './memorySource';
 import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
@@ -64,9 +64,9 @@ import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { 
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
 export const en = {
-  ...authModalEn, ...toolCreateConfirmEn, ...modelSetupEn, ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
+  ...authModalEn, ...toolCreateConfirmEn, ...modelSetupEn, ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn, ...authEn,
   ...imageNarrationEn, ...mermaidEn,
-  ...voiceAuditEn,
+  ...voiceAuditEn, ...memorySourceEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,
@@ -585,7 +585,7 @@ export const en = {
       engineCountLabel: 'Engine Count',
       engineCountCaption: 'Codex / Claude',
       // Engine rows
-      remoteDefaultLabel: 'Remote default',
+      remoteDefaultLabel: 'Remote default: ',
       localDefaultLabel: 'Local default selection',
       modelSelectableSummary: '{enabled}/{total} models available',
       loading: 'Loading model catalog...',
@@ -796,8 +796,8 @@ export const en = {
     saveHint: 'Press Cmd/Ctrl + Enter to save',
     confirmMemoryTitle: 'Confirm Memory',
     confirmMemoryBody: 'AI learned the content above. Save it to memory?',
-    confirmDirectiveTitle: 'Confirm User Directive',
-    confirmDirectiveBody: 'Once saved, this rule takes priority over product defaults in future sessions. You can revoke it in Memory Management, and the write remains auditable.',
+    confirmDirectiveTitle: 'Confirm user rule',
+    confirmDirectiveBody: 'Once saved, this rule takes priority over product defaults in future sessions. You can revoke it in Memory Management, and the change remains auditable.',
     confirmSkip: 'Skip',
     confirmSave: 'Save',
     confirmDirectiveSave: 'Confirm Rule',
@@ -945,7 +945,7 @@ export const en = {
   ...backgroundPanelEn,
   ...voiceEn,
   ...sidebarEn,
-  ...cronCenterEn,
+  ...cronCenterEn, ...cronWorkingFolderEn, ...cronWakeCadenceEn,
   ...previewWorkspaceEn,
   ...deliveryExperienceEn,
   ...modalPrimitivesEn,
@@ -954,7 +954,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
-  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn,
+  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn, guiTakeover: guiTakeoverEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,

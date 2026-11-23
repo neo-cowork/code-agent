@@ -11,9 +11,13 @@ const mocks = vi.hoisted(() => ({
   dispatchEvent: vi.spyOn(window, 'dispatchEvent'),
 }));
 
+// 语言可切换的 i18n mock（黑话回归测试要同时渲染 zh/en 卡片）
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ t: i18nState.language === 'en' ? en : zh, language: i18nState.language }) };
 });
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
@@ -75,7 +79,7 @@ describe('AgentErrorCard', () => {
     renderCard(makeError());
 
     expect(screen.getByText('模型接口或模型名称不匹配')).toBeTruthy();
-    expect(screen.getByText(/Base URL/)).toBeTruthy();
+    expect(screen.getByText(/接口地址/)).toBeTruthy();
     expect(screen.getByText(/RUN_FAILED/)).toBeTruthy();
     expect(screen.getByText('HTTP 404')).toBeTruthy();
   });
@@ -90,7 +94,7 @@ describe('AgentErrorCard', () => {
     expect(screen.queryByRole('button', { name: /换个模型/ })).toBeNull();
   });
 
-  it.each(['model_not_found', 'forbidden', 'concurrency', 'network'] as const)(
+  it.each(['model_not_found', 'forbidden', 'bad_request', 'concurrency', 'network'] as const)(
     'shows 换个模型 but not 新开会话 for model-ish category %s',
     (category) => {
       renderCard(makeError({ category, httpStatus: undefined }));
@@ -199,6 +203,15 @@ describe('AgentErrorCard', () => {
       (e) => (e as Event).type === OPEN_MODEL_SWITCHER_EVENT,
     );
     expect(event).toBeTruthy();
+  });
+
+  it('bad_request: zh 卡片给出白话建议、无「服务商返回」行、换个模型按钮触发切换器', () => {
+    renderCard(makeError({ category: 'bad_request', httpStatus: undefined, rawMessage: 'Bad Request' }));
+    expect(screen.getByText('当前模型可能用不了')).toBeTruthy();
+    expect(screen.queryByTestId('agent-error-provider-reason')).toBeNull();
+    expect(screen.queryByText(/Bad Request/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /换个模型/ }));
+    expect(mocks.dispatchEvent.mock.calls.some(([e]) => (e as Event).type === OPEN_MODEL_SWITCHER_EVENT)).toBe(true);
   });
 
   it('new session goes through the session store createSession path', () => {
@@ -339,6 +352,82 @@ describe('AgentErrorCard', () => {
       title: 'Interrupted',
       suggestion: 'This run was stopped before any reply. You can retry.',
     });
+  });
+});
+
+// N-FIX-OFFLINE-FAILURE-CARD-BASE-URL-JARGON：失败卡建议不许再露出 Base URL、/v1、
+// Not Found、模型 ID 这类工程黑话。check-copy 的逐词棘轮没列 Base URL，这里用渲染级
+// 断言兜底（真实 AgentErrorPresentation，zh/en 两条路径），堵住文案回归。
+describe('AgentErrorPresentation 失败卡建议不含工程黑话', () => {
+  const JARGON_RE = /Base URL|\/v1|Not Found|模型 ID|model ID/i;
+  const findSuggestionLine = (report: string, label: string) =>
+    report.split('\n').find((line) => line.startsWith(`${label}: `)) ?? '';
+
+  beforeEach(() => {
+    useSessionStore.setState({ runningSessionIds: new Set() });
+    useAppStore.setState({ developerMode: false });
+    i18nState.language = 'zh';
+  });
+
+  afterEach(() => {
+    cleanup();
+    useMessageActionStore.getState().unregister();
+    i18nState.language = 'zh';
+  });
+
+  it.each(['zh', 'en'] as const)('%s network 断网卡：建议只谈网络与代理，无 Base URL', (language) => {
+    i18nState.language = language;
+    renderCard(makeError({ category: 'network', httpStatus: undefined }));
+
+    const alertText = screen.getByRole('alert').textContent ?? '';
+    expect(alertText).not.toMatch(JARGON_RE);
+    if (language === 'zh') {
+      expect(alertText).toContain('当前模型请求没有成功到达供应商。请检查网络连接或代理设置，稍后再重试。');
+      expect(alertText).toContain('网络');
+      expect(alertText).toContain('代理');
+    } else {
+      expect(alertText).toContain('The request never reached the provider. Check your network connection or proxy settings, then retry.');
+      expect(alertText).toContain('network');
+      expect(alertText).toContain('proxy');
+    }
+  });
+
+  it.each(['zh', 'en'] as const)('%s model_not_found 404卡：讲成人话，无 Base URL、/v1、模型 ID', (language) => {
+    i18nState.language = language;
+    renderCard(makeError());
+
+    const alertText = screen.getByRole('alert').textContent ?? '';
+    expect(alertText).not.toMatch(JARGON_RE);
+    if (language === 'zh') {
+      expect(alertText).toContain('当前模型供应商找不到这个接口或模型（404）');
+      expect(alertText).toContain('请检查接口地址和模型名称是否填对');
+    } else {
+      expect(alertText).toContain('The model provider could not find this endpoint or model (404)');
+      expect(alertText).toContain('check that its service address and model name are correct');
+    }
+  });
+
+  it('复制错误报告经 buildAgentErrorReport 携带新建议文案（zh 与 en）', async () => {
+    useAppStore.setState({ developerMode: true });
+    i18nState.language = 'zh';
+    renderCard(makeError());
+    fireEvent.click(screen.getByRole('button', { name: '复制错误报告' }));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledTimes(1));
+    const zhReport = mocks.writeText.mock.calls[0][0] as string;
+    const zhSuggestionLine = findSuggestionLine(zhReport, zh.agentError.report.suggestion);
+    expect(zhSuggestionLine).toContain('当前模型供应商找不到这个接口或模型（404）。如果用的是自定义模型，请检查接口地址和模型名称是否填对；也可以先切换到其他模型后重试。');
+    expect(zhSuggestionLine).not.toMatch(JARGON_RE);
+
+    cleanup();
+    mocks.writeText.mockReset().mockResolvedValue(undefined);
+    i18nState.language = 'en';
+    renderCard(makeError({ category: 'network', httpStatus: undefined }));
+    fireEvent.click(screen.getByRole('button', { name: en.agentError.actions.copyReport }));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledTimes(1));
+    const enReport = mocks.writeText.mock.calls[0][0] as string;
+    const enSuggestionLine = findSuggestionLine(enReport, en.agentError.report.suggestion);
+    expect(enSuggestionLine).toContain('The request never reached the provider. Check your network connection or proxy settings, then retry.');
+    expect(enSuggestionLine).not.toMatch(JARGON_RE);
   });
 });
 

@@ -4,6 +4,24 @@ import type { zh } from '../i18n/zh';
 type ConnectorCardStatusLabels = (typeof zh)['settings']['mcp']['grid']['cardStatus'];
 type ConnectorCardConnectionState = WorkbenchMcpRegistryItem['lifecycle']['connectionState'];
 
+/** 唯一的"已连接"判据：徽标、顶部计数、状态点、断开按钮共用。 */
+export function isConnectorCardConnected(
+  server: WorkbenchMcpRegistryItem,
+  connectionState: ConnectorCardConnectionState,
+): boolean {
+  return server.enabled && connectionState === 'connected';
+}
+
+export function countConnectedMcpServers(
+  servers: readonly WorkbenchMcpRegistryItem[],
+  installingServerIds: ReadonlySet<string> = new Set(),
+): number {
+  return servers.filter((server) => isConnectorCardConnected(
+    server,
+    installingServerIds.has(server.id) ? 'connecting' : server.lifecycle.connectionState,
+  )).length;
+}
+
 function getStatusLabel(
   server: WorkbenchMcpRegistryItem,
   labels: ConnectorCardStatusLabels,
@@ -11,10 +29,9 @@ function getStatusLabel(
 ): string {
   if (connectionState === 'connecting') return labels.connecting;
   if (!server.enabled) return labels.disabled;
+  if (isConnectorCardConnected(server, connectionState)) return labels.connected;
 
   switch (connectionState) {
-    case 'connected':
-      return labels.connected;
     case 'lazy':
       return labels.connectsWhenNeeded;
     case 'error':

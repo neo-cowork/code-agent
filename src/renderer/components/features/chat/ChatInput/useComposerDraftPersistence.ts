@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UI } from '@shared/constants';
 import type { MessageAttachment } from '@shared/contract';
 import { mergeAttachments } from './attachmentDedupe';
+import { discardRejectedAttachments } from './attachmentDiscard';
 import {
   COMPOSER_DRAFT_ADOPTED_EVENT,
   COMPOSER_DRAFT_DEBOUNCE_MS,
@@ -216,12 +217,13 @@ export function useComposerDraftPersistence(args: {
       setValue(entry.text);
     }
     if (hasAttachments && setAttachments) {
-      const { attachments: merged } = mergeAttachments(
+      const result = mergeAttachments(
         attachmentsRef.current,
         entry.attachments,
         UI.MAX_ATTACHMENTS,
       );
-      setAttachments(merged);
+      setAttachments(result.attachments);
+      discardRejectedAttachments(result);
     }
   }, [setAttachments, setValue]);
 

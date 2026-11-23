@@ -8,6 +8,7 @@ import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import { FormField } from '../../composites/FormField';
 import { Select } from '../../primitives/Select';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { listRoles } from '../../../services/rolesClient';
 
 interface CronTemplateRoleFieldProps {
@@ -18,6 +19,7 @@ interface CronTemplateRoleFieldProps {
 export const CronTemplateRoleField: React.FC<CronTemplateRoleFieldProps> = ({ value, onChange }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
+  const localizeRole = useLocalizeRole();
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export const CronTemplateRoleField: React.FC<CronTemplateRoleFieldProps> = ({ va
           { value: '', label: cc.templateRoleNone },
           ...roles.map((role) => ({
             value: role.roleId,
-            label: role.displayName || role.roleId,
+            label: localizeRole(role.roleId, { name: role.displayName ?? '' }).name || role.roleId,
           })),
         ]}
       />

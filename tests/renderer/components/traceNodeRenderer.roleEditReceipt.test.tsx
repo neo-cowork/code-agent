@@ -191,7 +191,7 @@ describe('ProjectTrustConfirmCard 确认并重发', () => {
 describe('edit-role user bubble display projection and rewind/edit preservation', () => {
   it.each([
     ['zh', '修改专家：知微（数据分析师）'],
-    ['en', 'Edit expert: 知微 (数据分析师)'],
+    ['en', 'Edit expert: Zhiwei (Data Analyst)'],
   ] as const)('projects single-line /edit-role <roleId> in %s through TurnBasedTraceView and TraceNodeRenderer without showing /edit-role', async (language, expectedText) => {
     const { fireEvent } = await import('@testing-library/react');
     const { buildOverviewRunHeaderModel } = await import('../../../src/renderer/utils/overviewRunHeader');
@@ -236,8 +236,10 @@ describe('edit-role user bubble display projection and rewind/edit preservation'
       roleLabels: useRoleLabelsStore.getState().labels[language],
       now: 100,
     });
-    expect(headerModel?.title).toBe(expectedText);
-    console.log(`ASSERT overviewRunHeader: ${headerModel?.title}`);
+    // 会话标题是主名，用户指令（已投影成回执文案）是副标题
+    expect(headerModel?.subtitle).toBe(expectedText);
+    console.log(`ASSERT overviewRunHeader: ${headerModel?.subtitle}`);
+    expect(headerModel?.subtitle).not.toContain('/edit-role');
     expect(headerModel?.title).not.toContain('/edit-role');
 
     // Direct TraceNodeRenderer check with turnSystemContext scaffold wrapper

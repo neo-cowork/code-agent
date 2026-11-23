@@ -44,7 +44,7 @@ export const ALLOW_COMMENT = 'copy-allow:';
 export const PRESSURE_WORDS = ['轻松', '一键', '只需', '立即体验'];
 
 // 工程黑话（裸露给用户时体验差）。N-FIX-UI-RAW-TOOL-NAMES-EXPOSED 起升级为棘轮：后四个是 copy-audit E 类里已清掉的英文内部词。
-export const JARGON_WORDS = ['幂等', '序列化', '反序列化', '单一真源', '落库', '死锁', '脏数据', 'AX candidates', 'cookie value', 'provider-reported', '参数预览', 'axPath', 'Tool Call', 'tool call'];
+export const JARGON_WORDS = ['幂等', '协同空间', '序列化', '反序列化', '单一真源', '落库', '死锁', '脏数据', 'AX candidates', 'cookie value', 'provider-reported', '参数预览', 'axPath', 'Tool Call', 'tool call'];
 
 const CJK_RE = /[一-鿿]/;
 const ELLIPSIS_RE = /\.{3}/;

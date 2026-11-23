@@ -33,6 +33,7 @@ function createHarness() {
       browserService: {
         getActiveTab: () => { id: string; page: unknown } | null;
         getSessionState: () => { viewport: { width: number; height: number } };
+        noteUserActivity: () => void;
         setViewport: (width: number, height: number) => Promise<void>;
       },
     ) => Promise<{ success: boolean; output?: string }>;
@@ -51,6 +52,7 @@ function createHarness() {
     const result = await input.executeProvider(new AbortController().signal, {
       getActiveTab: () => ({ id: 'tab-1', page }),
       getSessionState: () => ({ viewport: { width: 1280, height: 720 } }),
+      noteUserActivity: vi.fn(),
       setViewport,
     });
     return {
@@ -233,6 +235,7 @@ describe('UserBrowserLinkService.dispatchUserInput', () => {
 
 describe('SurfaceLiveStreamService.start first-frame buffer', () => {
   it('delivers a frame emitted before startup finishes once streaming becomes active', async () => {
+    const page = { id: 'page-1' };
     const published: SurfaceLiveFrameV1[] = [];
     const stop = vi.fn(async () => undefined);
     startPageScreencast.mockImplementationOnce(async (
@@ -259,7 +262,7 @@ describe('SurfaceLiveStreamService.start first-frame buffer', () => {
         findBindingBySurfaceSessionId: () => ({
           browserService: {
             isRunning: () => true,
-            getActiveTab: () => ({ id: 'tab-1', page: { id: 'page-1' } }),
+            getActiveTab: () => ({ id: 'tab-1', page }),
           },
         }),
       } as never,

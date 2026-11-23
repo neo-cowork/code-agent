@@ -656,6 +656,23 @@
         },
         "expectedOutcome": {
           "type": "string"
+        },
+        "guiTakeoverDisclosure": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "const": "gui_takeover"
+            },
+            "app": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "app"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -1115,6 +1132,12 @@
         "details": {
           "type": "object",
           "properties": {
+            "calendarApprovalSnapshotFields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "path": {
               "type": "string"
             },
@@ -4329,6 +4352,9 @@
         "to": {
           "type": "string"
         },
+        "exhausted": {
+          "type": "boolean"
+        },
         "category": {
           "type": "string"
         },
@@ -4362,8 +4388,7 @@
       },
       "required": [
         "reason",
-        "from",
-        "to"
+        "from"
       ],
       "additionalProperties": false
     },

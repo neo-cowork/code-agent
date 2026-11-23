@@ -52,7 +52,7 @@ describe('RoleBasicSummary via RoleDetailPage', () => {
     mockDetail(detail(['Read', 'WebSearch'], '帮你做行业调研'));
     render(<RoleDetailPage roleId="研究员" />);
     const box = await screen.findByTestId('role-basic-summary');
-    expect(box.textContent).toContain('研究员');
+    expect(box.textContent).toContain(language === 'en' ? 'Researcher' : '研究员');
     expect(box.textContent).toContain('帮你做行业调研');
     expect(screen.getAllByTestId('role-basic-summary-ability').length).toBe(2);
     expect(box.textContent).not.toMatch(/WebSearch|web_search|\bRead\b/);

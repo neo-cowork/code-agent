@@ -28,6 +28,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '3. 短小的本地文件修改，先 Read 再用 Edit 或 Write 直接完成；写报告/文档/表格时若本轮工具表已有对应生成工具（docx_generate、excel_generate），直接调用它把文件交付掉；运行命令、联网查证、多步骤执行、等待审批，以及做网页等其他生成级长任务，调用 delegate_task。读的量大到要翻遍整个仓库时也派活。',
   '3a. 本轮工具表里已有邮件、日历、提醒事项工具时，发邮件、建日程、设提醒这类请求直接调用对应工具完成，不派 delegate_task；发送或创建前聊天里会出现确认卡片，按用户在卡片上的选择如实回复，只在工具返回成功后才说已发送或已创建。',
   '3b. 用户明确点名 Bash、终端、命令行或脚本执行形式时，调用 delegate_task，把用户的命令意图完整写入 prompt；这条点名路由优先于 3a。调用后用一句话说明它正在作为后台任务运行。',
+  '3c. 用户要把刚写好的文件存进资料库（「放进资料库」「入库」）时，直接调用 library_add 完成，先写文件再入库，不派 delegate_task，也不去文件系统里找资料库的存放位置；入库结果以工具返回为准，如实回复用户。',
   '4. 用户点名要某个角色去做（"让溯真去调研 X""这件事交给明镜"），调用 spawn_agent 把活交给那个角色本人，不要用 delegate_task 把角色名写进 prompt 让通用任务扮演——扮演出来的产出不会进那个角色的记忆和履历，下次它回来还是一张白纸。没点名角色时照常用 delegate_task。',
   '5. 用户补充或修正某件正在做的工作，调用 steer_task；要求停止时调用 cancel_task；用户主动追问进度时调用 task_status——没人问就不要查进度，派完活直接结束 turn。',
   '6. 目标任务不唯一或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜；并发槽已满时由 delegate_task 展示选择卡，不要再次询问，只有用户明确回复“排队”时才带 queue_when_full: true 重调。',
@@ -60,6 +61,15 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
 // docx_generate，模型可见工具表里却没有它（r2b 真机）。
 const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
 const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
+
+// 非交付轮的表格阅读/改写：ExcelAutomate 只作为意图附加项进面，其他轮次的 schema 字节不变。
+// 生成轮仍走上面的 excel_generate + DocEdit，不把自动化工具塞进交付卡。
+const SPREADSHEET_TOKEN_RE = /\.xlsx\b|\.xls\b|\bspreadsheet\b|工作簿|工作表|\bexcel\b/i;
+const SPREADSHEET_USE_VERB_RE = /说明|解释|讲了|讲什么|看看|看一下|看下|读一下|读取|总结|打开|内容|summarize|explain|describe|read\b|look at|改写|改一下|修改|重写|公式|rewrite|edit\b/i;
+
+function isSpreadsheetReadOrRevisePrompt(prompt: string): boolean {
+  return SPREADSHEET_TOKEN_RE.test(prompt) && SPREADSHEET_USE_VERB_RE.test(prompt);
+}
 
 // 句首才算存草稿指令。晨报正文或句子中间出现这几个字不能把 mail_draft 送上轮。
 // 允许的前缀只是客气话（请 / 麻烦 / 帮我 / 你好 / please），不是任意前文。
@@ -181,6 +191,8 @@ export function getTextForegroundToolNamesForPrompt(
   if (features.isOneTurnFileDeliverable) {
     if (OFFICE_DOC_DELIVERABLE_RE.test(prompt)) extras.push('docx_generate');
     if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
+  } else if (isSpreadsheetReadOrRevisePrompt(prompt)) {
+    extras.push('ExcelAutomate');
   }
   if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
   // 角色主动性写入必须留在用户亲自参与的前台轮次，并继续走工具内 force-confirm。

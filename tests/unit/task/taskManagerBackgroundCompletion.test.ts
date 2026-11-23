@@ -33,6 +33,7 @@ const notifyState = vi.hoisted(() => ({
   notifyTaskComplete: vi.fn(),
   notifyNeedsInput: vi.fn(),
 }));
+const terminalInfo = vi.hoisted(() => vi.fn());
 
 const orchestratorMocks = vi.hoisted(() => ({
   configs: [] as Array<{ onEvent: (event: unknown) => Promise<void> }>,
@@ -42,8 +43,8 @@ const orchestratorMocks = vi.hoisted(() => ({
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-  createLogger: () => ({
-    info: vi.fn(),
+  createLogger: (name: string) => ({
+    info: name === 'BackgroundTaskTerminal' ? terminalInfo : vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
@@ -88,6 +89,7 @@ vi.mock('../../../src/host/session/backgroundTaskManager', () => ({
 
 import { TaskManager } from '../../../src/host/task/TaskManager';
 import { withWakeRunTimeout } from '../../../src/host/services/roleAssets/wakeRunGuard';
+import { notificationService } from '../../../src/host/services/infra/notificationService';
 
 const TASK_COMPLETE_EVENT = {
   type: 'task_complete',
@@ -111,6 +113,7 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
     backgroundManagerState.markCompleted.mockReset().mockResolvedValue(undefined);
     backgroundManagerState.markFailed.mockReset();
     notifyState.notifyTaskComplete.mockClear();
+    terminalInfo.mockClear();
     dbState.db.updateSession.mockReset();
     orchestratorMocks.configs.length = 0;
   });
@@ -123,7 +126,7 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
       persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
     }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
 
-    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好');
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好', 4200);
     expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
   });
 
@@ -196,16 +199,68 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1', summary: '周报已写好' }));
   });
 
-  it('子代理的 task_complete（eventKey ≠ sessionId）：不触发后台收口，走原通知路径', async () => {
+  it('skips a sub-task completion banner while the primary run is running', async () => {
     backgroundManagerState.isInBackground.mockReturnValue(true);
     const manager = newManager();
+    vi.spyOn(manager, 'getSessionState').mockReturnValue({ status: 'running' });
 
     await (manager as unknown as {
       persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
     }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'subagent-key');
 
     expect(backgroundManagerState.markCompleted).not.toHaveBeenCalled();
-    expect(notifyState.notifyTaskComplete).toHaveBeenCalled();
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(0);
+    expect(terminalInfo).toHaveBeenCalledExactlyOnceWith(
+      'sub-task completion banner skipped: primary run active',
+      { sessionId: 'session-1', eventKey: 'subagent-key' },
+    );
+    console.info(...terminalInfo.mock.calls[0]);
+  });
+
+  it('sends one late sub-task completion banner without a duration line', async () => {
+    const manager = newManager();
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+    notificationService.clearRecentNotifications();
+    notifyState.notifyTaskComplete.mockImplementationOnce((data) => notificationService.notifyTaskComplete(data));
+    try {
+      await (manager as unknown as {
+        persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+      }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'subagent-key');
+
+      expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+      expect(notifyState.notifyTaskComplete.mock.calls[0][0]).not.toHaveProperty('duration');
+      const notifications = notificationService.getRecentNotifications();
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0].body).toBe('周报已写好');
+      expect(notifications[0].body).not.toMatch(/耗时|Duration/);
+      console.info('Late sub-task banner body:', JSON.stringify(notifications[0].body));
+    } finally {
+      notificationService.clearRecentNotifications();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('sends only the primary duration after a sub-task completes during a direct web run', async () => {
+    const manager = newManager();
+    const activePrimaryRun = vi.spyOn(manager, 'hasActivePrimaryRun').mockReturnValue(true);
+    const persist = (manager as unknown as {
+      persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
+    }).persistEventToSession.bind(manager);
+
+    await persist('session-1', TASK_COMPLETE_EVENT, undefined, 'subagent-key');
+    activePrimaryRun.mockReturnValue(false);
+    await persist('session-1', {
+      ...TASK_COMPLETE_EVENT,
+      data: { ...TASK_COMPLETE_EVENT.data, duration: 27_000 },
+    }, undefined, 'session-1');
+
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session-1',
+      sessionTitle: '长任务',
+      summary: '周报已写好',
+      duration: 27_000,
+      toolsUsed: ['Write'],
+    });
   });
 });
 
@@ -316,7 +371,7 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     await persist('session-1', { type: 'agent_complete', data: null }, undefined, 'session-1');
 
     expect(backgroundManagerState.markCompleted).toHaveBeenCalledTimes(1);
-    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好');
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好', 4200);
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 

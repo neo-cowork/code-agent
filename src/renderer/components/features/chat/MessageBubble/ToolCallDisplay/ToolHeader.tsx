@@ -20,6 +20,8 @@ import {
   isInternalStreamTool,
   toolNameForDetail,
 } from '../../../../../utils/humanizeToolStep';
+import { readHelperOutcomes } from '../../../../../utils/helperOutcomeCopy';
+import { resolveToolCallTerminalState } from '../../../../../utils/toolCallTerminalState';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
@@ -113,7 +115,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
-        { delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
+        { notRun: resolveToolCallTerminalState({ toolCall }).notRun, handedOff: resolveToolCallTerminalState({ toolCall }).handedOff, helperOutcomes: readHelperOutcomes(toolCall.result?.metadata), delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
   const statusLabel = assembled
     ? assembled.terminal
@@ -145,6 +147,10 @@ export function ToolHeader({
     resolveStreamInterruptionOutcomeKey(interruptionReason)
   ].timeline;
   const title = humanizeInternalText(buildToolHeaderTitle(toolCall, displayName, assembled?.terminalKey === 'env-waiting' ? assembled.terminal : interruptionOutcome.label), language).text;
+  // aria-label 与 tooltip 同口径：普通路径 humanizeInternalText 原样放行（不改行为），
+  // 只有上传副本这类 /private/var/folders 临时路径被整体改写，屏幕阅读器不再读到
+  // 绝对路径（N-FIX-HUMANIZE-TEMP-PATH-PRIVATE-PREFIX-LEFTOVER）。
+  const humanizedFilePath = filePath ? humanizeInternalText(filePath, language).text : '';
   const pluginOriginDisplayName = getPluginOriginDisplayName(toolCall);
 
   return (
@@ -173,7 +179,7 @@ export function ToolHeader({
           data-testid="tool-header-open-preview"
           className={`${status === 'interrupted' ? 'text-zinc-500 font-normal hover:text-zinc-300' : 'text-zinc-200 font-semibold hover:text-zinc-100'} truncate min-w-0 text-left hover:underline underline-offset-2`}
           title={title}
-          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', filePath)}
+          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', humanizedFilePath)}
           onClick={handleOpenPreview}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {

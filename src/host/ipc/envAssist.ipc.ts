@@ -9,7 +9,7 @@ import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/se
 import { createCuaHelperGrantBridge, type CuaHelperGrantBridge } from '../permissions/envAssist/grants/cuaHelperGrantBridge';
 import { createDefaultGrantBridge, mintClickToken, requestGrant, requestHelperGrant } from '../permissions/envAssist/grants/requestGrant';
 import { accessibilityProbe, automationProbe, calendarAccess, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
-import { enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps, type PendingEnable } from '../permissions/envAssist/calendarSetting';
+import { askCalendarOnce, enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps, type PendingEnable } from '../permissions/envAssist/calendarSetting';
 import { askCalendarFromClick, isCalendarNotice, settleCalendarGranted } from '../permissions/envAssist/calendarGrant';
 import type { CalendarAccess } from '../permissions/envAssist/probes/passiveProbes';
 import { readCuaHelperPermissionState, type CuaHelperPermissionState } from '../permissions/envAssist/cua/helperPermissionState';
@@ -19,6 +19,7 @@ import type { ProbeResult, ReadOnlyProbe } from '../permissions/envAssist/probes
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
 import { createLogger } from '../services/infra/logger';
+import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
 import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
@@ -120,7 +121,11 @@ function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane:
   if (notice.target?.id.startsWith('helper')) {
     return pane === 'accessibility' || pane === 'screenCapture' ? cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane) : null;
   }
-  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(notice.target?.id));
+  const targetId = notice.target?.id;
+  if (pane === 'automation' && targetId && isAutomationDenialOverridden(targetId)) {
+    return async () => ({ status: 'denied' });
+  }
+  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(targetId));
 }
 
 /** Every probe that reads granted closes the card, whether the grant came from the button or from System Settings. */
@@ -209,6 +214,8 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       return settle(deps, notice, { status: 'checked', outcome: calendarOutcome(asked.access) });
     }
     if (request.actionKind === 'request_grant') {
+      // No grant API exists for files: Settings is the only route.
+      if (request.payload.pane === 'filesAndFolders') return { status: 'rejected' };
       const targetBundleId = automationBundleId(notice.target?.id);
       const probe = noticeProbe(deps, notice, request.payload.pane);
       if (!probe) return { status: 'rejected' };
@@ -222,7 +229,7 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
         }
       }
       const token = mintClickToken(notice.id, deps.now);
-      const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
+      const grant = await requestGrant(token, { pane: request.payload.pane, targetBundleId }, deps.grantBridge ?? null, deps.now);
       return settle(deps, notice, { status: grant === 'requested' ? 'checked' : grant, outcome: await probe() });
     }
     if (!deps.available()) return { status: 'not_available' };
@@ -256,6 +263,33 @@ export async function grantCalendarFromConnectorClick(): Promise<void> {
     open: deps.open, available: deps.available,
   });
   if (asked.access === 'granted') await settleCalendarGranted('connector_repair');
+}
+
+/**
+ * ADR-090 修订（N-ENV-ASSIST-FOREGROUND-DIRECT-PROMPT）：用户本人在前台发起的这一轮里，日历工具碰到「未决定」——
+ * 用户就在跟前、请求是他自己的，直接弹一次系统框并等答复，不先出卡。凭证仍只在本文件签发；
+ * 只有「未决定」才弹（已拒绝/只写/受限不弹，调用方照旧出卡）。调用方负责只在前台、非无人值守、非子代理时调用。
+ */
+export async function grantCalendarForForegroundRequest(toolCallId: string, signal?: AbortSignal): Promise<CalendarAccess | 'aborted'> {
+  const deps = buildDefaultDependencies();
+  const asked = await askCalendarOnce({
+    access: () => calendarAccess(deps.passiveBridge ?? null),
+    prompt: () => requestGrant(mintClickToken(`foreground:${toolCallId}`), { pane: 'calendars' }, deps.grantBridge ?? null)
+      .catch(() => 'not_available' as const),
+  }, undefined, signal);
+  if (asked?.aborted) {
+    logger.info('Calendar foreground request: stopped while waiting', { prompted: asked.prompted });
+    void asked.completion?.then(async (answer) => {
+      if (answer?.access === 'granted') await settleCalendarGranted('foreground_request');
+    }).catch((error: unknown) => {
+      logger.warn('Calendar foreground request: completion failed', { error: error instanceof Error ? error.message : String(error) });
+    });
+    return 'aborted';
+  }
+  const access = asked?.access ?? 'unavailable';
+  logger.info('Calendar foreground request: direct dialog', { prompted: asked?.prompted === true, access });
+  if (access === 'granted') await settleCalendarGranted('foreground_request');
+  return access;
 }
 
 /** Opener injection is also used by hosts without a desktop; it never grants permission. */

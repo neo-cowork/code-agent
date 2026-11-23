@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 
@@ -22,10 +22,12 @@ vi.mock('../../../src/renderer/components/features/chat/ToolStepGroup', () => ({
 
 import { turnPhaseFallbackLabel } from '../../../src/renderer/utils/turnPhaseFallback';
 import { languages } from '../../../src/renderer/i18n';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 afterEach(() => {
   cleanup();
+  useAppStore.setState({ language: 'zh', pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {} });
   vi.useRealTimers();
 });
 
@@ -113,10 +115,11 @@ describe('TurnCard busy signal', () => {
     expect(getStreamingCarets()).toHaveLength(0);
   });
 
-  it('durable 回合已启动且尚无首 token 时，轮头如实显示等待模型', () => {
+  it('durable 回合已启动且尚无首 token 时，由单行「正在思考」独占信号', () => {
     render(<TurnCard turn={makeTurn([])} />);
 
-    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · \d+s$/);
+    expect(screen.queryByText('信号传输中，正在等待模型回响…')).toBeNull();
     expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
     expect(screen.queryByTestId('tool-running')).toBeNull();
     expect(getStreamingCarets()).toHaveLength(0);
@@ -252,6 +255,31 @@ describe('TurnCard failed phase fallback', () => {
   it('does not display a completed header while waiting for the first token', () => {
     render(<TurnCard turn={makeTurn([])} />);
     expect(screen.queryByTestId('turn-run-header')).toBeNull();
-    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · \d+s$/);
   });
+});
+
+
+describe('TurnCard live approval status', () => {
+  for (const language of ['zh', 'en'] as const) {
+    it.each([false, true])('shows approval instead of tool/preparation signals when tool completed=%s (' + language + ')', (completed) => {
+      useAppStore.setState({ language, pendingPermissionSessionId: 'session-approval', pendingPermissionRequest: {
+        id: 'perm-1', type: 'file_write', tool: 'Write', details: { path: 'summary.md' }, timestamp: 1,
+      } });
+      const turn = makeTurn([{
+        ...completedTool(), timestamp: baseTime - 60_000,
+        toolCall: { id: 'call-1', name: 'Write', args: {}, ...(completed ? { result: 'Saved', success: true } : {}) },
+      }]);
+      render(<TurnCard turn={turn} sessionId="session-approval" />);
+      expect(screen.getByLabelText(languages[language].chat.waitingApproval).textContent).toBe(languages[language].chat.waitingApproval);
+      expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+      expect(screen.queryByText(/正在发送消息|Sending message|深空巡航/)).toBeNull();
+      act(() => useAppStore.setState({ pendingPermissionRequest: null, pendingPermissionSessionId: null }));
+      expect(screen.queryByLabelText(languages[language].chat.waitingApproval)).toBeNull();
+      // 审批结束后回合在等模型：已完成工具无可见步骤行时，由单行「正在思考」独占信号，不再叠加「正在整理回复」。
+      expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+      if (completed) expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考|^Thinking/);
+      else expect(screen.queryByTestId('thinking-digest')).toBeNull();
+    });
+  }
 });

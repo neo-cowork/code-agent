@@ -18,7 +18,7 @@ const harness = vi.hoisted(() => {
     archiveSession: vi.fn(),
     updateMessage: vi.fn(),
   };
-  const mockOrchestrator = { sendMessage: vi.fn() };
+  const mockOrchestrator = { sendMessage: vi.fn(), setExecutionTopology: vi.fn() };
   return {
     configDir: { dir: '' },
     mockSessionManager,
@@ -31,6 +31,8 @@ const harness = vi.hoisted(() => {
     mockSettings: { value: {} as Record<string, unknown> },
     // 能力中心：默认无已连接源，各测试按需注入
     listCapabilities: vi.fn(async (): Promise<{ items: CapabilityCenterItem[] }> => ({ items: [] })),
+    // 角色声明的工具（undefined = 没声明）
+    declaredTools: { value: undefined as string[] | undefined },
   };
 });
 
@@ -77,7 +79,7 @@ vi.mock('@host/session/sessionEventService', () => ({
   getSessionEventService: () => harness.mockSessionEvents,
 }));
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
-  resolveAgent: () => undefined,
+  resolveAgent: () => (harness.declaredTools.value ? { tools: harness.declaredTools.value } : undefined),
 }));
 vi.mock('../../../../src/host/hooks', () => ({
   createHookManager: () => ({
@@ -115,6 +117,23 @@ function connectedSource(name: string): CapabilityCenterItem {
     source: { kind: 'builtin' },
     tags: [],
   } as unknown as CapabilityCenterItem;
+}
+
+/** native 连接器源（Calendar/Mail/Reminders）：按工具名前缀与角色声明工具对齐。 */
+function nativeSource(id: string, name: string): CapabilityCenterItem {
+  return {
+    name,
+    kind: 'connector',
+    state: { runtime: 'connected' },
+    source: { kind: 'builtin' },
+    tags: ['native', id],
+  } as unknown as CapabilityCenterItem;
+}
+
+function primeNativeSources(): void {
+  harness.listCapabilities.mockImplementation(async () => ({
+    items: [nativeSource('calendar', 'Calendar'), nativeSource('mail', 'Mail'), nativeSource('reminders', 'Reminders')],
+  }));
 }
 
 function primeConnectedSources(names: string[]): void {
@@ -166,6 +185,7 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     await ensureRoleAssetDirs(RESEARCHER);
     harness.mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'daily' } } };
     vi.clearAllMocks();
+    harness.declaredTools.value = undefined;
     harness.listCapabilities.mockImplementation(async () => ({ items: [] }));
   });
   afterEach(async () => {
@@ -187,6 +207,43 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     expect(wakePrompt).toContain('wake_proposals');
     // 提议落盘
     expect(await readStoredProposals(RESEARCHER)).toHaveLength(1);
+  });
+
+  it('每日醒来：角色只声明 calendar+mail → prompt 只列 Calendar、Mail，不含 Reminders，并带措辞规则', async () => {
+    harness.declaredTools.value = ['calendar', 'mail'];
+    primeNativeSources();
+    primeWakeOutput('<decision>silence</decision>');
+    await wakeRole(RESEARCHER, 'cadence');
+    const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+    expect(wakePrompt).toContain('已连接源：Calendar、Mail');
+    expect(wakePrompt).not.toContain('Reminders');
+    expect(wakePrompt).toContain('不写工具名、参数名');
+    expect(wakePrompt).toContain('未读取：<源名>」，后面跟一句通俗的原因');
+  });
+
+  it('每日醒来：角色另外声明 reminders → 仍列 Reminders', async () => {
+    harness.declaredTools.value = ['calendar', 'mail', 'reminders'];
+    primeNativeSources();
+    primeWakeOutput('<decision>silence</decision>');
+    await wakeRole(RESEARCHER, 'cadence');
+    const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+    expect(wakePrompt).toContain('已连接源：Calendar、Mail、Reminders');
+  });
+
+  it('每日醒来：角色没声明工具 → 维持旧行为，列全部已连接源', async () => {
+    primeNativeSources();
+    primeWakeOutput('<decision>silence</decision>');
+    await wakeRole(RESEARCHER, 'cadence');
+    const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+    expect(wakePrompt).toContain('已连接源：Calendar、Mail、Reminders');
+  });
+
+  it('强制失败：声明 calendar+mail 的角色两源都「未读取」+ 模型选沉默 → 仍纠正为 report', async () => {
+    harness.declaredTools.value = ['calendar', 'mail'];
+    primeNativeSources();
+    primeWakeOutput('未读取：Calendar（日历暂时打不开）\n未读取：Mail（邮箱暂时连不上）\n<decision>silence</decision>');
+    const result = await wakeRole(RESEARCHER, 'cadence');
+    expect(result.decision).toBe('report');
   });
 
   it('空履历 + 无已连接源：维持既有静默，不烧模型 token', async () => {

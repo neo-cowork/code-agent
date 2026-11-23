@@ -1,8 +1,10 @@
-import { watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
+import { noteFirstModelRequestPhase, watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
 import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
+import { existsSync } from 'node:fs';
+import { resolveWorkspacePath } from '../../host/runtime/workspaceScope';
 import { randomUUID } from 'node:crypto';
 import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
@@ -115,6 +117,7 @@ import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../hos
 import {
   isPlannedSessionWorkDirectory,
   maybeDivertCollidingSessionWorkDirectory,
+  needsWorkspaceModelTitleForDeliverable,
   maybeReplanSessionWorkDirectory,
   planSessionWorkDirectory,
 } from '../../host/config/sessionWorkDirectory';
@@ -691,17 +694,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const workDirReservations = needsWorkDirReservations && dbAvailable && !sessionPreflightReadFailed
       ? await listSessionWorkDirectoryReservations({ exceptSessionId: sessionId })
       : [];
+    const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
     if (!resolvedProject) {
-      // 无文件夹会话分两档（N-DELIVERABLE-WORKDIR-DEFAULT）：新会话（preflight 时零历史
-      // 消息——本轮 user message 要到下方 SSE 之后的 pre-persist 才落库，此处读到的就是
-      // 首轮前状态）首轮**规划**按会话产出子目录 任务_MMDD_<标题> 并经下方回写粘住；
-      // 已有消息的存量会话保持扁平默认目录，既有文件永不挪动。
-      // 懒开（N-DELIVERABLE-WORKDIR-LAZY）：首轮只算路径不落盘，纯问答会话不产生任何
-      // 目录；到首个非只读工具派发前（toolExecutionEngine）或外部引擎 preflight 才补 mkdir。
-      // 只在「确知零消息且目录选择粘得住」（preflight 读成功、持久化健康态明确可写、
-      // 且会话行已经存在）时才规划新目录：读失败/行不存在/运行期降级都保持扁平默认。
-      // 持久化健康态的 durable 字段在 degraded 时会保留历史值，所以同时检查 status；
-      // 否则 readonly/quick_check 失败会被误判为可持久化，每轮各开一个 任务_x-N 目录。
+      // 无文件夹首轮只规划路径，首次非只读工具或外部引擎 preflight 才 mkdir。
+      // 只给健康持久态且确知零历史的会话规划；不能粘住目录时继续用扁平默认目录。
       const persistenceHealth = getPersistenceHealth();
       const persistenceIsDurable = persistenceHealth.durable === true
         && (persistenceHealth.status === 'available' || persistenceHealth.status === 'recovered');
@@ -711,15 +707,25 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         && persistedSession !== null
         && !persistedSession.workingDirectory?.trim()
         && !persistedSessionHasMessages(persistedSession);
+      const deferWorkspaceTitle = firstRunNoFolderSession && !isExternalAgentEngine(selectedEngine.kind)
+        && !body.goal && !prompt.trimStart().startsWith('/')
+        && !needsWorkspaceModelTitleForDeliverable(prompt);
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('workspace_planning');
       try {
         resolvedProject = firstRunNoFolderSession
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            deferModelTitle: deferWorkspaceTitle,
+            askTitle: async (titlePrompt, signal) => {
+              const { quickTask, isQuickModelAvailable } = await import('../../host/model/quickModel');
+              return isQuickModelAvailable() ? quickTask(titlePrompt, undefined, signal) : undefined;
+            },
             attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
+        if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_run_setup');
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       } catch (error) {
         if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
@@ -773,7 +779,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     }
 
-    const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
     const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
     // 写边界预检（identity 快照缺失/变化、Source 未信任）fail-closed 抛 ProjectSourceTrustError：
     // 在写 SSE 之前收口成可确认的 422（renderer 出「确认并重发」入口）；其余错误原样
@@ -795,11 +800,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
       if (transport.connectedClient) {
-        res.status(422).json({
-          error: 'Project folder needs trust confirmation',
-          code: 'PROJECT_SOURCE_TRUST',
-          kind: error.kind,
-        });
+        res.status(422).json(error.toHttpBody());
         return;
       }
       throw error;
@@ -809,6 +810,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // run lifecycle, including Native RunContext/tool execution. Request
       // context and the legacy session cwd are only source provenance here.
       resolvedProject = runWorkspaceScope.primaryRoot;
+    }
+    if (runWorkspaceScope && !runWorkspaceScope.version.startsWith('isolated-v1:')) {
+      // A saved Source replacement can leave both the session row and a mounted
+      // client's request pointing at the removed folder. Repair only absent paths
+      // outside the verified scope; valid project subdirectories keep their cwd.
+      const verifiedScope = runWorkspaceScope;
+      const isRemovedProjectDirectory = (directory: string): boolean =>
+        !resolveWorkspacePath(verifiedScope, directory, 'read') && !existsSync(directory);
+      if (persistedSession?.workingDirectory && isRemovedProjectDirectory(persistedSession.workingDirectory)) {
+        if (!sessionManagerForRun?.updateSession) throw new Error('SESSION_WORKSPACE_RECOVERY_UNAVAILABLE');
+        await sessionManagerForRun.updateSession(sessionId, {
+          workingDirectory: runWorkspaceScope.primaryRoot,
+          updatedAt: Date.now(),
+        });
+        persistedSession = { ...persistedSession, workingDirectory: runWorkspaceScope.primaryRoot };
+      }
+      if (isRemovedProjectDirectory(resolvedProject)) {
+        resolvedProject = runWorkspaceScope.primaryRoot;
+        logger.info('[AgentRouter] Using verified primary Source after folder replacement', { sessionId, projectId: runWorkspaceScope.projectId });
+      }
     }
     // 外部引擎把 resolvedProject 当子进程 cwd，缺失会被 assertWorkspaceCwd 硬拒
     // （"must exist"）——懒开目录对它们没有「等首个写工具」的余地，preflight 落盘。
@@ -1751,7 +1772,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
-          const sessionsTable = sb.supabase.from('sessions');
           // Insert user message (skip if pre-persisted)
           if (!userMsgPrePersistedSupabase) {
             await sb.supabase.from('messages').insert({
@@ -1780,13 +1800,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               source_device_id: 'web',
             });
           }
-          // 更新会话标题（第一轮消息时）
-          if (isNewSession) {
-            await sessionsTable.update({
-              title: buildSessionTitle(titleSource),
-              updated_at: Date.now(),
-            }).eq('id', sessionId);
-          }
+          // 首轮标题只在 syncSupabaseSessionRow 以 insert-if-absent 写入；这里不再用截断档覆盖已回写的智能标题。
         }
       } catch (sbErr) {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
@@ -1808,7 +1822,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      getBackgroundTaskManager().markFailed(
+      await getBackgroundTaskManager().markFailed(
         sessionId,
         resolveBackgroundRunSettlement({ status: 'error', errorMessage: message }).message,
       );

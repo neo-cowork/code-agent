@@ -51,7 +51,8 @@ describe('scheduled-only shell residency and explicit complete quit', () => {
       expect(handler).not.toContain(forbidden);
     }
     const dialog = between('fn show_quit_confirm_dialog<', 'fn execute_quit_exit_plan<');
-    expect(dialog).toContain('execute_quit_exit_plan(app, coordinator, origin, plan)');
+    expect(dialog).toContain('background_resident::handle_quit_dialog_answer(');
+    expect(dialog).not.toMatch(/allow_exit|app\.exit|set_background_continue|post_quit_intent|arm_background_continue_detach/);
     const helper = between('fn execute_quit_exit_plan<', 'static MAC_QUIT_GUARD_APP:');
     expect(helper).toContain('post_quit_intent(');
     expect(helper).toMatch(/set_stop_intent_landed\(\);\s*hide_windows_for_stop_wait\(&app\)/);
@@ -65,17 +66,21 @@ describe('scheduled-only shell residency and explicit complete quit', () => {
   it('HideToBackground in spawn_quit_guard_flow keeps the shell alive and cancels macOS terminate', () => {
     const flow = between('fn spawn_quit_guard_flow<', 'fn show_quit_confirm_dialog<');
     const arm = flow.slice(flow.indexOf('quit_guard::QuitDecision::HideToBackground'), flow.indexOf('quit_guard::QuitDecision::Confirm'));
-    expect(arm).toContain('background_resident::minimize_and_hint(&app, language, hint_poster)');
-    expect(arm).toContain('coordinator.finish()');
-    expect(arm).toContain('reply_to_mac_application_terminate(&app, false)');
+    expect(arm).toContain('background_resident::hide_to_background(&app, &coordinator, origin, language, hint_poster)');
     for (const forbidden of ['allow_exit', 'app.exit', 'cleanup_server', 'set_background_continue', 'show_quit_confirm_dialog']) {
       expect(arm).not.toContain(forbidden);
     }
     const resident = read('background_resident.rs').split('#[cfg(test)]')[0];
+    const hide = resident.slice(resident.indexOf('pub(crate) fn hide_to_background<'), resident.indexOf('/// Quit-dialog answer handling'));
+    expect(hide).toContain('minimize_and_hint(app, language, poster)');
+    expect(hide).toContain('coordinator.finish()');
+    expect(hide).toContain('reply_to_mac_application_terminate(app, false)');
+    // dialog 后台继续与 scheduled-only 共用同一个收起函数
+    expect(resident).toMatch(/BackgroundContinue => \{\s*hide_to_background\(/);
     expect(resident).toContain('app.webview_windows().values()');
     expect(resident).toContain('window.minimize()');
     expect(resident).toContain('crate::real_data_dir()');
     expect(resident).toContain('crate::native_notification::post_unc(');
-    expect(resident).not.toMatch(/allow_exit|app\.exit|cleanup_server/);
+    expect(resident.slice(0, resident.indexOf('QuitAnswerAction::Quit =>'))).not.toMatch(/allow_exit|app\.exit|cleanup_server/);
   });
 });

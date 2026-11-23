@@ -45,6 +45,11 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
     const sessionIds = getStringArray(payload, 'sessionIds');
     return service.summarizeSessions(sessionIds);
   },
+  getRoleWakeRun: (_ctx, payload) => {
+    const sessionId = getString(payload, 'sessionId');
+    if (!sessionId) throw new Error('SESSION_ID_REQUIRED');
+    return getSessionAutomationService().getRoleWakeRun(sessionId);
+  },
   getSessionSummary: (_ctx, payload) => {
     const service = getSessionAutomationService();
     const sessionId = getString(payload, 'sessionId');

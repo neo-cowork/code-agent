@@ -27,7 +27,6 @@ export function recoverVoiceTaskSlots(input: {
       if (!item || TERMINAL.has(item.status)) continue;
       input.fail(slot.workItemId, formatSessionTaskSlotRecoveryDetail({
         taskLabel: item.shortName ?? item.title,
-        laneKey: slot.laneKey,
         occupiedMs,
         locale,
       }), {

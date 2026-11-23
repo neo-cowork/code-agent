@@ -10,13 +10,13 @@ import {
   MAX_FOLDER_FILES,
   getFileCategory,
   readDirectoryEntry,
-  extractPdfText,
   generateAttachmentId,
 } from './utils';
 import { toast } from '../../../../hooks/useToast';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
+import { UploadFailureError, uploadFailureMessage } from '../../../../utils/httpFailureMessage';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatFileSize } from './formatFileSize';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
@@ -32,12 +32,22 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
   });
 }
 
+// 上传后才被拒的附件：把刚写入的临时副本清掉（原生桥没有该方法，不会误删用户真实文件）
+function discardRejectedUpload(filePath: string | undefined): void {
+  if (!filePath) return;
+  const discard = ipcService.discardUploadedFiles;
+  if (!discard) return;
+  void discard([filePath]).catch((e: unknown) => {
+    logger.warn('discard rejected upload failed', { error: e });
+  });
+}
+
 /**
  * 文件上传处理 Hook
  * 处理单个文件和文件夹的上传逻辑
  */
 export function useFileUpload() {
-  const { t } = useI18n();
+  const { t, language: uiLanguage } = useI18n();
   const showToast = toast.show;
 
   // 处理单个文件
@@ -47,27 +57,58 @@ export function useFileUpload() {
     const relativePath = (file as File & { relativePath?: string }).relativePath;
     const displayName = relativePath || file.name;
 
+    // 非 PDF 超限：先拒绝再上传，避免服务端留下注定无用的副本
+    if (category !== 'pdf' && file.size > MAX_FILE_SIZE) {
+      logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
+      useComposerRejectedUploadsStore.getState().add({ name: displayName, size: file.size });
+      showToast('warning', t.chatInput.uploadFileTooLarge.replace('{name}', file.name).replace('{size}', formatFileSize(file.size)));
+      return null;
+    }
+
     let filePath: string | undefined;
+    let pathFailure: unknown;
     try {
       filePath = await ipcService.getPathForFile(file);
     } catch (e) {
+      pathFailure = e;
       logger.warn('processFile - failed to get path', { error: e });
+    }
+
+    // PDF / Word / Excel 只能靠服务端路径抽正文；没有路径又没有本地兜底，直说原因，不塞乱码附件
+    const needsServerPath = category === 'pdf' || category === 'excel'
+      || (category === 'document' && file.name.toLowerCase().endsWith('.docx'));
+    if (pathFailure !== undefined && needsServerPath) {
+      const reason = pathFailure instanceof UploadFailureError
+        ? pathFailure.userMessage
+        : uploadFailureMessage({ status: 0, language: uiLanguage });
+      showToast('error', t.chatInput.uploadServerFailed.replace('{name}', displayName).replace('{reason}', reason));
+      return null;
     }
 
     // PDF 大文件只传路径，不受 MAX_FILE_SIZE 限制
     if (category === 'pdf' && filePath) {
-      const { text, pageCount } = await extractPdfText(t, filePath);
-      return {
-        id, type: 'file', category: 'pdf', name: displayName, size: file.size,
-        mimeType: 'application/pdf', data: text, pageCount, path: filePath,
-      };
+      try {
+        const result = await ipcService.extractPdfText(filePath);
+        if (result) {
+          return {
+            id, type: 'file', category: 'pdf', name: displayName, size: file.size,
+            mimeType: 'application/pdf', data: result.text, pageCount: result.pageCount, path: filePath,
+          };
+        }
+      } catch (e) {
+        logger.warn('PDF extraction failed', { error: e });
+      }
+      showToast('error', t.chatInput.uploadPdfFailed.replace('{name}', file.name));
+      discardRejectedUpload(filePath);
+      return null;
     }
 
-    // 非 PDF 文件超限时 toast 提示
+    // 仅剩 PDF 没拿到路径的情形会走到这里
     if (file.size > MAX_FILE_SIZE) {
       logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
       useComposerRejectedUploadsStore.getState().add({ name: displayName, size: file.size });
       showToast('warning', t.chatInput.uploadFileTooLarge.replace('{name}', file.name).replace('{size}', formatFileSize(file.size)));
+      discardRejectedUpload(filePath);
       return null;
     }
 
@@ -92,29 +133,34 @@ export function useFileUpload() {
         logger.warn('Docx extraction failed', { error: e });
       }
       showToast('error', t.chatInput.uploadDocxFailed.replace('{name}', file.name));
+      discardRejectedUpload(filePath);
       return null;
     }
 
     // Excel 文件处理
     if (category === 'excel' && filePath) {
-      const result = await ipcService.extractExcelText(filePath);
-      if (result) {
-        // Also extract JSON for SpreadsheetBlock interactive rendering
-        let sheetsJson: string | undefined;
-        try {
-          const jsonResult = await ipcService.extractExcelJson(filePath);
-          if (jsonResult) sheetsJson = JSON.stringify(jsonResult);
-        } catch { /* non-blocking */ }
+      try {
+        const result = await ipcService.extractExcelText(filePath);
+        if (result) {
+          // Also extract JSON for SpreadsheetBlock interactive rendering
+          let sheetsJson: string | undefined;
+          try {
+            const jsonResult = await ipcService.extractExcelJson(filePath);
+            if (jsonResult) sheetsJson = JSON.stringify(jsonResult);
+          } catch { /* non-blocking */ }
 
-        return {
-          id, type: 'file', category: 'excel', name: displayName, size: file.size,
-          mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          data: result.text, sheetCount: result.sheetCount, rowCount: result.rowCount, path: filePath,
-          sheetsJson,
-        };
+          return {
+            id, type: 'file', category: 'excel', name: displayName, size: file.size,
+            mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            data: result.text, sheetCount: result.sheetCount, rowCount: result.rowCount, path: filePath,
+            sheetsJson,
+          };
+        }
+      } catch (e) {
+        logger.warn('Excel extraction failed', { error: e });
       }
-      logger.warn('Excel extraction failed, falling back to binary warning');
       showToast('error', t.chatInput.uploadXlsxFailed.replace('{name}', file.name));
+      discardRejectedUpload(filePath);
       return null;
     }
 
@@ -122,6 +168,7 @@ export function useFileUpload() {
       const data = await readFileAsDataUrl(file);
       if (!data) {
         showToast('error', t.chatInput.uploadPptFailed.replace('{name}', file.name));
+        discardRejectedUpload(filePath);
         return null;
       }
 
@@ -139,6 +186,7 @@ export function useFileUpload() {
       const data = await readFileAsDataUrl(file);
       if (!data) {
         showToast('error', t.chatInput.uploadArchiveFailed.replace('{name}', file.name));
+        discardRejectedUpload(filePath);
         return null;
       }
 
@@ -153,6 +201,7 @@ export function useFileUpload() {
     if (category === 'document') {
       logger.warn('Unsupported Office document type', { fileName: file.name, mimeType: file.type });
       showToast('warning', t.chatInput.uploadUnsupported.replace('{name}', file.name));
+      discardRejectedUpload(filePath);
       return null;
     }
 
@@ -168,6 +217,7 @@ export function useFileUpload() {
         };
         reader.onerror = () => {
           showToast('error', t.chatInput.uploadImageFailed.replace('{name}', file.name));
+          discardRejectedUpload(filePath);
           resolve(null);
         };
         reader.readAsDataURL(file);
@@ -188,6 +238,7 @@ export function useFileUpload() {
         reader.onerror = () => {
           const kind = category === 'audio' ? t.chatInput.mediaKindAudio : t.chatInput.mediaKindVideo;
           showToast('error', t.chatInput.uploadMediaFailed.replace('{name}', file.name).replace('{kind}', kind));
+          discardRejectedUpload(filePath);
           resolve(null);
         };
         reader.readAsDataURL(file);
@@ -217,6 +268,7 @@ export function useFileUpload() {
       };
       reader.onerror = () => {
         showToast('error', t.chatInput.uploadTextFailed.replace('{name}', file.name));
+        discardRejectedUpload(filePath);
         resolve(null);
       };
       reader.readAsText(file);

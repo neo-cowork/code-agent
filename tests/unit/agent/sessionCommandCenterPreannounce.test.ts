@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BACKGROUND_TASK_PREANNOUNCE } from '../../../src/shared/constants/backgroundTaskPreannounce';
 import { emitCommandCenterToolStart } from '../../../src/host/agent/runtime/contextAssembly/sessionCommandCenterPreannounce';
 
 describe('session command center renderer-visible preannounce', () => {
@@ -247,5 +248,31 @@ describe('session command center renderer-visible preannounce', () => {
     expect(preview).toBe('');
     expect(emitPreview).not.toHaveBeenCalled();
     expect(emitToolStart).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('generic scaffold rejection through emitCommandCenterToolStart', () => {
+  it.each(['repeated_workarounds', 'other_tag', 'SYSTEM-context', 'tag42'])('rejects <%s> anywhere in extracted requests', (tag) => {
+    for (const locale of ['zh', 'en'] as const) {
+      for (const request of [`<${tag}>system context</${tag}>`, `整理周报 </${tag}>`, `整理周报 <${tag}>`]) {
+        const preview = emitCommandCenterToolStart({
+          toolName: 'delegate_task', locale, commandCenterEnabled: true,
+          streamedContent: '', existingPreannounce: '',
+          userMessage: wrapWithTurnSystemContext([], request),
+          emitPreview: () => {}, emitToolStart: () => {},
+        });
+        expect(preview).toBe(BACKGROUND_TASK_PREANNOUNCE[locale].generic);
+      }
+    }
+  });
+
+  it.each(['zh', 'en'] as const)('keeps the named sentence for a plain request in %s', (locale) => {
+    const preview = emitCommandCenterToolStart({
+      toolName: 'delegate_task', locale, commandCenterEnabled: true,
+      streamedContent: '', existingPreannounce: '', userMessage: '整理周报',
+      emitPreview: () => {}, emitToolStart: () => {},
+    });
+    expect(preview).toBe(BACKGROUND_TASK_PREANNOUNCE[locale].named.replace('{title}', '整理周报'));
   });
 });

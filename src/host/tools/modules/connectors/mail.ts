@@ -27,6 +27,7 @@ import {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
 import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 import { formatConnectorTime } from './connectorTime';
 
 type MailAction = 'get_status' | 'list_accounts' | 'list_mailboxes' | 'list_messages' | 'read_message';
@@ -121,7 +122,7 @@ async function executeMail(
     ctx.logger.debug('mail', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
       const output = formatConnectorStatusOutput('mail', status);
       return {
         ok: true,
@@ -227,7 +228,7 @@ async function executeMail(
         : `Mail connector failed: ${error instanceof Error ? error.message : String(error)}`,
       // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
       // 判据读 metadata.code，缺了它 mail 的授权被拒永远发不出环境卡片）。
-      ...(osascriptFailure ? { code: failure.code } : {}),
+      code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
   }
 }

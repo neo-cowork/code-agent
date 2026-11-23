@@ -4,6 +4,8 @@ import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
 import { generateMessageId } from '../../shared/utils/id';
+import path from 'node:path';
+import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
 import { attachAssistantCorrelation, stampAssistantMessageCorrelation } from '../../host/session/assistantCorrelation';
 import type { WebRouteLogger } from '../routes/routeTypes';
@@ -250,12 +252,46 @@ function isDuplicateMessageError(error: unknown): boolean {
   return message.includes('UNIQUE constraint failed') || message.includes('SQLITE_CONSTRAINT');
 }
 
+/**
+ * 建行时解析项目归属：先精确路径、再 workspace key；只查不铸造。
+ * 解析不到一律留 NULL，但必须留下可区分原因（不得静默）。
+ */
+function resolveProjectIdForNewSession(
+  logger: WebRouteLogger,
+  sessionId: string,
+  workingDirectory: string | undefined,
+): string | undefined {
+  const dir = workingDirectory?.trim();
+  if (!dir || !path.isAbsolute(dir)) {
+    logger.info?.(
+      `[AgentRouter] session ${sessionId} created without project_id: ${dir ? 'relative-directory' : 'empty-directory'}`,
+    );
+    return undefined;
+  }
+  try {
+    const service = getProjectService();
+    const project = service.getProjectForWorkspace(dir) ?? service.findProjectForWorkspace(dir);
+    if (!project) {
+      logger.info?.(`[AgentRouter] session ${sessionId} created without project_id: no-registered-project (${dir})`);
+      return undefined;
+    }
+    return project.id;
+  } catch (error) {
+    logger.warn(
+      `[AgentRouter] session ${sessionId} created without project_id: lookup-failed:`,
+      error instanceof Error ? error.message : String(error),
+    );
+    return undefined;
+  }
+}
+
 async function ensureDbSession(
   getDatabase: WebSessionStoreDeps['getDatabase'],
   sessionId: string,
   title: string,
   modelConfig: Pick<ModelConfig, 'provider' | 'model'>,
   workingDirectory?: string,
+  projectId?: string,
 ): Promise<DatabaseService> {
   const db = await getDatabase();
   const existing = db.getSession(sessionId);
@@ -264,6 +300,7 @@ async function ensureDbSession(
       title,
       modelConfig,
       ...(workingDirectory ? { workingDirectory } : {}),
+      ...(projectId ? { projectId } : {}),
     });
   } else {
     // renderer 端常用 '新对话' 占位 title 先创建 session 行，再发 user message。
@@ -606,6 +643,10 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         const sessionExists = cliSessionManager
           ? await prepareCliSessionForWrite(cliSessionManager, input.sessionId, input.title)
           : false;
+        const willCreateRow = cliSessionManager ? !sessionExists : true;
+        const projectId = willCreateRow
+          ? resolveProjectIdForNewSession(deps.logger, input.sessionId, input.workingDirectory)
+          : undefined;
         const db = cliSessionManager
           ? null
           : await ensureDbSession(
@@ -614,6 +655,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             input.title,
             input.modelConfig,
             input.workingDirectory,
+            projectId,
           );
         await persistMessageToDb(
           sm,
@@ -627,6 +669,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               // 与 infra SessionManager 的 owner 过滤对齐：无归属行在已登录进程里读写全报 not found
               userId: getAuthService().getCurrentUser()?.id ?? null,
               ...(input.workingDirectory ? { workingDirectory: input.workingDirectory } : {}),
+              ...(projectId ? { projectId } : {}),
             }
             : undefined,
         );

@@ -3,7 +3,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentTrajectorySessionQualitySummary } from '@shared/contract/agentTrajectory';
 import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
-import type { CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
+import type { CrossSessionSearchProjectScope, CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
 import { useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
 import { useSessionUIStore, type TrajectoryReviewFilter } from '../../../stores/sessionUIStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -14,7 +14,7 @@ import ipcService from '../../../services/ipcService';
 import { createLogger } from '../../../utils/logger';
 import { groupByWorkspace } from '../../../utils/workspaceGrouping';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DESIGN_WORKSPACE } from '@shared/constants';
-import { type SidebarProjectMeta } from '../../../utils/sidebarProjectSummary';
+import { primarySourceFolderMissing, type SidebarProjectMeta } from '../../../utils/sidebarProjectSummary';
 import {
   buildSessionSearchText,
   getSessionStatusPresentation,
@@ -33,6 +33,12 @@ import {
 } from '../../../utils/sidebarMessageSearch';
 import { buildSessionReplayEvidenceMap } from '../../../utils/sessionReplayEvidence';
 import { getProjectArtifacts, getProjectDetail } from '../../../services/projectClient';
+import {
+  hideArchivedCollaborationSpaces,
+  mergeEmptyCollaborationSpaces,
+  overlaySpaceCatalogMeta,
+} from '../../../utils/emptyCollaborationSpaces';
+import { useEmptyCollaborationSpaces } from './useEmptyCollaborationSpaces';
 
 const logger = createLogger('Sidebar');
 
@@ -196,6 +202,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     Record<string, AgentTrajectorySessionQualitySummary>
   >({});
   // 注意：Sidebar 测试按 useState 调用序号强制注入 reviewItems（sidebar.reviewActions.test），新增 state 一律放其后。
+  // 空空间目录的两枚 useState 也在这之后，避免把 reviewItems 的序号从 17 往后挤。
+  const { spaces: collaborationSpaces, revision: collaborationSpaceRevision } = useEmptyCollaborationSpaces();
   const [messageSearchFailed, setMessageSearchFailed] = useState(false);
   // 全库搜索命中、但不在侧栏已加载列表里的会话（主机返回的元数据合成，已排除归档）
   const [remoteSearchSessions, setRemoteSearchSessions] = useState<SessionWithMeta[]>([]);
@@ -209,9 +217,19 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [],
   );
 
-  // 只有「本项目」范围才把搜索限制在已加载会话 id 内；「全部」交给主机搜整个历史。
-  const restrictedSearchKey =
-    effectiveSearchScope === 'current-project' ? Array.from(allowedSearchSessionIds).sort().join('\n') : null;
+  // 「本项目」范围发项目描述符，由主机在 SQL 层按整库过滤；不再用侧栏已加载（最新 50 条）的会话 id 限定。
+  const currentSession = sessions.find((session) => session.id === currentSessionId);
+  const scopeProjectId = currentSession?.projectId?.trim() || '';
+  const scopeWorkingDirectory = currentSession?.workingDirectory?.trim() || '';
+  const projectScopeKey =
+    effectiveSearchScope === 'current-project'
+      ? JSON.stringify(scopeProjectId ? { projectId: scopeProjectId } : { workingDirectory: scopeWorkingDirectory })
+      : null;
+
+  // 切范围时先丢掉上一个范围的远端行，避免新结果回来前短暂混入另一个项目的会话
+  useEffect(() => {
+    setRemoteSearchSessions([]);
+  }, [projectScopeKey]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -223,15 +241,14 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       return undefined;
     }
 
-    const restrictedIds = restrictedSearchKey === null ? null : restrictedSearchKey.split('\n').filter(Boolean);
-    const restrictedSet = restrictedIds ? new Set(restrictedIds) : undefined;
+    const projectScope = projectScopeKey === null ? null : (JSON.parse(projectScopeKey) as CrossSessionSearchProjectScope);
     let cancelled = false;
     const timer = setTimeout(() => {
       setMessageSearchLoading(true);
       void ipcService
         .invoke(IPC_CHANNELS.SESSION_SEARCH, {
           query,
-          options: restrictedIds ? { limit: 80, sessionIds: restrictedIds } : { limit: 80 },
+          options: projectScope ? { limit: 80, projectScope } : { limit: 80 },
         })
         .then((results) => {
           if (cancelled) return;
@@ -242,11 +259,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             throw new Error('SESSION_SEARCH returned no result payload');
           }
           const messageHits = typedResults.results.filter((item) => item.sessionArchived !== true);
-          setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(messageHits, restrictedSet));
-          if (restrictedSet) {
-            setRemoteSearchSessions([]);
-            return;
-          }
+          setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(messageHits));
           const remote = new Map<string, SessionWithMeta>();
           for (const item of messageHits) {
             if (item.sessionTitle === undefined || remote.has(item.sessionId)) continue;
@@ -283,7 +296,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [restrictedSearchKey, searchQuery]);
+  }, [projectScopeKey, searchQuery]);
 
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
@@ -381,10 +394,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const searchResultSessions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const loadedIds = new Set(sessions.map((session) => session.id));
-    const remoteRows =
-      query && effectiveSearchScope === 'all'
-        ? remoteSearchSessions.filter((session) => !loadedIds.has(session.id))
-        : [];
+    const remoteRows = query ? remoteSearchSessions.filter((session) => !loadedIds.has(session.id)) : [];
     return [...searchableSessions
       .filter((session) => allowedSearchSessionIds.has(session.id))
       .filter((session) => {
@@ -411,7 +421,6 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   }, [
     allowedSearchSessionIds,
     language,
-    effectiveSearchScope,
     remoteSearchSessions,
     sessions,
     backgroundSessionMap,
@@ -471,7 +480,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
   // sorted by latest activity; sessions without a workingDirectory go into a
   // trailing uncategorized bucket. No time sub-groups inside workspaces.
-  const workspaceGroupedSessions = useMemo(
+  const sessionGroupedWorkspaces = useMemo(
     // 设计草稿会话（工作目录在 .code-agent/design 下）不进聊天侧栏——设计模式有自己的历史。
     () =>
       groupByWorkspace(
@@ -508,17 +517,27 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       })),
     [backgroundSessionMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates, t],
   );
+  const groupedWithEmptySpaces = useMemo(
+    () => mergeEmptyCollaborationSpaces(
+      sessionGroupedWorkspaces,
+      collaborationSpaces,
+      searchQuery.trim() !== '' || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter,
+    ),
+    [collaborationSpaces, hasActiveTrajectoryFilter, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
+  );
+  // 归档过滤之前取 id：详情回来把空间标成 archived 后组会从展示列表消失，
+  // 若这里跟着消失，effect 会清掉 meta，组又出现，来回闪。
   const visibleProjectIds = useMemo(
     () =>
       Array.from(
         new Set(
-          workspaceGroupedSessions
+          groupedWithEmptySpaces
             .filter((group) => !group.isUncategorized)
             .map((group) => group.projectId?.trim())
             .filter((projectId): projectId is string => Boolean(projectId)),
         ),
       ).sort(),
-    [workspaceGroupedSessions],
+    [groupedWithEmptySpaces],
   );
   const [projectMetaById, setProjectMetaById] = useState<Record<string, SidebarProjectMeta>>({});
   // visibleProjectIds 已 .sort()，join 成内容稳定 key：活动轮里每条 SSE 事件都会重建
@@ -526,6 +545,14 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   // effect 依赖，会随每个 token 重拉 project detail/artifacts 打爆 socket 池（ERR_INSUFFICIENT_RESOURCES）。
   // 与下方 visibleSessionIdsKey / trajectoryQualityCandidateKey 同款处理。
   const visibleProjectIdsKey = visibleProjectIds.join('\n');
+  const projectMetaForDisplay = useMemo(
+    () => overlaySpaceCatalogMeta(projectMetaById, collaborationSpaces),
+    [collaborationSpaces, projectMetaById],
+  );
+  const workspaceGroupedSessions = useMemo(
+    () => hideArchivedCollaborationSpaces(groupedWithEmptySpaces, projectMetaForDisplay),
+    [groupedWithEmptySpaces, projectMetaForDisplay],
+  );
   const visibleSessionIds = useMemo(
     () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
     [workspaceGroupedSessions],
@@ -590,6 +617,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
               })),
               sessionCount: detail.sessionIds.length,
               updatedAt: detail.project.updatedAt,
+              folderMissing: primarySourceFolderMissing(detail.sources),
             },
           ];
         } catch (error) {
@@ -612,7 +640,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     };
     // 依赖 visibleProjectIdsKey（内容稳定）而非 visibleProjectIds（每次渲染新引用），
     // 否则活动轮里每个 SSE tick 都会重拉 → 请求风暴。
-  }, [visibleProjectIdsKey]);
+    // collaborationSpaceRevision：改名/归档/删除后 id 集合可能不变，仍要重拉详情。
+  }, [collaborationSpaceRevision, visibleProjectIdsKey]);
 
   useEffect(() => {
     if (!canOpenSessionReplay || visibleSessionIds.length === 0) {
@@ -666,7 +695,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     workspaceGroupedSessions,
     visibleProjectIds,
     visibleSessionIds,
-    projectMetaById,
+    projectMetaById: projectMetaForDisplay,
     setProjectMetaById,
   };
 }

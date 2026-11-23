@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NEEDS_INPUT_NATIVE_FALLBACK } from '../../../../src/shared/constants/timeouts';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../../../src/shared/parkedApprovalLocation';
+import { AppWindow } from '../../../../src/host/platform/windowBridge';
 
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
@@ -90,6 +91,17 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     });
   });
 
+  it('background native fallback uses English action copy', async () => {
+    platformMocks.language = 'en';
+    notificationService.setNotificationSessionTitleResolver(async () => 'Sales workbook');
+    setDaemonQuitIntent('background');
+    notificationService.notifyNeedsInput({ sessionId: 's-en', title: 'raw', body: 'raw', tool: 'excel_generate' });
+    await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith({
+      id: expect.any(String), sessionId: 's-en', title: 'Sales workbook', body: 'Waiting for your OK: Export spreadsheet',
+    });
+  });
+
   it('原生通知文案不带工具名（不复制调用方 title/body）', async () => {
     setDaemonQuitIntent('background');
     notificationService.notifyNeedsInput({
@@ -131,14 +143,19 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     expect(nativeSender).toHaveBeenCalledTimes(1);
   });
 
-  it('原生兜底只挂在 needs_input 上：任务完成通知在 background 下不弹原生', async () => {
+  it('任务完成通知在 background 意图下仍有交互窗口时只投递 renderer', async () => {
     setDaemonQuitIntent('background');
-    notificationService.notifyTaskComplete({
-      sessionId: 's1', sessionTitle: '日报', duration: 1000, toolsUsed: [], succeeded: true,
-    }, { force: true });
-    await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
-    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
-    expect(nativeSender).not.toHaveBeenCalled();
+    const window = new AppWindow();
+    try {
+      notificationService.notifyTaskComplete({
+        sessionId: 's1', sessionTitle: '日报', duration: 1000, toolsUsed: [], succeeded: true,
+      }, { force: true });
+      await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+      expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+      expect(nativeSender).not.toHaveBeenCalled();
+    } finally {
+      window.destroy();
+    }
   });
 
   it('CODE_AGENT_NOTIFICATION_DRY_RUN=1 + background 时只记录不弹原生通知（记 dry-run 跳过日志）', async () => {

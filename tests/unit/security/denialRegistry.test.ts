@@ -146,6 +146,18 @@ describe('DenialRegistry（(sessionId, 指纹) 键与容量有界）', () => {
 
 describe('goal registry is independent of fingerprint availability', () => {
   beforeEach(() => getDenialRegistry().clearAll());
+  it.each(['declined from inbox', 'already includes guidance'])('responder reason %s retains closing guidance exactly once', async (reason) => {
+    const guidance = userDeniedGoalStickyError('Write').modelText;
+    const message = reason === 'already includes guidance' ? `declined from inbox ${guidance}` : reason;
+    const result = await getDenialRegistry().observeApproval({
+      sessionId: 'goal', sourceMessageId: 'user-1', toolName: 'Write', enabled: true,
+      ask: async () => ({ approved: false, denialSource: 'user', message }),
+    });
+    expect(result.message).toBe(`declined from inbox ${guidance}`);
+    expect(result.message?.split(guidance)).toHaveLength(2);
+    expect(result.message).toContain('End this turn now with exactly one short final sentence');
+    expect(result.message).not.toMatch(/how to proceed|AskUserQuestion/);
+  });
   it('null fingerprint still records a real user denial, isolated by family/session/message', async () => {
     const registry = getDenialRegistry();
     const base = { sessionId: 'goal', sourceMessageId: 'user-1', toolName: 'custom_action', enabled: true };

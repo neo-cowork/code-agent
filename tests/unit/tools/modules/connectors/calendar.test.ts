@@ -154,6 +154,7 @@ describe('calendarModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toContain('end_ms must be greater than or equal to start_ms');
+        expect(result.code).toBe('CONNECTOR_FAILED');
         expect(result.error).not.toContain('读取失败');
       }
     });

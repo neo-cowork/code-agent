@@ -51,10 +51,10 @@ export function createProjectTrustRouter(deps: ProjectTrustRouterDeps): Router {
     } catch (error) {
       if (error instanceof ProjectTrustConfirmError) {
         deps.logger.warn('[ProjectTrust] confirmation rejected', { sessionId, projectId, reason: error.reason });
-        res.status(422).json({
-          error: 'Project folder trust could not be re-confirmed',
-          code: 'PROJECT_TRUST_CONFIRM_REJECTED',
+        res.json({
+          confirmed: false,
           reason: error.reason,
+          ...(error.folderName ? { folderName: error.folderName } : {}),
         });
         return;
       }

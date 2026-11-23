@@ -23,7 +23,7 @@ import {
 } from './sessionRepositoryParsers';
 import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import * as sidecarState from './sessionRepositorySidecarState';
-import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryParsers';
+import { getLatestUserAuthorId as readLatestUserAuthorId, serializeMessageMetadata } from './sessionRepositoryParsers';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
 import {
@@ -58,6 +58,7 @@ import {
 } from './sessionRepositoryBoundary';
 import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
 import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
+import { pushProjectScopeCondition } from './sessionProjectScope';
 
 export type { StoredSession, StoredMessage };
 export type {
@@ -509,7 +510,7 @@ export class SessionRepository {
         message.effortLevel || null,
         this.resolveSyncedAt(options),
         message.contentParts ? JSON.stringify(message.contentParts) : null,
-        message.metadata ? JSON.stringify(message.metadata) : null,
+        serializeMessageMetadata(message.metadata, message.modelDecision),
         message.isMeta ? 1 : 0,
         message.compaction ? JSON.stringify(message.compaction) : null,
         message.visibility ?? 'active',
@@ -666,9 +667,9 @@ export class SessionRepository {
       setClauses.push('content_parts = ?');
       values.push(updates.contentParts ? JSON.stringify(updates.contentParts) : null);
     }
-    if (updates.metadata !== undefined) {
+    if (updates.metadata !== undefined || updates.modelDecision !== undefined) {
       setClauses.push('metadata = ?');
-      values.push(updates.metadata ? JSON.stringify(updates.metadata) : null);
+      values.push(serializeMessageMetadata(updates.metadata, updates.modelDecision, (this.db.prepare('SELECT metadata FROM messages WHERE id = ?').get(messageId) as { metadata?: unknown } | undefined)?.metadata));
     }
     if (updates.isMeta !== undefined) {
       setClauses.push('is_meta = ?');
@@ -1043,11 +1044,12 @@ export class SessionRepository {
   // Session Archive
   // --------------------------------------------------------------------------
 
-  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): StoredSession[] {
+  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null, projectScope?: import('../../../../shared/ipc/types').CrossSessionSearchProjectScope): StoredSession[] {
     const filters = ["s.status = 'archived'", 's.is_deleted = 0'];
     const params: unknown[] = [];
     this.applyOwnerFilter(filters, params, userId);
-    const rows = this.db
+    pushProjectScopeCondition(filters, params, projectScope);
+    return (this.db
       .prepare(
         `
       SELECT s.*,
@@ -1059,9 +1061,7 @@ export class SessionRepository {
       LIMIT ? OFFSET ?
     `,
       )
-      .all(...params, limit, offset) as SQLiteRow[];
-
-    return rows.map((row) => rowToSession(row));
+      .all(...params, limit, offset) as SQLiteRow[]).map((row) => rowToSession(row));
   }
 
   archiveSession(sessionId: string, updatedAt?: number): StoredSession | null {

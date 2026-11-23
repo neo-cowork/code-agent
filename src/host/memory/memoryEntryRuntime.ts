@@ -35,6 +35,7 @@ import {
   scopeMatches,
   scoreMemoryEntry,
   tokenizeQuery,
+  expandTokensWithWordSegments,
   type ProjectMemoryMatch,
 } from './memoryEntryScoring';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
@@ -607,7 +608,9 @@ export async function packMemoryEntries(
   const kinds = request.kinds?.length ? new Set<MemoryEntryKind>(request.kinds) : null;
   const excludedEntryIds = new Set(request.excludeEntryIds || []);
   const query = (request.query || '').trim();
-  const tokens = tokenizeQuery(query);
+  const baseTokens = tokenizeQuery(query);
+  const requireMatch = Boolean(request.requireQueryMatch) && baseTokens.length > 0;
+  const tokens = requireMatch ? expandTokensWithWordSegments(query, baseTokens) : baseTokens;
   const entries = (await listUnifiedMemoryEntries(db)).entries;
 
   // 混合召回（roadmap 2.5）：listUnifiedMemoryEntries 的 DB 侧只取最近窗口，
@@ -657,6 +660,7 @@ export async function packMemoryEntries(
       return { entry, score: scored.score, reasons: scored.reasons };
     })
     .filter((item) => tokens.length === 0 || item.score > 0)
+    .filter((item) => !requireMatch || item.reasons.some((reason) => reason.startsWith('query-match:')))
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return b.entry.updatedAt - a.entry.updatedAt;

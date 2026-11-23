@@ -112,7 +112,7 @@ describe('CronWriteScopePanel 三态', () => {
   it('未授权 + 解析不出文件夹：提示先在对话里选工作文件夹，不出按钮', () => {
     const job = makeJob({ action: { type: 'agent', agentType: 'default', prompt: '写一条笔记' } });
     render(<CronWriteScopePanel job={job} />);
-    expect(screen.getByTestId('cron-write-scope-no-folder').textContent).toContain('先在对话里给这个任务选一个工作文件夹');
+    expect(screen.getByTestId('cron-write-scope-no-folder').textContent).toContain('先编辑任务，给它选一个工作文件夹');
     expect(screen.queryByTestId('cron-write-scope-allow')).toBeNull();
     expect(screen.queryByTestId('cron-write-scope-revoke')).toBeNull();
   });
@@ -126,7 +126,7 @@ describe('CronWriteScopePanel 三态', () => {
 
     render(<CronWriteScopePanel job={job} />);
     await act(async () => { fireEvent.click(screen.getByTestId('cron-write-scope-allow')); });
-    expect(screen.getByTestId('cron-write-scope-no-folder').textContent).toContain('先在对话里给这个任务选一个工作文件夹');
+    expect(screen.getByTestId('cron-write-scope-no-folder').textContent).toContain('先编辑任务，给它选一个工作文件夹');
     expect(screen.queryByTestId('cron-write-scope-allow')).toBeNull();
   });
 

@@ -37,6 +37,7 @@ vi.mock('../../../src/host/cron/cronAgentSession', () => ({
 vi.mock('../../../src/host/cron/cronAgentRoleContext', () => ({ buildCronAgentRunOptions: async () => ({}) }));
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: vi.fn(),
       sendMessage: async () => undefined,

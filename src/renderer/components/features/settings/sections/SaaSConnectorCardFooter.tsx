@@ -7,23 +7,18 @@ interface SaaSConnectorCardFooterProps {
     requiresClientSecret: boolean;
     clientSecretConfigured: boolean;
   };
-  badge: string;
   text: {
     actions: { cancel: string };
-    badges: { connecting: string };
     clientSecretSaved: string;
-    metaSeparator: string;
   };
-  busy: boolean;
   connecting: boolean;
   onCancel: (providerId: string) => unknown;
 }
 
+// 状态词只在卡片头部徽标里说一次；这里只留取消按钮和「密钥已保存」备注。
 export const SaaSConnectorCardFooter: React.FC<SaaSConnectorCardFooterProps> = ({
   status,
-  badge,
   text,
-  busy,
   connecting,
   onCancel,
 }) => {
@@ -41,12 +36,7 @@ export const SaaSConnectorCardFooter: React.FC<SaaSConnectorCardFooterProps> = (
     );
   }
 
-  return (
-    <div className={`mt-3 text-[11px] ${busy ? 'text-badge-warning' : 'text-zinc-500'}`}>
-      {busy ? text.badges.connecting : badge}
-      {status.requiresClientSecret && status.clientSecretConfigured
-        ? `${text.metaSeparator}${text.clientSecretSaved}`
-        : ''}
-    </div>
-  );
+  if (!(status.requiresClientSecret && status.clientSecretConfigured)) return null;
+
+  return <div className="mt-3 text-[11px] text-zinc-500">{text.clientSecretSaved}</div>;
 };

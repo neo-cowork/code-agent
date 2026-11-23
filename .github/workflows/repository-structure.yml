@@ -43,3 +43,7 @@ jobs:
       # 脚本零依赖（只用 node: 内置模块），无需 npm install。
       - name: Check shell scripts fail loud
         run: node scripts/shell-fail-loud-lint.mjs
+
+      # 红线：脚本禁止直接 exec *.app/Contents/MacOS/*（沙箱里 AppKit abort → 系统崩溃框），只能走 open。
+      - name: Check no direct exec of app bundle binary
+        run: node scripts/ci/check-no-direct-app-exec.mjs

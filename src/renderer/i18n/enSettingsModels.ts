@@ -82,6 +82,13 @@ export const enSettingsModels = {
         unconfiguredPrefix: 'Needs Key · ',
       },
       header: {
+        apiKeyAccount: 'Provided by your account',
+        apiKeyEnvironment: 'Using the key from your environment',
+        apiKeyUnsaved: 'API Key not saved yet',
+        apiKeyAvailable: 'API Key available',
+        noKeyGuide: 'No API key yet? Add one here',
+        keyNeededSuffix: ' (Key needed)',
+
         unsetAddress: 'No address set',
         noApiKey: 'No API Key needed',
         apiKeySaved: 'API Key saved',
@@ -594,7 +601,7 @@ export const enSettingsModels = {
         discover: 'Discover connections',
       },
       toast: {
-        refreshSuccess: 'MCP configuration refreshed from cloud',
+        refreshSuccess: 'External tools configuration refreshed from cloud',
         refreshFailed: 'Refresh failed',
         reconnectSuccessSuffix: ' reconnected',
         reconnectFailedMiddle: ' reconnect failed: ',
@@ -623,7 +630,7 @@ export const enSettingsModels = {
         cancelling: 'Cancelling...',
         cancelInstall: 'Cancel connection',
         refreshing: 'Refreshing...',
-        refreshFromCloud: 'Refresh MCP config from cloud',
+        refreshFromCloud: 'Refresh external tools config from cloud',
         addServer: 'Add server',
         stats: {
           overview: { label: 'Overview', caption: 'Connected / total' },
@@ -709,6 +716,10 @@ export const enSettingsModels = {
           notConnected: 'Not connected · Open for connection options',
           connectionSetup: 'Connection setup',
           secretInNextStep: 'The next step opens a secure setup panel. Secrets use password fields and are saved to secure storage on this device.',
+          addDesktopOnly: 'Please add it in the desktop app. This page is view-only.',
+          enableDesktopOnly: 'Enable it in the desktop app. This page is view-only.',
+          addRequiresAdmin: 'You need administrator permissions to add this connector.',
+          browserSignIn: 'Sign in via browser',
           tryIt: 'Try it',
           examples: [
             'Use {name} to gather the external data this task needs and list the key results.',
@@ -765,7 +776,7 @@ export const enSettingsModels = {
         uninstall: 'Uninstall',
         install: 'Install',
         installedPrefix: 'Installed; available from the next conversation turn: ',
-        approvalQueued: 'Waiting for your approval to run: ',
+        approvalQueued: 'Needs your approval to run: ',
         versionsTitle: 'Saved versions',
         runningVersion: 'Running',
         lastSuccessfulVersion: 'Last successful',
@@ -858,7 +869,7 @@ export const enSettingsModels = {
         uninstallSuccessPrefix: 'Uninstalled ',
       },
       trustSummary: {
-        prefix: 'Trust: ',
+        prefix: '',
         skillsUnit: 'skills',
         commandsUnit: 'commands',
         permissionsUnit: 'permissions',
@@ -968,6 +979,8 @@ export const enSettingsModels = {
         updatePrefix: ' · Updated ',
         refresh: 'Refresh',
         remove: 'Remove',
+        pluginCount: { one: '{count} plugin', other: '{count} plugins' },
+        autoUpdate: 'auto update',
       },
       visibleList: {
         title: 'Visible plugin list',

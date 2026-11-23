@@ -1,5 +1,5 @@
 // ============================================================================
-// ProjectMembersCard —— 右栏第五卡「成员」（仅 cloudProjectId 非空的云协同空间渲染）。
+// ProjectMembersCard —— 右栏第五卡「成员」（仅 cloudProjectId 非空的云协作空间渲染）。
 // 只读列表 + 「邀请」入口（走页头同一邀请 Modal，逻辑在 useProjectSpaceInvite，不复制）。
 // 视觉节奏复用 ProjectConfigCard（同款 section 边框/标题行），但不硬套其选用交互。
 // 加载/空/取数失败三态全覆盖，卡不消失（房规：能力不可用要降级提示不是消失）。

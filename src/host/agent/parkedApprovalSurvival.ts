@@ -48,10 +48,27 @@ export function hashLedgerFormArgs(args: Record<string, unknown> | undefined): s
   return createHash('sha256').update(canonicalJsonStringify(args)).digest('hex');
 }
 
+/** Strip only added, verifiable large-text annotations; original keys must all survive unchanged. */
+function withoutAddedLedgerAnnotations(original: unknown, ledger: unknown): unknown {
+  if (Array.isArray(original) && Array.isArray(ledger)) {
+    return ledger.map((value, index) => withoutAddedLedgerAnnotations(original[index], value));
+  }
+  if (!original || typeof original !== 'object' || Array.isArray(original)
+    || !ledger || typeof ledger !== 'object' || Array.isArray(ledger)) return ledger;
+  const source = original as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(ledger).filter(([key, value]) => {
+    if (Object.hasOwn(source, key)) return true;
+    const field = /^(content|old_text|new_text)_length$/.exec(key)?.[1];
+    if (field && typeof source[field] === 'string' && value === source[field].length) return false;
+    return !(key === 'content_lines' && typeof source.content === 'string'
+      && value === source.content.split('\n').length);
+  }).map(([key, value]) => [key, withoutAddedLedgerAnnotations(source[key], value)]));
+}
+
 /**
  * 执行器侧的存活原料计算：对「这台工具现在真会拿去执行的参数」取账本形
  * （与 messageProcessor 落库前同一套 sanitize），算指纹并判定忠实性。
- * ledgerFaithful=false（sanitize 改动了 args，如 Write 大文本截断）→ 行不可存活。
+ * ledgerFaithful=false（sanitize 丢失或改写了原参数，如 Write 大文本截断）→ 行不可存活。
  */
 export function computeLedgerArgsSurvival(
   toolName: string,
@@ -64,7 +81,7 @@ export function computeLedgerArgsSurvival(
   }])?.[0]?.arguments ?? args;
   return {
     argsFingerprint: hashLedgerFormArgs(ledgerForm),
-    ledgerFaithful: canonicalJsonStringify(args) === canonicalJsonStringify(ledgerForm),
+    ledgerFaithful: canonicalJsonStringify(args) === canonicalJsonStringify(withoutAddedLedgerAnnotations(args, ledgerForm)),
   };
 }
 

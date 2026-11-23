@@ -5,7 +5,7 @@
 // control methods (cancel/interrupt/steer), plan mode, structured output
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHookManager } from '../../../src/host/hooks';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -389,6 +389,7 @@ import {
   ConversationRuntime,
   SteerRejectedError,
 } from '../../../src/host/agent/runtime/conversationRuntime';
+import { buildDelegatedTaskPrompt } from '../../../src/host/services/commandCenter/delegationGuidance';
 import { MEMORY_OFF_NOTICE } from '../../../src/shared/constants';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
@@ -1304,6 +1305,24 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('does not fall back to database-seed when the packer matched nothing for the query', async () => {
+      vi.mocked(buildPackedSeedMemory).mockResolvedValue({
+        block: '',
+        packed: { items: [], selectedCount: 0, totalCandidates: 0, budget: 800 } as any,
+      });
+
+      await runtime.initializeRun('帮我把这三个网页总结成周报');
+
+      expect(buildSeedMemoryBlock).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'user-memory',
+      );
+      const traces = listMemoryInjectionTraces({ sessionId: 'test-session-1' });
+      expect(traces).toContainEqual(expect.objectContaining({ blockType: 'user-memory', injected: false }));
+      expect(traces).not.toContainEqual(expect.objectContaining({ blockType: 'user-memory', source: 'database-seed' }));
+    });
+
     it('injects user directives and ordinary memory as separate historical-background blocks', async () => {
       vi.mocked(buildPackedUserDirectives).mockResolvedValue({
         block: '## User Directives\n<memory-pack>\n- [1] Keep PRs fail closed\n</memory-pack>',
@@ -1446,7 +1465,71 @@ describe('ConversationRuntime', () => {
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
     });
 
-    it('drops a bare-word alias skill injection on a one-turn file-deliverable turn', async () => {
+    describe('skill allowed-tools boundary vs delegated background run', () => {
+      // 真实 resolver/上下文构建与内置技能，给 dream 和 distill 加上测试用的作者别名
+      async function useRealBuiltinResolution(): Promise<void> {
+        const actual = await vi.importActual<
+          typeof import('../../../src/host/services/skills/skillInvocationResolver')
+        >('../../../src/host/services/skills/skillInvocationResolver');
+        const { BUILTIN_SKILLS } = await import('../../../src/host/services/skills/builtinSkills');
+        const skills = BUILTIN_SKILLS.map((skill) => ['dream', 'distill'].includes(skill.name) ? { ...skill, aliases: [`run ${skill.name}`] } : skill);
+        vi.mocked(resolveSkillInvocation).mockImplementation(async (message: string) => actual.resolveSkillInvocationFromSkills(message, skills));
+        vi.mocked(buildSkillInvocationContext).mockImplementation(actual.buildSkillInvocationContext);
+      }
+
+      afterEach(() => {
+        vi.mocked(resolveSkillInvocation).mockReset().mockResolvedValue(null);
+        vi.mocked(buildSkillInvocationContext).mockReset();
+      });
+
+      it('foreground run with a hand-written "scope" message keeps the task-brief-builder boundary (Bash stays outside it)', async () => {
+        await useRealBuiltinResolution();
+        await runtime.initializeRun('help me scope this task before writing code');
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder', matchKind: 'alias' });
+        expect(ctx.turn.skillToolBoundary?.skillName).toBe('task-brief-builder');
+        expect(ctx.turn.skillToolBoundary?.allowedTools).not.toContain('Bash');
+      });
+
+      it('delegated (auxiliary) run with the delegated prompt gets neither skill context nor boundary', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        await runtime.initializeRun(buildDelegatedTaskPrompt('open example.com and read the heading'));
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+        expect(ctx.turn.activeSkillContextBlock).toBeUndefined();
+        expect(ctx.turn.skillToolBoundary).toBeUndefined();
+      });
+
+      it('auxiliary run keeps the strict boundary for a dream or distill frontmatter alias hit', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        for (const name of ['dream', 'distill']) {
+          ctx.turn.setSkillToolBoundary(undefined);
+          await runtime.initializeRun(`run ${name}`);
+          expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: name, matchKind: 'alias' });
+          expect(ctx.turn.skillToolBoundary).toMatchObject({ skillName: name, strict: true });
+        }
+      });
+
+      it('delegated (auxiliary) run drops an alias word arriving only inside the machine-built envelope', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        await runtime.initializeRun(
+          buildDelegatedTaskPrompt('open example.com and read the heading', 'run dream while it runs'),
+        );
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+        expect(ctx.turn.skillToolBoundary).toBeUndefined();
+      });
+
+      it('delegated run still honours an explicit /slash skill boundary', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        await runtime.initializeRun('/task-brief-builder open example.com');
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ matchKind: 'slash' });
+        expect(ctx.turn.skillToolBoundary?.skillName).toBe('task-brief-builder');
+      });
+    });
+
+    it('drops a frontmatter alias skill injection on a one-turn file-deliverable turn', async () => {
       // 模块 mock 默认透传 retainSkillInvocationForTurn；这里换上真实现来测装配围栏。
       // 消费侧过滤语义本身的断言在 skillInvocationResolver.test.ts。
       const actual = await vi.importActual<
@@ -1465,11 +1548,11 @@ describe('ConversationRuntime', () => {
           source: 'user',
         },
         matchKind: 'alias',
-        matchedText: 'docx',
-        args: '请用 docx 生成一份周报 .docx 文件，不要问我问题',
-        confidence: 0.87,
-        aliases: ['docx'],
-        reason: 'name alias matched',
+        matchedText: '周报排版',
+        args: '请帮我做周报排版，生成 .docx 文件，不要问我问题',
+        confidence: 0.91,
+        aliases: ['周报排版'],
+        reason: 'frontmatter alias matched',
       };
       const passthrough = vi.mocked(retainSkillInvocationForTurn).getMockImplementation();
       vi.mocked(retainSkillInvocationForTurn).mockImplementation(actual.retainSkillInvocationForTurn);
@@ -1477,8 +1560,8 @@ describe('ConversationRuntime', () => {
         .mockResolvedValueOnce(aliasInvocation)
         .mockResolvedValueOnce(aliasInvocation);
       try {
-        // 文件交付轮（含 .docx + 生成动词）：围栏丢弃裸词别名注入，不装配 skill 上下文
-        await runtime.initializeRun('请用 docx 生成一份周报 .docx 文件，不要问我问题');
+        // 文件交付轮（含 .docx + 生成动词）：围栏丢弃别名注入，不装配 skill 上下文
+        await runtime.initializeRun(aliasInvocation.args!);
         expect(buildSkillInvocationContext).not.toHaveBeenCalled();
         expect(ctx.turn.activeSkillInvocation).toBeUndefined();
 
@@ -1487,7 +1570,7 @@ describe('ConversationRuntime', () => {
           block: '<required-skill-invocation name="docx">...</required-skill-invocation>',
           contextModifier: {},
         });
-        await runtime.initializeRun('请用 docx 帮我看看这份周报的排版建议');
+        await runtime.initializeRun('请帮我看看周报排版建议');
         expect(buildSkillInvocationContext).toHaveBeenCalledTimes(1);
         expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'docx', matchKind: 'alias' });
       } finally {

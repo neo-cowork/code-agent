@@ -631,3 +631,35 @@ it.each([['zh', '待办'], ['en', 'Todo']] as const)('TaskWorkspaceOverview modu
   expect(screen.getByTestId('overview-todo-module').getAttribute('aria-label')).toBe(label);
   expect(screen.getByTestId('overview-todo-module').textContent).toContain(label);
 });
+
+// FB-2291：右栏 MCP 行不再出现 mcp__ 原文 / 内部 server slug。
+// cua-driver（Computer Use 后端）出「电脑操作」，其余 server 出展示名。
+describe('上下文模块 MCP 行人话名（FB-2291）', () => {
+  it('cua-driver 工具行显示「电脑操作」，不出现 mcp__ / cua-driver', () => {
+    locale.language = 'zh';
+    runWorkbenchState.tools = [
+      { id: 'tool:mcp__cua-driver__list_apps', label: 'mcp__cua-driver__list_apps', source: 'mcp', callable: true, activatedForTurn: true },
+    ] as never;
+
+    render(<TaskWorkspaceOverview />);
+    const contextModule = screen.getByTestId('overview-context-module');
+    const text = contextModule.textContent || '';
+    expect(text).not.toContain('mcp__');
+    expect(text).not.toContain('cua-driver');
+    expect(text).toContain('电脑操作');
+  });
+
+  it('未知连字 server 行出 Title Case 展示名，不回原文', () => {
+    locale.language = 'zh';
+    runWorkbenchState.tools = [
+      { id: 'tool:mcp__totally-unknown-server__do_thing', label: 'mcp__totally-unknown-server__do_thing', source: 'mcp', callable: true, activatedForTurn: true },
+    ] as never;
+
+    render(<TaskWorkspaceOverview />);
+    const contextModule = screen.getByTestId('overview-context-module');
+    const text = contextModule.textContent || '';
+    expect(text).not.toContain('mcp__');
+    expect(text).not.toContain('totally-unknown-server');
+    expect(text).toContain('Totally Unknown Server');
+  });
+});

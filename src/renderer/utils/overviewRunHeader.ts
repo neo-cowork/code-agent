@@ -45,8 +45,10 @@ export function deriveRunOverviewTone(status: RunUiStatus): RunOverviewTone {
 }
 
 export interface OverviewRunHeaderModel {
-  /** 当前轮任务名：run 用户指令优先，缺失时才退回会话标题 / run.phase */
+  /** 主名：会话标题（与侧栏同名）优先，缺失时退回本轮用户指令 / run.phase */
   title: string;
+  /** 副标题：本轮用户指令（与主名不同且非空时），否则 null */
+  subtitle: string | null;
   /** 当前步骤（run.phase），与 title 相同则不重复渲染；完成/异常态为 null（动作句消失） */
   phase: string | null;
   status: RunUiStatus;
@@ -89,12 +91,15 @@ export function buildOverviewRunHeaderModel(args: {
   const runTitle = args.run.title?.trim()
     ? formatEditRoleUserPrompt(args.run.title.trim(), languages[language].roleEditReceipt.userPrompt, args.roleLabels)
     : undefined;
-  const title = automaticTitle || runTitle || sessionTitle || args.run.phase;
+  const displaySessionTitle = sessionTitle ? getLocalizedSessionTitle(sessionTitle, language).trim() : '';
+  const title = automaticTitle || displaySessionTitle || runTitle || args.run.phase;
+  const subtitle = runTitle && runTitle !== title ? runTitle : null;
   const total = args.todoProgress?.total ?? 0;
   const completed = args.todoProgress?.completed ?? 0;
 
   return {
     title,
+    subtitle,
     // 完成/异常态不摆当前动作句（异常态由 outcome 人话结局顶替）
     phase: !args.primaryFailed && (tone === 'live' || tone === 'waiting')
       ? (args.run.phase && args.run.phase !== title ? args.run.phase : null)

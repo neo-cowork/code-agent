@@ -75,10 +75,20 @@ describe.each(['zh', 'en'] as const)('空回复行呈现 (%s)', (language) => {
       ? (language === 'zh' ? '你停止了这次执行' : 'You stopped this run')
       : (language === 'zh' ? '切换会话时中断' : 'Interrupted when you switched conversations');
     console.log(`[${language}] (b) ${marker} DOM text:`, JSON.stringify(text));
+    expect(document.querySelector('[data-testid="bare-interruption-note"]')?.textContent)
+      .toBe(expectedReason);
     expect(text).toContain(expectedReason);
     expect(text).not.toContain('[cancelled]');
     expect(text).not.toContain('切换会话中断]');
     expect(text.replace('只回答两个字：收到', '').trim().length).toBeGreaterThan(0);
+  });
+
+  it('renders a stopped partial as reply text without a transcript stopped note', () => {
+    lang = language;
+    const text = renderHistory([user('u1'), { ...cancelledOnly, content: 'Partial reply.\n\n[cancelled]' }]);
+    expect(text).toContain('Partial reply.');
+    expect(text).not.toContain('[cancelled]');
+    expect(document.querySelector('[data-testid="bare-interruption-note"]')).toBeNull();
   });
 
   it('(c) Write 成功后停止：保留改动摘要与本地化停止说明', () => {

@@ -12,6 +12,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
@@ -19,13 +20,14 @@ import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
+let translations: typeof zh = zh;
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined; messages: Array<{ id: string; from: string; to: string; content: string; timestamp: number; messageType: string }> } = {
   agents: [], activeSessionId: undefined, messages: [],
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: translations }) }));
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({ useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState) }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -84,6 +86,7 @@ function treeSnapshot(node: AgentTreeNode): AgentTreeSnapshot {
 
 describe('成员对话页', () => {
   beforeEach(() => {
+    translations = zh;
     invokeMock.mockReset();
     invokeMock.mockImplementation((channel: unknown) => {
       if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
@@ -113,6 +116,38 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-final-output').textContent).toContain('三处口径不一致');
     // 只显示这一位，不串到别人
     expect(screen.getByTestId('member-conversation-view').textContent).not.toContain('初稿');
+  });
+
+  it.each([
+    ['zh', zh, '接下来我会直接操作「Keynote」的界面——这件事没有现成的连接器或网页路径可用。'],
+    ['en', en, "Next I'll operate Keynote directly on screen — there's no connector or browser route for this."],
+  ] as const)('shows the host disclosure once on Team and plain member pages (%s)', async (_locale, t, expected) => {
+    translations = t;
+    const guiDisclosures = [{ app: 'Keynote', callId: 'keynote-call' }];
+    swarmState.agents = [agentOf({
+      finalOutput: '',
+      contextSnapshot: {
+        currentTokens: 1, maxTokens: 100, usagePercent: 1, messageCount: 1, warningLevel: 'normal',
+        lastUpdated: 1, tools: [], attachments: [], previews: [], truncatedMessages: 0, guiDisclosures,
+      },
+    })];
+    const detail = { ...ledgerDetail, agents: [{ ...record, finalOutput: '' }] };
+    invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
+      channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [ledgerRun] : detail,
+    ));
+
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    const team = render(<MemberConversationView sessionId="session-1" />);
+    expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
+    team.unmount();
+
+    invokeDomainMock.mockResolvedValue(treeSnapshot({
+      id: 'plain-agent', role: 'Coder', status: 'running', statusLabel: '', children: [],
+      worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'], guiDisclosures,
+    }));
+    useMemberViewStore.setState({ viewingMemberId: 'plain-agent' });
+    render(<MemberConversationView sessionId="session-1" />);
+    expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
   });
 
   it('点顶部「← 返回主会话」回主会话', async () => {
@@ -175,6 +210,32 @@ describe('成员对话页', () => {
 
     // S3：当前动作置顶高亮 = 最近一条动作
     expect(screen.getByTestId('member-current-action').textContent).toBe(zh.toolStepHumanize.bashFallback);
+  });
+
+  it('成员的多条 Bash 各自一行（带人话描述），命令样描述退通用文案、命令不外露', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 100, maxTokens: 1000, usagePercent: 10, messageCount: 3,
+          warningLevel: 'normal', lastUpdated: 1, attachments: [], previews: [], truncatedMessages: 0,
+          tools: ['Bash'],
+          bashSteps: [
+            { description: '列出工作区目录内容', command: 'ls -la /tmp/ws' },
+            { description: '统计 csv 文件个数', command: 'find /tmp/ws -name "*.csv" | wc -l' },
+            { description: 'find /tmp/ws -name x', command: 'find /tmp/ws -name x' },
+          ],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+
+    const texts = screen.getAllByTestId('member-recent-action').map((node) => node.textContent);
+    expect(texts).toEqual([zh.toolStepHumanize.bashFallback, '统计 csv 文件个数', '列出工作区目录内容']);
+    expect(screen.getByTestId('member-recent-actions').textContent).not.toContain('/tmp/ws');
   });
 
   it('还没动手时给空态文案，不留一个空壳区块', async () => {
@@ -296,6 +357,49 @@ describe('成员对话页', () => {
     cleanup();
     await renderPlainAgent(mailAgentNode('completed'));
     expect(screen.getByTestId('member-current-action').textContent).toContain('发送了邮件');
+  });
+
+  it('已完成的委派任务页逐条列出 Bash 步骤：两条人话 + 一条缺描述退通用文案，命令不外露', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-9', sessionId: 'session-1', source: 'delegate_task', title: '数 csv', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        lastToolStep: { tool: 'Bash', target: 'du -h /tmp/ws', description: '找出最大的 csv', at: 2 },
+        bashSteps: [
+          { description: '列出工作区目录内容', command: 'ls -la /tmp/ws' },
+          { command: 'find /tmp/ws -name "*.csv" | wc -l' },
+          { description: '找出最大的 csv', command: 'du -h /tmp/ws' },
+        ],
+      },
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-9' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-bash-steps')).toBeTruthy());
+    const rows = screen.getAllByTestId('member-bash-step').map((node) => node.textContent);
+    expect(rows).toEqual(['列出工作区目录内容', zh.toolStepHumanize.bashFallback, '找出最大的 csv']);
+    expect(screen.getByTestId('member-bash-steps').textContent).not.toContain('/tmp/ws');
+  });
+
+  it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 1, maxTokens: 10, usagePercent: 1, messageCount: 1, warningLevel: 'normal', lastUpdated: 1,
+          attachments: [], previews: [], truncatedMessages: 0, tools: ['Bash'],
+          bashSteps: [{ description: '列出工作区目录内容', command: 'ls' }, { command: 'wc -l x' }],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+    expect(screen.getAllByTestId('member-recent-action').map((node) => node.textContent))
+      .toEqual([zh.toolStepHumanize.bashFallback, '列出工作区目录内容']);
   });
 
   it('普通代理按 delegate_task 后台任务渲染：标题 / 摘要 / 产出引用 / 耗时', async () => {
@@ -645,5 +749,91 @@ describe('成员对话页', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zh.expert.memberBar.sentNotRecorded));
     expect(input.value).toBe('');
     expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('queued');
+  });
+  describe('产出区渲染 markdown 并折叠长命令输出', () => {
+    const lsLines = Array.from({ length: 12 }, (_, n) => `-rw-r--r--  1 u  staff  ${n}00 Nov 1 报表${n}.xlsx`).join('\n');
+    const rich = `共找到 **3** 个表格，命令 \`ls -la\` 输出：\n\n\`\`\`\n${lsLines}\n\`\`\`\n`;
+    const short = '结果：\n\n```\na.xlsx\nb.xlsx\nc.xlsx\n```\n';
+
+    const plainNode = (progress: string): AgentTreeNode => ({
+      id: 'agent-9', role: '审阅代理', status: 'completed', statusLabel: '已完成',
+      task: '审阅改动', progress, children: [], worktreeState: { status: 'none' },
+      budgetSummary: { tokensUsed: 1, toolCalls: 1, costUsd: 0 }, evidenceRefs: [], sources: ['spawnGuard'],
+    });
+    const openPlain = async (progress: string) => {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue([]);
+      invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+        if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(treeSnapshot(plainNode(progress)));
+        return Promise.resolve(null);
+      });
+      useMemberViewStore.setState({ viewingMemberId: 'agent-9' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    };
+    const openExpert = async (finalOutput: string) => {
+      const detail = { ...ledgerDetail, agents: [{ ...record, finalOutput }, writerRecord] };
+      invokeMock.mockImplementation((channel: unknown) => {
+        if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
+        if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+        return Promise.resolve(null);
+      });
+      useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    };
+    const expectRendered = () => {
+      const box = screen.getByTestId('member-final-output');
+      expect(box.textContent).not.toContain('**');
+      expect(box.querySelector('strong')?.textContent).toBe('3');
+      expect(box.querySelector('code')?.textContent).toBe('ls -la');
+      const block = box.querySelector('[data-code-block-lines]') as HTMLElement;
+      expect(block.getAttribute('data-code-block-lines')).toBe('12');
+      expect(block.getAttribute('data-code-highlighted-lines')).toBe('0');
+      expect(box.textContent).not.toContain('报表11.xlsx');
+      fireEvent.click(screen.getByText('展开全部 (12 行)'));
+      expect(box.textContent).toContain('报表11.xlsx');
+      fireEvent.click(screen.getByText('收起'));
+      expect(box.textContent).not.toContain('报表11.xlsx');
+    };
+
+    it('专家成员分支：markdown 渲染，12 行 ls 默认折叠、点击展开/收起', async () => {
+      await openExpert(rich);
+      expectRendered();
+    });
+    it('普通代理分支：markdown 渲染，12 行 ls 默认折叠、点击展开/收起', async () => {
+      await openPlain(rich);
+      expectRendered();
+    });
+    it('delegate_task 后台任务（真实载荷形状）：summary 是 240 字单行，完整结果在 metadata.resultMarkdown，页面不出现孤立 ``` 且 ls 折叠', async () => {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue([]);
+      const flat = rich.replace(/\s+/g, ' ').slice(0, 240);
+      const task: Task = {
+        id: 'task-8', sessionId: 'session-1', source: 'session_command_center', title: '清点 Downloads 里的表格文件',
+        summary: flat, status: 'completed', createdAt: 1, updatedAt: 2, durationMs: 5_000,
+        metadata: { resultMarkdown: rich.trim() }, events: [], outputRefs: [],
+      };
+      useBackgroundTaskStore.setState({ tasks: [task] });
+      useMemberViewStore.setState({ viewingMemberId: 'task-8' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+      expectRendered();
+      expect(screen.getByTestId('member-final-output').textContent).not.toContain('```');
+    });
+    it('≤5 行的代码块保持展开', async () => {
+      await openExpert(short);
+      const box = screen.getByTestId('member-final-output');
+      expect(box.querySelector('[data-code-block-lines]')?.getAttribute('data-code-highlighted-lines')).toBe('3');
+      expect(box.textContent).toContain('c.xlsx');
+      expect(screen.queryByText(/展开全部/)).toBeNull();
+    });
+    it('空产出仍显示无产出文案（两个分支）', async () => {
+      await openExpert('');
+      expect(screen.getByTestId('member-final-output').textContent).toContain(zh.expert.workRecord.noOutput);
+      cleanup();
+      await openPlain('');
+      expect(screen.getByTestId('member-final-output').textContent).toContain(zh.expert.workRecord.noOutput);
+    });
   });
 });

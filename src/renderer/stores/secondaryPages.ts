@@ -25,6 +25,7 @@ export const SECONDARY_PAGES_CLOSED = {
   activeInternalFeatureId: null,
   showProjectCollaborationPage: false,
   showProjectSpacePage: false,
+  projectSpaceCreateRequested: false,
   expertDetailRoleId: null,
 } as const;
 

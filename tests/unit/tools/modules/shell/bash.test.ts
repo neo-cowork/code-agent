@@ -8,6 +8,7 @@ import { homedir, tmpdir } from 'os';
 import { dirname, join, parse, resolve } from 'path';
 import { resetPolicyEngine, getPolicyEngine } from '../../../../../src/host/permissions/policyEngine';
 import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../../src/host/security/policyEnforcer';
+import { classifyEnvBlocker } from '../../../../../src/host/permissions/envAssist/classify';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -959,7 +960,7 @@ describe('bash failure diagnostics', () => {
       sandboxed: true,
       workingDirectory: '/tmp/project',
     });
-    expect(denied).toContain('沙盒拒绝：/Users/tester/x（沙盒只允许写 /tmp/project 与临时目录）');
+    expect(denied).toContain('沙盒拒绝：/Users/tester/x（沙盒只允许写 /tmp/project 与临时目录）。原文件内容没有被改动。下一步：请用户在对话里确认要写入这个位置（或写明「输出目录：路径」），也可以先把文件写到工作目录内再交付。');
 
     expect(diagnoseBashFailure({
       command: 'touch ~/x',
@@ -1003,6 +1004,113 @@ describe('bashModule failure diagnostics wiring', () => {
       expect(result.error).toContain('可能');
       expect(result.error).toContain('kill');
     }
+  });
+
+  it.skipIf(process.platform !== 'darwin').each([
+    ['screencapture', 'could not create image from display', '屏幕录制'],
+    ['osascript', 'execution error: Not authorized to send Apple events to "Finder". (-1743)', '自动化'],
+    ['osascript', 'execution error: System Events got an error: osascript is not allowed assistive access. (-1719)', '辅助功能'],
+  ])('foreground exit 1 with macOS privacy refusal %s %s names the System Settings page', async (tool, stderr, page) => {
+    vi.stubEnv('SSH_CONNECTION', '');
+    vi.stubEnv('SSH_TTY', '');
+    vi.stubEnv('SSH_CLIENT', '');
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: `${tool}() { printf '%s\\n' '${stderr}' >&2; return 1; }; ${tool} -x out.png` },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain(`诊断：`);
+        expect(result.error).toContain(`隐私与安全性 > ${page}」打开 Neo`);
+        // No new card: Bash never feeds the env-assist classifier a notice.
+        expect(classifyEnvBlocker({ toolName: 'Bash', result, sessionId: 's', runId: 'r' })).toBeNull();
+        expect((result as { meta?: Record<string, unknown> }).meta?.envAssist).toBeUndefined();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.skipIf(process.platform !== 'darwin')('foreground exit 1 from an unrelated command quoting a refusal gets no privacy line', async () => {
+    vi.stubEnv('SSH_CONNECTION', '');
+    vi.stubEnv('SSH_TTY', '');
+    vi.stubEnv('SSH_CLIENT', '');
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: `printf '%s\\n' 'could not create image from display' >&2; exit 1` },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).not.toContain('隐私与安全性');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  describe('foreground exit 0 with macOS privacy refusal', () => {
+    const SC = 'could not create image from display';
+    const AUTO = 'execution error: Not authorized to send Apple events to "Finder". (-1743)';
+    const run = async (command: string) => {
+      const handler = await bashModule.createHandler();
+      return handler.execute({ command }, makeCtx(), allowAll);
+    };
+    const noSsh = () => {
+      vi.stubEnv('SSH_CONNECTION', '');
+      vi.stubEnv('SSH_TTY', '');
+      vi.stubEnv('SSH_CLIENT', '');
+    };
+    afterEach(() => vi.unstubAllEnvs());
+
+    it.skipIf(process.platform !== 'darwin').each([
+      ['stderr + echo', `screencapture() { printf '%s\\n' '${SC}' >&2; return 1; }; screencapture -x f.png; echo "exit=$?"`, '屏幕录制'],
+      ['2>&1', `screencapture() { printf '%s\\n' '${SC}' >&2; return 1; }; screencapture -x f.png 2>&1; echo "exit=$?"`, '屏幕录制'],
+      ['osascript -1743 ; true', `osascript() { printf '%s\\n' '${AUTO}' >&2; return 1; }; osascript -e 'x'; true`, '自动化'],
+      ['assistive access', `osascript() { printf '%s\\n' 'osascript is not allowed assistive access.' >&2; return 1; }; osascript -e 'x' || true`, '辅助功能'],
+      ['-25211', `osascript() { printf '%s\\n' 'AXError -25211' >&2; return 1; }; osascript -e 'x'; true`, '辅助功能'],
+    ])('names the System Settings page: %s', async (_n, command, page) => {
+      noSsh();
+      const result = await run(command);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain(`隐私与安全性 > ${page}」打开 Neo`);
+        expect(result.output).toContain('诊断：');
+      }
+    });
+
+    it.skipIf(process.platform !== 'darwin')('adds no line for ordinary screencapture output or a denial string without the tool tokens', async () => {
+      noSsh();
+      const ok = await run(`screencapture() { echo captured; }; screencapture -x f.png; echo "exit=$?"`);
+      expect(ok.ok).toBe(true);
+      if (ok.ok) expect(ok.output).not.toContain('诊断：');
+      const other = await run(`printf '%s\\n' '${SC}' >&2; true`);
+      expect(other.ok).toBe(true);
+      if (other.ok) expect(other.output).not.toContain('诊断：');
+    });
+
+    it.skipIf(process.platform !== 'darwin')('adds no line over SSH', async () => {
+      vi.stubEnv('SSH_CONNECTION', '1.2.3.4 1 5.6.7.8 22');
+      const result = await run(`screencapture() { printf '%s\\n' '${SC}' >&2; }; screencapture -x f.png; true`);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).not.toContain('隐私与安全性');
+    });
+
+    it('adds no line on non-darwin hosts', async () => {
+      noSsh();
+      const real = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      try {
+        const result = await run(`screencapture() { printf '%s\\n' '${SC}' >&2; }; screencapture -x f.png; true`);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.output).not.toContain('隐私与安全性');
+      } finally {
+        Object.defineProperty(process, 'platform', real);
+      }
+    });
   });
 
   it('appends OOM diagnostics on foreground non-zero exit 137', async () => {

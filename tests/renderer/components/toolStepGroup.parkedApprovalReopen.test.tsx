@@ -112,7 +112,9 @@ describe('重开会话：落库停车审批在折叠头与行上都说「等你�
     listParkedApprovals.mockResolvedValue([parkedItem('call-w')]);
     await act(async () => { await refreshParkedApprovals(); });
     render(<ToolStepGroup nodes={[writeNode({ success: false, result: '这一步等你确认超过 24 小时，已自动作废，没有执行。' })]} sessionId={SESSION} />);
-    expect(head()).not.toMatch(/请求写入|运行中|正在写入/);
+    // 标题读作「未执行 · 请求写入 …」（请求词表 + 未执行前缀），不是待确认/运行中。
+    expect(head()).toMatch(/^未执行 · /);
+    expect(head()).not.toMatch(/运行中|正在写入|未成功/);
   });
 
   it('② 行没有 toolCallId（老行）→ 保持原行为：仍按运行中渲染', async () => {

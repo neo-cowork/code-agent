@@ -75,6 +75,18 @@ function readRestatement(value: unknown): ScheduleRestatement | undefined {
 // 校验失败返回 undefined，由 normalizeScheduleDraft 判草案无效（与缺 action 同等处理）：
 // 缺 schedule 的草案走到确认一步也会被 host 拒掉，不能出卡。
 // weeks 是契约遗留单位，展示标签没有对应文案，按无效处理。
+// 事件草案的两项可选限额：模型给的一句话筛选 + 每小时上限；空/非数不落键（host 缺省生效）。
+function readEventLimits(value: Record<string, unknown>): { prefilter?: string; maxRunsPerHour?: number } {
+  const prefilter = asTrimmedString(value.prefilter).slice(0, CRON_EVENT_TRIGGER.MAX_PREFILTER_CHARS);
+  const cap = value.maxRunsPerHour;
+  return {
+    ...(prefilter ? { prefilter } : {}),
+    ...(typeof cap === 'number' && Number.isFinite(cap)
+      ? { maxRunsPerHour: Math.min(CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR, Math.max(CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR, Math.floor(cap))) }
+      : {}),
+  };
+}
+
 function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | undefined {
   if (!isPlainObject(value)) return undefined;
   switch (asTrimmedString(value.type)) {
@@ -103,6 +115,7 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
       // accountId 恒为 string（草稿期可为空串 = 还没选，共享校验器据此禁确认）；
       // chatId 空串不落键（= 任意会话，空串下发给 host 会绑死不存在的会话）。
       const accountId = asTrimmedString(value.accountId);
+      const limits = readEventLimits(value);
       if (asTrimmedString(value.source) === 'channel') {
         const chatId = asTrimmedString(value.chatId);
         return {
@@ -111,6 +124,7 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
           eventName: 'message',
           accountId,
           ...(chatId ? { chatId } : {}),
+          ...limits,
         };
       }
       // connector:mail：mailbox 可选（缺省 INBOX，空串不落键——空 mailbox 下发给
@@ -124,6 +138,7 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
           eventName: 'message',
           accountId,
           ...(mailbox ? { mailbox } : {}),
+          ...limits,
         };
       }
       return undefined;

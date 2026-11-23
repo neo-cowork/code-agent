@@ -33,8 +33,22 @@ export function stripSearchHighlightMarkers(snippet: string): string {
   return snippet.replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
 }
 
-export function formatSidebarMessageSearchHitLabel(hit: SidebarMessageSearchHit): string {
-  return `消息命中 · ${hit.snippet}`;
+export interface SidebarMessageSearchHitPrefixes {
+  messageHitPrefix: string;
+  toolHitPrefix: string;
+}
+
+const ZH_HIT_PREFIXES: SidebarMessageSearchHitPrefixes = {
+  messageHitPrefix: '消息命中',
+  toolHitPrefix: '工具输出命中',
+};
+
+export function formatSidebarMessageSearchHitLabel(
+  hit: SidebarMessageSearchHit,
+  prefixes: SidebarMessageSearchHitPrefixes = ZH_HIT_PREFIXES,
+): string {
+  const prefix = hit.role === 'tool' ? prefixes.toolHitPrefix : prefixes.messageHitPrefix;
+  return `${prefix} · ${hit.snippet}`;
 }
 
 export function formatSidebarMessageSearchHitMeta(
@@ -137,6 +151,9 @@ function compareSidebarMessageSearchHits(
 ): number {
   if (left.relevance !== right.relevance) {
     return right.relevance - left.relevance;
+  }
+  if ((left.role === 'tool') !== (right.role === 'tool')) {
+    return left.role === 'tool' ? 1 : -1;
   }
   return right.timestamp - left.timestamp;
 }

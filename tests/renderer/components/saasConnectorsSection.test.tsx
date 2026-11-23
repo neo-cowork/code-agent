@@ -9,13 +9,14 @@ import { en } from '../../../src/renderer/i18n/en';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
 const useInChat = vi.hoisted(() => vi.fn());
+const uiLang = vi.hoisted(() => ({ value: 'zh' as 'zh' | 'en' }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain },
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: zh, language: 'zh' }),
+  useI18n: () => ({ t: uiLang.value === 'en' ? en : zh, language: uiLang.value }),
 }));
 
 vi.mock('../../../src/renderer/hooks/useConnectorInChat', () => ({
@@ -108,6 +109,7 @@ function openFeishuDetail() {
 beforeEach(() => {
   invokeDomain.mockReset();
   useInChat.mockReset();
+  uiLang.value = 'zh';
   window.localStorage.clear();
 });
 
@@ -759,5 +761,83 @@ describe('SaaSConnectorsSection actions and receipts', () => {
     fireEvent.click(screen.getByText(zh.settings.saasConnectors.advanced.title));
     fireEvent.click(screen.getByText(zh.settings.saasConnectors.advanced.configure));
     expect(configureReadonly).toHaveBeenCalledTimes(1);
+  });
+});
+
+const LANGS = [['zh', zh], ['en', en]] as const;
+
+// 状态词作为独立文案块（叶子元素以它开头）出现的次数；正文里顺带提到的字不算
+function countOf(card: HTMLElement, word: string): number {
+  return Array.from(card.querySelectorAll('*'))
+    .filter((el) => el.children.length === 0 && (el.textContent ?? '').trim().startsWith(word)).length;
+}
+
+describe('SaaSConnectorsSection says each status once per card', () => {
+  it.each(LANGS)('%s: unavailable / needs setup / connected / admin required', async (lang, locale) => {
+    uiLang.value = lang;
+    const b = locale.settings.saasConnectors.badges;
+    const cases: Array<[string, string, Partial<TestProviderStatus>]> = [
+      ['unavailable', b.unavailable, { stale: true }],
+      ['needs setup', b.needsSetup, {}],
+      ['connected', b.connected, { clientSecretConfigured: true, connected: true }],
+      ['admin required', b.adminRequired, { authMode: 'lark-cli', requiresClientSecret: false, blocked: true }],
+    ];
+    for (const [name, word, overrides] of cases) {
+      renderStatus(overrides);
+      const card = await screen.findByTestId('saas-connector-feishu');
+      await waitFor(() => expect(card.textContent).toContain(word));
+      expect(countOf(card, word), `${lang} ${name}`).toBe(1);
+      cleanup();
+    }
+  });
+
+  it.each(LANGS)('%s: connecting', async (lang, locale) => {
+    uiLang.value = lang;
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'oauthStatus') return Promise.resolve([{ ...baseStatus, clientSecretConfigured: true }]);
+      if (action === 'oauthConnect') return new Promise<void>(() => undefined);
+      return Promise.resolve([]);
+    });
+    render(<SaaSConnectorsSection />);
+    await screen.findByTestId('saas-connector-feishu');
+    openFeishuDetail();
+    fireEvent.click(screen.getByTestId('saas-connect-feishu'));
+    const word = locale.settings.saasConnectors.badges.connecting;
+    await waitFor(() => expect(screen.getByTestId('saas-cancel-feishu')).toBeTruthy());
+    const card = screen.getByTestId('saas-connector-feishu');
+    expect(countOf(card, word)).toBe(1);
+  });
+
+  it.each(LANGS)('%s: unavailable status shows once on a Google Calendar card', async (lang, locale) => {
+    uiLang.value = lang;
+    invokeDomain.mockImplementation((_d: string, action: string) => (
+      action === 'oauthStatus'
+        ? Promise.resolve([{ ...googleStatus, clientIdConfigured: false }])
+        : Promise.resolve([])
+    ));
+    render(<SaaSConnectorsSection />);
+    const card = await screen.findByTestId('saas-connector-google-calendar');
+    expect(countOf(card, locale.settings.saasConnectors.badges.unavailable)).toBe(1);
+  });
+});
+
+describe('SaaSConnectorsSection custom OAuth card copy', () => {
+  it.each(LANGS)('%s: no connector / host / token / MCP wording', async (lang) => {
+    uiLang.value = lang;
+    renderStatus();
+    await screen.findByTestId('saas-connector-feishu');
+    fireEvent.click(screen.getByTestId('saas-custom-oauth-toggle'));
+    const form = screen.getByTestId('saas-custom-oauth-form');
+    const block = form.parentElement as HTMLElement;
+    const text = block.textContent ?? '';
+    console.log(`[custom-oauth:${lang}] ${text}`);
+    expect(text).not.toMatch(/\b(connectors?|hosts?|tokens?|mcp)\b/i);
+  });
+
+  it.each(LANGS)('%s: saved toast and save button have no engineering words', (lang) => {
+    const c = (lang === 'zh' ? zh : en).settings.saasConnectors.customOAuth;
+    for (const v of [c.description, c.requiresClientSecret, c.save, c.saved, c.tokenUrl, c.authorizeUrl]) {
+      expect(v).not.toMatch(/\b(connectors?|hosts?|tokens?|mcp)\b/i);
+    }
   });
 });

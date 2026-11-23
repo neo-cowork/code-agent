@@ -10,9 +10,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertNoLoginSession, isolatedVerificationEnv } from './lib/verificationIsolation.ts';
+import { FALLBACK_SELECTION, SLOTLESS_FALLBACK_PROVIDER_ID, isFallbackSelection, maskTokenRhythmKey, maskVerifyKey, missingProviderMessage, parseProviderFlag, resolveSlotlessProviderKey, resolveSlotlessSelection } from './lib/slotlessProvider.mjs';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../src/shared/constants/cliConnectorDescriptors.ts';
 
-const PROVIDER_ID = 'custom-tokenrhythm';
 const SLOTLESS_MODEL_CANDIDATES = [
   'deepseek-v4-flash',
   'deepseek-flash',
@@ -35,15 +35,18 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account] [--copy-login-session]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account] [--copy-login-session] [--skip-model-check] [--provider <id>] [--model <id>]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
     'Copies NO login session by default; model credentials come from the staged config.json.',
     'Use --copy-login-session to explicitly copy the source secure-storage.json + .secure-key (WARNING: live login session).',
     'By default, native connectors keep the source config and no system apps are probed.',
+    'Before handing out NEO_VERIFY_URL it sends one tiny chat request with the dogfood key and exits non-zero on non-2xx.',
+    'Use --skip-model-check (or NEO_VERIFY_SKIP_MODEL_CHECK=1) only for presentation-only checks that need no model reply.',
     'Use --clean-account to skip the cloud session-list pull so the sidebar starts truly empty (sign-in is unchanged).',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
+    'Provider: --provider > NEO_VERIFY_PROVIDER > ~/.ship/grab/realrun-dev-model > custom-tokenrhythm; model: --model > NEO_VERIFY_MODEL_ID.',
     `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
     'Set NEO_VERIFY_PRE_START=<script> to run that node script (with NEO_VERIFY_DATA_DIR in env) after the',
     'data dir is staged and before the webServer spawns — e.g. to place folders the startup path must see.',
@@ -74,7 +77,7 @@ function copyModelDescriptor(value) {
   return Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 
-export function resolveSlotlessModelId(sourceProvider) {
+export function resolveSlotlessModelId(sourceProvider, providerId = SLOTLESS_FALLBACK_PROVIDER_ID) {
   const models = sourceProvider?.models;
   const modelId = SLOTLESS_MODEL_CANDIDATES.find((candidate) => {
     const descriptor = models?.[candidate];
@@ -85,24 +88,25 @@ export function resolveSlotlessModelId(sourceProvider) {
     const descriptor = models?.[candidate];
     return `${candidate}=${descriptor?.enabled === false ? 'disabled' : 'missing'}`;
   });
-  fail(`no enabled model candidate for ${PROVIDER_ID}: ${states.join(', ')}`);
+  fail(`no enabled model candidate for ${providerId}: ${states.join(', ')}`);
 }
 
-export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) {
+export function buildSlotlessConfig(source, providerKey, nativeConnectorIds, selection = FALLBACK_SELECTION) {
+  const providerId = selection.providerId;
   const sourceModels = source?.models;
-  const sourceProvider = sourceModels?.providers?.[PROVIDER_ID];
-  if (!sourceProvider || typeof sourceProvider !== 'object' || Array.isArray(sourceProvider)) {
-    fail(`source config is missing provider ${PROVIDER_ID}`);
-  }
-  const modelId = resolveSlotlessModelId(sourceProvider);
-  const sourceModel = sourceProvider.models[modelId];
+  const sourceProvider = sourceModels?.providers?.[providerId];
+  if (!sourceProvider || typeof sourceProvider !== 'object' || Array.isArray(sourceProvider)) fail(missingProviderMessage(providerId));
+  const modelId = selection.modelOverride
+    ?? (isFallbackSelection(selection) ? resolveSlotlessModelId(sourceProvider, providerId) : sourceProvider.model);
+  if (!modelId) fail(`source provider ${providerId} has no model (verification environment unavailable)`);
+  const sourceModel = sourceProvider.models?.[modelId];
 
   const provider = {};
   for (const key of ['enabled', 'displayName', 'baseUrl', 'protocol', 'temperature', 'maxTokens']) {
     if (sourceProvider[key] !== undefined) provider[key] = sourceProvider[key];
   }
   provider.enabled = true;
-  provider.apiKey = tokenRhythmKey;
+  provider.apiKey = providerKey;
   provider.model = modelId;
   provider.models = { [modelId]: copyModelDescriptor(sourceModel) };
 
@@ -111,21 +115,21 @@ export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) 
   // enabled=false 这个否定标记，不复制模型、URL、key 或其他账号配置。
   const providers = Object.fromEntries(
     Object.keys(sourceModels.providers)
-      .filter((providerId) => providerId !== PROVIDER_ID)
-      .map((providerId) => [providerId, { enabled: false }]),
+      .filter((id) => id !== providerId)
+      .map((id) => [id, { enabled: false }]),
   );
-  providers[PROVIDER_ID] = provider;
+  providers[providerId] = provider;
 
   const routeNames = Object.keys(sourceModels?.routing ?? {});
   const routing = Object.fromEntries(
     (routeNames.length > 0 ? routeNames : ['code', 'fast', 'chat'])
-      .map((route) => [route, { provider: PROVIDER_ID, model: modelId }]),
+      .map((route) => [route, { provider: providerId, model: modelId }]),
   );
 
   const config = {
     models: {
-      default: PROVIDER_ID,
-      defaultProvider: PROVIDER_ID,
+      default: providerId,
+      defaultProvider: providerId,
       providers,
       routing,
     },
@@ -173,8 +177,8 @@ export function resolveSourceConfigPath(sourceConfigArg) {
   return path.resolve(sourceConfigArg ?? DEFAULT_SOURCE_CONFIG);
 }
 
-export function buildSlotlessTemplateProvenance(config, sourceConfigPath) {
-  const configuredProvider = config.models.providers[PROVIDER_ID];
+export function buildSlotlessTemplateProvenance(config, sourceConfigPath, selection = FALLBACK_SELECTION) {
+  const configuredProvider = config.models.providers[selection.providerId];
   const provider = Object.fromEntries(
     ['enabled', 'displayName', 'baseUrl', 'protocol', 'temperature', 'maxTokens']
       .filter((key) => configuredProvider[key] !== undefined)
@@ -301,7 +305,7 @@ export function parseDogfoodEnv(raw) {
   return values;
 }
 
-export function readDogfoodCredentials(secretFile = DEFAULT_SECRET_FILE) {
+export function readDogfoodCredentials(secretFile = DEFAULT_SECRET_FILE, { requireTokenRhythmKey = true } = {}) {
   if (!existsSync(secretFile)) {
     fail(`dogfood credential file is required: ${secretFile}`);
   }
@@ -312,8 +316,8 @@ export function readDogfoodCredentials(secretFile = DEFAULT_SECRET_FILE) {
   }
   const values = parseDogfoodEnv(readFileSync(secretFile, 'utf8'));
   const tokenRhythmKey = values.NEO_DOGFOOD_TR_KEY?.trim();
-  if (!tokenRhythmKey) fail('缺 NEO_DOGFOOD_TR_KEY');
-  if (!tokenRhythmKey.startsWith('sk_tr_')) {
+  if (requireTokenRhythmKey && !tokenRhythmKey) fail('缺 NEO_DOGFOOD_TR_KEY');
+  if (requireTokenRhythmKey && !tokenRhythmKey.startsWith('sk_tr_')) {
     fail('NEO_DOGFOOD_TR_KEY must start with sk_tr_');
   }
   const email = values.NEO_DOGFOOD_EMAIL?.trim();
@@ -324,12 +328,7 @@ export function readDogfoodCredentials(secretFile = DEFAULT_SECRET_FILE) {
   return { email, password, tokenRhythmKey };
 }
 
-export function maskTokenRhythmKey(value) {
-  if (typeof value !== 'string' || !value.startsWith('sk_tr_') || value.length < 10) {
-    fail('cannot mask invalid NEO_DOGFOOD_TR_KEY');
-  }
-  return `sk_tr_…${value.slice(-4)}`;
-}
+export { maskTokenRhythmKey };
 
 function writePrivateJson(filePath, value) {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
@@ -435,7 +434,7 @@ async function signInDogfood(url, token, credentials) {
   }
 }
 
-async function assertConfiguredModel(url, token) {
+async function assertConfiguredModel(url, token, providerId) {
   const response = await fetch(`${url}/api/domain/settings/get`, {
     method: 'POST',
     headers: {
@@ -447,7 +446,7 @@ async function assertConfiguredModel(url, token) {
   });
   const body = await response.json().catch(() => null);
   const settings = body?.success ? body.data : null;
-  const provider = settings?.models?.providers?.[PROVIDER_ID];
+  const provider = settings?.models?.providers?.[providerId];
   const model = provider?.models?.[provider.model];
   if (
     !response.ok
@@ -457,8 +456,41 @@ async function assertConfiguredModel(url, token) {
     || !model
     || model.enabled === false
   ) {
-    fail(`model self-check failed: ${PROVIDER_ID}/${provider?.model} is not configured`);
+    fail(`model self-check failed: ${providerId}/${provider?.model} is not configured`);
   }
+}
+
+/**
+ * 真调一次模型（max_tokens 极小）：/v1/models 通不代表能对话（基元实名宽限过期后 models 200、chat 全 403）。
+ * 非 2xx 直接 fail-closed，报 HTTP 状态和响应 code，不打印 key。
+ */
+export async function probeModelChat({ baseUrl, apiKey, model, providerId = SLOTLESS_FALLBACK_PROVIDER_ID, fetchImpl = fetch, timeoutMs = 30_000 }) {
+  const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
+  let response;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 5, messages: [{ role: 'user', content: 'ping' }] }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    fail(`model chat self-check failed: ${providerId}/${model} unreachable (${error instanceof Error ? error.message : String(error)})`);
+  }
+  if (response.ok) return;
+  const text = await response.text().catch(() => '');
+  let code;
+  try {
+    const body = JSON.parse(text);
+    code = body?.error?.code ?? body?.code ?? body?.error?.type;
+  } catch {
+    /* 非 JSON 响应：只报状态 */
+  }
+  fail(
+    `model chat self-check failed: ${providerId}/${model} HTTP ${response.status}`
+    + (code ? ` code=${code}` : '')
+    + ' (verification environment unavailable; pass --skip-model-check only for presentation-only checks)',
+  );
 }
 
 async function assertConfiguredNativeConnectors(url, token, nativeConnectorIds) {
@@ -786,17 +818,19 @@ function runPreStartHook(dataDir) {
   if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false, copyLoginSession = false) {
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false, copyLoginSession = false, skipModelCheck = false, providerArgs = {}) {
   const ticket = sanitizeTicket(ticketArg);
-  const credentials = readDogfoodCredentials();
+  const selection = resolveSlotlessSelection(providerArgs);
+  const credentials = readDogfoodCredentials(undefined, { requireTokenRhythmKey: isFallbackSelection(selection) });
   const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
   if (!existsSync(requestedSourceConfig)) fail(`source config is required: ${requestedSourceConfig}`);
   if (!statSync(requestedSourceConfig).isFile()) fail(`source config path is not a file: ${requestedSourceConfig}`);
   const sourceConfigPath = realpathSync(requestedSourceConfig);
   const sourceDataDir = path.dirname(sourceConfigPath);
   const sourceConfig = JSON.parse(readFileSync(sourceConfigPath, 'utf8'));
-  const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey, nativeConnectorIds);
-  const template = buildSlotlessTemplateProvenance(config, sourceConfigPath);
+  const providerKey = await resolveSlotlessProviderKey(selection, sourceConfig, sourceDataDir, credentials.tokenRhythmKey);
+  const config = buildSlotlessConfig(sourceConfig, providerKey, nativeConnectorIds, selection);
+  const template = buildSlotlessTemplateProvenance(config, sourceConfigPath, selection);
   const requestedNativeConnectorIds = nativeConnectorIds ?? [];
   const webServer = ensureDist(reuseDist);
   const dataDir = mkdtempSync(path.join(os.tmpdir(), `neo-verify-${ticket}-`));
@@ -834,7 +868,14 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     await waitForHealth(child, url);
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
-    await assertConfiguredModel(url, token);
+    await assertConfiguredModel(url, token, selection.providerId);
+    const configuredProvider = config.models.providers[selection.providerId];
+    if (skipModelCheck) {
+      console.log('NEO_VERIFY_MODEL_CHECK=skipped');
+    } else {
+      await probeModelChat({ baseUrl: configuredProvider.baseUrl, apiKey: providerKey, model: configuredProvider.model, providerId: selection.providerId });
+      console.log('NEO_VERIFY_MODEL_CHECK=ok');
+    }
     if (nativeConnectorIds !== undefined) {
       await assertConfiguredNativeConnectors(url, token, nativeConnectorIds);
     }
@@ -856,8 +897,8 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     });
     child.unref();
     console.log('NEO_VERIFY_SECURE_STORAGE=dogfood-sign-in');
-    console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
-    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${config.models.providers[PROVIDER_ID].model}`);
+    console.log(`NEO_VERIFY_KEY=${maskVerifyKey(providerKey)}`);
+    console.log(`NEO_VERIFY_MODEL=${selection.providerId}/${configuredProvider.model}`);
     console.log(
       `NEO_VERIFY_TEMPLATE=${template.fingerprintSha256.slice(0, 16)}`
       + ` temperature=${template.provider.temperature ?? 'absent'}`
@@ -882,10 +923,16 @@ export function parseStartArgs(args) {
   let sourceConfigArg;
   let cleanAccount = false;
   let copyLoginSession = false;
+  let skipModelCheck = process.env.NEO_VERIFY_SKIP_MODEL_CHECK === '1';
+  let provider, model;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--reuse-dist') {
       reuseDist = true;
+      continue;
+    }
+    if (arg === '--skip-model-check') {
+      skipModelCheck = true;
       continue;
     }
     if (arg === '--copy-login-session') {
@@ -909,6 +956,12 @@ export function parseStartArgs(args) {
       index += 1;
       continue;
     }
+    const providerFlag = parseProviderFlag(args, index);
+    if (providerFlag) {
+      [provider, model] = providerFlag.flag === '--provider' ? [providerFlag.value, model] : [provider, providerFlag.value];
+      index += 1;
+      continue;
+    }
     if (arg === '--source-config') {
       if (sourceConfigArg !== undefined) fail('--source-config may only be specified once');
       const value = args[index + 1];
@@ -922,7 +975,7 @@ export function parseStartArgs(args) {
     ticket = arg;
   }
   if (!ticket) fail(usage());
-  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession };
+  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession, skipModelCheck, provider, model };
 }
 
 async function main(args = process.argv.slice(2)) {
@@ -934,8 +987,8 @@ async function main(args = process.argv.slice(2)) {
     await stopRun(args[1]);
     return;
   }
-  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession } = parseStartArgs(args);
-  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession);
+  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession, skipModelCheck, provider, model } = parseStartArgs(args);
+  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession, skipModelCheck, { provider, model });
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
