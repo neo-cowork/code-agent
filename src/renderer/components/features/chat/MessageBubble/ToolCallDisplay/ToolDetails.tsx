@@ -175,9 +175,10 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
 
   const userMessage = result?.userMessage === undefined ? undefined : localizeToolUserMessage(result.userMessage, t);
   const displayError = userMessage ?? result?.error;
-  const humanError = userMessage !== undefined ? { summary: stripAnsiCodes(userMessage) }
-    : result && !result.success ? humanizeToolError(displayError, name, t, result.metadata) : null;
   const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
+  const humanError = userMessage === undefined
+    ? result && !result.success ? humanizeToolError(displayError, name, t, result.metadata) : null
+    : { summary: stripAnsiCodes(userMessage), detail: structuredHostReason ? humanizeToolError(undefined, name, t, result?.metadata)?.detail : undefined };
   const remindersReadDenied = isRemindersReadAuthorizationFailure(name, result?.metadata);
   const errorDetail = humanError?.detail ?? (userMessage !== undefined || remindersReadDenied ? undefined : copy.genericErrorDetail);
 

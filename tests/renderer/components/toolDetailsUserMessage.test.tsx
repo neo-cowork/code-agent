@@ -45,8 +45,8 @@ function expectCard(call: ToolCall, result: ToolResult, sentence: string) {
   expect(html).not.toMatch(modelInstructions);
   expect(html).toContain(sentence.replaceAll('>', '&gt;'));
   expect(html).not.toContain(zh.rendererHumanPipe.toolDetails.viewRawError);
-  expect(buildToolErrorActions(toolCall, 'message').errorText).toBe(sentence);
   expect(summarizeTool(toolCall, zh)).not.toMatch(modelInstructions);
+  expect(buildToolErrorActions(toolCall, 'message').errorText).toBe(sentence);
 }
 
 describe('tool cards show the user message produced by tool execution', () => {
@@ -83,7 +83,7 @@ describe('tool cards show the user message produced by tool execution', () => {
       expect(result.metadata?.code).toBe('FOREIGN_SLOT_DATA_DIR');
       expect(result.error).toContain('Use MemoryRead or memory_search instead of reading the memory directory directly');
       expect(requestPermission).not.toHaveBeenCalled();
-      expectCard(call, { toolCallId: call.id, ...result }, '这是另一个槽（.code-agent）的数据目录，当前槽无权读取');
+      expectCard(call, { toolCallId: call.id, ...result }, '这是 Neo 另一份独立数据目录，当前不能直接读取');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

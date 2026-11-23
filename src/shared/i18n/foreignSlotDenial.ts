@@ -1,1 +1,1 @@
-export const FOREIGN_SLOT_DENIAL_ZH = '这是另一个槽（{slotName}）的数据目录，当前槽无权读取';
+export const FOREIGN_SLOT_DENIAL_ZH = '这是 Neo 另一份独立数据目录，当前不能直接读取';

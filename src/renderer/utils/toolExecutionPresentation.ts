@@ -554,13 +554,8 @@ for (const key of Object.keys(CONNECTOR_RECONNECT_ZH) as Array<keyof typeof CONN
   connectorMessageKeys.set(CONNECTOR_RECONNECT_ZH[key], key);
 }
 
-const [foreignSlotPrefix, foreignSlotSuffix] = FOREIGN_SLOT_DENIAL_ZH.split('{slotName}');
-
 export function localizeToolUserMessage(message: string, t: Translations): string {
-  if (message.startsWith(foreignSlotPrefix) && message.endsWith(foreignSlotSuffix)) {
-    const slotName = message.slice(foreignSlotPrefix.length, -foreignSlotSuffix.length);
-    return t.toolErrors.foreignSlotDenial.replace('{slotName}', () => slotName);
-  }
+  if (message === FOREIGN_SLOT_DENIAL_ZH) return t.agentError.hostReasons[HostReasonCode.ForeignDataDir].summary;
   const key = connectorMessageKeys.get(message);
   return key === undefined ? message : t.toolErrors.connectorReconnect[key];
 }
