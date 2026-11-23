@@ -328,6 +328,21 @@ describe('TaskManager background delivery verdict', () => {
     expect(JSON.stringify(event.data)).not.toContain('/work/proj');
   });
 
+  it('words the failed-command task_error in English when the UI language is en', async () => {
+    configState.language = 'en';
+    try {
+      sessionManagerState.getSession.mockResolvedValue({ messages: [], workingDirectory: '/work/proj' });
+      const event = await runBackgroundTask(messages({
+        calls: [{ id: 'bash-1', name: 'Bash', success: false, command: '/work/proj/check.sh', failedOutput: 'missing: brief.pdf' }],
+        conclusion: 'done',
+      }));
+      expect(event.type).toBe('task_error');
+      expect((event.data as EventData).error).toBe('The background task could not finish: the command ./check.sh did not run successfully (missing: brief.pdf), so it stopped.');
+    } finally {
+      configState.language = 'zh';
+    }
+  });
+
   it('keeps a failed Bash completed when a later non-probe Bash succeeded', async () => {
     const event = await runBackgroundTask(messages({
       calls: [
