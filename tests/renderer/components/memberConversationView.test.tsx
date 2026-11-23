@@ -19,7 +19,7 @@ import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/compo
 import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
-import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
+import { createSingleSpawnRunId, createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -122,12 +122,15 @@ describe('成员对话页', () => {
       statusLabel: '', progress, failureCode, children: [], worktreeState: { status: 'none' },
       budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'],
     };
-    const run = { ...ledgerRun, totalAgents: 1 };
+    const id = createSwarmTraceStorageId({
+      sessionId: 'session-1', runId: createSingleSpawnRunId(node.id), treeId: 'session-1',
+    });
+    const run = { ...ledgerRun, id, totalAgents: 1 };
     invokeMock.mockImplementation((channel: unknown) => {
       if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
       if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve({
         ...ledgerDetail, run: { ...ledgerDetail.run, ...run },
-        agents: [{ ...record, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: progress }],
+        agents: [{ ...record, runId: id, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: progress }],
       });
       return Promise.resolve(null);
     });

@@ -13,6 +13,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Bot, Clock, Square, Wrench, Zap } from 'lucide-react';
+import { createSingleSpawnRunId, parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -173,9 +174,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     [member, plainNode, backgroundTasks, viewingMemberId],
   );
 
-  const awaitingSingleSpawn = !snapshot && durableDetail?.run.sessionId === sessionId
-    && durableDetail?.run.trigger === 'llm-spawn' && durableDetail.run.totalAgents === 1
-    && durableDetail.agents[0]?.agentId === viewingMemberId;
+  const awaitingSingleSpawn = !snapshot && member?.record
+    && parseSwarmTraceStorageId(member.record.runId)?.runId === createSingleSpawnRunId(member.key);
   if (awaitingSingleSpawn || (!member && !plainNode && !plainTask)) return null;
 
     // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
