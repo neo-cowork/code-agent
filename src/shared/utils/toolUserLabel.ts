@@ -6,7 +6,8 @@
 // 原始命令只放在审批卡的可展开详情里，通知只说动作。
 // ============================================================================
 
-import { PARKED_APPROVAL_ENTRY_PATH } from '../parkedApprovalLocation';
+import { APPROVAL_NOTIFICATION_TEXT } from '../i18n/approvalNotification';
+import { WAITING_ON_USER_LABELS } from '../i18n/waitingOnUserLabels';
 import { findConnectorToolMetadata, isMcpToolName } from '../contract/workbenchTools';
 import { catalogConnectorToolPhrase } from './catalogConnectorToolLabel';
 
@@ -64,18 +65,12 @@ export function permissionNotice(
   toolName: string | undefined,
   language: 'zh' | 'en',
   context: 'approval' | 'parked' | 'first_wake' = 'approval',
+  sessionTitle?: string,
 ): { title: string; body: string } {
-  const en = language === 'en';
-  const title = en ? 'Approval needed' : '需要授权';
-  const label = toolName?.trim() ? toolUserLabel(toolName, language) : undefined;
-  const body = label ? `${title}${en ? ': ' : '：'}${label}` : (en ? 'Review the proposed action.' : '请求执行权限');
-  if (context === 'first_wake') {
-    return { title, body: `${body}${en
-      ? '. The task is paused. Go back to the chat where you created this expert and tap Allow.'
-      : '。任务已暂停，回到刚创建专家的对话里点「允许」。'}` };
-  }
-  if (context !== 'parked') return { title, body };
-  return { title, body: `${body}${en
-    ? '. The task is paused. Open Agent Neo to review the unattended task.'
-    : `。任务已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`}` };
+  const copy = APPROVAL_NOTIFICATION_TEXT[language];
+  const title = sessionTitle ? copy.namedTitle(sessionTitle) : copy.title;
+  const body = toolName?.trim()
+    ? WAITING_ON_USER_LABELS[language].approvalWithLabel.replace('{label}', () => toolUserLabel(toolName, language))
+    : copy.noTool;
+  return { title, body: body + copy[context] };
 }
