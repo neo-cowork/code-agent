@@ -249,6 +249,8 @@ describe('approved rm production approval boundary', () => {
       (f: string[]) => `test ! -e "${f[0]}" && echo gone`,
       (f: string[]) => `[ -e "${f[0]}" ] && echo STILL || echo GONE; ls -l ${f[1]} 2>&1; echo "exit=$?"`,
       (f: string[]) => `stat "${f[0]}"; test -f ${f[1]}`,
+      (f: string[]) => `for p in ${f[0]} "${f[1]}"; do\n  if [ -e "$p" ]; then echo "STILL: $p"; ls -l "$p"; else echo "GONE: $p"; fi\ndone`,
+      (f: string[]) => `for p in ${f[0]} "${f[1]}"; do if [ -e "$p" ]; then echo "STILL PRESENT: $p"; else echo "GONE: $p"; fi; done`,
     ])('answers %# without a card after the approved delete', (build) => {
       approveDelete();
       expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(true);
@@ -260,9 +262,13 @@ describe('approved rm production approval boundary', () => {
       (f: string[]) => `test -e "${f[0]}" && cat "${f[0]}"`,
       (f: string[]) => `ls ${f[0]} > ${f[1]}`,
       (f: string[]) => `ls ${f[0]} $(printf x)`,
-      (f: string[]) => `for p in ${f[0]}; do test -e "$p"; done`,
-      (f: string[]) => `ls ${join(cwd, '*.tmp')}`,
-      () => 'echo done',
+      (f: string[]) => `for p in ${f[0]}; do rm "$p"; done`,
+      (f: string[]) => `for p in ${f[0]} ${f[2]}; do test -e "$p"; done`,
+      (f: string[]) => `for p in ${f[0]}; do test -e "$q"; done`,
+      (f: string[]) => `for p in ${f[0]}; do ls "$p" "$other"; done`,
+      (f: string[]) => `while true; do test -e ${f[0]}; done`,
+      (_f: string[]) => `ls ${join(cwd, '*.tmp')}`,
+      (_f: string[]) => 'echo done',
     ])('keeps asking for %#: unrelated path, other program, redirect, expansion, loop, glob', (build) => {
       approveDelete();
       expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(false);

@@ -21,7 +21,7 @@ const TEST_OPERATORS = new Set(['!', ']', '-e', '-f', '-d', '-s', '-L', '-h', '-
 
 /**
  * True when `command` only checks (test / [ / ls / stat, plus echo/printf of text) files that the
- * user approved for deletion earlier in this session. Loops, redirects to files, expansions and any
+ * user approved for deletion earlier in this session. A `for` loop is covered only when every list item is such a file. Redirects to files, expansions and any
  * other path stay on the normal approval path.
  */
 export function isApprovedRmVerifyProbe(command: string, workingDirectory: string, sessionId: string | undefined, now = Date.now()): boolean {
@@ -33,19 +33,34 @@ export function isApprovedRmVerifyProbe(command: string, workingDirectory: strin
   if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0
     || parsed.writeTargets.length > 0 || parsed.segments.length === 0) return false;
   let pathOperands = 0;
+  const home = homedir();
+  const approved = (word: string) => {
+    const literal = word === '~' ? home : word.startsWith('~/') ? path.join(home, word.slice(2)) : word;
+    return bucket.has(path.resolve(workingDirectory, literal));
+  };
+  // `for f in <approved files>; do if [ -e "$f" ]; ...; fi; done`: the list is only approved files, so "$f" is too.
+  const loopVars = new Set<string>();
   for (const segment of parsed.segments) {
-    const [program = '', ...args] = segment.words;
+    let words = segment.words;
+    if (words[0] === 'for') {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(words[1] ?? '') || words[2] !== 'in' || words.length < 4 || !words.slice(3).every(approved)) return false;
+      loopVars.add(words[1]);
+      continue;
+    }
+    if (['do', 'done', 'then', 'else', 'fi'].includes(words[0] ?? '') && words.length === 1) continue;
+    while (['if', 'then', 'else', 'do'].includes(words[0] ?? '')) words = words.slice(1);
+    const [program = '', ...args] = words;
     if (!READ_ONLY_PROGRAMS.has(program) || segment.redirects.length > 0 || segment.reads.length > 0) return false;
     if (segment.terminator !== null && ![';', '\n', '&&', '||'].includes(segment.terminator)) return false;
-    if (args.some((word) => /[$`*?{}\\]/.test(word.replaceAll('${?}', '')))) return false;
+    const isLoopVar = (word: string) => loopVars.has(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(word)?.[1] ?? '');
+    const plain = (word: string) => word.replaceAll('${?}', '').replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => loopVars.has(name) ? '' : '$');
+    if (args.some((word) => /[$`*?{}\\]/.test(plain(word)))) return false;
     if (program === 'printf' && args.some((word) => /^-v|%[^%]*n/.test(word))) return false;
     if (!PATH_PROGRAMS.has(program)) continue;
     if (program === '[' && args.at(-1) !== ']') return false;
     for (const word of args) {
       if (program === 'test' || program === '[' ? TEST_OPERATORS.has(word) : /^-[A-Za-z]+$/.test(word)) continue;
-      const home = homedir();
-      const literal = word === '~' ? home : word.startsWith('~/') ? path.join(home, word.slice(2)) : word;
-      if (!bucket.has(path.resolve(workingDirectory, literal))) return false;
+      if (!isLoopVar(word) && !approved(word)) return false;
       pathOperands += 1;
     }
   }
