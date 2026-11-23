@@ -50,6 +50,7 @@ vi.mock('@shared/keybindings/defaults', async (importOriginal) => ({
 import { ErrorBoundary } from '../../../src/renderer/components/ErrorBoundary';
 import { languages } from '../../../src/renderer/i18n';
 import { useServerConnectionStore } from '../../../src/renderer/stores/serverConnectionStore';
+import * as serverConnectionMonitor from '../../../src/renderer/utils/serverConnectionMonitor';
 import { SettingsModal } from '../../../src/renderer/components/features/settings/SettingsModal';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
@@ -58,6 +59,7 @@ afterEach(() => {
   useAppStore.setState({ language: 'zh', settingsInitialTab: null });
   useServerConnectionStore.getState().setStatus('ok');
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('SettingsModal 内容列左锚定（FB-215）', () => {
@@ -117,7 +119,10 @@ describe('SettingsModal service outage', () => {
     const main = within(panel.getByRole('main'));
     expect(await main.findByText(t.settings.pageLoadFailed)).toBeTruthy();
     expect(main.getByText(t.serverConnection.unavailableHintWeb)).toBeTruthy();
-    expect(main.getByRole('button', { name: t.settings.reloadPage })).toBeTruthy();
+    const retry = vi.spyOn(serverConnectionMonitor, 'retryNow');
+    fireEvent.click(main.getByRole('button', { name: t.settings.reloadPage }));
+    expect(retry).toHaveBeenCalledOnce();
+    expect(main.getByText(t.settings.pageLoadFailed)).toBeTruthy();
     expect(panel.getByTestId('server-connection-banner')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/TypeError|Importing a module|任务执行失败|Task failed/);
     expect(document.querySelector('pre')).toBeNull();

@@ -50,7 +50,8 @@ import { useExternalImportStore } from '../../../stores/externalImportStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { Button, IconButton } from '../../primitives';
 import { ErrorBoundary } from '../../ErrorBoundary';
-import { getServerReloadHint } from '../../../utils/serverConnectionMonitor';
+import { getServerConnectionStatus } from '../../../stores/serverConnectionStore';
+import { getServerReloadHint, retryNow } from '../../../utils/serverConnectionMonitor';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -627,7 +628,18 @@ export const SettingsModal: React.FC = () => {
                 <div className="space-y-3 text-sm">
                   <p>{t.settings.pageLoadFailed}</p>
                   <p className="text-zinc-400">{getServerReloadHint(t.serverConnection)}</p>
-                  <Button size="sm" variant="secondary" onClick={() => window.location.reload()}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      // A successful probe reloads the page without discarding the recovery UI while offline.
+                      if (getServerConnectionStatus() !== 'ok') {
+                        retryNow();
+                      } else {
+                        window.location.reload();
+                      }
+                    }}
+                  >
                     {t.settings.reloadPage}
                   </Button>
                 </div>
