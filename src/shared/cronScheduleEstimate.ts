@@ -1,5 +1,5 @@
 import type { CreateCronJobDefinition, CronJobDefinition, CronJobExecution } from './contract/cron';
-import { cronScheduleMinimumIntervalSeconds, everyScheduleIntervalSeconds } from './cronScheduleInterval';
+import { cronScheduleIntervalRangeSeconds, everyScheduleIntervalSeconds } from './cronScheduleInterval';
 
 const HOURS_PER_DAY = 24;
 const SECONDS_PER_DAY = HOURS_PER_DAY * 60 * 60;
@@ -31,18 +31,19 @@ export function estimateScheduleRuns(
 ): { runsPerDay: number; exact: boolean; highlight: boolean; cost: ScheduleRunCost } | undefined {
   if (schedule.type !== 'every' && schedule.type !== 'cron') return undefined;
 
-  let seconds: number | undefined;
+  let range: ReturnType<typeof cronScheduleIntervalRangeSeconds>;
   try {
-    seconds = everyScheduleIntervalSeconds(schedule) ?? cronScheduleMinimumIntervalSeconds(schedule);
+    range = cronScheduleIntervalRangeSeconds(schedule);
   } catch {
     // Invalid drafts can reach the preview before save-time validation.
     return undefined;
   }
+  const seconds = range?.min ?? everyScheduleIntervalSeconds(schedule);
   if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) return undefined;
 
-  const exact = schedule.type === 'every';
-  const roundedRuns = Math.round(SECONDS_PER_DAY / seconds);
-  const runsPerDay = exact ? roundedRuns : Math.max(1, roundedRuns);
+  const exact = schedule.type === 'every' || (range !== undefined && range.min === range.max);
+  const dailyRate = SECONDS_PER_DAY / seconds;
+  const runsPerDay = dailyRate < 1 ? dailyRate : Math.round(dailyRate);
   const local = runsOn !== 'cloud';
   return {
     runsPerDay,

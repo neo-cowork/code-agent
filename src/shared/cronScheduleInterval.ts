@@ -12,18 +12,27 @@ export function everyScheduleIntervalSeconds(schedule: CronJobDefinition['schedu
   return schedule.interval * multiplier;
 }
 
-export function cronScheduleMinimumIntervalSeconds(schedule: CronJobDefinition['schedule']): number | undefined {
+export function cronScheduleIntervalRangeSeconds(
+  schedule: CronJobDefinition['schedule'],
+): { min: number; max: number } | undefined {
   if (schedule.type !== 'cron') return undefined;
   const probe = new Cron(schedule.expression, { timezone: schedule.timezone, paused: true });
   try {
     const runs = probe.nextRuns(16);
-    let minimum: number | undefined;
+    if (runs.length < 2) return undefined;
+    let min = Infinity;
+    let max = 0;
     for (let index = 1; index < runs.length; index++) {
       const gap = (runs[index].getTime() - runs[index - 1].getTime()) / 1000;
-      minimum = minimum === undefined ? gap : Math.min(minimum, gap);
+      min = Math.min(min, gap);
+      max = Math.max(max, gap);
     }
-    return minimum;
+    return { min, max };
   } finally {
     probe.stop();
   }
+}
+
+export function cronScheduleMinimumIntervalSeconds(schedule: CronJobDefinition['schedule']): number | undefined {
+  return cronScheduleIntervalRangeSeconds(schedule)?.min;
 }

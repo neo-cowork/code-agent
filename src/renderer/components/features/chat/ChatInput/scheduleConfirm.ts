@@ -313,7 +313,11 @@ export function buildScheduleConfirmRows(
   ];
   if (estimate) {
     const copy = languages[lang].cronScheduleEstimate;
-    const count = estimate.exact ? copy.about(estimate.runsPerDay) : copy.atMost(estimate.runsPerDay);
+    const { runsPerDay, exact } = estimate;
+    const count = runsPerDay < 1
+      ? copy.lessThanDaily
+      : exact ? copy.about(runsPerDay) : copy.atMost(runsPerDay);
+    const cadence = exact ? count : copy.shortestGap(count);
     const { cost } = estimate;
     const costText = {
       usd: cost.kind === 'usd' ? copy.usd(formatRunCostUsd(cost.perDayUsd)) : '',
@@ -324,7 +328,7 @@ export function buildScheduleConfirmRows(
     rows.push({
       key: 'estimate',
       label: copy.label,
-      value: costText ? `${count} · ${costText}` : count,
+      value: costText ? `${cadence} · ${costText}` : cadence,
       hint: estimate.highlight ? copy.frequent : undefined,
     });
   }

@@ -22,7 +22,7 @@ vi.mock('../../../src/renderer/components/features/cron/useChannelCatalog', () =
 
 const twoMinutes = { type: 'every', interval: 2, unit: 'minutes' } as const;
 const hourly = { type: 'every', interval: 1, unit: 'hours' } as const;
-const daily = { type: 'cron', expression: '0 9 * * *' } as const;
+const daily = { type: 'cron', expression: '0 9 * * *', timezone: 'UTC' } as const;
 const irregular = { type: 'cron', expression: '0,5 9 * * *' } as const;
 const shell = { type: 'shell', command: 'backup.sh' } as const;
 const event = { type: 'event', source: 'channel', eventName: 'message', accountId: 'acct' } as const;
@@ -66,7 +66,10 @@ const cases = [
   { name: 'highlights 720 local runs and shows the first-run cost message', draft: draft(twoMinutes), history: [], value: 'About 720 runs/day · cost visible after the first run', highlight: true },
   { name: 'uses the median positive local session cost', draft: draft(twoMinutes), history: paidHistory, value: 'About 720 runs/day · about $144.0000/day', highlight: true },
   { name: 'shows a flat-fee history without a dollar figure', draft: draft(twoMinutes), history: flatFeeHistory, value: 'About 720 runs/day · not billed in USD', highlight: true },
-  { name: 'leaves daily jobs unhighlighted', draft: draft(daily), history: [], value: 'At most about 1 run/day, based on the shortest gap between runs · cost visible after the first run' },
+  { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost visible after the first run' },
+  { name: 'shows less than one run per day for weekly cron', draft: draft({ type: 'cron', expression: '0 9 * * 1', timezone: 'UTC' }), history: [], value: 'Less than one run/day · cost visible after the first run' },
+  { name: 'shows less than one run per day for monthly cron', draft: draft({ type: 'cron', expression: '0 9 1 * *', timezone: 'UTC' }), history: [], value: 'Less than one run/day, based on the shortest gap between runs · cost visible after the first run' },
+  { name: 'keeps a nonzero daily cost for every three days', draft: draft({ type: 'every', interval: 3, unit: 'days' }), history: [execution('paid', { cost: 0.3 })], value: 'Less than one run/day · about $0.1000/day' },
   { name: 'leaves hourly jobs unhighlighted', draft: draft(hourly), history: [], value: 'About 24 runs/day · cost visible after the first run' },
   { name: 'explains the shortest interval of an irregular schedule', draft: draft(irregular), history: [], value: 'At most about 288 runs/day, based on the shortest gap between runs · cost visible after the first run', highlight: true },
   { name: 'omits money and highlight for cloud jobs', draft: draft(twoMinutes, { runsOn: 'cloud' }), history: paidHistory, value: 'About 720 runs/day' },
