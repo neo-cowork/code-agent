@@ -15,7 +15,10 @@ import { POSTHOG_EVENTS } from '../../../src/shared/observability/posthog-events
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
-  mockGetSettings: vi.fn(() => ({ models: { providers: {} } })),
+  mockGetSettings: vi.fn((): {
+    ui?: { language?: string };
+    models: { providers: Record<string, { enabled?: boolean; displayName?: string; protocol?: string; baseUrl?: string }> };
+  } => ({ models: { providers: {} } })),
 }));
 
 vi.mock('../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
