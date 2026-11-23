@@ -647,15 +647,7 @@ export const enSettingsWork = {
           stale: 'Stale',
           archived: 'Archived',
         },
-        kindLabels: {
-          directive: 'User directive',
-          user: 'User',
-          feedback: 'Feedback',
-          project: 'Project',
-          reference: 'Reference',
-          session: 'Session',
-          pattern: 'Pattern',
-        },
+        kindLabels: { directive: 'User directive', user: 'User', feedback: 'Feedback', project: 'Project', people: 'People & organizations', reference: 'Reference', session: 'Session', pattern: 'Pattern' },
         stats: {
           total: 'Total',
           currentMatched: 'Current matches',

@@ -648,15 +648,7 @@ export const zhSettingsWork = {
           stale: '过期',
           archived: '归档',
         },
-        kindLabels: {
-          directive: '用户规则',
-          user: '用户',
-          feedback: '反馈',
-          project: '项目',
-          reference: '引用',
-          session: '会话',
-          pattern: '经验',
-        },
+        kindLabels: { directive: '用户规则', user: '用户', feedback: '反馈', project: '项目', people: '人与组织', reference: '引用', session: '会话', pattern: '经验' },
         stats: {
           total: '总数',
           currentMatched: '当前匹配',

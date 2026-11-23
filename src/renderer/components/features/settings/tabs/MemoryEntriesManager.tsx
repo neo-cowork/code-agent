@@ -93,7 +93,7 @@ function isBackgroundMemoryActor(actor: string): boolean {
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
-const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'reference', 'session', 'pattern'];
+const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'people', 'reference', 'session', 'pattern'];
 
 export function getMemoryEntryStatusLabel(
   status: MemoryEntryStatus,

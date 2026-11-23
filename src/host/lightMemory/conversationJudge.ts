@@ -24,7 +24,7 @@ export interface DurableFact {
   filename: string;
   name: string;
   description: string;
-  type: 'user' | 'feedback' | 'project' | 'reference';
+  type: 'user' | 'feedback' | 'project' | 'people' | 'reference';
   content: string;
   /** 判断器给出的置信度 (0-1)。缺失/越界时解析侧回落保守缺省（不低于丢弃门）。 */
   confidence: number;
@@ -64,7 +64,7 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
       "filename": "稳定、可复用的英文短文件名.md",
       "name": "事实名称",
       "description": "一句话说明这条记忆是什么",
-      "type": "user | feedback | project | reference 四选一",
+      "type": "user | feedback | project | people | reference 五选一",
       "content": "下次会话可直接使用的完整事实",
       "confidence": "0到1之间的小数，表示这条事实跨会话仍然成立的把握",
       "supersedes": "可选；若这条事实修正或取代了现有记忆文件清单中的某个文件，填那个文件名，否则省略该字段"
@@ -79,6 +79,7 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
 - title 抓住会话主题；worthKnowledge 抓住用户真正想达成什么、定了什么。
 - durableFacts 只收用户在对话中顺带透露、下次仍然成立的稳定事实，例如所在城市、家庭构成、预算档位、口味或忌口、常用平台与账号、明确表达的工作偏好，或用户对你的纠正。
 - 最强信号：你为了完成任务向用户问了一个问题，用户回答了，而且这个答案下次仍然成立。这种事实必须收进 durableFacts。
+- 用户提到同事、客户、团队或组织是谁、做什么、负责什么，用 type=people 收（一人或一个组织一条）；某个项目的当前进展、里程碑、负责人用 type=project 收。这两类里的相对日期（下周三、明天）必须按会话时间换成绝对日期（如 2026-11-25）再写入 content。
 - durableFacts 不收本次任务的临时状态、不收能从材料本身推导出的代码或文档或数据自带信息、不收闲聊和一次性调试细节。
 - durableFacts 返回空数组是正常结果，宁缺勿滥；绝大多数轮次都应该返回 []。
 - confidence 校准：用户亲口明说、且明确跨会话成立的给 0.5 以上；从措辞推断、可能只在本任务成立、或拿不准的给 0.5 以下——低于 0.5 的事实会被直接丢弃，不要为了写进而抬高。
@@ -120,6 +121,7 @@ const DURABLE_FACT_TYPES = new Set<DurableFact['type']>([
   'user',
   'feedback',
   'project',
+  'people',
   'reference',
 ]);
 
