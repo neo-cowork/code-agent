@@ -25,6 +25,7 @@ import {
 } from '../agent/memberRuntimeEngine';
 import type { AgentMessage } from '../agent/messageOrigin';
 import type { SwarmRunDetail } from '../../shared/contract/swarmTrace';
+import { getBackgroundSubagentRegistry } from '../agent/backgroundSubagentRegistry';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
 import { cleanDisplayText, resolveSessionWorkspaceRoot } from '../agent/workspacePathDisplay';
@@ -410,12 +411,16 @@ export function registerSwarmHandlers(
       services.planApproval.cancelRun(scope, 'swarm_cancelled');
       services.launchApproval.cancelRun(scope, 'swarm_cancelled');
       services.spawnGuard.cancelRun(scope, 'swarm_cancelled');
+      const registry = getBackgroundSubagentRegistry();
+      const persisted: Promise<void>[] = [];
       for (const agentId of resolveSingleSpawnVisibility(scope)?.agentIds ?? []) {
         services.spawnGuard.cancel(agentId);
+        persisted.push(registry.persistAgentUserStop(agentId, scope.sessionId));
       }
       services.parallelCoordinators.abortRun(scope, 'swarm_cancelled');
       getSwarmEventEmitter().cancelled(scope);
       services.parallelCoordinators.finalize(scope, 'cancelled');
+      await Promise.all(persisted);
       return true;
     } catch (error) {
       logger.error('swarm:cancel-run failed', { error: String(error) });
@@ -446,6 +451,9 @@ export function registerSwarmHandlers(
       const coordinatorCancelled = coordinator?.abortTask(ref.agentId) ?? false;
       const cancelled = cancelledPlanCount > 0 || spawnCancelled || coordinatorCancelled;
 
+      if (spawnCancelled) {
+        await getBackgroundSubagentRegistry().persistAgentUserStop(ref.agentId, ref.sessionId);
+      }
       if (cancelled) {
         getSwarmEventEmitter().agentCancelled(scope, ref.agentId, 'Cancelled by user');
       }

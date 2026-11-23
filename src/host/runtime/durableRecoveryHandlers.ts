@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
+import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import type { PendingOperation } from '../../shared/contract/durableRun';
 import {
   buildAgentTeamRecoveryDecision,
@@ -143,7 +144,7 @@ export function createAgentTeamRecoveryHandler(input: {
 /**
  * N-BGSPAWN-DURABLE 启动收口：engine_kind='subagent_single' 的残留 running 行
  * 说明持有它的进程死了（租约过期才会被 recoverOnStartup 认领）。断点续跑不在
- * 本卡范围（ADR-025 A2），统一收口成 failed/interrupted_by_restart 终态，并把
+ * 本卡范围（ADR-025 A2）。用户已停止的收口为 cancelled，其余收口为 failed，并把
  * 中断事实经 SubagentCompletionRecord 管道投影回父会话。terminal 成功后行即
  * 终态、不再被 sweep，投影因此只发生一次。
  */
@@ -155,17 +156,30 @@ export function createBackgroundSubagentRecoveryHandler(input: {
     engineKind: 'subagent_single',
     async recover(plan, now) {
       const metadata = readBackgroundSubagentCursorMetadata(plan.envelope.cursor.engineCursor);
+      const completion = metadata?.userStopped
+        ? { status: 'cancelled', failureCode: AgentFailureCode.CancelledByUser } as const
+        : { status: 'failed', failureCode: AgentFailureCode.ParentGone } as const;
+      const reason = completion.status === 'cancelled'
+        ? completion.failureCode
+        : BACKGROUND_SUBAGENT_INTERRUPTED_REASON;
       await input.registry.terminalDurable(plan.envelope.runId, {
         now,
-        status: 'failed',
-        reason: BACKGROUND_SUBAGENT_INTERRUPTED_REASON,
+        status: completion.status,
+        reason,
         event: {
-          type: 'background_subagent_interrupted_by_restart',
-          payload: { agentId: plan.envelope.runId, sessionId: plan.envelope.sessionId },
+          type: completion.status === 'cancelled'
+            ? 'background_subagent_cancelled'
+            : 'background_subagent_interrupted_by_restart',
+          payload: {
+            agentId: plan.envelope.runId,
+            sessionId: plan.envelope.sessionId,
+            ...(completion.status === 'cancelled' ? { outcome: completion.status, reason } : {}),
+          },
           recordedAt: now,
         },
       });
       const record = getBackgroundSubagentRegistry().recordInterruptedCompletion({
+        ...completion,
         agentId: plan.envelope.runId,
         ...(metadata?.title ? { title: metadata.title } : {}),
         ...(metadata?.role ? { role: metadata.role } : {}),
@@ -180,10 +194,10 @@ export function createBackgroundSubagentRecoveryHandler(input: {
         ...(metadata?.toolCalls !== undefined ? { toolCalls: metadata.toolCalls } : {}),
         ...(backgroundCursorHasLiveProgress(metadata) ? { progressRecorded: true } : {}),
       });
-      scheduleBackgroundSubagentIdleWake(record);
+      if (record.status !== 'cancelled') scheduleBackgroundSubagentIdleWake(record);
       return {
         status: 'recovered',
-        reason: BACKGROUND_SUBAGENT_INTERRUPTED_REASON,
+        reason,
         detail: { agentId: plan.envelope.runId, sessionId: plan.envelope.sessionId },
       };
     },

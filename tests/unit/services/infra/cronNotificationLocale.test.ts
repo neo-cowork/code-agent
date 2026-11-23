@@ -80,21 +80,21 @@ describe('scheduled-task notifications follow ui.language', () => {
       lang: 'zh',
       duration: '耗时: 2 秒',
       success: '定时任务已完成',
-      failure: '定时任务失败：Provider unavailable',
-      unknownFailure: '定时任务失败：未知错误',
-      consecutive: '连续失败 5 次已自动停用。最后错误：Provider unavailable。可在「自动化中心 → 定时任务」重新启用。',
-      permanent: '因配置/鉴权类错误停用（重试无效）。错误：未知错误。修正配置后可在「自动化中心 → 定时任务」重新启用。',
+      failure: '定时任务失败：运行失败',
+      unknownFailure: '定时任务失败：运行失败',
+      consecutive: '连续失败 5 次已自动停用。最后错误：运行失败。可在「自动化中心 → 定时任务」重新启用。',
+      permanent: '因配置/鉴权类错误停用（重试无效）。错误：运行失败。修正配置后可在「自动化中心 → 定时任务」重新启用。',
     },
     {
       lang: 'en',
       duration: 'Duration: 2 sec',
       success: 'Scheduled task completed',
-      failure: 'Scheduled task failed: Provider unavailable',
-      unknownFailure: 'Scheduled task failed: Unknown error',
+      failure: 'Scheduled task failed: The run failed.',
+      unknownFailure: 'Scheduled task failed: The run failed.',
       consecutive: 'The task was disabled after 5 consecutive failures. '
-        + 'Re-enable it under Automation Center → Scheduled tasks. Last error: Provider unavailable',
+        + 'Re-enable it under Automation Center → Scheduled tasks. Last error: The run failed.',
       permanent: 'The task was disabled because of a configuration or authentication error. '
-        + 'Fix the configuration, then re-enable it under Automation Center → Scheduled tasks. Error: Unknown error',
+        + 'Fix the configuration, then re-enable it under Automation Center → Scheduled tasks. Error: The run failed.',
     },
   ])('$lang bodies', ({ lang, duration, success, failure, unknownFailure, consecutive, permanent }) => {
     beforeEach(() => {

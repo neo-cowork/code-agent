@@ -56,7 +56,7 @@ interface VoiceArtifactAnchor {
 function projectBackgroundTaskArtifacts(message: Message, turns: TraceTurn[]): VoiceArtifactAnchor | null {
   const result = message.metadata?.backgroundTaskResult;
   if (!result?.artifacts?.length) return null;
-  const matchedTurn = findVoiceWorkTurn(turns, result.taskId);
+  const matchedTurn = findVoiceWorkTurn(turns, result.taskId) ?? findDelegatedTaskTurn(turns, result.taskId);
   if (!matchedTurn) return null;
 
   const artifactOwnership: TurnArtifactOwnershipItem[] = result.artifacts.flatMap((artifact) => (
@@ -636,6 +636,7 @@ export function projectTurns(
           : contentMetadata;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
+          messageId: msg.id,
           type: 'tool_call',
           content: '',
           timestamp: msg.timestamp,
@@ -835,6 +836,15 @@ export function projectTurns(
     activeTurnIndex,
   };
   });
+}
+
+/** 按 taskId 倒查发起这个后台任务的轮（delegate_task 等工具结果里的 sessionTask.tasks）。 */
+function findDelegatedTaskTurn(turns: TraceTurn[], taskId: string | undefined): TraceTurn | undefined {
+  if (!taskId) return undefined;
+  return [...turns].reverse().find((turn) => turn.nodes.some((node) => {
+    const tasks = (node.toolCall?.metadata?.sessionTask as { tasks?: Array<{ taskId?: string }> } | undefined)?.tasks;
+    return tasks?.some((task) => task.taskId === taskId);
+  }));
 }
 
 /** 按 workItemId 倒查最近的 voiceDispatch 派活轮（matched-turn 挂轮策略专用）。 */
