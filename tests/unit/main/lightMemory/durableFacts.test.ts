@@ -39,8 +39,9 @@ vi.mock('../../../../src/host/model/quickModel', () => ({
   memoryTask: memoryModelMocks.memoryTask,
 }));
 
+const withTimeoutSpy = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/host/services/infra/timeoutController', () => ({
-  withTimeout: <T>(promise: Promise<T>) => promise,
+  withTimeout: <T>(promise: Promise<T>, ms: number) => { withTimeoutSpy(ms); return promise; },
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', async (importOriginal) => {
@@ -320,6 +321,17 @@ describe('默认助手长期事实写回', () => {
 
     expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toContain('type: people');
     expect(await fs.readFile(path.join(memoryDir, 'fact-2.md'), 'utf-8')).toContain('type: project');
+  });
+
+  it('判官调用用 SESSION_JUDGE.TIMEOUT_MS，且留得下推理模型的尾延迟（≥20s）', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [] }));
+    withTimeoutSpy.mockClear();
+
+    await judgeConversation({ userMessages: ['随便聊聊。'] });
+
+    expect(withTimeoutSpy).toHaveBeenCalledWith(SESSION_JUDGE.TIMEOUT_MS);
+    expect(SESSION_JUDGE.TIMEOUT_MS).toBeGreaterThanOrEqual(20_000);
+    expect(memoryModelMocks.memoryTask).toHaveBeenCalledWith(expect.any(String), SESSION_JUDGE.MAX_TOKENS);
   });
 
   it('模型返回五条事实时只保留并写入前三条', async () => {

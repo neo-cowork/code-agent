@@ -44,9 +44,13 @@ export const MEMORY_OFF_NOTICE =
 /** session 收尾 LLM 判断（runFinalizer → conversationJudge） */
 export const SESSION_JUDGE = {
   /** quick model max_tokens：需要容纳判断结果与少量长期事实正文 */
-  MAX_TOKENS: 768,
-  /** quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口 */
-  TIMEOUT_MS: 8000,
+  MAX_TOKENS: 1024,
+  /**
+   * quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口。
+   * 8000→20000：dogfood 模型关思考后判官典型 4–5s，但实测会有 14s 的尾延迟，8s 线上会整段降级成
+   * 「一条长期记忆也写不出」；仍须小于 SKILL_REVIEW.TIMEOUT_MS（conversationReview 单测钉着）。
+   */
+  TIMEOUT_MS: 20000,
   /** 参与判断的最近用户轮数（多轮会话取最近 N 轮即可锁定当前主题） */
   RECENT_USER_TURNS: 8,
   /** 单轮最多沉淀的长期事实条数 */
