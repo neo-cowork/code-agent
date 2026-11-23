@@ -1,3 +1,4 @@
+import { persistBackgroundSubagentFailure } from './subagentContextLifecycle';
 // ============================================================================
 // 后台 subagent 注册表 — 进程内后台执行 + 稳定 agent_id（Kimi 借鉴 #2 / ADR-025）
 // ============================================================================
@@ -361,6 +362,9 @@ export class BackgroundSubagentRegistry {
 
   private async recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): Promise<void> {
     this.liveProgressByAgent.delete(entry.agentId);
+    if (entry.sessionId && entry.failureCode && entry.finishedAt !== undefined) {
+      persistBackgroundSubagentFailure(entry.sessionId, entry.agentId, entry.failureCode, entry.finishedAt);
+    }
     if (options.completionNotificationGate?.suppress) return;
     const record = buildSubagentCompletionRecord({
       agentId: entry.agentId,

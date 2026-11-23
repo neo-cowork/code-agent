@@ -9,7 +9,10 @@ import {
   type AgentTreeSpawnAgentSource,
 } from '../../../src/host/agent/agentTreeService';
 import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import * as contextStore from '../../../src/host/context/subagentContextStore';
 import { SubagentContextStore } from '../../../src/host/context/subagentContextStore';
+import { BackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import { withPersistedSubagentLifecycle } from '../../../src/host/agent/subagentContextLifecycle';
 import type { EvidenceRef } from '../../../src/shared/contract/evidence';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 
@@ -214,6 +217,48 @@ describe('agentTreeService', () => {
   // 执行方已死，节点不能再以 unknown（renderer 口径 = 工作中）谎报在跑。
   // 用 Date.now() 相对量构造「上一进程写的」与「本进程刚写的」两类记录。
   // --------------------------------------------------------------------------
+  it.each([
+    { success: false, output: '', error: 'Permission denied', code: AgentFailureCode.PermissionDenied },
+    { success: true, output: '', code: AgentFailureCode.Unknown },
+  ])('rehydrates a registry failure ($code) with the same cause as the live receipt', async ({ code, ...result }) => {
+    const dir = mkdtempSync(join(tmpdir(), 'failed-helper-context-'));
+    const path = join(dir, 'context.json');
+    const store = new SubagentContextStore(path);
+    const storeMock = vi.spyOn(contextStore, 'getSubagentContextStore').mockReturnValue(store);
+    const registry = new BackgroundSubagentRegistry();
+    const sessionId = 'report-session';
+    const agentId = 'report-agent';
+    const backgroundAgentId = 'report-background';
+    try {
+      const run = withPersistedSubagentLifecycle({
+        config: { name: 'Explorer', roleId: 'explore', systemPrompt: '', availableTools: [] },
+        prompt: 'Summarize the project handover notes',
+        context: {
+          sessionId, executionAgentId: agentId,
+          resolver: { getDefinition: () => undefined },
+          abortSignal: new AbortController().signal, cwd: dir,
+          modelConfig: { provider: 'test', model: 'test-model' },
+          permission: { request: async () => true },
+          events: { emit: () => undefined, detached: true, backgroundDurableAgentId: backgroundAgentId },
+        },
+      }, async () => ({ ...result, toolsUsed: [], iterations: 1 }));
+      registry.adopt(run, { agentId: backgroundAgentId, sessionId, completionNotificationGate: { suppress: true } });
+      await registry.await(backgroundAgentId);
+      const live = buildAgentTreeSnapshot({ sessionId, contextRecords: store.list(sessionId), backgroundAgents: registry.list() }).nodes[0];
+      const reopened = new SubagentContextStore(path);
+      const contextRecords = reopened.list(sessionId);
+      expect(contextRecords[0]?.lifecycle).toMatchObject({ status: 'failed', failureCode: code, failureReason: expect.any(String) });
+      const replayed = buildAgentTreeSnapshot({ sessionId, contextRecords }).nodes[0];
+      expect(replayed).toMatchObject({
+        id: agentId, backgroundAgentId, role: 'explore', status: 'failed',
+        failureCode: code, failureReason: live.failureReason,
+      });
+    } finally {
+      storeMock.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('rehydrates a stopped agent as cancelled after the executor reports failure', () => {
     const directory = mkdtempSync(join(tmpdir(), 'agent-tree-restart-'));
     const storePath = join(directory, 'context.json');
