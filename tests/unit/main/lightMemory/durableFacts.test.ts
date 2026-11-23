@@ -313,6 +313,7 @@ describe('默认助手长期事实写回', () => {
     expect(judgment.durableFacts.map((fact) => fact.type)).toEqual(['people', 'project']);
     const prompt = memoryModelMocks.memoryTask.mock.calls[0][0] as string;
     expect(prompt).toContain('type=people');
+    expect(prompt).toContain('拆成两条分别收');
     expect(prompt).toContain('绝对日期');
     expect(prompt).toMatch(/会话日期：\d{4}-\d{2}-\d{2}（/);
     await writeDurableFacts(judgment.durableFacts);
