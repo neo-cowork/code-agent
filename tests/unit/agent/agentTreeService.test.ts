@@ -219,6 +219,7 @@ describe('agentTreeService', () => {
   // --------------------------------------------------------------------------
   it.each([
     { success: false, output: '', error: 'Permission denied', code: AgentFailureCode.PermissionDenied },
+    { success: false, output: '', cancellationReason: 'timeout' as const, code: AgentFailureCode.Timeout },
     { success: true, output: '', code: AgentFailureCode.Unknown },
   ])('rehydrates a registry failure ($code) with the same cause as the live receipt', async ({ code, ...result }) => {
     const dir = mkdtempSync(join(tmpdir(), 'failed-helper-context-'));

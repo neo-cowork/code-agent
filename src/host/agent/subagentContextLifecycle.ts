@@ -59,7 +59,7 @@ export function persistBackgroundSubagentFailure(
   const record = store.get(sessionId, agentId)
     ?? store.list(sessionId).find((candidate) => candidate.lifecycle?.backgroundAgentId === agentId);
   if (!record?.lifecycle) return;
-  const cancelled = record.lifecycleStatus === 'cancelled' || record.lifecycle.status === 'cancelled'
+  const cancelled = record.lifecycleStatus === 'cancelled'
     || failureCode === AgentFailureCode.CancelledByUser || failureCode === AgentFailureCode.CancelledByParent;
   store.upsert({
     ...record,
