@@ -237,7 +237,7 @@ export function ChatImageAnnotateModal({
           ) : !error ? (
             <div className="text-sm text-zinc-400">{copy.loading}</div>
           ) : null}
-          {error && <div className="text-sm text-red-400" role="alert">{error}</div>}
+          {error && <div className="text-sm text-badge-danger" role="alert">{error}</div>}
         </div>
         <div className="flex w-full shrink-0 flex-col gap-2 md:w-64">
           {comments.map((comment, i) => (
