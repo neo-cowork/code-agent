@@ -369,13 +369,13 @@
     "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
     "rule": "uuid",
     "sample": "{focusedWorkflowRun ? focusedWorkflowRun.goal ? `Workflow: ${focusedWorkflowRun.goal}` : `Workflow ${focusedWorkflowRun.runId}` : focusedBackgroundTask ? backgroundTaskDisplayLabels.get(focusedBackgroundTask.id) : undefined}",
-    "reason": "N-FIX-BGTASK-TITLE-ENGLISH-IN-OTHER-LISTS: task.id is only a Map key; rendered text is the localised backgroundTaskLabel"
+    "reason": "N-FIX-BGTASK-TITLE-ENGLISH-IN-OTHER-LISTS"
   },
   {
     "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
     "rule": "uuid",
     "sample": "{backgroundTaskDisplayLabels.get(task.id)}",
-    "reason": "N-FIX-BGTASK-TITLE-ENGLISH-IN-OTHER-LISTS: task.id is only a Map key; rendered text is the localised backgroundTaskLabel"
+    "reason": "N-FIX-BGTASK-TITLE-ENGLISH-IN-OTHER-LISTS"
   },
   {
     "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
