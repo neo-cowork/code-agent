@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import fixture from '../../../../src-tauri/src/notification_click_fixtures/needs-input-click.json';
 import { NEEDS_INPUT_NATIVE_FALLBACK } from '../../../../src/shared/constants/timeouts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,13 +31,16 @@ import { notificationService } from '../../../../src/host/services/infra/notific
 import { Notification } from '../../../../src/host/platform/notifications';
 
 let child: EventEmitter & { unref: ReturnType<typeof vi.fn> };
-const notify = async () => { notificationService.notifyNeedsInput({ sessionId: '--session;$(ignored)', title: 'write_file', body: 'mcp__internal', tool: 'Write' }); await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS); };
+const notify = async (sessionId = fixture.payload.sessionId) => {
+  notificationService.notifyNeedsInput({ sessionId, title: 'write_file', body: 'mcp__internal', tool: 'Write' });
+  await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+};
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '');
-  vi.stubEnv('CODE_AGENT_SHELL_EXE', '/Applications/Agent Neo.app/Contents/MacOS/code-agent-tauri');
+  vi.stubEnv('CODE_AGENT_SHELL_EXE', fixture.executable);
   vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
   child = Object.assign(new EventEmitter(), { unref: vi.fn() });
   h.spawn.mockReturnValue(child);
@@ -60,7 +65,7 @@ describe('production notificationService needs-input background notify-only', ()
     const id = h.broadcast.mock.calls[0][1].id;
     expect(h.spawn).toHaveBeenCalledExactlyOnceWith(
       process.env.CODE_AGENT_SHELL_EXE,
-      ['--notify-only', '--title', '会议纪要', '--body', '等你确认：写入文件', '--id', id, '--session', '--session;$(ignored)'],
+      fixture.argv.map((arg) => arg === fixture.payload.id ? id : arg),
       { detached: true, stdio: 'ignore', shell: false },
     );
     expect(child.unref).toHaveBeenCalledOnce();
@@ -69,6 +74,17 @@ describe('production notificationService needs-input background notify-only', ()
       .flatMap((launch) => launch.mock.calls).filter(([command]) => /\bosascript\b/.test(String(command)));
     expect(osascriptCalls).toEqual([]);
     console.info('ASSERT child_process spawn/exec osascript calls:', osascriptCalls.length);
+  });
+
+  it('passes a flag-like session id with shell metacharacters as a single argv value', async () => {
+    const sessionId = '--session;$(ignored)';
+    await notify(sessionId);
+    const id = h.broadcast.mock.calls[0][1].id;
+    expect(h.spawn).toHaveBeenCalledExactlyOnceWith(
+      process.env.CODE_AGENT_SHELL_EXE,
+      ['--notify-only', '--title', '会议纪要', '--body', '等你确认：写入文件', '--id', id, '--session', sessionId],
+      { detached: true, stdio: 'ignore', shell: false },
+    );
   });
 
   it('missing env warns notify-only-executable-missing with no osascript', async () => {
@@ -104,5 +120,16 @@ describe('production notificationService needs-input background notify-only', ()
     await notify();
     expect(h.spawn).not.toHaveBeenCalled();
     expect(h.warn).toHaveBeenCalledWith('Native needs-input notification unavailable', { reason: 'notify-only-platform-unsupported' });
+  });
+});
+
+describe('needs-input native delivery source', () => {
+  it.each([
+    'src/host/services/infra/notificationService.ts',
+    'src/host/services/infra/needsInputNativeFallback.ts',
+    'src-tauri/src/native_notification.rs',
+  ])('%s contains no AppleScript notification command', (file) => {
+    const source = readFileSync(new URL(`../../../../${file}`, import.meta.url), 'utf8');
+    expect(source).not.toMatch(/osascript|display notification/i);
   });
 });

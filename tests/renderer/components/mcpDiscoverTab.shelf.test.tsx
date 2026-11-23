@@ -2,15 +2,21 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { findRecommendedMcpServer, getBuiltinMcpCatalogPayload } from '../../../src/shared/constants/mcpCatalog';
 
+const environment = vi.hoisted(() => ({
+  isWebMode: false,
+  language: 'zh' as 'zh' | 'en',
+}));
+
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: zh, language: 'zh' }),
+  useI18n: () => ({ t: environment.language === 'en' ? en : zh, language: environment.language }),
 }));
 
 vi.mock('../../../src/renderer/utils/platform', () => ({
-  isWebMode: () => false,
+  isWebMode: () => environment.isWebMode,
 }));
 
 import { McpDiscoverTab, type McpDiscoverTabProps } from '../../../src/renderer/components/features/settings/tabs/McpDiscoverTab';
@@ -33,7 +39,11 @@ function renderDiscover(overrides: Partial<McpDiscoverTabProps> = {}) {
 }
 
 describe('McpDiscoverTab unified grid cards', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    environment.isWebMode = false;
+    environment.language = 'zh';
+  });
 
   it('keeps capability copy on the card and moves runtime details into the modal', () => {
     renderDiscover();
@@ -145,5 +155,83 @@ describe('McpDiscoverTab unified grid cards', () => {
 
     expect(props.onEnableBuiltin).toHaveBeenCalledWith('exa');
     expect(props.onAdd).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { state: 'web mode', web: true, canManageMcp: true, reason: discoverText.grid.addDesktopOnly },
+    { state: 'no admin permission', web: false, canManageMcp: false, reason: discoverText.grid.addRequiresAdmin },
+    { state: 'web mode without admin permission', web: true, canManageMcp: false, reason: discoverText.grid.addDesktopOnly },
+  ])('explains disabled Add in $state for Notion and Supabase', ({ web, canManageMcp, reason }) => {
+    environment.isWebMode = web;
+    const catalog = getBuiltinMcpCatalogPayload();
+    const fixtureValue = 'fixture-credential-value-must-stay-hidden';
+    renderDiscover({
+      canManageMcp,
+      catalog: {
+        ...catalog,
+        servers: catalog.servers.map((entry) => {
+          if (entry.id !== 'supabase' || entry.connection?.type !== 'stdio') return entry;
+          return { ...entry, connection: { ...entry.connection, env: { SUPABASE_ACCESS_TOKEN: fixtureValue } } };
+        }),
+      },
+    });
+
+    for (const [id, credential] of [
+      ['notion', discoverText.grid.browserSignIn],
+      ['supabase', 'SUPABASE_ACCESS_TOKEN'],
+    ]) {
+      fireEvent.click(screen.getByTestId(`mcp-discover-card-${id}`));
+      const dialog = screen.getByRole('dialog');
+      const detail = within(dialog);
+      const add = detail.getByRole<HTMLButtonElement>('button', { name: discoverText.add });
+      expect(add.disabled).toBe(true);
+      const reasonNode = detail.getByTestId(`mcp-discover-add-disabled-reason-${id}`);
+      expect(reasonNode.textContent).toBe(reason);
+      expect(reasonNode.id).toBe(add.getAttribute('aria-describedby'));
+      expect(reasonNode.previousElementSibling).toBe(add);
+      expect(detail.getByText(discoverText.requiredCredentialsPrefix + credential)).toBeTruthy();
+      expect(detail.queryByText(discoverText.grid.secretInNextStep)).toBeNull();
+      expect(dialog.textContent).not.toContain(fixtureValue);
+      fireEvent.keyDown(document, { key: 'Escape' });
+    }
+  });
+
+  it('explains disabled Enable in web mode and retains the no-config line', () => {
+    environment.isWebMode = true;
+    renderDiscover();
+    fireEvent.click(screen.getByTestId('mcp-discover-card-puppeteer'));
+
+    const detail = within(screen.getByRole('dialog'));
+    const enable = detail.getByRole<HTMLButtonElement>('button', { name: discoverText.enable });
+    expect(enable.disabled).toBe(true);
+    const reason = detail.getByTestId('mcp-discover-add-disabled-reason-puppeteer');
+    expect(reason.textContent).toBe(discoverText.grid.enableDesktopOnly);
+    expect(reason.id).toBe(enable.getAttribute('aria-describedby'));
+    expect(detail.getByText(discoverText.noConfig)).toBeTruthy();
+  });
+
+  it('keeps the setup panel hint and omits the disabled reason when Add is enabled', () => {
+    renderDiscover();
+    fireEvent.click(screen.getByTestId('mcp-discover-card-notion'));
+
+    const detail = within(screen.getByRole('dialog'));
+    const add = detail.getByRole<HTMLButtonElement>('button', { name: discoverText.add });
+    expect(add.disabled).toBe(false);
+    expect(add.hasAttribute('aria-describedby')).toBe(false);
+    expect(detail.queryByTestId('mcp-discover-add-disabled-reason-notion')).toBeNull();
+    expect(detail.getByText(discoverText.grid.secretInNextStep)).toBeTruthy();
+  });
+
+  it('renders the disabled Notion detail entirely in English', () => {
+    environment.isWebMode = true;
+    environment.language = 'en';
+    renderDiscover();
+    fireEvent.click(screen.getByTestId('mcp-discover-card-notion'));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Needs: Sign in via browser')).toBeTruthy();
+    expect(within(dialog).getByTestId('mcp-discover-add-disabled-reason-notion').textContent)
+      .toBe(en.settings.mcp.discover.grid.addDesktopOnly);
+    expect(dialog.textContent).not.toMatch(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u);
   });
 });

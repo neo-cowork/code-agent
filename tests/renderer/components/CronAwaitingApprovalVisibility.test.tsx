@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE：无人值守任务停在审批时，任务行/详情/运行记录
-// 都要能看到 amber「等你批准」，且「去处理」把用户带到运行记录 tab（审批卡在收件箱顶部）。
+// 都要能看到 amber「等你确认」，且「去处理」把用户带到运行记录 tab（审批卡在收件箱顶部）。
 // 面板级走真子组件（CronJobList/CronJobDetail/CronExecutionList），只打桩编辑器/收件箱/横幅。
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -117,7 +117,7 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
     try {
       render(<CronCenterPanel onClose={() => undefined} />);
       const badge = await screen.findByTestId('cron-exec-awaiting-approval');
-      expect(badge.textContent).toBe('等你批准');
+      expect(badge.textContent).toBe('等你确认');
       fireEvent.click(badge);
       const entry = screen.getByTestId('cron-detail-awaiting-approval-hint').parentElement;
       expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
@@ -221,7 +221,7 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
       () => {
         const badges = screen.getAllByTestId('cron-job-awaiting-approval');
         expect(badges).toHaveLength(1);
-        expect(badges[0].textContent).toBe('等你批准');
+        expect(badges[0].textContent).toBe('等你确认');
         expect(badges[0].closest('button')!.textContent).toContain('每日晨报');
       },
       { timeout: 3000 },
@@ -274,8 +274,8 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
     );
 
     // loadJobs 后默认选中 jobs[0]（job-1），任务详情已在右侧
-    expect(screen.getByTestId('cron-detail-awaiting-approval').textContent).toBe('等你批准');
-    expect(screen.getByTestId('cron-detail-awaiting-approval-hint').textContent).toContain('等你批准操作');
+    expect(screen.getByTestId('cron-detail-awaiting-approval').textContent).toBe('等你确认');
+    expect(screen.getByTestId('cron-detail-awaiting-approval-hint').textContent).toContain('等你确认操作');
 
     fireEvent.click(screen.getByTestId('cron-detail-awaiting-approval-action'));
     expect(screen.getByTestId('cron-center-tab-runs').getAttribute('aria-selected')).toBe('true');
@@ -283,12 +283,12 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
     await vi.waitFor(
       () => {
         const execBadge = screen.getByTestId('cron-exec-awaiting-approval');
-        expect(execBadge.textContent).toBe('等你批准');
+        expect(execBadge.textContent).toBe('等你确认');
       },
       { timeout: 3000 },
     );
   });
-  it('⑤ 带 commandPreview：详情提示与运行行 chip 显示「等你批准：<预览>」；无预览保持原文案', async () => {
+  it('⑤ 带 commandPreview：详情提示与运行行 chip 显示「等你确认：<预览>」；无预览保持原文案', async () => {
     render(<CronCenterPanel onClose={() => undefined} />);
     awaitingRunsMock = [{
       jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1,
@@ -302,7 +302,7 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
       { timeout: 3000 },
     );
     const hint = screen.getByTestId('cron-detail-awaiting-approval-hint').textContent ?? '';
-    expect(hint).toContain('等你批准：运行命令');
+    expect(hint).toContain('等你确认：运行命令');
     expect(hint).not.toContain('node scripts/refresh-wechat');
     expect(hint).not.toContain('--verbose-long-flag');
 
@@ -310,10 +310,10 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
     await vi.waitFor(
       () => {
         const chip = screen.getByTestId('cron-exec-awaiting-approval');
-        expect(chip.textContent).toContain('等你批准：运行命令');
+        expect(chip.textContent).toContain('等你确认：运行命令');
         expect(chip.className).toContain('whitespace-nowrap');
         expect(chip.className).toContain('max-w-[180px]');
-        expect(chip.getAttribute('title')).toBe('等你批准：运行命令');
+        expect(chip.getAttribute('title')).toBe('等你确认：运行命令');
       },
       { timeout: 3000 },
     );
@@ -342,7 +342,7 @@ describe.each(['zh', 'en'] as const)('shared approval labels (%s)', (language) =
           ? <CronExecutionDetail execution={execution} awaitingRun={run} />
           : <CronJobApprovalHint run={run} />);
       const name = item.name ?? (language === 'zh' ? '运行命令' : 'Run command');
-      const expected = `${language === 'zh' ? '等你批准：' : 'Needs your approval: '}${name}`;
+      const expected = `${language === 'zh' ? '等你确认：' : 'Needs your approval: '}${name}`;
       const id = surface === 'list' ? 'cron-exec-awaiting-approval' : surface === 'detail' ? 'cron-exec-detail-awaiting-approval-hint' : 'cron-detail-awaiting-approval-hint';
       const element = screen.getByTestId(id);
       expect(element.textContent).toContain(expected);

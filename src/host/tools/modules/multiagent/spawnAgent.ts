@@ -319,7 +319,7 @@ async function runSpawnAgent(
 
   return withMultiagentMeta(result, ctx, schemaName, {
     action: 'spawn',
-    status: result.ok ? 'completed' : 'failed',
+    status: !result.ok ? 'failed' : serviceResult.metadata?.background === true ? 'running' : 'completed',
     agentId: typeof normalizedArgs.agentId === 'string'
       ? normalizedArgs.agentId
       : (typeof serviceAgentId === 'string' ? serviceAgentId : undefined),

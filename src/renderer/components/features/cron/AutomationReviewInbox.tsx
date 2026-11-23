@@ -39,6 +39,7 @@ import { NL_RULE_K2_TEXT } from '@shared/nlRuleRestate';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+import { AutomationRoleChip } from './AutomationRoleChip';
 import { folderDisplayName, ParkedArgsDisclosure } from './parkedArgsDisclosure';
 
 const logger = createLogger('AutomationReviewInbox');
@@ -123,9 +124,9 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
     }
     const key = `${row.sessionId}\u0000${row.writeGrantFolder}`;
     const existing = groups.get(key);
-    if (existing) {
-      existing.groupIds!.push(row.id);
-      existing.groupPaths!.push(row.argsPreview ?? '');
+    if (existing?.groupIds && existing.groupPaths) {
+      existing.groupIds.push(row.id);
+      existing.groupPaths.push(row.argsPreview ?? '');
     } else {
       const group: ParkedDisplayItem = { ...row, groupIds: [row.id], groupPaths: [row.argsPreview ?? ''] };
       groups.set(key, group);
@@ -536,7 +537,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     </div>
                     {parkedArgs(item)}
                     <div className="text-[11px] text-zinc-500">
-                      {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
+                      {cc.parkedVoidedLabel}{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                     </div>
                   </div>
                 ))}
@@ -586,6 +587,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                              <AutomationRoleChip roleId={record.config?.roleId} />
                               {isMustToday && (
                                 <span
                                   className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"

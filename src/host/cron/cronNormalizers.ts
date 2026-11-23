@@ -52,6 +52,8 @@ export interface CronAgentActionResult {
   alertReason?: string;
   /** 本次运行实测成本（USD，N-CRON-RUN-LEDGER-VISIBLE）：scoped 计量器读数；无模型调用时缺省。 */
   costUsd?: number;
+  /** 价表 0 元（包月/免费额度）模型且无实测美元成本：不按美元计费的机读标记。 */
+  flatFee?: true;
   /**
    * 有命令没获批准且无产出（N-CRON-RUN-COMPLETED-BUT-DENIED）：状态仍是 completed
    * （拒绝不是任务失败，不触发重试/停用），通知与 UI 用它换琥珀色「需处理」。
@@ -167,6 +169,7 @@ export interface CronExecutionRow {
   retry_attempt: number;
   exit_code?: number | null;
   cost_usd?: number | null;
+  flat_fee?: number | null;
   trigger_json?: string | null;
   push_note?: string | null;
 }
@@ -369,6 +372,7 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
           pollIntervalSec: clampPollIntervalSec(readNumberField(value, 'pollIntervalSec')),
           batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
           minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+          ...eventLimitFields(value),
         };
       }
       if (value.source === 'webhook') {
@@ -386,6 +390,7 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
           eventName: 'message',
           batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
           minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+          ...eventLimitFields(value),
         };
       }
       if (
@@ -405,6 +410,7 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
         eventName: 'message',
         batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
         minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+        ...eventLimitFields(value),
       };
     }
 
@@ -427,6 +433,24 @@ function clampMinRunIntervalSec(value: number | undefined): number {
     return CRON_EVENT_TRIGGER.DEFAULT_MIN_RUN_INTERVAL_SEC;
   }
   return Math.max(value, CRON_EVENT_TRIGGER.MIN_MIN_RUN_INTERVAL_SEC);
+}
+
+/** 事件源共用的两个可选限额：预筛一句话（trim、截断）+ 每小时 run 上限（取整、夹取）；未设则不落键。 */
+function eventLimitFields(value: Record<string, unknown>): { prefilter?: string; maxRunsPerHour?: number } {
+  const prefilter = typeof value.prefilter === 'string'
+    ? value.prefilter.trim().slice(0, CRON_EVENT_TRIGGER.MAX_PREFILTER_CHARS)
+    : '';
+  const rawCap = readNumberField(value, 'maxRunsPerHour');
+  const cap = rawCap !== undefined && Number.isFinite(rawCap)
+    ? Math.min(
+      Math.max(Math.floor(rawCap), CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR),
+      CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR,
+    )
+    : undefined;
+  return {
+    ...(prefilter ? { prefilter } : {}),
+    ...(cap !== undefined ? { maxRunsPerHour: cap } : {}),
+  };
 }
 
 /** mail 源轮询间隔夹取：不低于下限，非法/缺省取缺省。 */
@@ -644,6 +668,7 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     exit_code: readNullableNumberField(row, 'exit_code'),
     trigger_json: readNullableStringField(row, 'trigger_json'),
     cost_usd: readNullableNumberField(row, 'cost_usd'),
+    flat_fee: readNullableNumberField(row, 'flat_fee'),
     push_note: readNullableStringField(row, 'push_note'),
   };
 }

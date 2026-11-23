@@ -1,3 +1,4 @@
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 export const cronRunRecordZh = {
@@ -6,8 +7,8 @@ export const cronRunRecordZh = {
   elapsedHm: '{h} 时 {m} 分',
   elapsedMs: '{m} 分 {s} 秒',
   elapsedS: '{s} 秒',
-  awaiting: '等你批准',
-  awaitingWithLabel: '等你批准：{label}',
+  awaiting: WAITING_ON_USER_LABELS.zh.approval,
+  awaitingWithLabel: WAITING_ON_USER_LABELS.zh.approvalWithLabel,
   awaitingBashPrefix: '运行 ',
   approve: '批准',
   reject: '拒绝',
@@ -17,6 +18,7 @@ export const cronRunRecordZh = {
   interrupted: `${outcomeWordsZh.outcomeWords['interrupted-restart'].timeline.label}，没有结果`,
   failedDenied: '没跑成：命令被拒绝',
   failedGeneric: '没跑成',
+  failedBudget: '没跑成：无人值守额度已用完',
   cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
   rerun: '再跑一次',
   rerunFailed: '没能重新运行，请稍后再试',
@@ -29,8 +31,8 @@ export const cronRunRecordEn = {
   elapsedHm: '{h}h {m}m',
   elapsedMs: '{m}m {s}s',
   elapsedS: '{s}s',
-  awaiting: 'Needs your approval',
-  awaitingWithLabel: 'Needs your approval: {label}',
+  awaiting: WAITING_ON_USER_LABELS.en.approval,
+  awaitingWithLabel: WAITING_ON_USER_LABELS.en.approvalWithLabel,
   awaitingBashPrefix: 'Run ',
   approve: 'Approve',
   reject: 'Reject',
@@ -40,6 +42,7 @@ export const cronRunRecordEn = {
   interrupted: `${outcomeWordsEn.outcomeWords['interrupted-restart'].timeline.label} — no result`,
   failedDenied: "Didn't run: command was denied",
   failedGeneric: "Didn't finish",
+  failedBudget: "Didn't run: unattended budget used up",
   cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
   rerun: 'Run again',
   rerunFailed: 'Could not start another run — try again later',

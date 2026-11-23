@@ -76,7 +76,7 @@ export async function continueParkedDurableRun(input: {
     const quotaDueAt = parkedCause === 'quota_wait' ? parked?.quotaWaitDueAt : undefined;
     clearEnvResumeWaiter(recovered.runId);
     clearQuotaWaitTimer(recovered.runId);
-    await runRegistry.resetDurableResumeBudget(recovered.runId);
+    if (parkedCause !== 'env_blocked') await runRegistry.resetDurableResumeBudget(recovered.runId);
     try {
       if (parkedCause === 'env_blocked') {
         await continueEnvBlockedRun({

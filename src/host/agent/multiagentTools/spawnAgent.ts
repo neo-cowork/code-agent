@@ -645,6 +645,20 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
         metadata: {
           cost: aggregation.totalCost,
           tokensUsed: totalTokensUsed,
+          // 每个助手各自的真实结局：整批 success:false 不能把已完成的助手也读成失败。
+          helperOutcomes: tasks.map((task) => {
+            const taskResult = resultByTaskId.get(task.id);
+            const success = taskResult?.success === true;
+            return {
+              name: task.name ?? task.role,
+              success,
+              ...(success ? {} : {
+                failureCode: taskResult?.failureCode ?? inferAgentFailureCode({
+                  error: taskResult?.error ?? result.errors.find((entry) => entry.taskId === task.id)?.error,
+                }),
+              }),
+            };
+          }),
           ...runScope,
         },
       };

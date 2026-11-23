@@ -105,3 +105,66 @@ describe('extract-excel-json 行坐标与真实 xlsx 对齐', () => {
     expect(sheets.map((s) => s.name)).toEqual(['Sheet1', 'Summary']);
   });
 });
+
+describe('extract-excel-json preview headers', () => {
+  it('returns a single cell as data', async () => {
+    const filePath = await writeWorkbook('one-cell.xlsx', { Sheet1: [[1200]] });
+
+    await expect(extract(filePath)).resolves.toEqual({
+      sheets: [{ name: 'Sheet1', headers: ['A'], rows: [[1200]], rowCount: 1, headerless: true }],
+      sheetCount: 1,
+    });
+  });
+
+  it('renders the full width of a single row, including columns after Z', async () => {
+    const row = ['Quarterly fee', ...Array.from({ length: 26 }, (_, index) => 1200 + index)];
+    const filePath = await writeWorkbook('wide-row.xlsx', { Sheet1: [row] });
+    const { sheets: [sheet] } = await extract(filePath);
+
+    expect(sheet).toMatchObject({ rows: [row], rowCount: 1, headerless: true });
+    expect(sheet.headers).toHaveLength(row.length);
+    expect(sheet.headers.slice(0, 2)).toEqual(['A', 'B']);
+    expect(sheet.headers.slice(-2)).toEqual(['Z', 'AA']);
+  });
+
+  it('keeps an empty first cell from shifting the number into column A', async () => {
+    const filePath = await writeWorkbook('empty-first-cell.xlsx', { Sheet1: [['', 1200]] });
+    const { sheets: [sheet] } = await extract(filePath);
+
+    expect(sheet).toEqual({
+      name: 'Sheet1', headers: ['A', 'B'], rows: [['', 1200]], rowCount: 1, headerless: true,
+    });
+  });
+
+  it('stringifies numeric and missing headers in place on a multi-row sheet', async () => {
+    const filePath = await writeWorkbook('numeric-header.xlsx', {
+      Sheet1: [[undefined, 1200, false], ['Item', 5, true]],
+    });
+    const { sheets: [sheet] } = await extract(filePath);
+
+    expect(sheet).toEqual({
+      name: 'Sheet1', headers: ['', '1200', 'false'], rows: [['Item', 5, true]], rowCount: 1,
+    });
+  });
+
+  it('preserves an empty sheet and uses the real columns on an offset headerless sheet', async () => {
+    const empty = await writeWorkbook('empty.xlsx', { Sheet1: [] });
+    await expect(extract(empty)).resolves.toEqual({
+      sheets: [{ name: 'Sheet1', headers: [], rows: [], rowCount: 0 }],
+      sheetCount: 1,
+    });
+
+    const offset = await writeWorkbook('offset.xlsx', { Sheet1: [[], [], [undefined, 'Fee', 1200]] });
+    const { sheets: [sheet] } = await extract(offset);
+    expect(sheet).toEqual({
+      name: 'Sheet1', headers: ['B', 'C'], rows: [['Fee', 1200]], rowCount: 1,
+      rangeStart: { row: 2, column: 1 }, headerless: true,
+    });
+  });
+
+  it('maps a headerless data row to the first row of the used range', () => {
+    expect(sheetCellRef(0, 0, undefined, true)).toBe('A1');
+    expect(sheetCellRef(0, 1, undefined, true)).toBe('B1');
+    expect(sheetCellRef(0, 1, { row: 2, column: 1 }, true)).toBe('C3');
+  });
+});

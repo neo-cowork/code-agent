@@ -41,10 +41,11 @@ describe('actual spawn branches through task_status', () => {
     const active = await executeTaskStatus({}, ctx, allow);
     expect(active.ok && active.output).toContain('总结B ：进行中');
     expect(getSpawnGuard().list()).toHaveLength(1);
-    expect(getBackgroundSubagentRegistry().listBySession(sessionId)).toHaveLength(wrapped ? 1 : 0);
+    const registry = getBackgroundSubagentRegistry();
+    expect(registry.listBySession(sessionId)).toHaveLength(1);
     resolve({ success: true, output: 'Folder B summarized', toolsUsed: ['Read'], iterations: 1 });
     await vi.waitFor(() => expect(getSpawnGuard().list()[0].status).toBe('completed'));
-    if (wrapped) await vi.waitFor(() => expect(getBackgroundSubagentRegistry().listBySession(sessionId)[0].status).toBe('completed'));
+    await vi.waitFor(() => expect(registry.listBySession(sessionId)[0].status).toBe('completed'));
     const completed = await executeTaskStatus({}, ctx, allow);
     expect(completed.ok && completed.output).toContain('总结B ：已完成');
     expect(completed.ok && completed.output.match(/已完成/g)).toHaveLength(1);

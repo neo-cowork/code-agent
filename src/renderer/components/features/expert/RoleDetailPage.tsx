@@ -2,6 +2,7 @@
 // RoleDetailPage - 角色详情（设置页与专家面板共用）
 // ============================================================================
 
+import { stripKeywordsTail } from './memoryDescriptionDisplay';
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
@@ -396,10 +397,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             ) : null}
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {memory.description}
-          </div>
-          <div className="mt-0.5 text-[10px] text-zinc-600">
-            {memory.filename}
+            {stripKeywordsTail(memory.description)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">

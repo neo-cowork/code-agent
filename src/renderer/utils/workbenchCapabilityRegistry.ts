@@ -180,7 +180,7 @@ function buildConnectorBlockedReason(connector: WorkbenchConnectorCapability): W
   if (connector.readiness === 'failed') {
     return {
       code: 'connector_auth_failed',
-      detail: `Connector ${connector.label} 授权/可用性检查失败，本轮不会调用。${connector.error ? ` ${connector.error}` : ''}`,
+      detail: `Connector ${connector.label} 授权/可用性检查失败，本轮不会调用。`,
       hint: '打开本地应用确认登录和系统授权后，再点"检查/授权"。',
       severity: 'error',
     };

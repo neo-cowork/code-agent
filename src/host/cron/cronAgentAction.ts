@@ -26,7 +26,7 @@ import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadRecei
 import { buildCronAgentPrompt, CRON_NO_WORKING_FOLDER_NOTICE, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
-import { attachCronRunCost, createCronRunCostMeterForExecution } from './cronRunCostMeter';
+import { attachCronRunCost, createCronRunCostMeterForExecution, cronFlatFeeForModel } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import type { CronResultDeliverySkip } from './cronResultDelivery';
 import { getCronAutomationType } from './cronAutomationBridge';
@@ -299,7 +299,7 @@ export async function executeCronAgentAction(
     if (runError instanceof Error && !('cronSessionId' in runError)) {
       (runError as Error & { cronSessionId?: string }).cronSessionId = cronSession.id;
     }
-    attachCronRunCost(runError, costMeter);
+    attachCronRunCost(runError, costMeter, cronSession.modelConfig);
     throw runError;
   }
 
@@ -338,6 +338,6 @@ export async function executeCronAgentAction(
     ...actionResult,
     ...(unattendedApprovalDenials.length > 0 ? { unattendedApprovalDenials } : {}),
     ...(eventDecisions.length > 0 ? { eventDecisions } : {}),
-    ...(costUsd > 0 ? { costUsd } : {}),
+    ...(costUsd > 0 ? { costUsd } : cronFlatFeeForModel(cronSession.modelConfig, costUsd) ? { flatFee: true as const } : {}),
   };
 }

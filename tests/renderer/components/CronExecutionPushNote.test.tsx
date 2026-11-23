@@ -11,8 +11,12 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 const language = vi.hoisted(() => ({ value: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { cronCenterZh, cronCenterEn } = await import('../../../src/renderer/i18n/cronCenter');
+  const { cronWakeCadenceZh, cronWakeCadenceEn } = await import('../../../src/renderer/i18n/cronWakeCadence');
   return {
-    useI18n: () => ({ language: language.value, t: language.value === 'zh' ? cronCenterZh : cronCenterEn }),
+    useI18n: () => ({
+      language: language.value,
+      t: language.value === 'zh' ? { ...cronCenterZh, ...cronWakeCadenceZh } : { ...cronCenterEn, ...cronWakeCadenceEn },
+    }),
   };
 });
 

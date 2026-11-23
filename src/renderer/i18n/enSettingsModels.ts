@@ -716,6 +716,10 @@ export const enSettingsModels = {
           notConnected: 'Not connected · Open for connection options',
           connectionSetup: 'Connection setup',
           secretInNextStep: 'The next step opens a secure setup panel. Secrets use password fields and are saved to secure storage on this device.',
+          addDesktopOnly: 'Please add it in the desktop app. This page is view-only.',
+          enableDesktopOnly: 'Enable it in the desktop app. This page is view-only.',
+          addRequiresAdmin: 'You need administrator permissions to add this connector.',
+          browserSignIn: 'Sign in via browser',
           tryIt: 'Try it',
           examples: [
             'Use {name} to gather the external data this task needs and list the key results.',
@@ -772,7 +776,7 @@ export const enSettingsModels = {
         uninstall: 'Uninstall',
         install: 'Install',
         installedPrefix: 'Installed; available from the next conversation turn: ',
-        approvalQueued: 'Waiting for your approval to run: ',
+        approvalQueued: 'Needs your approval to run: ',
         versionsTitle: 'Saved versions',
         runningVersion: 'Running',
         lastSuccessfulVersion: 'Last successful',
@@ -865,7 +869,7 @@ export const enSettingsModels = {
         uninstallSuccessPrefix: 'Uninstalled ',
       },
       trustSummary: {
-        prefix: 'Trust: ',
+        prefix: '',
         skillsUnit: 'skills',
         commandsUnit: 'commands',
         permissionsUnit: 'permissions',
@@ -975,6 +979,8 @@ export const enSettingsModels = {
         updatePrefix: ' · Updated ',
         refresh: 'Refresh',
         remove: 'Remove',
+        pluginCount: { one: '{count} plugin', other: '{count} plugins' },
+        autoUpdate: 'auto update',
       },
       visibleList: {
         title: 'Visible plugin list',

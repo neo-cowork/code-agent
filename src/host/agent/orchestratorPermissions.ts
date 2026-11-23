@@ -834,6 +834,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...(hasBackgroundRunIdentity(fullRequest) ? { backgroundLane: true as const } : {}),
         ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
@@ -887,6 +888,7 @@ export class OrchestratorPermissionIsland {
         const ownChat = this.isDetachedRun()
           && !modes.isUnattendedSession(fullRequest.sessionId)
           && !modes.isLiveVoiceSession(fullRequest.sessionId);
+        const noticeContext = modes.isFirstWakeSession(fullRequest.sessionId) ? 'first_wake' : ownChat ? 'approval' : 'parked';
         try {
           // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
           // 同键去重，用户只看到这一条更具体的横幅。
@@ -896,7 +898,7 @@ export class OrchestratorPermissionIsland {
             sessionId: fullRequest.sessionId,
             ...(fullRequest.handback
               ? { title: NL_RULE_K2_TEXT.notify.title, body: NL_RULE_K2_TEXT.notify.body(fullRequest.tool) }
-              : buildApprovalNotification(fullRequest.tool, ownChat ? 'approval' : 'parked')),
+              : buildApprovalNotification(fullRequest.tool, noticeContext)),
             tool: fullRequest.tool,
             dedupeKey: fullRequest.id,
           });

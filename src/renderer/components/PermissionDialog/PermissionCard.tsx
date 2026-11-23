@@ -183,9 +183,12 @@ export function PermissionCard({
     && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
       || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
-  // 删一条日程可撤销（删前留快照），和建 / 改同配色：主按钮「删除」，不默认突出「取消」、不给红框
-  // （爸 11-16：删一条日程不至于红色警示；红色只留给删整个系列 / 一次删多条这类收不回的操作）。
-  const safeDefaultDeny = request !== null && request.tool !== 'calendar_delete_event' && isSafeDefaultDeny(request);
+  // 删一条日程或提醒走中性写回卡：主按钮「删除」，不默认突出「取消」、不给红框。
+  // 红色只留给删整个系列 / 一次删多条这类收不回的操作。
+  const safeDefaultDeny = request !== null
+    && request.tool !== 'calendar_delete_event'
+    && request.tool !== 'reminders_delete'
+    && isSafeDefaultDeny(request);
   // N-PERM-NL-RULES-K2：handback（交回我亲手做）卡——两键（我做完了 / 让 Neo 做这一次），
   // 不出会话/始终常驻授权，不走记忆直发（host 侧已 forceConfirm）。
   const handback = request !== null && request.handback === true && !settled;
@@ -203,9 +206,10 @@ export function PermissionCard({
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
   const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'
     || request?.tool === 'calendar_delete_event';
-  // 单条日程删除：中性写回卡 +「删除 / 取消」，没有「改一改」（见 permissionEdit 里 calendar_delete_event 的说明）
-  const isNativeDelete = request?.tool === 'calendar_delete_event';
-  const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update';
+  // 单条日程 / 提醒删除：中性写回卡 +「删除 / 取消」，没有「改一改」
+  const isNativeDelete = request?.tool === 'calendar_delete_event' || request?.tool === 'reminders_delete';
+  const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update'
+    || request?.tool === 'reminders_delete';
   const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
   const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
 
@@ -516,13 +520,15 @@ export function PermissionCard({
       ? w.calendarCreateTitle
       : request.tool === 'calendar_update_event'
         ? w.calendarUpdateTitle
-        : isNativeDelete
+        : request.tool === 'calendar_delete_event'
         ? w.calendarDeleteTitle
         : request.tool === 'reminders_create'
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
-            : editable
+            : request.tool === 'reminders_delete'
+              ? w.remindersDeleteTitle
+              : editable
               ? w.mailSendTitle
               : isDangerous && described.kind === 'shell'
                 ? getPermissionTitle('command', p)
@@ -544,12 +550,14 @@ export function PermissionCard({
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)
       : request.tool === 'calendar_update_event'
         ? (contentTitle ? w.calendarUpdateQuestion.replace('{title}', contentTitle) : w.calendarUpdateQuestionFallback)
-        : isNativeDelete
+        : request.tool === 'calendar_delete_event'
         ? (contentTitle ? w.calendarDeleteQuestion.replace('{title}', contentTitle) : w.calendarDeleteQuestionFallback)
         : request.tool === 'reminders_create'
           ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
           : request.tool === 'reminders_update'
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
+            : request.tool === 'reminders_delete'
+              ? (contentTitle ? w.remindersDeleteQuestion.replace('{title}', contentTitle) : w.remindersDeleteQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
     : described.question);

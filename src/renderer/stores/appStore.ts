@@ -26,7 +26,7 @@ export function preserveLatestCompressionSignal(
     },
   };
 }
-import { defaultLanguage } from '../i18n';
+import { defaultLanguage, readStoredLanguage, storeLanguage } from '../i18n';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -147,6 +147,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showProjectCollaborationPage: false,
   projectCollaborationPageProjectId: null,
   showProjectSpacePage: false,
+  projectSpaceCreateRequested: false,
   showActivityPanel: false,
   showCapabilityHub: false,
   capabilityHubTab: 'experts',
@@ -160,8 +161,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   optionalUpdateInfo: null,
   showOptionalUpdateModal: false,
 
-  // 语言默认为中文
-  language: defaultLanguage,
+  // 语言默认为中文；localStorage 快照仅作首帧取值，后端设置加载后仍为准
+  language: readStoredLanguage() ?? defaultLanguage,
 
   // 云端 UI 字符串（初始为 null，由主进程推送）
   cloudUIStrings: null,
@@ -377,7 +378,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
     projectCollaborationPageProjectId: null,
   }),
   openProjectSpacePage: () => set({ ...SECONDARY_PAGES_CLOSED, showProjectSpacePage: true }),
-  closeProjectSpacePage: () => set({ showProjectSpacePage: false }),
+  openProjectSpaceCreate: () => set({
+    ...SECONDARY_PAGES_CLOSED,
+    showProjectSpacePage: true,
+    projectSpaceCreateRequested: true,
+  }),
+  consumeProjectSpaceCreate: () => set({ projectSpaceCreateRequested: false }),
+  closeProjectSpacePage: () => set({ showProjectSpacePage: false, projectSpaceCreateRequested: false }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
@@ -412,7 +419,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setOptionalUpdateInfo: (info) => set({ optionalUpdateInfo: info }),
   setShowOptionalUpdateModal: (show) => set({ showOptionalUpdateModal: show }),
-  setLanguage: (language) => set({ language }),
+  setLanguage: (language) => {
+    set({ language });
+    storeLanguage(language);
+  },
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
   setDeveloperMode: (enabled) => set({ developerMode: enabled }),

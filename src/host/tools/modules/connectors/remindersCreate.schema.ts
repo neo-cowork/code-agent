@@ -14,6 +14,8 @@ Optional parameters:
 - remind_at_local (preferred)
 - remind_at_ms
 
+Omit notes unless the user explicitly asks for a note; never restate or paraphrase the title or the time in notes.
+
 Use this only when the user wants to create a real local reminder.
 Resolve relative dates using Today's date and Local timezone in <env> (the host-local zone used by Reminders.app). Do not use the UTC date as the local date. For timed reminders, prefer remind_at_local in YYYY-MM-DD HH:mm (24-hour) form in that local timezone. The host converts it to the actual instant, including daylight saving; never do epoch arithmetic for this field. Supply only one time field.
 The success receipt reports the actual read-back reminder time. In your final reply, quote that receipt time verbatim, including its timezone; never recalculate it from the request or claim an unconfirmed time.`,
@@ -31,7 +33,7 @@ The success receipt reports the actual read-back reminder time. In your final re
       },
       notes: {
         type: 'string',
-        description: 'Optional reminder notes/body.',
+        description: 'Omit notes unless the user explicitly asks for a note; never restate or paraphrase the title or the time in notes.',
       },
       remind_at_local: {
         type: 'string',

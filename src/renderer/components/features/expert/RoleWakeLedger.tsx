@@ -63,6 +63,7 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
+              generic: t.cronWakeCadence.skipGeneric,
             });
             return (
               <li
@@ -72,7 +73,7 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
               >
                 <span>{formatDateTime(execution.startedAt ?? execution.scheduledAt, language)}</span>
                 <span className="min-w-0 truncate text-right" data-testid="role-wake-ledger-value">
-                  {skipText ?? (execution.cost != null ? formatRunCostUsd(execution.cost) : cc.roleWakeNoModel)}
+                  {skipText ?? (execution.cost != null ? formatRunCostUsd(execution.cost) : execution.flatFee ? cc.costFlatFee : cc.roleWakeNoModel)}
                 </span>
               </li>
             );

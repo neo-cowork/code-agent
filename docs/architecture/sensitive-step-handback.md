@@ -141,7 +141,7 @@ SENSITIVE_STEP_DONE_BY_USER — I did NOT perform this step. The user completed 
 **skipped（[这步不做了] / 停车超时 / 取消）**，`metadata.outcome = 'skipped'`：
 
 ```
-SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose to skip "{label}" ({kind}). Continue the rest of the task without it, or ask the user how to proceed. Do not retry this step.
+SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose to skip "{label}" ({kind}). Continue the rest of the task without this step if that is possible; if the task cannot continue without it, state plainly in the final reply which step is missing. Do not ask a question or call a question tool. Do not retry this step.
 ```
 
 停车 24h 兜底超时走 skipped 模板，追加一行：`The hand-back expired unanswered (parked approval backstop), so it counts as skipped.` 模板中的 `{label}` / `{kind}` 来自 `details.sensitiveStep`（不是参数原文）。模板对模型的纪律要求（不代做、不重试、先重读窗口）就写在模板正文里，不依赖模板之外的机制或记忆。

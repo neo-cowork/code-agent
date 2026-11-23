@@ -15,6 +15,7 @@ import type {
 } from '../../../protocol/tools';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { blobSchema as schema } from './blob.schema';
+import { guardBinaryNotText } from './binaryNotText';
 
 const DEFAULT_MAX_BYTES = 64 * 1024;
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -87,6 +88,11 @@ class BlobHandler implements ToolHandler<Record<string, unknown>, string> {
           output: JSON.stringify(artifact, null, 2),
           meta: { artifact },
         };
+      }
+
+      if (action === 'read_text') {
+        const refusal = await guardBinaryNotText(filePath, ' Blob stat still returns size/mime for images.');
+        if (refusal) return refusal;
       }
 
       const offset = Number(args.offset ?? 0);

@@ -30,6 +30,7 @@ import type {
 } from '@shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '@shared/contract/productClosure';
 import ipcService from './ipcService';
+import { notifyProjectSpaceList } from './projectSpaceListEvents';
 
 export async function listProjects(includeArchived = false): Promise<Project[]> {
   return ipcService.invokeDomain<Project[]>(IPC_DOMAINS.PROJECT, 'list', { includeArchived });
@@ -42,7 +43,9 @@ export async function listProjectsWithActivity(includeArchived = false, spacesOn
 
 /** 新建显式协作空间；撞已有 workspace 项目时 host 侧自动升级并返回该项目 */
 export async function createSpace(input: CreateSpaceInput): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
+  notifyProjectSpaceList('created');
+  return project;
 }
 
 /** 将已有普通项目升级为显式协作空间；项目带目录且含危险项时需 trustAcknowledged 知情确认 */
@@ -50,10 +53,12 @@ export async function promoteToSpace(
   projectId: string,
   opts?: { trustAcknowledged?: boolean },
 ): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', {
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', {
     projectId,
     trustAcknowledged: opts?.trustAcknowledged,
   });
+  notifyProjectSpaceList('promoted');
+  return project;
 }
 
 /** 升级为云协作空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */
@@ -150,7 +155,9 @@ export async function getArtifactIssuesByArtifactId(
 }
 
 export async function renameProject(projectId: string, name: string): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'rename', { projectId, name });
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'rename', { projectId, name });
+  notifyProjectSpaceList('renamed');
+  return project;
 }
 
 export async function setProjectDescription(projectId: string, description: string | null): Promise<Project> {
@@ -158,11 +165,15 @@ export async function setProjectDescription(projectId: string, description: stri
 }
 
 export async function setProjectStatus(projectId: string, status: ProjectStatus): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setStatus', { projectId, status });
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setStatus', { projectId, status });
+  notifyProjectSpaceList('status');
+  return project;
 }
 
 export async function deleteProject(projectId: string): Promise<{ deleted: boolean }> {
-  return ipcService.invokeDomain<{ deleted: boolean }>(IPC_DOMAINS.PROJECT, 'deleteProject', { projectId });
+  const result = await ipcService.invokeDomain<{ deleted: boolean }>(IPC_DOMAINS.PROJECT, 'deleteProject', { projectId });
+  notifyProjectSpaceList('deleted');
+  return result;
 }
 
 export async function addProjectGoal(

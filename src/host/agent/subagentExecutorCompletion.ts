@@ -29,6 +29,7 @@ import {
   flushSubagentCancellation,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
+import { stripCardToolCallMarkup } from '../../shared/modelMarkupStrip';
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import {
@@ -210,7 +211,8 @@ export function finalizeSubagentSuccess(
   if (new AntiPatternDetector().detectFailedToolCallPattern(finalOutput, 'explicit-calls')) {
     return handleSubagentFailure(deps, { ...state, error: new SubagentTextToolCallError() });
   }
-  const stepCapConclusion = !finalOutput && state.maxIterations !== undefined && iterations >= state.maxIterations
+  const conclusionText = stripCardToolCallMarkup(finalOutput);
+  const stepCapConclusion = !conclusionText && state.maxIterations !== undefined && iterations >= state.maxIterations
     ? buildStepCapConclusion({ iterations, maxIterations: state.maxIterations, messages: state.messages ?? [] })
     : undefined;
 
@@ -262,7 +264,7 @@ export function finalizeSubagentSuccess(
   }
 
   // leftoverReport 来自上面唯一一次 reportSubagentLeftoverShells（有副作用，不重扫），随 stopHint 带给后台注册表。
-  const stopHint: SubagentResult['stopHint'] | undefined = finalOutput ? undefined
+  const stopHint: SubagentResult['stopHint'] | undefined = conclusionText ? undefined
     : stepCapConclusion
       ? { kind: 'step_cap', conclusion: stepCapConclusion, leftoverReport }
       : { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail, leftoverReport };

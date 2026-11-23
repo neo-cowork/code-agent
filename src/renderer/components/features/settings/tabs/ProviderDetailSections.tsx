@@ -92,6 +92,7 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
   const { t } = useI18n();
   const modelText = t.settings.model;
   const connectionText = modelText.connection;
+  const webNote = isWebMode() ? t.settings.webModeBanner.modelManageDesktopOnly : undefined;
 
   return (
     <ProviderDetailCard step="1" title={connectionText.title}>
@@ -107,6 +108,7 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
                   variant="ghost"
                   onClick={onResetOfficialEndpoint}
                   disabled={isWebMode()}
+                  title={webNote}
                 >
                   {connectionText.resetOfficial}
                 </Button>
@@ -161,6 +163,7 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
           </div>
           <Button
             disabled={isWebMode() || !canTestConnection}
+            title={webNote}
             onClick={onTestConnection}
             loading={isTesting}
             variant="secondary"

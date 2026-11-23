@@ -108,6 +108,10 @@ const toolCallSchema: z.ZodType<ToolCall> = typed<ToolCall>(z.object({
     iconHint: z.string().optional(),
   }).optional(),
   expectedOutcome: z.string().optional(),
+  guiTakeoverDisclosure: z.object({
+    code: z.literal('gui_takeover'),
+    app: z.string(),
+  }).optional(),
 }));
 
 const messageSchema = typed<Message>(z.object({
@@ -684,7 +688,9 @@ const ModelResponseEventSchema = event('model_response', z.object({
   }).optional(),
 }));
 const ModelFallbackEventSchema = event('model_fallback', z.object({
-  reason: z.string(), from: z.string(), to: z.string(), category: z.string().optional(), strategy: modelFallbackStrategySchema.optional(), tried: z.array(modelFallbackTraceStepSchema).optional(), skipped: z.array(modelFallbackTraceStepSchema).optional(), toolPolicy: modelFallbackToolPolicySchema.optional(), fromIdentity: modelProviderIdentitySchema.optional(), toIdentity: modelProviderIdentitySchema.optional(), turnId: z.string().optional(),
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽时 host 不写 `to`（改发 exhausted: true），
+  // renderer 据此按 UI 语言渲染"未切换"，不再往 payload 里塞中文串。
+  reason: z.string(), from: z.string(), to: z.string().optional(), exhausted: z.boolean().optional(), category: z.string().optional(), strategy: modelFallbackStrategySchema.optional(), tried: z.array(modelFallbackTraceStepSchema).optional(), skipped: z.array(modelFallbackTraceStepSchema).optional(), toolPolicy: modelFallbackToolPolicySchema.optional(), fromIdentity: modelProviderIdentitySchema.optional(), toIdentity: modelProviderIdentitySchema.optional(), turnId: z.string().optional(),
 }));
 const ApiKeyRequiredEventSchema = event('api_key_required', z.object({ provider: z.string(), capability: z.string(), message: z.string() }));
 const TaskProgressEventSchema = event('task_progress', typed<TaskProgressData & { parentToolUseId?: string }>(z.object({ turnId: z.string(), phase: z.enum(['thinking', 'tool_pending', 'tool_running', 'generating', 'completed', 'failed']), step: z.string().optional(), progress: z.number().optional(), tool: z.string().optional(), toolIndex: z.number().optional(), toolTotal: z.number().optional(), parentToolUseId: z.string().optional() })));

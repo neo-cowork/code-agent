@@ -33,6 +33,7 @@ function createHarness() {
       browserService: {
         getActiveTab: () => { id: string; page: unknown } | null;
         getSessionState: () => { viewport: { width: number; height: number } };
+        noteUserActivity: () => void;
         setViewport: (width: number, height: number) => Promise<void>;
       },
     ) => Promise<{ success: boolean; output?: string }>;
@@ -51,6 +52,7 @@ function createHarness() {
     const result = await input.executeProvider(new AbortController().signal, {
       getActiveTab: () => ({ id: 'tab-1', page }),
       getSessionState: () => ({ viewport: { width: 1280, height: 720 } }),
+      noteUserActivity: vi.fn(),
       setViewport,
     });
     return {

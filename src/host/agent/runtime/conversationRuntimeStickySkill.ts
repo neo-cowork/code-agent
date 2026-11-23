@@ -21,6 +21,7 @@ import { listRoleDrafts } from '../../services/roleAssets/roleDraftQueue';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
+import { DELEGATED_TASK_PLAN_TAG } from '../../services/commandCenter/delegationGuidance';
 
 const logger = createLogger('AgentLoop');
 
@@ -174,19 +175,21 @@ export async function resolveNaturalLanguageCreateRoleInvocation(
 }
 
 /**
- * A skill's allowed-tools boundary constrains only the run started under that skill.
- * The one proven false hit: the machine-built delegated-task prompt contains the word "scope",
- * which aliases task-brief-builder; in a background run nobody can approve the resulting forced asks.
- * Everything else (strict skills, other aliases, /slash) keeps its boundary on auxiliary runs too.
+ * 只有「机器拼装的委派提示词」里的裸词别名命中才不是用户意图：辅助轮（auxiliaryRun）
+ * 的用户消息带 buildDelegatedTaskPrompt 信封（<drafted_task_plan>）时，其内嵌 original_user_request
+ * 与 drafted plan 里的普通词（首例："scope" 命中 task-brief-builder）不代表用户调技能，注入后其
+ * 强制审批在后台无人能答，任务停车。不带信封的辅助轮文本（wake 消息、TaskManager 任务句、
+ * dream/distill 等别名词）维持原行为：alias 命中照常生效。slash / inline-slash / sticky 不受影响。
  */
-export function skillBoundaryAppliesToRun(
+export function dropDelegatedPromptAliasHit(
   run: Pick<RuntimeContext, 'auxiliaryRun'>,
-  invocation: { matchKind: string; matchedText?: string; skill: { name: string } },
-): boolean {
-  return !(
+  invocation: ResolvedSkillInvocation | null | undefined,
+  userMessage: string,
+): ResolvedSkillInvocation | null {
+  if (
     run.auxiliaryRun === true
-    && invocation.matchKind === 'alias'
-    && invocation.skill.name === 'task-brief-builder'
-    && invocation.matchedText?.toLowerCase() === 'scope'
-  );
+    && invocation?.matchKind === 'alias'
+    && userMessage.includes(DELEGATED_TASK_PLAN_TAG)
+  ) return null;
+  return invocation ?? null;
 }

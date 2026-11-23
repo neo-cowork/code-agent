@@ -1,4 +1,3 @@
-import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from './conversationTurns';
 import type { Message } from '@shared/contract';
 import type { TraceNode, TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
@@ -100,12 +99,13 @@ export function applyStreamingMessageDeltasToProjection(
       continue;
     }
 
-    const message = messages.find((candidate) => candidate.id === messageId);
+    const messageIndex = messages.findIndex((candidate) => candidate.id === messageId);
+    const message = messages[messageIndex];
     if (message?.role !== 'assistant') {
       continue;
     }
 
-    const targetTurnIndex = getTargetTurnIndex(projection, turns);
+    const targetTurnIndex = getTargetTurnIndex(turns, messages, messageIndex);
     if (targetTurnIndex < 0) {
       continue;
     }
@@ -176,7 +176,17 @@ function concatenatedAssistantText(nodes: TraceNode[], messageId: string, fallba
   return nodes[fallbackIndex]?.content ?? '';
 }
 
-function getTargetTurnIndex(projection: TraceProjection, turns: TraceTurn[]): number {
-  const activeIndex = getActiveConversationTurnIndex({ ...projection, turns });
-  return activeIndex >= 0 ? activeIndex : getLastConversationTurnIndex(turns);
+function getTargetTurnIndex(turns: TraceTurn[], messages: Message[], messageIndex: number): number {
+  const message = messages[messageIndex];
+  const ownerIndex = turns.findIndex((turn) => turn.nodes.some((node) => node.messageId === message.id));
+  if (ownerIndex >= 0) return ownerIndex;
+
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate.role !== 'user') continue;
+    const turnIndex = turns.findIndex((turn) => turn.nodes.some((node) => node.id === candidate.id));
+    if (turnIndex >= 0) return turnIndex;
+  }
+  // A history window can begin with an assistant before the first visible prompt.
+  return turns.findIndex((turn) => !turn.standalone && turn.startTime === message.timestamp);
 }
