@@ -4,7 +4,6 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectorStatusSummary, NativeConnectorInventoryItem } from '../../../src/shared/ipc';
 import { NATIVE_APP_NAMES } from '../../../src/host/connectors/native/appNames';
-import { describeAppleScriptFailure } from '../../../src/host/connectors/native/appleScriptFailure';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
@@ -13,9 +12,6 @@ const { mockInvokeDomain, testLocale } = vi.hoisted(() => ({
   testLocale: { value: 'zh' as 'zh' | 'en' },
 }));
 
-vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: testLocale.value } }) }),
-}));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => testLocale.value === 'zh' ? { t: zh, language: 'zh' } : { t: en, language: 'en' },
 }));
@@ -41,12 +37,10 @@ describe('NativeConnectorsSection Automation denial card', () => {
     testLocale.value = locale;
     const copy = (locale === 'zh' ? zh : en).settings.nativeConnectors;
     const label = NATIVE_APP_NAMES[id].en;
-    const raw = new Error(`Not authorized to send Apple events to ${label}. (-1743)`);
-    const { message, code } = describeAppleScriptFailure(NATIVE_APP_NAMES[id], raw);
-    expect(code).toBe('not_authorized');
+    const message = copy.grid.detailCode.automation_not_authorized.replaceAll('{name}', copy.grid.labels[id]);
     const inventory: NativeConnectorInventoryItem[] = [{ id, label, enabled: true }];
     const statuses: ConnectorStatusSummary[] = [{
-      id, label, connected: false, readiness: 'failed', errorCode: 'not_authorized', error: message,
+      id, label, connected: false, readiness: 'failed', errorCode: 'not_authorized', detailCode: 'automation_not_authorized',
       capabilities: [], actions: ['repair_permissions'],
     }];
     mockInvokeDomain.mockImplementation(async (_domain: string, action: string) => {
@@ -59,6 +53,7 @@ describe('NativeConnectorsSection Automation denial card', () => {
     const card = await screen.findByTestId(`native-connector-card-${id}`);
     expect(card.querySelector('p')?.textContent).toBe(message);
     expect(card.textContent).toContain(copy.readiness.failed);
+    if (locale === 'en') expect(card.textContent).not.toMatch(/[\u3400-\u9fff]/);
     expect(card.textContent).not.toContain(copy.grid.statusDetail.failed);
     expect(screen.getAllByText(message, { exact: false })).toEqual([within(card).getByText(message)]);
     const button = within(card).getByRole('button', { name: copy.openAutomationSettings });

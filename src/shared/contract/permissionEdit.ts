@@ -158,14 +158,23 @@ function validateTimeRange(
   return null;
 }
 
-function validateFinalFields(fields: readonly EditableField[], params: Record<string, unknown>): ApplyEditedArgsResult | null {
+function validateFinalFields(
+  fields: readonly EditableField[],
+  params: Record<string, unknown>,
+  original: Record<string, unknown>,
+): ApplyEditedArgsResult | null {
   for (const field of fields) {
     const value = params[field.key];
     const empty = value === undefined
       || value === null
       || (typeof value === 'string' && value.trim() === '')
       || (Array.isArray(value) && value.length === 0);
-    if (field.required && empty) return { ok: false, reason: `field ${field.key} is required` };
+    // 只读字段的值永远来自原参数（updatedArgs 改不动它）。原参数就没带这个字段时
+    // 再要求它必填，等于因为模型少传了一个工具 schema 本就允许缺省的参数而拒掉用户
+    // 的任何修改（FB-2606 复现路径：模型省略 calendar → 卡上改 notes 被整体拒绝）。
+    // 原参数带了这个字段（哪怕是空值）时照常校验。
+    const originalLacked = field.readonly && !Object.prototype.hasOwnProperty.call(original, field.key);
+    if (field.required && empty && !originalLacked) return { ok: false, reason: `field ${field.key} is required` };
     if (field.kind === 'datetime' && !empty && datetimeMillis(field, value) === null) {
       return { ok: false, reason: `field ${field.key} must be a valid datetime` };
     }
@@ -216,7 +225,7 @@ export function applyEditedArgs(
     if (JSON.stringify(value) !== JSON.stringify(original[field.key])) changedKeys.push(field.key);
     params[field.key] = value;
   }
-  const invalidFields = validateFinalFields(fields, params);
+  const invalidFields = validateFinalFields(fields, params, original);
   if (invalidFields) return invalidFields;
   const invalidRange = validateTimeRange(toolName, fields, params);
   if (invalidRange) return invalidRange;

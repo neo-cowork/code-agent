@@ -3,7 +3,41 @@
 // one plain-language fact plus a model-directed instruction so models never relay
 // internal "X connector: unavailable|connected|disconnected" or "Capabilities:" dumps.
 
+import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
+
 type StatusConnectorId = 'mail' | 'calendar' | 'reminders';
+
+// Model-directed English facts per stable detailCode. The host no longer writes
+// user-facing prose into detail/error, so the model gets its cause + fix hint here.
+const DETAIL_CODE_GUIDANCE: Record<NativeConnectorDetailCode, string> = {
+  platform_unsupported: 'This only works on a Mac.',
+  unchecked: 'Access has not been checked yet.',
+  ready: 'Access is allowed.',
+  automation_not_authorized: 'macOS has not allowed Neo to control this app. The user can allow it in System Settings > Privacy & Security > Automation, then check again.',
+  not_found: 'The app could not find the expected account, calendar or list.',
+  timeout: 'The app did not respond in time. Ask the user to make sure the app is open and not blocked by a dialog, then try again.',
+  read_failed: 'Reading from the app failed. Try again shortly.',
+  probe_failed: 'The access check failed for an unknown reason. Try again shortly.',
+  calendar_undecided: 'Calendar access has not been decided yet. The user needs to allow it when macOS asks, or in System Settings > Privacy & Security > Calendars.',
+  calendar_denied: 'Calendar access was refused. The user can allow it in System Settings > Privacy & Security > Calendars.',
+  calendar_write_only: 'Calendar access is write-only. The user must change it to Full Access in System Settings > Privacy & Security > Calendars so events can be read.',
+  calendar_restricted: 'Calendar access is restricted by the system (for example by a device management profile). The user cannot fix this from the Connectors page; an administrator must lift the restriction.',
+  calendar_desktop_only: 'Calendar access is only available in the desktop app, not in this runtime.',
+  photos_failed: 'Reading the Photos library failed. Try again shortly.',
+  photos_unavailable: 'The Photos library is not available on this computer.',
+};
+
+// Codes whose fix lives in macOS System Settings rather than on the Connectors page.
+const SYSTEM_SETTINGS_FIX_CODES: ReadonlySet<NativeConnectorDetailCode> = new Set([
+  'automation_not_authorized', 'calendar_undecided', 'calendar_denied', 'calendar_write_only',
+]);
+
+/** Model-facing fact for a status: legacy detail wins, else the detailCode guidance. */
+export function describeStatusDetail(status: { detail?: string; error?: string; detailCode?: NativeConnectorDetailCode }): string {
+  const text = (status.error ?? status.detail ?? '').trim();
+  if (text) return text;
+  return status.detailCode ? DETAIL_CODE_GUIDANCE[status.detailCode] : '';
+}
 
 interface ConnectorCopy {
   title: string;
@@ -75,6 +109,7 @@ export function formatConnectorStatusOutput(
   status: {
     connected: boolean;
     detail?: string;
+    detailCode?: NativeConnectorDetailCode;
     capabilities: string[];
     unavailable?: boolean;
   },
@@ -84,11 +119,18 @@ export function formatConnectorStatusOutput(
     return `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
   }
 
-  const trimmedDetail = status.detail?.trim() ?? '';
+  const trimmedDetail = describeStatusDetail(status);
   const detailSentence = trimmedDetail ? ` ${ensureSentenceEnd(trimmedDetail)}` : '';
 
   if (!status.connected) {
-    return `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
+    const notConnected = `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence}`;
+    if (status.detailCode === 'calendar_restricted') {
+      return `${notConnected} Tell the user in plain words, in their own language, that ${copy.userTarget} is blocked by a system restriction and there is nothing they can change themselves. Do not send them to the Connectors page or System Settings. Do not quote this line.`;
+    }
+    if (status.detailCode && SYSTEM_SETTINGS_FIX_CODES.has(status.detailCode)) {
+      return `${notConnected} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described above; once changed, it can be re-checked on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
+    }
+    return `${notConnected} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
   }
 
   const actionCapabilities = status.capabilities.filter((cap) => Boolean(cap) && cap !== 'get_status');
