@@ -72,7 +72,8 @@ import {
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ModelKeyGuide } from './ModelKeyGuide';
-import { ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { isStagedApiKeyUnsaved, ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { ProviderSaveBar } from './ProviderSaveBar';
 import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
@@ -999,27 +1000,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                 />
               )}
 
-              {/* ── 保存 ── */}
-              <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
-                {providerFormDirty && (
-                  <span className="inline-flex w-fit items-center rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning">
-                    {modelText.header.unsavedBadge}
-                  </span>
-                )}
-                <Button
-                  disabled={isWebMode()} title={webNote}
-                  onClick={handleSave}
-                  loading={isSaving}
-                  size="lg"
-                  variant="primary"
-                  className="w-full"
-                >
-                  {isSaving ? t.common.saving : modelText.header.saveConfig}
-                </Button>
-                <span className="text-xs text-zinc-500">
-                  {modelText.header.saveHintPrefix}{providerTitle}{modelText.header.saveHintSuffix}
-                </span>
-              </div>
+              <ProviderSaveBar
+                dirty={providerFormDirty}
+                apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, hasApiKey)}
+                saving={isSaving}
+                disabled={isWebMode()}
+                disabledTitle={webNote}
+                providerTitle={providerTitle}
+                onSave={handleSave}
+              />
             </>
           )}
         </div>
