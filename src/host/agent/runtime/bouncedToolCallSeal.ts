@@ -10,7 +10,8 @@
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
-import { getInabilityReplyGuidance, INABILITY_REPLY_CONTRACT } from '../../../shared/inabilityReplyContract';
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
+import { formatForegroundShellDenialFinalMessage } from '../../../shared/i18n/foregroundShellDenial';
 import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
@@ -73,7 +74,7 @@ export async function sealBouncedToolCalls(
       success: false,
       error: skipped ? getInabilityReplyGuidance(userPrompt, 'zh') : reason,
       ...(needsUserMessage
-        ? { userMessage: INABILITY_REPLY_CONTRACT[detectMessageLanguage(extractUserRequest(userPrompt)) ?? readUiLanguage()].finalMessage }
+        ? { userMessage: formatForegroundShellDenialFinalMessage(detectMessageLanguage(extractUserRequest(userPrompt)) ?? readUiLanguage()) }
         : {}),
       duration: 0,
       metadata: { skipped: true, bounced: true, ...(deniedCallIds ? { code: deniedCallIds.has(toolCall.id) ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED' } : {}) },
