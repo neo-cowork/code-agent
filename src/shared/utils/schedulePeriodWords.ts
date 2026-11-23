@@ -100,7 +100,12 @@ const DAILY_FREQUENCY = /每天|每日|每早(?:上)?|每晚(?:上)?|每夜|\b(?
 const NON_DAILY_FREQUENCY = /每周|每星期|每礼拜|周末|双休日|\b(?:weekly|every\s+week|weekends?)\b/i;
 const DAY_PERIOD = /^\s*(早上|早晨|上午|下午|傍晚|午后|中午|晚上|夜里)/;
 const CLOCK_AT = /^\s*(?:at\b|在|于)\s*/i;
-const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1,2})(?:\s*[:：]\s*(\d{2})|\s*(点)(?:钟)?(?:\s*(半|\d{1,2}(?:\s*分)?))?)?(?:\s*([ap])\.?m\b\.?)?(?!\s*[\d:：点])/i;
+const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1,2})(?:\s*[:：]\s*(\d{2})|\s*(点)(?:钟)?(?:\s*(半|\d{1,2}|[二三四五]?十[一二三四五六七八九]?|[零〇][一二三四五六七八九])(?:\s*分)?)?)?(?:\s*([ap])\.?m\b\.?)?(?!\s*[零〇一二两三四五六七八九十\d:：点])/i;
+const CLOCK_REVISION = /(?:改成|改到|调到|换成|提前到|推迟到|延后到|\b(?:change|switch|move|reschedule)(?:\s+it)?\s+to)\s*/i;
+const SCHEDULE_CANCEL = /(?:取消|停止|关闭|不要|不用|无需|别再?)\s*(?:定时|按时|唤醒|醒来)|\b(?:cancel|stop|disable)\s+(?:the\s+)?(?:schedule|wake[- ]?up)\b/i;
+const NEGATED_DAILY = /(?:不要|不用|无需|别再?|取消|停止|不再|\b(?:do not|don't|no longer|cancel|stop)\b)[^，。！？；,.!?;\n]{0,12}$/i;
+const BARE_CLOCK_SUFFIX = /^(?:[\p{L}\p{N}]|\s+(?:封|件|条|项|个|次|份|人|页|张|篇))/u;
+
 
 /**
  * Read a clock attached to an explicit daily phrase before enabling a wake.
@@ -108,15 +113,21 @@ const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1
  * is unsupported or has no explicit clock. The cron form keeps its own defaults.
  */
 export function readExplicitDailySchedule(text: string): string | null | undefined {
-  if (readWeekday(text).freq || NON_DAILY_FREQUENCY.test(text)) return null;
-  let result: null | undefined;
+  if (readWeekday(text).freq || NON_DAILY_FREQUENCY.test(text) || SCHEDULE_CANCEL.test(text)) return null;
+  let result: string | null | undefined;
   for (const marker of text.matchAll(DAILY_FREQUENCY)) {
+    const index = marker.index ?? 0;
+    if (NEGATED_DAILY.test(text.slice(0, index))) return null;
     // A marker in the expert name or task text may precede the actual schedule.
-    const time = clockAfterDailyPhrase(marker[0], text.slice((marker.index ?? 0) + marker[0].length));
-    if (time) return time;
-    result = null;
+    result ??= clockAfterDailyPhrase(marker[0], text.slice(index + marker[0].length));
   }
-  return result;
+  if (result !== undefined) return result;
+
+  // A clock-only revision supersedes the earlier request without establishing
+  // that Neo should run it every day.
+  const revision = CLOCK_REVISION.exec(text);
+  if (revision && clockAfterDailyPhrase('', text.slice(revision.index + revision[0].length))) return null;
+  return undefined;
 }
 
 function clockAfterDailyPhrase(marker: string, tail: string): string | null {
@@ -135,12 +146,12 @@ function clockAfterDailyPhrase(marker: string, tail: string): string | null {
   const noon = dayPart === '中午';
   if (!colonMinutes && !chime && !meridiem) {
     // An unmarked number needs a time cue and must stand apart from task text.
-    if (!(at || evening || afternoon || morning || noon) || /^[\p{L}\p{N}]/u.test(clockText.slice(clock[0].length))) return null;
+    if (!(at || evening || afternoon || morning || noon) || BARE_CLOCK_SUFFIX.test(clockText.slice(clock[0].length))) return null;
   }
 
   let hour = zhHour(hourText);
-  const minute = chineseMinutes === '半' ? 30 : parseInt(colonMinutes ?? chineseMinutes ?? '0', 10);
-  if (hour === null || hour >= 24 || minute >= 60 || (meridiem && (hour === 0 || hour > 12))) return null;
+  const minute = clockMinute(colonMinutes ?? chineseMinutes ?? '0');
+  if (hour === null || hour >= 24 || minute === null || minute >= 60 || (meridiem && (hour === 0 || hour > 12))) return null;
 
   const amPm = meridiem?.toLowerCase();
   if (amPm === 'p' && hour < 12) hour += 12;
@@ -149,4 +160,12 @@ function clockAfterDailyPhrase(marker: string, tail: string): string | null {
   else if (!amPm && (evening || afternoon) && hour < 12) hour += 12;
   else if (!amPm && noon && hour < 6) hour += 12;
   return `${pad(hour)}:${pad(minute)}`;
+}
+
+function clockMinute(value: string): number | null {
+  if (value === '半') return 30;
+  if (/^[零〇]/.test(value)) return ZH_DIGITS[value[1]] ?? null;
+  const [tens, ones] = value.split('十');
+  if (ones !== undefined) return (tens ? ZH_DIGITS[tens] : 1) * 10 + (ones ? ZH_DIGITS[ones] : 0);
+  return zhHour(value);
 }

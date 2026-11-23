@@ -238,6 +238,9 @@ describe('roleDraftQueue', () => {
     it.each([
       ['new expert in a reused chat', '/create-role 每天早上 9 点检查项目进度', '再帮我建一个只看会议的专家'],
       ['English new expert in a reused chat', '/create-role every morning at 9 check project progress', 'Create another expert that only checks meetings'],
+      ['new expert after a request prefix', '/create-role 每天早上 9 点检查项目进度', '帮我再创建一个只看会议的专家'],
+      ['clock-only revision', '每天早上 9 点检查邮箱', '改成 10 点'],
+      ['cancelled wake', '每天早上 9 点检查邮箱', '取消每天早上 9 点'],
       ['weekday revision', '每天早上 8 点看邮件', '改成工作日每天早上 9 点'],
       ['weekly revision', '每天早上 8 点看邮件', '改成每周一 9 点'],
       ['weekend revision', '每天早上 8 点看邮件', '改成周末早上 9 点'],
@@ -261,6 +264,7 @@ describe('roleDraftQueue', () => {
       ['每日晚上 8 点半', '0 30 20 * * *'],
       ['daily at 7:15 pm', '0 15 19 * * *'],
       ['每天早上9点15', '0 15 9 * * *'],
+      ['每天早上八点三十', '0 30 8 * * *'],
       ['每天晚上12点', '0 0 0 * * *'],
     ])('I2 saves the explicit clock in %s', async (content, cadence) => {
       cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content }]);
@@ -270,7 +274,19 @@ describe('roleDraftQueue', () => {
       expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', { level: 'daily', cadence });
     });
 
-    it.each(['每天把第3点做完', '每天早上把第3点做完', 'every evening at 7:5', '每早 25', '每早8件事', 'every evening at 7th Street'])(
+    it.each([
+      '每天把第3点做完',
+      '每天早上把第3点做完',
+      'every evening at 7:5',
+      '每早 25',
+      '每早8件事',
+      '每天早上 3 封邮件',
+      '每晚 2 封',
+      'every evening at 7th Street',
+      '不要每天早上 9 点了',
+      '取消每天早上 9 点',
+      "Don't wake every morning at 9",
+    ])(
       'I2 does not install a guessed clock for %s',
       async (content) => {
         cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content }]);

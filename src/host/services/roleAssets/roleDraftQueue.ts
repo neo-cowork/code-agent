@@ -282,7 +282,7 @@ export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRo
 
 // Recognize fresh requests even when a continuation prefix prevents routing
 // the turn as a new create-role skill invocation.
-const ROLE_REQUEST_CONTINUATION = /^(?:(?:再|另外|接着|然后|也|请)[\s，,]*)+/;
+const ROLE_REQUEST_CONTINUATION = /^(?:(?:再|另外|接着|然后|也|请你?|麻烦你?|帮我|给我|为我)[\s，,]*)+/;
 const EN_ROLE_REQUEST = /^(?:please\s+)?(?:create|build|make|add|set up)\s+(?:(?:me|us)\s+)?(?:another|one more|an?)\s+(?:[\w-]+\s+){0,5}(?:expert|assistant|role)\b/i;
 
 function startsAnotherRoleRequest(text: string): boolean {
