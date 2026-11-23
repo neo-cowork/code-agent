@@ -1,3 +1,5 @@
+import { CONNECTOR_RECONNECT_ZH } from '@shared/i18n/connectorReconnect';
+import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 import { toolErrorCodesEn, toolErrorCodesZh } from './toolErrorCodes';
 
 export const chatErrorCopyZh = {
@@ -11,6 +13,8 @@ systemError: {
 // 工具报错人话化（toolExecutionPresentation.ts 的 humanizeToolError，7 类）——
 // 判别顺序有意为之，额度/余额排最前，避免上游把额度错误裹成 401 被误判成鉴权。
 toolErrors: {
+  connectorReconnect: { ...CONNECTOR_RECONNECT_ZH } as Record<keyof typeof CONNECTOR_RECONNECT_ZH, string>,
+  foreignSlotDenial: FOREIGN_SLOT_DENIAL_ZH as string,
   remindersReadDenied: 'Neo 尚未获得访问提醒事项的授权。',
   quota: {
     summary: '额度/余额不足：当前服务的用量或余额已耗尽',
@@ -62,6 +66,15 @@ systemError: {
 // order is intentional: quota/balance is checked first since upstream often wraps quota
 // errors as HTTP 401, which would otherwise be misread as an auth failure.
 toolErrors: {
+  connectorReconnect: {
+    reconnect: 'I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.',
+    remindersUnchecked: 'Neo has not checked access to Reminders. Select Check in Capability Hub > Connectors and follow the prompts.',
+    remindersDenied: 'Neo needs permission to access Reminders. Select Check in Capability Hub > Connectors and follow the prompts.',
+    calendar: 'Calendar is disconnected, so I could not see your events. Connect it in Capability Hub > Connectors and try again.',
+    mail: 'Mail is disconnected, so I could not see your emails. Connect it in Capability Hub > Connectors and try again.',
+    reminders: 'Reminders is disconnected, so I could not see your reminders. Connect it in Capability Hub > Connectors and try again.',
+  },
+  foreignSlotDenial: 'This data belongs to another installation of Neo and cannot be read from here.',
   remindersReadDenied: 'Neo needs permission to access Reminders.',
   quota: {
     summary: 'Quota or balance exhausted for this service',
