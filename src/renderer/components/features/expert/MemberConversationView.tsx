@@ -21,7 +21,7 @@ import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { agentNodeLabel, backgroundTaskLabel } from '../../../utils/agentRoleLabel';
-import { agentFailureReason } from '../../../utils/agentFailureCopy';
+import { agentOutputAfterFailure } from '../../../utils/agentFailureCopy';
 import { isStandaloneSpawnTrace } from '../../../utils/agentNodeLifecycle';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
@@ -210,7 +210,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
     const taskResultMarkdown = plainTask?.metadata?.resultMarkdown;
     const nodeOutput = plainNode && (plainNode.status === 'failed' || plainNode.status === 'cancelled')
-      ? agentFailureReason(plainNode, t) : plainNode?.progress;
+      ? agentOutputAfterFailure(plainNode, t, tracedMember?.agent?.finalOutput) : plainNode?.progress;
     const finalOutput = nodeOutput
       ?? (typeof taskResultMarkdown === 'string' && taskResultMarkdown ? taskResultMarkdown : plainTask?.summary)
       ?? '';

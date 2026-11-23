@@ -111,11 +111,18 @@ describe('成员对话页', () => {
   afterEach(() => cleanup());
 
   it.each([
-    [zh, '调研员', 'Tool results: Read denied', AgentFailureCode.PermissionDenied],
-    [en, 'Researcher', 'Error: internal provider response', AgentFailureCode.Timeout],
-    [zh, '调研员', 'Tool results: Read denied', undefined],
-    [en, 'Researcher', 'Error: internal provider response', undefined],
-  ] as const)('uses one role label and localized failure copy across the receipt and member view (%#)', async (t, name, progress, failureCode) => {
+    { t: zh, name: '调研员', progress: 'Tool results: Read denied', failureCode: AgentFailureCode.PermissionDenied },
+    { t: en, name: 'Researcher', progress: 'Error: internal provider response', failureCode: AgentFailureCode.Timeout },
+    { t: zh, name: '调研员', progress: 'Tool results: Read denied' },
+    { t: en, name: 'Researcher', progress: 'Error: internal provider response' },
+    { t: en, name: 'Researcher', progress: 'Permission denied: provider workspace', failureCode: AgentFailureCode.PermissionDenied },
+    { t: zh, name: '调研员', progress: '已核对两份统计表，口径一致。', failureCode: AgentFailureCode.StepCapReached,
+      readable: '已核对两份统计表，口径一致。' },
+    { t: en, name: 'Researcher', progress: 'Permission denied: provider workspace', failureCode: AgentFailureCode.PermissionDenied,
+      ledgerOutput: 'Both source tables use the same definition.', readable: 'Both source tables use the same definition.' },
+  ])('uses one role label and localized failure copy across the receipt and member view (%#)', async ({
+    t, name, progress, failureCode, ledgerOutput, readable,
+  }) => {
     translations = t;
     const node: AgentTreeNode = {
       id: 'report-agent', role: 'explore', displayName: 'explore-交接笔记', background: true, status: 'failed',
@@ -130,7 +137,7 @@ describe('成员对话页', () => {
       if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
       if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve({
         ...ledgerDetail, run: { ...ledgerDetail.run, ...run },
-        agents: [{ ...record, runId: id, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: progress }],
+        agents: [{ ...record, runId: id, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: ledgerOutput ?? progress }],
       });
       return Promise.resolve(null);
     });
@@ -152,10 +159,13 @@ describe('成员对话页', () => {
     const output = await screen.findByTestId('member-final-output');
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(name);
     expect(screen.getByTestId('delegation-headline').textContent).toContain(`${name} · `);
-    const reason = t.toolStepHumanize.agentFailureReasons[failureCode ?? AgentFailureCode.Unknown];
+    const reason = { ...t.toolStepHumanize.failureCodes, ...t.toolStepHumanize.agentFailureReasons }[
+      failureCode ?? AgentFailureCode.Unknown
+    ];
     expect(screen.getByTestId('delegation-failure').textContent).toBe(reason);
     expect(output.textContent).toContain(reason);
-    expect(output.textContent).not.toContain(progress);
+    if (readable) expect(output.textContent).toContain(readable);
+    if (progress !== readable) expect(output.textContent).not.toContain(progress);
   });
 
   it('keeps process messages, run trail and ledger output for a background Team member', async () => {
