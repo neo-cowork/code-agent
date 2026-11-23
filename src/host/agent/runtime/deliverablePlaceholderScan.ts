@@ -139,7 +139,7 @@ type ScannableContent =
   | { kind: 'json'; values: TextSegment[] };
 
 /** 只有扫描集合内的扩展名才抽正文（代码文件结构性不进——TODO 注释不算交付物占位）。 */
-function isPlaceholderScannablePath(path: string): boolean {
+export function isPlaceholderScannablePath(path: string): boolean {
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   return path.includes('.') && SCANNABLE_EXTENSIONS.has(extension);
 }

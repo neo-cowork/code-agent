@@ -1,5 +1,6 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { normalizeReminderCreateTime } from './reminderCreateTime';
+import { omitUnrequestedReminderNotes } from './reminderUnrequestedNotes';
 import { normalizeCalendarEventTime } from './calendarEventTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
@@ -65,6 +66,7 @@ import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
+import { formatRunPolicyDenial, isForegroundExcelNonReadParams } from './runPolicyBounceText';
 import { evaluateSubagentPolicyDenial, type SubagentToolPolicy } from '../agent/subagentToolRuntime';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { denyUnanalyzableCommand, recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
@@ -119,6 +121,7 @@ import { connectorWritePermissionRequest, findConnectorTokenWrite } from './conn
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { tryReadOnlyProbe } from './readOnlyProbeHook';
+import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
@@ -267,6 +270,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 import { computeDeleteImpact } from './deleteImpact';
+import { trimIdentifierArgs } from './trimIdentifierArgs';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -621,7 +625,11 @@ export class ToolExecutor {
     }
     const requestedToolName = toolName;
     const normalizedRequestedToolName = normalizeToolName(requestedToolName);
-    const boundParams = this.bindRunScopedParams(normalizedRequestedToolName, rawParams);
+    const boundParams = this.bindRunScopedParams(
+      normalizedRequestedToolName,
+      // 先裁路径键再做 workspace 边界检查：判定、授权、执行看到同一个值（command 不裁，!run 逐字节）
+      trimIdentifierArgs(rawParams, { includeCommand: false }),
+    );
     if ('error' in boundParams) {
       return {
         success: false,
@@ -676,6 +684,16 @@ export class ToolExecutor {
       return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
     }
     params = reminderTime.args;
+    // The approval card is built from these params, before the tool handler runs.
+    // Only reminders_create: calendar_create_event also has title+notes, and a
+    // note that repeats the title is still the user's event body.
+    if (executionToolName === 'reminders_create') {
+      const unrequestedNotes = omitUnrequestedReminderNotes(params);
+      if (unrequestedNotes.dropped) {
+        logger.debug('reminders_create dropped notes', { reason: unrequestedNotes.reason });
+        params = unrequestedNotes.args;
+      }
+    }
     const calendarTime = normalizeCalendarEventTime(executionToolName, params);
     if (!calendarTime.ok) {
       return { success: false, error: calendarTime.error, metadata: { code: calendarTime.code } };
@@ -807,19 +825,12 @@ export class ToolExecutor {
     // AgentLoop 已在 schema 面过滤 + messageProcessor 拦截模型直调；这里兜底
     // 嵌套调用（PTC executeTool）与直接 executor 调用，保证被裁剪工具永不静默执行。
     // 与 recordDecision 配对（policy-deny），权限账本不断流。
-    if (isToolDeniedByRunPolicy({
-      deniedToolNames: options.deniedToolNames,
-      allowedToolNames: options.allowedToolNames,
-      toolScope: options.toolScope,
-      skillBoundaryAllowedTools: options.skillBoundaryAllowedTools,
-    }, executionToolName)) {
+    const runPolicy = { deniedToolNames: options.deniedToolNames, allowedToolNames: options.allowedToolNames, toolScope: options.toolScope, skillBoundaryAllowedTools: options.skillBoundaryAllowedTools };
+    if (isToolDeniedByRunPolicy(runPolicy, executionToolName) || isForegroundExcelNonReadParams(options.foregroundToolFace, executionToolName, params)) {
       logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
-      return {
-        success: false,
-        error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
-        metadata: { code: 'TOOL_DISABLED_FOR_RUN', bounced: true },
-      };
+      const canHandOff = options.foregroundToolFace === true && !getPermissionModeManager().isUnattendedSession(effectiveSessionId) && !isToolDeniedByRunPolicy(runPolicy, 'delegate_task');
+      return { success: false, error: formatRunPolicyDenial(executionToolName, canHandOff), metadata: { code: 'TOOL_DISABLED_FOR_RUN', bounced: true } };
     }
 
     // Subagent 收缩闸：subagent 调用必须先过工具白名单 + 收缩策略。
@@ -1286,7 +1297,7 @@ export class ToolExecutor {
       ? undefined
       : (nestedToolName: string, nestedParams: Record<string, unknown>) => this.execute(
         nestedToolName,
-        nestedParams,
+        trimIdentifierArgs(nestedParams, { includeCommand: true }),
         {
           ...options,
           nestedToolCall: true,
@@ -1674,6 +1685,7 @@ export class ToolExecutor {
     let canonicalBashWorkingDirectory: string;
     let bashArgumentForcesClassification: boolean;
     let readArgumentForcesClassification: boolean;
+    const readOnlyLookupAsk = readOnlyLookupMustAsk(executionToolName);
     try {
       canonicalBashWorkingDirectory = resolveCanonicalRunPath(bashWorkingDirectory);
       bashArgumentForcesClassification = isBashToolName(policyToolName)
@@ -1718,6 +1730,7 @@ export class ToolExecutor {
     }
     // http_request 携带已连接连接器令牌的写调用必须进分类器强确认（skill 预授权不得跳过）。
     const connectorTokenWriteForcesClassification = findConnectorTokenWrite(policyToolName, params) !== undefined;
+    readArgumentForcesClassification ||= readOnlyLookupAsk;
     const argumentForcesClassification = bashArgumentForcesClassification
       || readArgumentForcesClassification
       || connectorTokenWriteForcesClassification;
@@ -1891,6 +1904,11 @@ export class ToolExecutor {
         permStartTime, undefined, effectiveSessionId, this.ledgerOrigin,
       );
     }
+    // Owner decision B（realrun105）：真人审批放行（ask.approvalSource === 'user'，含停车/定时
+    // 审批与改参一次性放行）的成功结果在 metadata 盖 userApproved 印；机器批准（auto-approve
+    // /session-allowlist/裸 boolean 等自报来源）不盖章。交付物收尾闸据此豁免「用户已批准写入的
+    // 文件」的占位符/Markdown 残留补轮——批准即拍板，不重写、不重弹同一张审批卡。
+    let userApproved = false;
     if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -1960,7 +1978,7 @@ export class ToolExecutor {
           // behind an approvable ask — same invariant as permissionClassifier.ts
           // holding outputRedirectionAsk until every deny has had its say.
           const workspaceRoot = this.writeWorkspaceRoot;
-          const classification: ClassificationResult = await resolveToolPermissionClassification({
+          const classification: ClassificationResult = askInsteadOfApprove(await resolveToolPermissionClassification({
             executionToolName,
             sessionId: effectiveSessionId,
             toolDefinition: toolDef,
@@ -1989,7 +2007,7 @@ export class ToolExecutor {
               const { getBrowserService } = await import('../services/infra/browserPool');
               return getBrowserService(context.agentId);
             },
-          });
+          }), readOnlyLookupAsk);
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
           // approve 路径另建 builder（见下），故其单独补一条。
@@ -2210,7 +2228,10 @@ export class ToolExecutor {
       }
       if (executionToolName === 'reminders_update' || executionToolName === 'reminders_delete') {
         if (executionToolName === 'reminders_delete') { delete permissionRequest.details.title; delete permissionRequest.details.remind_at_ms; }
-        const { remindersApprovalDetails } = await import('./modules/connectors/remindersApprovalDetails');
+        const { remindersApprovalDetails, remindersUpdateNoChangeError } = await import('./modules/connectors/remindersApprovalDetails');
+        // 空更新（模型只传了认不出的字段名）：不弹一张拿旧时间冒充修改的卡，直接让模型补字段重试。
+        const noChangeError = executionToolName === 'reminders_update' ? remindersUpdateNoChangeError(params) : null;
+        if (noChangeError) return { success: false, error: noChangeError, metadata: { code: 'INVALID_ARGS' } };
         try { Object.assign(permissionRequest.details, await remindersApprovalDetails(executionToolName, params)); }
         catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
       }
@@ -2343,6 +2364,11 @@ export class ToolExecutor {
           permissionRequest.forceConfirmBoundaryOnly = true;
         }
       }
+      // 查询前免确认关闭：autoApprove.read 等便利放行不得吞掉这张卡。
+      if (readOnlyLookupAsk) {
+        permissionRequest.forceConfirm = true;
+        permissionRequest.forceConfirmBoundaryOnly = false;
+      }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
       }
@@ -2447,6 +2473,8 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+      // 改参 fail-closed 后 ask.approved 已被改写为 false，取值在这之后才能忠实反映终局。
+      if (approved && ask.approvalSource === 'user') userApproved = true;
       if (approved && ask.approvalSource === 'user' && browserSessionGrant?.target) browserApprovedAction = `browser_action.${params.action}`;
 
       // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
@@ -2808,7 +2836,7 @@ export class ToolExecutor {
 
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
-      return { ...result, metadata: { ...result.metadata, executionStarted } };
+      return { ...result, metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
       if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;

@@ -24,6 +24,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { Project } from '@shared/contract/project';
 import { deleteLibraryItem, importLibraryFiles, listLibraryItems, retryLibraryLearn, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -386,7 +387,7 @@ export const LibraryPanel: React.FC = () => {
             >
               <option value={GLOBAL_SCOPE}>{t.library.scopeGlobal}</option>
               {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
+                <option key={project.id} value={project.id}>{getProjectDisplayName(project, t)}</option>
               ))}
             </select>
             <Button
@@ -581,7 +582,8 @@ export const LibraryPanel: React.FC = () => {
                                   <button /* ds-allow:button: 行标题即预览入口，纯文字热区，Button primitive 不适配 */ type="button" onClick={() => handlePreview(item)} title={t.library.preview} className="min-w-0 truncate text-left text-sm text-zinc-200 hover:text-zinc-100 hover:underline">{item.title}</button>
                                   <DeliverablePublishBadge state={publishModel.publishState} testId={`library-publish-state-${item.id}`} />
                                 </div>
-                                <div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div>
+                                {/* 摘要为空不渲染第二行：绝不回退本地 pathOrUri（内部绝对路径），同 atMentionPanelModel libraryRowSubtitle 口径 */}
+                                {item.summary?.trim() && <div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary}</div>}
                                 <div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div>
                               </div>
                             </div>

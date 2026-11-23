@@ -142,6 +142,7 @@ export interface RunTerminal {
   eventSeq: number;
   at: number;
   reason?: string;
+  abandonedParked?: true;
 }
 
 export interface RunEnvelope {

@@ -14,6 +14,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { listRoles } from '../../../services/rolesClient';
 import { useChannelCatalog } from './useChannelCatalog';
+import { useArchiveProjectName } from './useArchiveProjectName';
 import {
   buildSavedRoutineRestateRows,
   resolveSavedRoutineChannelLabel,
@@ -56,6 +57,8 @@ export const SavedRoutineRestate: React.FC<SavedRoutineRestateProps> = ({ job, o
     [job.resultChannel, accounts, conversationsByAccount],
   );
 
+  const archiveProjectName = useArchiveProjectName(job.action.type === 'agent' ? job.action.libraryProjectId : undefined);
+
   const rows = useMemo(() => buildSavedRoutineRestateRows({
     job,
     roleDisplayName,
@@ -72,9 +75,12 @@ export const SavedRoutineRestate: React.FC<SavedRoutineRestateProps> = ({ job, o
       savedRolePrefix: cc.savedRestateRolePrefix,
       savedStatusLabel: cc.savedRestateStatusLabel,
       savedStatusPaused: cc.savedRestateStatusPaused,
+      archiveLabel: cc.savedRestateArchiveLabel,
+      archiveUnknown: cc.savedRestateArchiveUnknown,
     },
+    archiveProjectName,
     lang: language,
-  }), [job, roleDisplayName, channelLabel, sc, cc, language]);
+  }), [job, roleDisplayName, channelLabel, archiveProjectName, sc, cc, language]);
 
   return (
     <div data-testid="cron-saved-routine-restate" className="space-y-3">

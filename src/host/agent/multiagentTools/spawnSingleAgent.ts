@@ -43,7 +43,7 @@ import { getSubagentExecutor } from '../subagentExecutor';
 import type { SubagentExecutionContext } from '../subagentExecutorTypes';
 import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
-import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget, withBackgroundWorktreeNote } from './spawnAgentForegroundBackground';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, registerDetachedSubagent, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget, withBackgroundWorktreeNote } from './spawnAgentForegroundBackground';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
 import { withWorkdirPrefix } from '../workdirPrefix';
 
@@ -301,11 +301,10 @@ export async function executeSingleSpawnAgent(
         availableTools: tools.slice(),
       };
 
-      // 孤儿回收（swarm 护栏 P1-2 #5）：仅后台 detached 子代理注入父探活。
-      // 前台子代理被父 await，不会成孤儿，跳过（多余开销）。
+      // Team 子代理继续跟踪父 run。会话级后台助手则需要跨过前台轮结束才能交付。
       // 动态 import 取 TaskManager，避开 task→agent 的静态循环依赖。
       let isParentAlive: (() => boolean) | undefined;
-      if (!waitForCompletion && context.sessionId) {
+      if (!waitForCompletion && context.swarmRunScope && context.sessionId) {
         try {
           const { getTaskManager } = await import('../../task/TaskManager');
           const tm = getTaskManager();
@@ -346,7 +345,7 @@ export async function executeSingleSpawnAgent(
         capabilityManifest: capabilityManifestForTools(tools),
         hooks: context.hooks,
         parentContext,
-        // 后台 detached 子代理的父探活（仅 !waitForCompletion 时非 undefined）
+        // Team 的后台子代理跟踪派出它的父 run。
         isParentAlive,
       };
 
@@ -394,6 +393,7 @@ export async function executeSingleSpawnAgent(
           treeId,
           parentRunId: context.runId,
           background: Boolean(managedAgentId),
+          completionByBackgroundRegistry: Boolean(managedAgentId && !context.swarmRunScope && !context.suppressBackgroundSubagentIdleWake),
           completion: { title: completionTitle, kind: 'user_visible' },
           parentId: context.spawnParentAgentId,
           slotAcquired: true,
@@ -495,6 +495,7 @@ Stats:
           };
         }
       } else {
+        const agentStartedAt = Date.now();
         // Start agent in background
         const promise = executor.execute({
           prompt: enrichedTask,
@@ -521,6 +522,14 @@ Stats:
         slotLease = undefined;
 
         const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
+        delegateWorktreeCleanup();
+        if (!context.swarmRunScope && !context.suppressBackgroundSubagentIdleWake) {
+          registerDetachedSubagent({
+            promise: worktreeInfo ? withBackgroundWorktreeNote(promise, worktreeNoteSettled, agentId) : promise,
+            agentId, completionTitle, role, context, treeId, agentStartedAt,
+            abort: () => abortController.abort('cancelled'),
+          });
+        }
         publishBackgroundSubagentVisibility({
           promise,
           scope: visibilityScope,
@@ -528,13 +537,10 @@ Stats:
           agentName,
           role: role || 'dynamic',
           task,
-          startedAt: Date.now(),
+          startedAt: agentStartedAt,
           ownsRunLifecycle: !context.swarmRunScope,
           publisher: 'executeSingleSpawnAgent',
         });
-
-        // Background worktree cleanup: register onComplete callback
-        delegateWorktreeCleanup();
 
         // 后台子代理的生命周期交给 SpawnGuard / close_agent：工具调用收口时引擎会
         // abort 本次调用的信号，不摘除监听会把已报告「后台运行中」的子代理连带取消。
@@ -558,6 +564,7 @@ Stats:
         )}${isolationNote}
 
 Use wait_agent to block until done, or close_agent to cancel.`,
+          metadata: { agentId, background: true },
         };
       }
     } catch (error) {

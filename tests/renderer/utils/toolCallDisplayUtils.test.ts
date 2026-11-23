@@ -29,8 +29,9 @@ describe('getToolDisplayName — MCP 工具', () => {
     expect(getToolDisplayName('mcp_unknownserver_action')).toBe('Unknownserver');
   });
 
-  it('不匹配 mcp_<server>_<tool> 形式时原样返回', () => {
-    expect(getToolDisplayName('mcp_invalid')).toBe('mcp_invalid');
+  it('不匹配 mcp_<server>_<tool> 形式时给中性词，不回原文（FB-2291 改旧约定）', () => {
+    expect(getToolDisplayName('mcp_invalid')).toBe('Tool');
+    expect(getToolDisplayName('mcp__')).toBe('Tool');
   });
 
   it('旧格式 name === "mcp" 走 displayNames 表，不进 server 解析', () => {

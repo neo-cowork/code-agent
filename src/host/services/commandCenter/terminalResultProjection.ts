@@ -15,12 +15,39 @@ import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getAuthService } from '../auth/authService';
 import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
+import {
+  formatSessionTaskCancelledClosing, formatSessionTaskUserDenied, isSessionTaskUserDeniedDetail,
+} from '../../../shared/constants/sessionCommandCenter';
 
 const logger = createLogger('TerminalResultProjection');
 
 export type TerminalResultStatus = 'completed' | 'failed' | 'cancelled';
 
 const resolveLocale = resolveSessionTaskResultLocale;
+
+const CJK_CHAR_RE = /[\u4e00-\u9fff]/;
+
+/**
+ * 停止行用哪个名字：完整任务标题（超长的词边界截断由 recordBackgroundTaskStopNote 负责），
+ * shortName 只是会话内部引用键（2-4 字符，可能是「抓gui」这类半截词），不再直接上屏。
+ * 例外：中文界面遇到完全没有中文字符的标题（整句英文任务名）且短键是整词/首字母缩写时用短键，半截词仍用完整标题，
+ * 不在中文界面上印一整句英文；标题为空同样退回短键，不出「」空名字。
+ */
+function stopNoteTitleForTask(task: SessionCommandTask, locale: ReturnType<typeof resolveLocale>): string {
+  const title = task.title.trim();
+  if (!title) return task.shortName;
+  if (locale === 'zh' && !CJK_CHAR_RE.test(title) && isWholeKeyOfTitle(task.shortName, title)) return task.shortName;
+  return title;
+}
+
+/** 短键是标题里的整词，或标题各词首字母缩写（全大写）时才算「完整」；4 字符硬截断的半截词不算。 */
+function isWholeKeyOfTitle(shortName: string, title: string): boolean {
+  const words = title.match(/[A-Za-z0-9]+/g) ?? [];
+  const key = shortName.trim();
+  if (words.some((w) => w.toLowerCase() === key.toLowerCase())) return true;
+  const initials = words.map((w) => w[0]).join('');
+  return key.length > 1 && key === key.toUpperCase() && key.toUpperCase() === initials.toUpperCase();
+}
 
 /**
  * 正常终态的 [任务结果] 行。消息 id 由 taskId 派生：迟到的重试与正常写撞同一 id 时
@@ -39,9 +66,22 @@ export async function projectTerminalResult(
   // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等）。放在 [任务结果] 行之后：
   // 说明写失败会抛出并随整条投影重试，但绝不会挡住结果行落库。
   if (task.stopped) {
-    await recordBackgroundTaskStopNote(task.sessionId, task.shortName, task.stopped.content, {
+    await recordBackgroundTaskStopNote(task.sessionId, stopNoteTitleForTask(task, resolveLocale()), task.stopped.content, {
       taskId: task.id, kind: task.stopped.kind,
     });
+    return;
+  }
+  // 取消（含用户拒绝审批）不唤醒模型（foregroundWake 对 cancelled 直接跳过），
+  // 由宿主写一句确定性收尾，让对话正文与卡片的「已取消」一致。
+  if (status === 'cancelled') {
+    const locale = resolveLocale();
+    const declined = isSessionTaskUserDeniedDetail(task.detail);
+    await recordBackgroundTaskStopNote(
+      task.sessionId,
+      stopNoteTitleForTask(task, locale),
+      declined ? formatSessionTaskUserDenied(locale) : formatSessionTaskCancelledClosing(locale),
+      { taskId: task.id, kind: 'cancelled' },
+    );
   }
 }
 

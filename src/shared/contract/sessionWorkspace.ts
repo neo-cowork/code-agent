@@ -413,10 +413,25 @@ function formatNamedCapability(label: string, values: string[]): string | undefi
   return `${label} ${values.length}`;
 }
 
+// server id 是内部 slug，不与用户见面（FB-2291）：cua-driver 是 Computer Use 后端，
+// 对外说「电脑操作」（与右栏 TaskPanel 上下文行同词）；其余 slug 统一转词组人话
+// （与 renderer mcpServerLabel.formatMcpServerName 同口径）。只影响展示字段，
+// mcpServerIds 数据字段保留原始 id。
+function formatMcpServerLabel(id: string): string {
+  if (id === 'cua-driver') {
+    return '电脑操作';
+  }
+  return id
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 function buildCapabilitySummary(args: CapabilityEvidence): string | undefined {
   const parts = [
     formatNamedCapability('连接器', args.connectorIds),
-    formatNamedCapability('MCP', args.mcpServerIds),
+    formatNamedCapability('MCP', args.mcpServerIds.map(formatMcpServerLabel)),
     formatNamedCapability('技能', args.skillIds),
   ].filter((value): value is string => Boolean(value));
 
@@ -509,7 +524,7 @@ export function deriveSessionWorkbenchSnapshot(
     labels.push(routingSummary);
   }
   labels.push(...capabilities.connectorIds.map((id) => `连接器:${id}`));
-  labels.push(...capabilities.mcpServerIds.map((id) => `MCP:${id}`));
+  labels.push(...capabilities.mcpServerIds.map((id) => `MCP:${formatMcpServerLabel(id)}`));
   labels.push(...capabilities.skillIds.map((id) => `技能:${id}`));
 
   const summarySegments: string[] = [];

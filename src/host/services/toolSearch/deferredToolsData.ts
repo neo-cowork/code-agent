@@ -1121,6 +1121,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'library_add',
+    shortDescription: '把本地文件放进资料库（面板里可见，之后可钉到对话）',
+    tags: ['file'],
+    aliases: ['library_add', '资料库', '放进资料库', '入库', '归档', 'library', 'add to library'],
+    source: 'builtin',
+  },
+  {
     name: 'SkillCreate',
     shortDescription: '把可复用的工作流固化成 skill（写 SKILL.md，创建前用户确认）',
     tags: ['evolution'],

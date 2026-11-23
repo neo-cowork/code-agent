@@ -131,6 +131,93 @@ export const PROVIDER_MODELS_MAP: Record<string, ProviderInfo> = Object.fromEntr
  */
 const RUNTIME_ONLY_MODEL_LABELS: Record<string, string> = {
   'glm-5.3': 'GLM-5.3',
+  // 注册表（BASE + ADDITIONAL = host PROVIDER_REGISTRY 全量）里登记但刻意不进 catalog
+  // 的模型（进 catalog 会变成设置页可选行）；标签取注册表 name，去掉末尾中文括号后缀
+  // （半角 (…) / 全角 （…） 都去）。新增注册模型没补标签会被
+  // tests/unit/shared/modelDisplayLabels.test.ts 钉红——那道门扫的是全量 patched 注册表。
+  // minimax
+  'abab6.5s-chat': 'abab6.5s',
+  'abab6.5-chat': 'abab6.5',
+  'abab5.5s-chat': 'abab5.5s',
+  'abab5.5-chat': 'abab5.5',
+  // gemini（直连侧未进 catalog 的档位）
+  'gemini-3-pro': 'Gemini 3 Pro',
+  'gemini-3-flash': 'Gemini 3 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+  // volcengine
+  'doubao-1.5-pro-256k': 'Doubao 1.5 Pro 256K',
+  'doubao-1.5-thinking-pro': 'Doubao 1.5 Thinking Pro',
+  'doubao-seed-1-6-vision-250815': 'Doubao Seed 1.6 Vision',
+  // xiaomi
+  'neohorse-1.5-flash-preview': 'NeoHorse 1.5 Flash',
+  // openrouter（label 查表是精确匹配，带上游前缀的完整 id 就是运行时真源 id）
+  'google/gemini-3-pro-preview': 'Gemini 3 Pro',
+  'google/gemma-3n-e2b-it:free': 'Gemma 3',
+  'anthropic/claude-opus-4.5': 'Claude Opus 4.5',
+  'anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
+  'anthropic/claude-haiku-4.5': 'Claude Haiku 4.5',
+  'openai/gpt-5.2': 'GPT-5.2',
+  'openai/gpt-5.2-codex': 'GPT-5.2 Codex',
+  'meta-llama/llama-3.3-70b-instruct:free': 'Llama 3.3 70B',
+  'meta-llama/llama-4-maverick': 'Llama 4 Maverick',
+  'deepseek/deepseek-v3.2': 'DeepSeek V3.2',
+  'deepseek/deepseek-r1-0528:free': 'DeepSeek R1',
+  // BASE_PROVIDER_REGISTRY（基础注册表）里同样没进 catalog 的模型，标签规则同上。
+  // deepseek
+  'deepseek-coder': 'DeepSeek Coder',
+  // claude（带日期后缀的正式 id）
+  'claude-sonnet-4-20250514': 'Claude 4 Sonnet',
+  'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
+  'claude-3-5-haiku-20241022': 'Claude 3.5 Haiku',
+  // openai
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o Mini',
+  // groq（带上游前缀的完整 id 就是运行时真源 id，同 openrouter 按精确匹配查表）
+  'meta-llama/llama-4-maverick-17b-128e-instruct': 'Llama 4 Maverick',
+  'meta-llama/llama-4-scout-17b-16e-instruct': 'Llama 4 Scout',
+  'openai/gpt-oss-20b': 'GPT OSS 20B',
+  'llama-3.1-8b-instant': 'Llama 3.1 8B',
+  'moonshotai/kimi-k2-instruct': 'Kimi K2',
+  'groq/compound': 'Groq Compound',
+  // local（Ollama 的 tag 形式 id，冒号是 id 的一部分）
+  'qwen2.5-coder:7b': 'Qwen 2.5 Coder 7B',
+  'qwen3:8b': 'Qwen3 8B',
+  'qwen3:32b': 'Qwen3 32B',
+  'gemma4:12b': 'Gemma4 12B',
+  'gemma4:27b': 'Gemma4 27B',
+  'deepseek-r1:7b': 'DeepSeek R1 7B',
+  'deepseek-r1:32b': 'DeepSeek R1 32B',
+  'llama4-scout:17b': 'Llama4 Scout 17B',
+  'codestral:22b': 'Codestral 22B',
+  // zhipu
+  'codegeex-4': 'CodeGeeX-4',
+  'cogview-3-flash': 'CogView-3 Flash',
+  'cogvideox-flash': 'CogVideoX Flash',
+  // qwen
+  'qwen-max': 'Qwen Max',
+  'qwen-plus': 'Qwen Plus',
+  'qwen-turbo': 'Qwen Turbo',
+  'qwq-plus': 'QwQ Plus',
+  'qvq-max': 'QVQ Max',
+  'qwen3-coder-plus': 'Qwen3 Coder Plus',
+  'qwen3-coder-flash': 'Qwen3 Coder Flash',
+  'qwen-coder-plus': 'Qwen Coder Plus',
+  'qwen3-vl-plus': 'Qwen3 VL Plus',
+  'qwen3-vl-flash': 'Qwen3 VL Flash',
+  'qwen-vl-ocr': 'Qwen VL OCR',
+  'qwen-omni-turbo': 'Qwen Omni Turbo',
+  'qwen3-omni-flash': 'Qwen3 Omni Flash',
+  'qwen-image-max': 'Qwen Image Max',
+  'qwen-image-edit-max': 'Qwen Image Edit',
+  'qwen3-tts-flash': 'Qwen3 TTS Flash',
+  'qwen3-asr-flash-realtime': 'Qwen3 ASR Flash',
+  'qwen2.5-7b-instruct-1m': 'Qwen 2.5 7B 1M',
+  'qwen-mt-turbo': 'Qwen MT Turbo',
+  'text-embedding-v4': 'Text Embedding V4',
+  // moonshot
+  'moonshot-v1-8k': 'Moonshot V1 8K',
+  'moonshot-v1-32k': 'Moonshot V1 32K',
+  'moonshot-v1-128k': 'Moonshot V1 128K',
 };
 
 const MODEL_LABELS: Record<string, string> = {

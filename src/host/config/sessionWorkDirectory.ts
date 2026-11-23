@@ -34,6 +34,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Message, MessageAttachment } from '../../shared/contract/message';
+import { needsArtifactTaskBrief } from '../prompts/artifactGeneration';
+import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getConfigService } from '../services/core/configService';
 import { deriveRuleSummaryTitle, isPlaceholderSessionTitle, isProvisionalAutoTitle } from '../../shared/sessionTitlePlaceholder';
 import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../shared/constants/timeouts';
@@ -51,6 +53,8 @@ export interface SessionWorkDirectoryOptions {
   userMessage?: string;
   /** 仅首轮规划调用；undefined 表示小模型不可用。配置层不依赖模型层。 */
   askTitle?: (prompt: string, signal: AbortSignal) => Promise<{ success: boolean; content?: string } | undefined>;
+  /** Use the rule title immediately for a native turn without a recognized deliverable workflow. */
+  deferModelTitle?: boolean;
   /** 空消息首轮以首个非空附件名兜底；文件去扩展名，文件夹保留名称。 */
   attachments?: readonly Pick<MessageAttachment, 'name' | 'category'>[];
   /** 目录名里的 MMDD 取这个时间戳（缺省 Date.now()），本地时区 */
@@ -195,8 +199,8 @@ async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions):
     logDecision('short-clean', 'clean-first-clause');
     return sanitizeFolderTitle(message);
   }
-  let reason = 'unavailable';
-  const askTitle = options.askTitle;
+  let reason = options.deferModelTitle ? 'deferred-native-turn' : 'unavailable';
+  const askTitle = options.deferModelTitle ? undefined : options.askTitle;
   if (askTitle) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -359,6 +363,17 @@ async function findFreeSessionWorkDirectory(
     return candidate;
   }
   throw new Error(`session work directory name exhausted after ${COLLISION_SUFFIX_LIMIT} collisions: ${baseName}`);
+}
+
+/**
+ * The run binds its working directory before checking tool write authority.
+ * Preserve smart naming for recognized deliverable and spreadsheet workflows
+ * that may materialize this turn. Other native turns can use the rule title.
+ */
+export function needsWorkspaceModelTitleForDeliverable(prompt: string): boolean {
+  const { isOfficeFileDeliverable, isExcelTask } = detectTaskFeatures(prompt);
+  const savesToFile = /\b(?:save|export)\s+(?:it\s+)?(?:to|as)\b|保存(?:到|至|为)|另存为|导出到/i.test(prompt);
+  return isOfficeFileDeliverable || isExcelTask || savesToFile || needsArtifactTaskBrief(prompt);
 }
 
 /**

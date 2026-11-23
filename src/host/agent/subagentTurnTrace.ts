@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { ToolCall } from '../../shared/contract';
 import {
   captureTurnDiff,
   captureWorkspaceMutationSnapshot,
@@ -150,7 +151,7 @@ export function createSubagentTurnObservability(input: {
         ? captureWorkspaceMutationSnapshot(input.workingDirectory)
         : undefined;
     },
-    emitToolCallStart(toolCall: { id: string; name: string; arguments: Record<string, unknown> }): void {
+    emitToolCallStart(toolCall: ToolCall): void {
       noteForegroundProgress();
       eventScope.emitToolCallStart(toolCall);
     },

@@ -3,6 +3,7 @@
 
 import { PROMPT_REQUIRED, REQUEST_INVALID } from '@shared/contract/agentRunErrors';
 import type { Language } from './index';
+import { projectTrustTurnCardEn, projectTrustTurnCardZh } from './projectTrust';
 
 const promptRequiredCopy: Record<Language, string> = {
   zh: '请补一句话说明想让我做什么，然后再发送一次。',
@@ -30,6 +31,15 @@ export function rejectedRequestMessage(error: unknown, language: Language): stri
   if (typeof error !== 'object' || error === null) return undefined;
   const { status, code } = error as { status?: unknown; code?: unknown };
   if (code === 'PROJECT_SOURCE_TRUST') {
+    const kind = (error as { kind?: unknown }).kind;
+    if (kind === 'source_missing') {
+      const copy = language === 'en' ? projectTrustTurnCardEn : projectTrustTurnCardZh;
+      const rawName = (error as { folderName?: unknown }).folderName;
+      const name = typeof rawName === 'string' && rawName.trim() && !rawName.includes('/') && !rawName.includes('\\')
+        ? rawName.trim()
+        : copy.projectTrustConfirm.folder;
+      return copy.projectTrustConfirm.reasons.source_missing.replace('{name}', name);
+    }
     return projectSourceTrustCopy[language] ?? projectSourceTrustCopy.zh;
   }
   if (code === REQUEST_INVALID) {

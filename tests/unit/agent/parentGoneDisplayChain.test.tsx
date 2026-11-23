@@ -250,9 +250,9 @@ const title = 'Compare three note-taking apps';
 const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]/u;
 
 // Literal byte baselines; do not derive the expectation from the active dictionary.
-const chineseHeadline = '助手没有完成';
+const chineseHeadline = '助手 · 没有完成';
 const chineseReason = '上级任务已经结束';
-const chineseCard = '助手没有完成上级任务已经结束查看详情重试';
+const chineseCard = '助手 · 没有完成上级任务已经结束查看详情重试';
 const chinesePanelRow = '助手失败：上级任务已经结束';
 
 async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {
@@ -274,7 +274,7 @@ async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {
     const cardText = card.container.textContent;
     printEvidence(`${producer} ${locale} chat textContent=${JSON.stringify(cardText)}`);
     if (locale === 'en') {
-      expect(cardText).toContain("Background assistant didn't finish");
+      expect(cardText).toContain("Background assistant · didn't finish");
       expect(cardText).toContain('The parent task has already ended');
       expect(cardText).not.toMatch(cjk);
       expect(cardText).not.toContain('Not completed background');
@@ -433,8 +433,8 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
     }, [], snapshot.nodes, locale === 'en' ? en : zh));
     const card = render(<ToolCallDisplay toolCall={interrupted} index={0} total={1} />);
     await waitFor(() => expect(card.container.textContent).toContain(locale === 'en'
-      ? "Background assistant didn't finish" : chineseHeadline)).catch(() => undefined);
-    expect.soft(card.container.textContent).toContain(locale === 'en' ? "Background assistant didn't finish" : chineseHeadline);
+      ? "Background assistant · didn't finish" : chineseHeadline)).catch(() => undefined);
+    expect.soft(card.container.textContent).toContain(locale === 'en' ? "Background assistant · didn't finish" : chineseHeadline);
     printEvidence(`r2 ${locale} restarted card textContent=${JSON.stringify(card.container.textContent)}`);
     expect.soft(card.container.textContent).toContain(locale === 'en' ? 'The parent task has already ended' : chineseReason);
     if (locale === 'zh') {

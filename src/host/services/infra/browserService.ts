@@ -127,8 +127,6 @@ export {
   createManagedBrowserLease,
   createManagedBrowserSessionId,
   isManagedBrowserLeaseExpired,
-  listOrphanManagedBrowserSurfaceProfileDirs,
-  ORPHAN_MANAGED_BROWSER_SURFACE_PROFILE_POLICY,
   redactBrowserWorkbenchTraceParams,
   resolveManagedBrowserProfile,
   resolveManagedBrowserProxyConfig,
@@ -375,12 +373,17 @@ export class BrowserService implements Disposable {
       }
       this.closingBrowser = false;
       this.logger.log('INFO', 'Browser closed, all tabs cleared');
+      if (this.profileMode === 'persistent') void import('./browserSurfaceProfileRetention').then(({ sweepEndedSurfaceProfile }) => sweepEndedSurfaceProfile(this.profileDir)).catch((error) => this.logger.log('WARN', `Surface profile sweep failed: ${error}`));
       this.emitSessionChanged('close');
     } else {
       this.leaseController.release();
       this.logger.log('WARN', 'No browser to close');
       this.emitSessionChanged('close');
     }
+  }
+
+  noteUserActivity(): void {
+    this.leaseController.heartbeat();
   }
 
   setLeaseInUse(inUse: boolean): void {

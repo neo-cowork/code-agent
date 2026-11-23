@@ -14,6 +14,7 @@ import type { NormalizedToolArtifactMeta } from './artifactBlob';
 import type { VoiceCallFailureCode, VoiceCallFailurePhase, VoiceCallSummary, VoiceToolCallOrigin } from './voice';
 import type { TurnDiffEventData } from './turnDiff';
 import type { EvidenceRef } from './evidence';
+import type { ProjectSourceTrustFailureKind } from './project';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -370,6 +371,13 @@ export interface MessageMetadata {
    * 失败 assistant 气泡据此挂「确认并重发」等就地恢复入口；正文仍是人话句子。
    */
   sendFailureCode?: string;
+  /**
+   * Trust-gate kind from the 422 body (source_missing / identity_changed / not_trusted).
+   * source_missing paints the missing-folder sentence and the re-select button on first view.
+   */
+  sendFailureKind?: ProjectSourceTrustFailureKind;
+  /** Folder basename from the 422 body. Never a full path. */
+  sendFailureFolderName?: string;
   /** Structured verification evidence carried by message-level projections. */
   evidenceRefs?: EvidenceRef[];
   /** Stable join keys for reconstructing a persisted message's runtime turn. */
@@ -461,7 +469,7 @@ export interface MessageMetadata {
   /** Deterministic user-visible note when a background task stops before producing its conclusion. */
   backgroundTaskStopped?: {
     taskId: string;
-    kind: 'step_cap' | 'no_conclusion' | 'error';
+    kind: 'step_cap' | 'no_conclusion' | 'error' | 'cancelled';
   };
   /**
    * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，

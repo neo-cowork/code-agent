@@ -21,6 +21,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { interpolate } from '../../../i18n/interpolate';
 import { useI18n } from '../../../hooks/useI18n';
 import { listProjects } from '../../../services/projectClient';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
@@ -70,6 +71,24 @@ export function compileSimpleSchedule(input: SimpleScheduleInput): Partial<CronJ
     case 'once':
       return { scheduleType: 'at', atDatetime: input.onceAt };
   }
+}
+
+/** compileSimpleSchedule 的逆：只认 `M H * * D`（D = * / 1-5 / 单个 0-6），其余返回 null。 */
+export function decompileSimpleSchedule(
+  expression: string,
+): { freq: 'daily' | 'weekdays' | 'weekly'; time: string; weekday: string } | null {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) return null;
+  const [m, h, dom, mon, dow] = fields;
+  if (!/^\d{1,2}$/.test(m) || !/^\d{1,2}$/.test(h) || dom !== '*' || mon !== '*') return null;
+  const minute = Number(m);
+  const hour = Number(h);
+  if (minute > 59 || hour > 23) return null;
+  const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  if (dow === '*') return { freq: 'daily', time, weekday: '1' };
+  if (dow === '1-5') return { freq: 'weekdays', time, weekday: '1' };
+  if (/^[0-6]$/.test(dow)) return { freq: 'weekly', time, weekday: dow };
+  return null;
 }
 
 /** 目标 + 名称 + 调度 → 完整 draft（agent action，agentType 与 LLM 生成路径同款 "default"） */
@@ -315,7 +334,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
             onChange={(e) => setLibraryProjectId(e.target.value)}
             options={[
               { value: '', label: cc.simpleArchiveNone },
-              ...projects.map((project) => ({ value: project.id, label: project.name })),
+              ...projects.map((project) => ({ value: project.id, label: getProjectDisplayName(project, t) })),
             ]}
           />
         </FormField>

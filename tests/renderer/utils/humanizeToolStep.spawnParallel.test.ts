@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
+import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
@@ -70,5 +71,58 @@ describe('humanizeToolStep — spawn_agent parallel form', () => {
     expect(humanizeToolStep('spawn_agent', { ...args, parallel: false }, zh, undefined, 'pending-approval'))
       .toBe(humanizeToolStep('spawn_agent', { role: 'explore', task: 'x' }, zh, undefined, 'pending-approval'));
     expect(humanizeToolStep('spawn_agent', { agents: [{ name: 'a' }, { name: 'b' }] }, zh)).toBe('启动了一个代理');
+  });
+
+  describe('mixed helper outcomes', () => {
+    const pair = {
+      parallel: true,
+      agents: [{ name: '纪要助手', role: 'explore', task: 'a' }, { name: '演示稿助手', role: 'coder', task: 'b' }],
+    };
+    const mixed = [
+      { name: '纪要助手', success: true },
+      { name: '演示稿助手', success: false, failureCode: 'step-cap-reached' },
+    ];
+
+    it('zh: one status per helper, step-cap uses the existing step-cap sentence', () => {
+      expect(humanizeToolStep('spawn_agent', pair, zh, undefined, 'failed', undefined, { helperOutcomes: mixed }))
+        .toBe('纪要助手已完成；演示稿助手未完成');
+    });
+
+    it('en: done / not done with a plain reason', () => {
+      expect(humanizeToolStep('spawn_agent', pair, en, undefined, 'failed', undefined, { helperOutcomes: mixed }))
+        .toBe('纪要助手 done; 演示稿助手 not done');
+    });
+
+    it('unknown failure code still gives a non-empty reason, never internal ids', () => {
+      const out = humanizeToolStep('spawn_agent', pair, zh, undefined, 'failed', undefined, {
+        helperOutcomes: [{ name: '甲', success: true }, { name: '乙', success: false, failureCode: 'weird-internal-state' }],
+      });
+      expect(out).toMatch(/^甲已完成；乙未完成$/);
+      expect(out).not.toContain('weird-internal-state');
+    });
+
+    it('the step-cap reason appears exactly once across title + reason line (zh and en)', () => {
+      for (const [t, reason] of [[zh, '这次任务做到步数上限，已停下'], [en, 'This task reached its step limit and stopped']] as const) {
+        const title = humanizeToolStep('spawn_agent', pair, t, undefined, 'failed', undefined, { helperOutcomes: mixed });
+        const line = humanizeToolFailureReason({ name: 'spawn_agent', result: { toolCallId: 't', success: false, error: 'x', metadata: { helperOutcomes: mixed } } } as never, t);
+        expect(`${title}\n${line}`.split(reason).length - 1).toBe(1);
+        expect(line).toBe(reason);
+      }
+    });
+
+    it('several failed helpers: reason line names each one', () => {
+      const line = humanizeToolFailureReason({ name: 'spawn_agent', result: { toolCallId: 't', success: false, error: 'x', metadata: { helperOutcomes: [
+        { name: '甲', success: false, failureCode: 'step-cap-reached' }, { name: '乙', success: false, failureCode: 'timeout' }] } } } as never, zh);
+      expect(line).toMatch(/^甲未完成 — .+；乙未完成 — .+/);
+    });
+
+    it('without outcomes the old failed sentence is kept', () => {
+      expect(humanizeToolStep('spawn_agent', pair, zh, undefined, 'failed')).toBe('启动 2 个代理未成功 — 纪要助手、演示稿助手');
+    });
+  });
+
+  it('a handed-off step reads as handed off, not as not-run', () => {
+    expect(humanizeToolStep('Bash', { command: 'ls' }, zh, undefined, 'completed', undefined, { handedOff: true })).toBe('这一步已交给后台任务去做');
+    expect(humanizeToolStep('Bash', { command: 'ls' }, en, undefined, 'completed', undefined, { handedOff: true })).toBe('Handed to a background task');
   });
 });

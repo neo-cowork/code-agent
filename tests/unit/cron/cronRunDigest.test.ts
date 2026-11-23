@@ -69,6 +69,8 @@ describe('parseCronRunDigest', () => {
   });
 });
 
+const plainLanguageSummaryInstruction = '结果摘要正文请用非技术读者也能看懂的日常用语，不要提及工具名、函数名、参数名、字段名、内部标识符或文件系统内部细节，只说明实际发生了什么，例如「你拒绝了创建提醒的请求，因此没有创建提醒」。';
+
 describe('buildCronAgentPrompt delivery digest instruction', () => {
   it('includes the digest instruction in both modes and keeps snapshot guidance enabled', () => {
     const enabled = buildCronAgentPrompt('检查', null, true, new Date('2026-09-30T00:00:00.000Z'));
@@ -81,6 +83,12 @@ describe('buildCronAgentPrompt delivery digest instruction', () => {
     expect(disabled).toContain('<cron_summary>...</cron_summary>');
     expect(disabled).toContain('artifact: <path>');
     expect(disabled).not.toContain('<cron_snapshot>');
+  });
+
+  it.each([true, false])('asks for a plain-language digest summary with snapshot tracking %s', (enabled) => {
+    const prompt = buildCronAgentPrompt('remind me tomorrow at 3pm to send the weekly report', null, enabled);
+
+    expect(prompt).toContain(plainLanguageSummaryInstruction);
   });
 
   it('lets the model mark urgency as the first line of the summary (N-CRON-INBOX-URGENCY-TIER)', () => {
@@ -130,12 +138,13 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
-  // 改动前的 deliveryDigestInstruction 原文（缺省判据路径必须逐字节复现）。
+  // 缺省判据路径的固定模板（包含结果摘要正文的措辞要求）。
   const personalChatSourceRule =
     '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）」。请逐字保留引号内的整行文字，不得改写页面或选项名称。';
   const deliveryDigest =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
-    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。'
+    + plainLanguageSummaryInstruction;
   const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
   const expectedEnabled = ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
@@ -189,8 +198,7 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
 });
 
 describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () => {
-  // 与 urgencyCriteria 同一条冻结锚点 harness：期望串的固定段逐字节取自
-  // 改动前（notifyWhen 缺席时）的源码字面量——无判据任务 prompt 字节不变是本单的硬约束。
+  // 与 urgencyCriteria 使用同一套冻结锚点的方式，固定 notifyWhen 缺席时的完整模板。
   const ANCHOR = {
     isoDate: '2099-12-31',
     year: 2099,
@@ -216,7 +224,8 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
     '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）」。请逐字保留引号内的整行文字，不得改写页面或选项名称。';
   const deliveryDigest =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
-    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。'
+    + plainLanguageSummaryInstruction;
   const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
   const expectedEnabled = ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');

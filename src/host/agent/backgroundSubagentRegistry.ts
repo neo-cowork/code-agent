@@ -12,6 +12,8 @@
 // ============================================================================
 
 import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
+import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
+import { formatSessionTaskCancelledClosing } from '../../shared/constants/sessionCommandCenter';
 import { stripCardToolCallMarkup } from '../../shared/modelMarkupStrip';
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { describeSubagentStopReason } from './subagentFailureReason';
@@ -190,6 +192,7 @@ export class BackgroundSubagentRegistry {
       status: 'running',
       startedAt,
       done,
+      ...(options.abort ? { abort: options.abort } : {}),
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       ...(options.runId ? { runId: options.runId } : {}),
       ...(options.treeId ? { treeId: options.treeId } : {}),
@@ -380,7 +383,9 @@ export class BackgroundSubagentRegistry {
     });
     const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
       || entry.failureCode === AgentFailureCode.CancelledByParent;
-    if (entry.status === 'failed' && entry.sessionId && !cancelled && !entry.cancelRequested) {
+    const autoReportsToUser = record.kind === 'user_visible' && !options.suppressIdleWake;
+    if (entry.status === 'failed' && entry.sessionId && !cancelled && !entry.cancelRequested
+      && !(autoReportsToUser && stripCardToolCallMarkup(entry.result?.output ?? '').trim())) {
       try {
         // 给用户的白话说明只在这条用户可见通道里生成；entry.error / durable terminal.reason 保留原始错误。
         const plain = entry.result?.stopHint?.kind === 'step_cap'
@@ -390,7 +395,18 @@ export class BackgroundSubagentRegistry {
           taskId: entry.agentId,
           kind: entry.result?.stopKind ?? (entry.result?.stopHint?.kind === 'step_cap' ? 'step_cap' : 'error'),
         });
+        // With no partial result to deliver, the persisted stop note closes the task.
+        if (autoReportsToUser) return;
       } catch (error) { logger.warn('Failed to record background stop note', error); }
+    }
+    if (entry.status === 'failed' && entry.sessionId && (cancelled || entry.cancelRequested)) {
+      // 取消不唤醒模型；宿主写一句收尾，避免卡片「已取消」而正文仍停在「还在跑」。
+      try {
+        await recordBackgroundTaskStopNote(
+          entry.sessionId, record.title, formatSessionTaskCancelledClosing(resolveSessionTaskResultLocale()),
+          { taskId: entry.agentId, kind: 'cancelled' },
+        );
+      } catch (error) { logger.warn('Failed to record background cancelled note', error); }
     }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
@@ -552,6 +568,11 @@ export class BackgroundSubagentRegistry {
     this.pendingNotifications.length = 0;
     this.pendingNotifications.push(...remaining);
     return matched;
+  }
+
+  restoreCompletionNotifications(records: readonly SubagentCompletionRecord[]): void {
+    // Draining leaves dedupe keys intact. Restore the original records in delivery order.
+    this.pendingNotifications.unshift(...records);
   }
 
   private matchesScope(record: SubagentCompletionRecord, scope?: BackgroundSubagentScopeFilter): boolean {
