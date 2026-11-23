@@ -267,6 +267,7 @@ describe('approved rm production approval boundary', () => {
       (f: string[]) => `for p in ${f[0]}; do test -e "$q"; done`,
       (f: string[]) => `for p in ${f[0]}; do ls "$p" "$other"; done`,
       (f: string[]) => `while true; do test -e ${f[0]}; done`,
+      (f: string[]) => `for p in ${f[0]}; do test -e "$p"; done < /etc/passwd`,
       (_f: string[]) => `ls ${join(cwd, '*.tmp')}`,
       (_f: string[]) => 'echo done',
     ])('keeps asking for %#: unrelated path, other program, redirect, expansion, loop, glob', (build) => {
@@ -279,6 +280,15 @@ describe('approved rm production approval boundary', () => {
       approveDelete();
       expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, 'another-session')).toBe(false);
       expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION, Date.now() + 6 * 60 * 1000)).toBe(false);
+    });
+
+    it('does not loop over an approved path that word-splits (space) onto another path', () => {
+      const spaced = join(cwd, 'cache dir.tmp');
+      writeFileSync(spaced, 'x');
+      input.params.command = `rm -- '${spaced}'`;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(spaced);
+      expect(isApprovedRmVerifyProbe(`for p in "${spaced}"; do ls -la $p; done`, cwd, SESSION)).toBe(false);
+      expect(isApprovedRmVerifyProbe(`ls -la "${spaced}"`, cwd, SESSION)).toBe(true);
     });
 
     it('does not remember files when the approval is refused', () => {

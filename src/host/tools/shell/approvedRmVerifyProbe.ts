@@ -42,15 +42,18 @@ export function isApprovedRmVerifyProbe(command: string, workingDirectory: strin
   const loopVars = new Set<string>();
   for (const segment of parsed.segments) {
     let words = segment.words;
+    if (segment.redirects.length > 0 || segment.reads.length > 0) return false;
     if (words[0] === 'for') {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(words[1] ?? '') || words[2] !== 'in' || words.length < 4 || !words.slice(3).every(approved)) return false;
+      // The parser folds $p and "$p" together, so an unquoted $p could word-split: loop only over paths that cannot split or glob.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(words[1] ?? '') || words[2] !== 'in' || words.length < 4
+        || !words.slice(3).every((word) => approved(word) && !/[\s*?[\]{}\\$`]/.test(word))) return false;
       loopVars.add(words[1]);
       continue;
     }
     if (['do', 'done', 'then', 'else', 'fi'].includes(words[0] ?? '') && words.length === 1) continue;
     while (['if', 'then', 'else', 'do'].includes(words[0] ?? '')) words = words.slice(1);
     const [program = '', ...args] = words;
-    if (!READ_ONLY_PROGRAMS.has(program) || segment.redirects.length > 0 || segment.reads.length > 0) return false;
+    if (!READ_ONLY_PROGRAMS.has(program)) return false;
     if (segment.terminator !== null && ![';', '\n', '&&', '||'].includes(segment.terminator)) return false;
     const isLoopVar = (word: string) => loopVars.has(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(word)?.[1] ?? '');
     const plain = (word: string) => word.replaceAll('${?}', '').replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => loopVars.has(name) ? '' : '$');
