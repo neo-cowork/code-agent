@@ -31,7 +31,7 @@ const FILE: MessageAttachment = {
 const REMOVE_NAME = zh.chatInput.attachRemoveAria.replace('{name}', FILE.name);
 const NEW_TEXT = 'Read the attached file and list its action items';
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); localStorage.clear(); });
 
 function editor(): HTMLElement { return screen.getByTestId('chat-composer-textarea'); }
 function chipMounts(): Element[] { return Array.from(editor().querySelectorAll('[data-composer-chip-key^="file:"]')); }

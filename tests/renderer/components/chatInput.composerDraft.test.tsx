@@ -16,6 +16,11 @@ import {
 } from '../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
 import { useComposerDraftPersistence } from '../../../src/renderer/components/features/chat/ChatInput/useComposerDraftPersistence';
 import { openInitialSession } from '../../../src/renderer/stores/sessionBootDraft';
+import { ChatInput } from '../../../src/renderer/components/features/chat/ChatInput';
+import ipcService from '../../../src/renderer/services/ipcService';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import { useComposerStore } from '../../../src/renderer/stores/composerStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { UnsentDraftNotice } from '../../../src/renderer/components/features/chat/ChatInput/UnsentDraftNotice';
 
 let activeLocale: 'zh' | 'en' = 'zh';
@@ -919,3 +924,116 @@ describe('composer draft v2 attachments', () => {
     expect(screen.getByTestId('attachment-chip-home-shot.png')).toBeTruthy();
   });
 });
+
+// FB-2582: Settings -> back unmounts and remounts the real ChatInput. The unsent text must come back
+// into the box, with no timer advance in between (the 400 ms debounce must not lose it).
+describe('ChatInput keeps unsent text across an in-app unmount/remount (FB-2582)', () => {
+  const makeSession = (id: string, messageCount = 0): SessionWithMeta => ({
+    id,
+    title: id,
+    modelConfig: { provider: 'openai', model: 'gpt-5' },
+    createdAt: 1,
+    updatedAt: 1,
+    messageCount,
+    turnCount: 0,
+  } as SessionWithMeta);
+  const showSession = (id: string, messageCount = 0) => useSessionStore.setState({
+    sessions: [makeSession(id, messageCount)],
+    currentSessionId: id,
+    messages: [],
+  });
+  const editor = () => screen.getByTestId('chat-composer-textarea');
+  const typeText = (text: string) => {
+    editor().textContent = text;
+    const selection = window.getSelection()!;
+    selection.selectAllChildren(editor());
+    selection.collapseToEnd();
+    fireEvent.input(editor());
+  };
+  const onSend = async () => true;
+
+  beforeEach(() => {
+    localStorage.clear();
+    activeLocale = 'zh';
+    useComposerStore.setState({ pendingComposerPrefill: null });
+    vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.QUEUED_INPUT && action === 'list') return Promise.resolve([]);
+      return Promise.reject(new Error('no bridge'));
+    });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useSessionStore.setState({ sessions: [], currentSessionId: null, messages: [] });
+  });
+
+  it('② text typed right before unmount (no timer advance) is back in the box after remount', () => {
+    showSession('rt-quick');
+    const first = render(<ChatInput onSend={onSend} />);
+    typeText('这是一份还没写完的社区义卖物品清单，先列桌椅和价签。');
+    first.unmount();
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('这是一份还没写完的社区义卖物品清单，先列桌椅和价签。');
+    expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
+  });
+
+  it('③ an existing session with messages keeps the draft too', () => {
+    showSession('rt-existing', 6);
+    const first = render(<ChatInput onSend={onSend} />);
+    typeText('接着上一轮再补一条');
+    first.unmount();
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('接着上一轮再补一条');
+  });
+
+  it('③ pre-filled example text survives the roundtrip', () => {
+    showSession('rt-prefill');
+    const first = render(<ChatInput onSend={onSend} />);
+    act(() => { useComposerStore.getState().setPendingComposerPrefill({ text: '帮我围绕这个主题定一套内容战役方案' }); });
+    expect(editor().textContent).toBe('帮我围绕这个主题定一套内容战役方案');
+    first.unmount();
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('帮我围绕这个主题定一套内容战役方案');
+  });
+
+  it('④ a fresh mount without a roundtrip still shows the put-back bar and an empty box', () => {
+    showSession('rt-cold');
+    localStorage.setItem(KEY_COLD, JSON.stringify({ v: 2, text: '上次没发出去的话' }));
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('');
+    expect(screen.getByTestId('unsent-draft-notice')).toBeTruthy();
+  });
+
+  it('④ opening Settings without typing keeps an older stored draft for the bar', () => {
+    showSession('rt-cold');
+    localStorage.setItem(KEY_COLD, JSON.stringify({ v: 2, text: '上次没发出去的话' }));
+    render(<ChatInput onSend={onSend} />).unmount();
+    expect(readComposerDraft(KEY_COLD)).toBe('上次没发出去的话');
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('');
+    expect(screen.getByTestId('unsent-draft-notice')).toBeTruthy();
+  });
+
+  it('④ after a successful send the remount is empty with no bar', async () => {
+    showSession('rt-sent');
+    const first = render(<ChatInput onSend={onSend} />);
+    typeText('这条会发出去');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.chatInput.sendAria })); });
+    first.unmount();
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('');
+    expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
+  });
+
+  it('④ switching to another session does not carry the text over', () => {
+    showSession('rt-a');
+    const first = render(<ChatInput onSend={onSend} />);
+    typeText('只属于 A');
+    first.unmount();
+    showSession('rt-b');
+    render(<ChatInput onSend={onSend} />);
+    expect(editor().textContent).toBe('');
+  });
+});
+const KEY_COLD = composerDraftStorageKey('rt-cold', false)!;
