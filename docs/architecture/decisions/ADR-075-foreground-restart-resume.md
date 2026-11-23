@@ -319,8 +319,17 @@ N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME（A′，owner 10-17 拍板：foundatio
 
 K2 与修订二/三的停靠标记、等审批 `waiting` 认领、预算语义全部不变；`directory_access` / `channel_pairing` 仍 fail-closed 全拒。合同测试：`tests/unit/agent/parkedApprovalSurvival.hydrate.test.ts`（真实 SQLite + 假时钟 23h59m/24h01m + startupMaintenance→hydrate 链）、`tests/unit/agent/parkedApprovalResume.test.ts`（认领幂等/指纹拒绝/拒绝不执行）、`tests/unit/host/runtime/parkedApprovalDurableRunParking.test.ts`（guard_halt 停靠不进 listRecoverable）；真机档：`tests/e2e/recovery-matrix.spec.ts` 的 G 单元格（SIGKILL + 同数据目录重启 + 收件箱批准）。
 
-## 修订五（2026-11-22）：停靠的 mail_draft 续跑后，同一封草稿再问一次
+## 修订五（2026-11-23）：停靠的 mail_draft 续跑后，沿用那次确认执行一次
 
-N-ENV-ASSIST-S3-RESUME-REST2-FU2（owner 拍板选 B：维持现状）：用户批准 `mail_draft`、Mail 自动化被拒（-1743）而停靠、授权后同一 run 自动续跑，模型重发同一封草稿时**会再弹一张批准卡**。原因：邮件草稿属于对外写副作用的连接器工具，分类器 C1 `connector_external_write` 带 `trustBoundary`，要求每次调用都重新确认，问用户之前的授权消费（`resolvePreAskGrant`）遇到这类硬门直接返回空。曾评估「同 run、参数完全一致、只用一次」的复用，因为要给这条信任边界开例外而否决。测试 `tests/unit/host/runtime/envResumeMail.test.ts` ⑤ 钉住两张卡。
+N-ENV-ASSIST-S3-RESUME-REST2-FU2（owner 11-23 知情后拍板选 A；此前「维持两张卡」的答复作废）：用户在确认卡上点了允许、但 `mail_draft` 因 Mail 自动化授权被拒（-1743）而停靠、从未执行；授权后同一 run 自动续跑，模型重发同一封草稿时，沿用那次确认，**不再弹第二张卡**。
 
-已知旁支问题：「本次任务内允许」这条绕行看起来也不管用——run 停靠时 `conversationRuntime.ts` 仍会调 `finalizeRun`，`runFinalizer.ts` 在其中 `clearToolRunGrants(sessionId)`，run 档授权随之清空。此结论只来自读代码，未做运行时验证。若 owner 日后要“只出一张卡”，另立 ADR 讨论信任边界例外；修复停靠清授权另立单。
+口径——**这不是给 C1 `connector_external_write`（trustBoundary「逐次强确认」）开例外**：硬门的本意是每一次对外写都要人亲手确认、不能被分类器 / 权限记忆 / autoApprove 顺带放行。停靠前那次确认对应的调用从没执行过，续跑执行的就是同一次被确认的调用：确认与执行仍是一对一。
+
+五条约束（实现：`src/host/permissions/parkedCallApproval.ts`，接线点只有停靠处记录、`toolExecutor.ts` 一处消费 + 一处提示、run 终态清理）：
+1. 一次性凭证：停靠时记「已确认未执行」，续跑执行一次即作废；同参再调用照常弹卡。
+2. 严格匹配：同 sessionId + 同 runId + 同工具名（只有 `mail_draft`，`mail_send` 等不适用）+ 参数规范化（键排序）后 sha256 逐字一致；差一个字就弹卡。
+3. 只在「环境授权后续跑」这一条路径：凭证只由 `EnvBlockedError` 停靠处写入；其余硬门（命令分析、策略、边界、forcePermissionHandler、目标已被拒等）仍然优先，分类器 / 权限记忆 / autoApprove 对 trustBoundary 的既有拒绝不动。
+4. 有效期 10 分钟（`PARKED_CALL_APPROVAL_TTL_MS`，从停靠记录起算，比用户点确认的时刻略晚几秒）；过期、run 终态清理、换会话 / 换 run 都不匹配；仅放进程内存，服务重启即失效（回到再问一次）。
+5. 透明：沿用凭证执行成功后，聊天里出一行人话（`env.reused`：「已按你刚才的确认保存草稿。」/ “Saved the draft as you confirmed a moment ago.”），不出工具名、id。
+
+已知旁支问题（本单不修）：「本次任务内允许」这条绕行看起来不管用——run 停靠时 `conversationRuntime.ts` 仍会调 `finalizeRun`，`runFinalizer.ts` 在其中 `clearToolRunGrants(sessionId)`，run 档授权随之清空。此结论只来自读代码，未做运行时验证；另立单修。

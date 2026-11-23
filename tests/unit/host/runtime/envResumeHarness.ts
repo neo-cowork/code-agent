@@ -46,6 +46,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   let blocked = true, executions = 0, resumes = 0;
   const seenCalls: string[] = [], seenRuns: string[] = [];
   const callArgs: Record<string, unknown> = mail ? MAIL_DRAFT_ARGS : {};
+  /** mail only: how the resumed model turn re-issues the draft (default: identical arguments, same run, once). */
+  const reissue: { args?: Record<string, unknown>; runId?: string; twice?: boolean } = {};
   const schema: ToolSchema = { name, description: 'Environment recovery fixture', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'string' }, category: 'network', permissionLevel: sideEffect ? 'write' : 'read', readOnly: !sideEffect, requiresPermission: false };
   const mailConnector = {
     id: 'mail', label: 'Mail', capabilities: ['draft_message'], getStatus: async () => ({ connected: true, capabilities: [] }),
@@ -85,8 +87,9 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       if (mail) {
         // The model's next turn: it reads the recorded "not run" result and issues mail_draft again, once, through the production executor.
         sessions.addMessage(sessionId, { id: 'env-assistant-2', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [{ id: 'env-call-2', name, arguments: callArgs }] });
-        const again = await executor().execute(name, callArgs, { runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
+        const again = await executor().execute(name, reissue.args ?? callArgs, { runId: reissue.runId ?? runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
         sessions.addMessage(sessionId, { id: 'env-tool-2', role: 'tool', content: '', timestamp: Date.now(), toolResults: [{ toolCallId: 'env-call-2', success: again.success, output: again.output, error: again.error }] });
+        if (reissue.twice) await executor().execute(name, reissue.args ?? callArgs, { runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-3' });
       }
       await finalizeOrParkDurableRun({ registry, runId, handle, sessionId, completed: true });
       registry.unregister(runId, handle);
@@ -117,7 +120,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     },
   });
   const continueRun = () => continueParkedDurableRun({ sessionId, runRegistry: registry, taskManager: tasks, getMessages: async () => messages(), envRecoveryPorts: ports });
-  return { db, registry, repository, messages, tasks, ports, continueRun,
+  return { db, registry, repository, messages, tasks, ports, continueRun, reissue,
     counts: () => ({ executions, resumes, seenCalls, seenRuns }),
     mailSaved: () => ({ attempts: mailAttempts.length, saved }),
     approvalCards: () => [...approvalCards],

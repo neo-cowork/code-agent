@@ -3,6 +3,7 @@ import type { RunEnvelope } from '../../../shared/contract/durableRun';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
 import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { isQuotaWaitParkableRun } from '../../runtime/quotaWaitParkability';
+import { recordParkedCallApproval } from '../../permissions/parkedCallApproval';
 import { createLogger } from '../../services/infra/logger';
 
 const notes = new Map<string, NonNullable<RunEnvelope['envBlocked']>>();
@@ -11,7 +12,7 @@ export function peekEnvBlockedNote(runId: string | undefined): RunEnvelope['envB
 export function clearEnvBlockedNote(runId: string): void { notes.delete(runId); }
 
 export function settleEnvBlockedTool(error: unknown, input: {
-  runId?: string; toolCallId: string; markCancelled: () => void;
+  runId?: string; toolCallId: string; markCancelled: () => void; toolName?: string; args?: unknown; sessionId?: string;
 }): boolean {
   if (!(error instanceof EnvBlockedError)) return false;
   if (!input.runId || error.toolCallId !== input.toolCallId
@@ -23,6 +24,8 @@ export function settleEnvBlockedTool(error: unknown, input: {
   if (!notes.has(input.runId)) notes.set(input.runId, {
     class: error.class, target: error.target, toolCallId: error.toolCallId,
   });
+  // The user already confirmed this call and it never ran: keep a one-shot credential for the resumed run (parkedCallApproval.ts).
+  if (input.toolName) recordParkedCallApproval({ sessionId: input.sessionId, runId: input.runId, tool: input.toolName, args: input.args });
   input.markCancelled();
   return true;
 }
