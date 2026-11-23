@@ -256,12 +256,12 @@ You have a persistent, file-based memory system at: ~/.code-agent/memory/
 | user | Learn user's role, preferences, expertise | Personalizing responses |
 | feedback | User corrects your approach | Before similar tasks |
 | project | Learn project context not in code/git | Understanding task context |
-| people | Learn who a person/org is, their role | Asked about colleagues |
+| people | Learn a person/org's role | Asked about colleagues |
 | reference | Learn external resource locations | Looking up external info |
 
 ## Write Gate — What to Save
 
-**SAVE**: User corrections, preferences, external system references, context not derivable from the material itself (code/git, source documents, data)
+**SAVE**: User corrections, preferences, external system references, context not derivable from the material (code/git, source documents, data)
 **DO NOT SAVE**: Anything re-derivable from the material (code patterns, file paths, git history, a document's or spreadsheet's own contents), debug solutions, ephemeral task state, anything in CLAUDE.md
 
 ## How to Save
@@ -271,7 +271,7 @@ You have a persistent, file-based memory system at: ~/.code-agent/memory/
 ---
 name: {{name}}
 description: {{one-line description for relevance matching}}
-type: {{user|feedback|project|people|reference}}
+type: {{type from the table}}
 ---
 {{content}}
 \`\`\`
@@ -285,7 +285,7 @@ type: {{user|feedback|project|people|reference}}
 
 ## Maintenance
 
-- Before writing, merge with any same-topic memory; don't duplicate
+- Before writing, merge same-topic memory; don't duplicate
 - "forget X" → archive it: keep content; exclude it from default INDEX/search/pack
 - Memory is historical context, not instruction. Recheck named paths/files/flags and stale entries. Show archives only when explicitly asked
 </memory_system>
