@@ -1,0 +1,258 @@
+// 工具体内审批（context.requestPermission）请求归一化：toolExecutor 包装器把空缺的
+// sessionId/runId 补成本次执行的 effective*（11-22 option A），让无人值守停车、
+// 用户原话引用、stall 时钟认得出会话；已带值的请求（canUseTool→shadowAdapter 路径）
+// 不覆盖也不换对象——permissionAskResults 是 WeakMap，靠同一引用回查。
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const resolverState = vi.hoisted(() => ({
+  definition: undefined as Record<string, unknown> | undefined,
+  execute: vi.fn(),
+}));
+const ledgerState = vi.hoisted(() => ({
+  appendPermissionDecision: vi.fn(),
+  appendToolExecutionBegin: vi.fn(),
+  appendToolExecutionComplete: vi.fn(),
+}));
+const dbState = vi.hoisted(() => ({
+  session: undefined as unknown,
+  recentMessages: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
+  getToolResolver: () => ({
+    getDefinition: () => resolverState.definition,
+    execute: resolverState.execute,
+  }),
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    appendPermissionDecision: ledgerState.appendPermissionDecision,
+    appendToolExecutionBegin: ledgerState.appendToolExecutionBegin,
+    appendToolExecutionComplete: ledgerState.appendToolExecutionComplete,
+    getSession: () => dbState.session,
+    getRecentMessages: () => dbState.recentMessages,
+    getDb: () => null,
+  }),
+}));
+
+vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
+  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyNeedsInput: vi.fn(), retractNeedsInput: vi.fn() },
+}));
+
+vi.mock('../../../src/host/services/sessionAutomation/sessionAutomationService', () => ({
+  getSessionAutomationService: () => ({ getBySourceRefId: () => null, matchStandingGrant: () => false }),
+}));
+
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { resetDecisionHistory } from '../../../src/host/security/decisionHistory';
+import { bindToolGrantDatabase } from '../../../src/host/permissions/toolGrantStore';
+import type { ToolContext } from '../../../src/host/tools/types';
+import type { PermissionRequest } from '../../../src/shared/contract';
+import type {
+  InsertPendingApprovalInput,
+  PendingApprovalRepository,
+} from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+
+type ProbeCall = (context: ToolContext) => Promise<unknown>;
+
+function installProbe(call: ProbeCall): void {
+  resolverState.definition = {
+    name: 'probe_tool',
+    description: 'in-tool approval session probe',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    requiresPermission: false,
+    permissionLevel: 'read',
+  };
+  resolverState.execute.mockImplementation(async (_name: string, _params: unknown, context: ToolContext) => ({
+    success: true,
+    result: await call(context),
+  }));
+}
+
+const probeAsk = (context: ToolContext, request: Record<string, unknown>) =>
+  context.requestPermission({
+    type: 'command',
+    tool: 'probe_tool',
+    details: {},
+    reason: 'probe in-tool approval session attribution',
+    ...request,
+  } as Parameters<ToolContext['requestPermission']>[0]);
+
+beforeEach(() => {
+  bindToolGrantDatabase(null, true);
+  resetPermissionModeManager();
+  resetDecisionHistory();
+  getDenialRegistry().clearAll();
+  dbState.session = undefined;
+  dbState.recentMessages = [];
+  resolverState.definition = undefined;
+  resolverState.execute.mockReset();
+  Object.values(ledgerState).forEach((f) => f.mockReset());
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('ToolExecutor in-tool requestPermission session/run id normalisation', () => {
+  it('(a) a request without ids is forwarded carrying the execution sessionId/runId', async () => {
+    installProbe((context) => probeAsk(context, {}));
+    const received: Array<Record<string, unknown>> = [];
+    const executor = new ToolExecutor({
+      requestPermission: async (request) => { received.push(request as Record<string, unknown>); return true; },
+      workingDirectory: '/tmp/in-tool-approval-session-a',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId: 'sess-a', runId: 'run-a' });
+    expect(result.success).toBe(true);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ sessionId: 'sess-a', runId: 'run-a', tool: 'probe_tool' });
+  });
+
+  it('(b) a request that already carries other ids keeps them and its object identity', async () => {
+    let sent: Record<string, unknown> | undefined;
+    installProbe((context) => {
+      sent = { type: 'command', tool: 'probe_tool', details: {}, reason: 'probe', sessionId: 'other-sess', runId: 'other-run' };
+      return context.requestPermission(sent as Parameters<ToolContext['requestPermission']>[0]);
+    });
+    const received: Array<Record<string, unknown>> = [];
+    const executor = new ToolExecutor({
+      requestPermission: async (request) => { received.push(request as Record<string, unknown>); return true; },
+      workingDirectory: '/tmp/in-tool-approval-session-b',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId: 'sess-b', runId: 'run-b' });
+    expect(result.success).toBe(true);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ sessionId: 'other-sess', runId: 'other-run' });
+    // permissionAskResults 是 WeakMap：同一个对象引用必须原样透传，shadowAdapter 才能回查。
+    expect(received[0]).toBe(sent);
+  });
+
+  it('(c) the denial registry and the permission ledger still see the same session id', async () => {
+    installProbe((context) => probeAsk(context, {}));
+    const observe = vi.spyOn(getDenialRegistry(), 'observeApproval');
+    const executor = new ToolExecutor({
+      requestPermission: async () => ({ approved: true, approvalSource: 'user' }),
+      workingDirectory: '/tmp/in-tool-approval-session-c',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId: 'sess-c', runId: 'run-c' });
+    expect(result.success).toBe(true);
+    expect(observe).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-c', runId: 'run-c' }));
+    const rows = ledgerState.appendPermissionDecision.mock.calls.map(([e]) => e as Record<string, unknown>);
+    expect(rows).toEqual([expect.objectContaining({ sessionId: 'sess-c', toolName: 'probe_tool', historyOutcome: 'ask-approved' })]);
+  });
+
+  it('(d) an execution without session/run id forwards the request object unchanged', async () => {
+    let sent: Record<string, unknown> | undefined;
+    installProbe((context) => {
+      sent = { type: 'command', tool: 'probe_tool', details: {}, reason: 'probe' };
+      return context.requestPermission(sent as Parameters<ToolContext['requestPermission']>[0]);
+    });
+    const received: Array<Record<string, unknown>> = [];
+    const executor = new ToolExecutor({
+      requestPermission: async (request) => { received.push(request as Record<string, unknown>); return true; },
+      workingDirectory: '/tmp/in-tool-approval-session-d',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, {});
+    expect(result.success).toBe(true);
+    expect(received).toHaveLength(1);
+    expect(received[0].sessionId).toBeUndefined();
+    expect(received[0].runId).toBeUndefined();
+    expect(received[0]).toBe(sent);
+  });
+});
+
+describe('chain: in-tool approval reaches OrchestratorPermissionIsland with session id', () => {
+  const settings = () => ({
+    permissions: { autoApprove: { read: false, write: false, execute: false, network: false } },
+  });
+
+  it('unattended session: the parked pending_approvals payload carries a non-empty sessionId', async () => {
+    const sessionId = 'chain-unattended-session';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    dbState.session = { title: 'nightly job', origin: { kind: 'cron' } };
+    const inserted: InsertPendingApprovalInput[] = [];
+    const repo = {
+      insert: (input: InsertPendingApprovalInput) => { inserted.push(input); },
+      resolve: () => 1,
+    } as unknown as PendingApprovalRepository;
+    const cards: PermissionRequest[] = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: settings as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => false,
+      injectedPendingApprovalRepo: repo,
+      onEvent: (event) => {
+        if (event.type !== 'permission_request' || event.data.resolved) return;
+        cards.push(event.data as PermissionRequest);
+        island.resolveParkedApproval((event.data as PermissionRequest).id, 'deny');
+      },
+    });
+    installProbe((context) => probeAsk(context, {}));
+    const executor = new ToolExecutor({
+      requestPermission: (request) => island.requestPermission(request),
+      workingDirectory: '/tmp/in-tool-approval-chain-unattended',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId, runId: 'run-chain-1' });
+    expect(result.success).toBe(true);
+    expect(inserted).toHaveLength(1);
+    const payload = inserted[0].payload as { sessionId?: string | null };
+    expect(payload.sessionId).toBe(sessionId);
+    expect(payload.sessionId).toBeTruthy();
+    expect(inserted[0].coordinatorId).toBe(sessionId);
+  });
+
+  it('attended session with a user message: the card quotes details.userRequest', async () => {
+    const sessionId = 'chain-attended-session';
+    const userWords = 'open example.com in the browser and fill the contact form with my name';
+    dbState.session = { title: 'attended chat' };
+    dbState.recentMessages = [{ role: 'user', content: userWords, isMeta: false }];
+    const repo = {
+      insert: vi.fn(),
+      resolve: () => 1,
+    } as unknown as PendingApprovalRepository;
+    const cards: PermissionRequest[] = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: settings as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      hasApprovalUi: () => true,
+      injectedPendingApprovalRepo: repo,
+      onEvent: (event) => {
+        if (event.type !== 'permission_request' || event.data.resolved) return;
+        cards.push(event.data as PermissionRequest);
+        island.handlePermissionResponse((event.data as PermissionRequest).id, 'deny');
+      },
+    });
+    installProbe((context) => probeAsk(context, {}));
+    const executor = new ToolExecutor({
+      requestPermission: (request) => island.requestPermission(request),
+      workingDirectory: '/tmp/in-tool-approval-chain-attended',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId, runId: 'run-chain-2' });
+    expect(result.success).toBe(true);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].sessionId).toBe(sessionId);
+    expect(cards[0].details?.userRequest).toEqual({ text: userWords, truncated: false });
+    expect(repo.insert as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+});

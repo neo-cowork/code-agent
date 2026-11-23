@@ -1330,7 +1330,15 @@ export class ToolExecutor {
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
-      requestPermission: async (request) => {
+      requestPermission: async (rawRequest) => {
+        // 工具体内直发 requestPermission 的调用方（browserRiskGate 等）不带 sessionId/runId，
+        // 补上本次执行的 effective*：无人值守停车、用户原话引用、stall 时钟都靠它认会话。
+        // 已带值的不覆盖也不换对象——permissionAskResults 是 WeakMap，shadowAdapter 用同一引用回查。
+        const sessionId = rawRequest.sessionId || effectiveSessionId;
+        const runId = rawRequest.runId || effectiveRunId;
+        const request = sessionId === rawRequest.sessionId && runId === rawRequest.runId
+          ? rawRequest
+          : { ...rawRequest, sessionId, runId };
         if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         // 工具体内的开头授权（shadowAdapter 标 grantEligible）先消费已记住的工具级授权：
         // 此前这条路直接弹卡，点了「本次任务内允许」下一次照问（11-17 真机：读日程连弹三张）。
