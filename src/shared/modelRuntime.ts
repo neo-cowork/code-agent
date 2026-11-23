@@ -688,8 +688,12 @@ export function getRuntimeModelLabel(
   provider?: ModelProvider,
   settings?: AppSettings | null,
 ): string {
-  if (provider && settings?.models?.providers?.[provider]?.models?.[modelId]?.label) {
-    return settings.models.providers[provider].models?.[modelId]?.label || modelId;
+  // 自定义标签 trim 后为空（空串/纯空白）视为未设置，回落到共享标签表的可读名。
+  const customLabel = provider
+    ? settings?.models?.providers?.[provider]?.models?.[modelId]?.label?.trim()
+    : undefined;
+  if (customLabel) {
+    return customLabel;
   }
   return getModelDisplayLabel(modelId);
 }

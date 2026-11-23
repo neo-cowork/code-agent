@@ -8,6 +8,15 @@ const VISION_PREFLIGHT_NOTICE_MESSAGES = {
   en: 'Read the image first, then continued with your answer.',
 } as const;
 
+const VISION_TOOL_UNSUPPORTED_NOTICE_MESSAGES = {
+  zh: '识图模型不能调用工具，这次回答只用文字完成。',
+  en: "The image-reading model can't use tools, so this reply will be text only.",
+} as const;
+
 export function formatVisionPreflightNotice(locale: 'zh' | 'en'): string {
   return VISION_PREFLIGHT_NOTICE_MESSAGES[locale];
+}
+
+export function formatVisionToolUnsupportedNotice(locale: 'zh' | 'en'): string {
+  return VISION_TOOL_UNSUPPORTED_NOTICE_MESSAGES[locale];
 }
