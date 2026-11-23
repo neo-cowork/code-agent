@@ -185,7 +185,7 @@ export function PermissionCard({
     : undefined;
   const requesterLine = agentId ? t.decisionCard.permission.requestedBy.replace(
     '{name}',
-    role ? agentNodeLabel({ role }, t.agentRoleLabels) : t.agentRoleLabels.assistant,
+    role && role !== 'background' ? agentNodeLabel({ role }, t.agentRoleLabels) : t.agentRoleLabels.assistant,
   ) : undefined;
   const sandboxEscalation = request !== null && isSandboxEscalation(request);
   // ADR-088 敏感步骤交回卡：reasonCode 与 details.sensitiveStep 双判据（与 host 收口同口径）

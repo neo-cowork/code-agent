@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '../../../src/shared/contract';
 
@@ -64,6 +64,15 @@ describe('PermissionCard requesting helper', () => {
     expect(await within(second).findByText(writer)).toBeDefined();
     expect(header.compareDocumentPosition(within(first).getByText(question)))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('uses the generic English label for a tree node without a named role', async () => {
+    state.language = 'en';
+    state.getTree.mockResolvedValue({ nodes: [{ id: 'agent-unnamed', role: 'background', background: true }] });
+    await act(async () => {
+      render(<PermissionCard requestOverride={request('unnamed', 'agent-unnamed')} />);
+    });
+    expect(screen.getByText('From: Assistant')).toBeDefined();
   });
 
   it('uses the assistant fallback for an unresolved identity and omits the line for foreground requests', async () => {
