@@ -212,7 +212,7 @@ function discoveredModels(...ids: string[]): DiscoverModelsResult {
     success: true,
     latencyMs: 5,
     models: ids.map((id) => ({
-      id, label: id, capabilities: ['tool'], supportsTool: true, supportsVision: false, supportsStreaming: true,
+      id, label: id, capabilities: ['general'], supportsTool: true, supportsVision: false, supportsStreaming: true,
     })),
   };
 }

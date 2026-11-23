@@ -176,7 +176,7 @@ export function buildProviderSettingsUpdate(
  *  默认指针与"已配置 provider"是两份状态：出厂默认（xiaomi/mimo）没 key 时，
  *  用户配好别家 key 后默认指针不会自己动，发送被门禁拦下（"明明配置了还说没配置"）。
  *  仅当刚保存的 provider 可用、且当前默认模型不可用时才接管，不抢用户已生效的默认。 */
-export function shouldPromoteProviderToDefault(
+function shouldPromoteProviderToDefault(
   provider: ModelProvider,
   providerConfig: ModelProviderSettings,
   settings: AppSettings | null | undefined,
