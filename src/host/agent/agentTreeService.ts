@@ -1,3 +1,4 @@
+import { agentFailureReasonText } from './subagentFailureReason';
 import {
   AgentFailureCode,
   inferAgentFailureCode,
@@ -119,44 +120,6 @@ function statusLabel(status: AgentTreeNodeStatus): string {
   }
 }
 
-function failureReason(code: AgentFailureCode): string {
-  switch (code) {
-    case AgentFailureCode.BlockedByParentRole:
-      return '上级角色规则不允许它继续';
-    case AgentFailureCode.PermissionDenied:
-      return '需要的权限没有通过';
-    case AgentFailureCode.ToolUnavailable:
-      return '需要的能力当前不可用';
-    case AgentFailureCode.InvalidArguments:
-      return '助手设置的等待时间超过了允许的上限，需要缩短';
-    case AgentFailureCode.BudgetExhausted:
-      return '可用预算已经用完';
-    case AgentFailureCode.StepCapReached:
-      return '执行步数已达上限';
-    case AgentFailureCode.Timeout:
-      return '处理时间超过了限制';
-    case AgentFailureCode.ParentGone:
-      return '父任务已经结束';
-    case AgentFailureCode.CancelledByUser:
-      return '用户取消了这个任务';
-    case AgentFailureCode.CancelledByParent:
-      return '父任务取消了这个任务';
-    case AgentFailureCode.DependencyFailed:
-      return '依赖的任务失败了';
-    case AgentFailureCode.DependencyMissing:
-      return '依赖的任务不存在';
-    case AgentFailureCode.WorkflowStageFailed:
-      return '工作流中的一个阶段失败了';
-    case AgentFailureCode.WorktreeCreateFailed:
-      return '无法创建隔离工作区';
-    case AgentFailureCode.ModelError:
-      return '模型调用没有成功完成';
-    case AgentFailureCode.Unknown:
-    default:
-      return '失败原因还不明确';
-  }
-}
-
 function truncate(value: string | undefined, maxLength = 220): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
@@ -207,10 +170,10 @@ function applyStatus(
   }
 }
 
-function applyFailure(node: AgentTreeNode, code?: AgentFailureCode): void {
+function applyFailure(node: AgentTreeNode, code?: AgentFailureCode, reason?: string): void {
   if (!code) return;
   node.failureCode = code;
-  node.failureReason = failureReason(code);
+  node.failureReason = reason ?? agentFailureReasonText(code);
 }
 
 function setLastEvent(node: AgentTreeNode, event: AgentTreeEventSummary): void {
@@ -515,11 +478,15 @@ function mergeContextRecord(
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
     node.background = lifecycle.background || node.background;
+    node.backgroundAgentId ??= lifecycle.backgroundAgentId;
     node.task ??= shortenDisplayPaths(stripWorkdirPrefix(lifecycle.task), workspaceRoot);
     node.createdAt ??= lifecycle.startedAt;
     node.completedAt ??= lifecycle.finishedAt;
   }
   applyStatus(node, status, 'subagentContext', statusPriorities);
+  if (!node.failureCode && (node.status === 'failed' || node.status === 'cancelled') && node.status === lifecycle?.status) {
+    applyFailure(node, lifecycle.failureCode, lifecycle.failureReason);
+  }
   node.updatedAt = Math.max(node.updatedAt ?? 0, record.updatedAt);
   const activeTool = activeToolFromContext(record);
   if (activeTool) node.activeTool = activeTool;

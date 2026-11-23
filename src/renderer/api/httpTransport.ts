@@ -189,12 +189,6 @@ function normalizeIpcTransportFailure(channel: string, status: number | null, me
   };
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
-}
-
 function normalizeUnknownRows(value: unknown): unknown[][] {
   return Array.isArray(value)
     ? value.filter((row): row is unknown[] => Array.isArray(row)).map((row) => [...row])
@@ -246,10 +240,13 @@ function normalizeExcelJsonResult(value: unknown): ExtractExcelJsonResult {
       const rangeStart = normalizeSheetRangeStart(sheet.rangeStart);
       return {
         name: getStringField(sheet, 'name') ?? '',
-        headers: normalizeStringArray(sheet.headers),
+        headers: Array.isArray(sheet.headers)
+          ? sheet.headers.filter((item): item is string => typeof item === 'string')
+          : [],
         rows,
         rowCount: getNumberField(sheet, 'rowCount') ?? rows.length,
         ...(rangeStart ? { rangeStart } : {}),
+        ...(typeof sheet.headerless === 'boolean' ? { headerless: sheet.headerless } : {}),
       };
     });
 
