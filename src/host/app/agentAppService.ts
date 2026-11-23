@@ -964,11 +964,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
         const state = tm.getSessionState(resolvedSessionId);
         if (isTaskManagerOwnedRunState(state.status)) {
-          await tm.cancelTask(resolvedSessionId, { keepBackground: normalizedReason === 'session-switch' });
+          await tm.cancelTask(resolvedSessionId, {
+            keepBackground: normalizedReason === 'session-switch',
+            ...(normalizedReason === 'parent-cancel' ? { persistUserStop: false } : {}),
+          });
         } else {
           const backgroundSettled = normalizedReason === 'session-switch'
             ? Promise.resolve()
-            : tm.cancelSessionBackgroundWork(resolvedSessionId);
+            : normalizedReason === 'parent-cancel'
+              ? tm.cancelSessionBackgroundWork(resolvedSessionId, false)
+              : tm.cancelSessionBackgroundWork(resolvedSessionId);
           try {
             // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
             // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
