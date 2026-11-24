@@ -356,21 +356,45 @@ export function chipMountAfterCaret(root: HTMLElement): HTMLElement | null {
 }
 
 /** 在当前光标处插入纯文本（可含 '\n'）；无有效选区时追加到末尾。 */
-export function insertPlainTextAtCaret(root: HTMLElement, text: string): void {
+export function insertPlainTextAtCaret(
+  root: HTMLElement,
+  text: string,
+  { anchorCaret = false }: { anchorCaret?: boolean } = {},
+): void {
+  const node = document.createTextNode(text);
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0 && root.contains(selection.getRangeAt(0).startContainer)) {
     const range = selection.getRangeAt(0);
     range.deleteContents();
-    const node = document.createTextNode(text);
     range.insertNode(node);
-    range.setStartAfter(node);
+    if (anchorCaret) {
+      // Range.insertNode can leave an empty text node when splitting at the end.
+      let next = node.nextSibling;
+      while (next instanceof Text && next.length === 0) next = next.nextSibling;
+      if (next instanceof Text) {
+        range.setStart(next, 0);
+      } else if (next) {
+        range.setStartBefore(next);
+      } else {
+        // Only an empty trailing line needs an anchor. The caret stays before it for Backspace.
+        node.appendData(COMPOSER_CARET_ANCHOR);
+        range.setStart(node, text.length);
+      }
+    } else {
+      range.setStartAfter(node);
+    }
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
     return;
   }
-  root.appendChild(document.createTextNode(text));
-  setCaretPlainTextOffset(root, extractComposerPlainText(root).length);
+  root.appendChild(node);
+  if (anchorCaret) {
+    node.appendData(COMPOSER_CARET_ANCHOR);
+    applyCaretPosition(node, text.length);
+  } else {
+    setCaretPlainTextOffset(root, extractComposerPlainText(root).length);
+  }
 }
 
 /** 外部 value 同步：清掉全部非 chip 节点，文本整体放到第一颗 chip 前（chip 保持原位）。 */
