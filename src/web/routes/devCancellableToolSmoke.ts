@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import dns from 'dns';
 import { promises as fs } from 'fs';
 import http from 'http';
 import os from 'os';
@@ -11,6 +12,38 @@ import { getDevCancellableToolPermissionHandler } from './devCancellableToolPerm
 import type { WebRouteLogger } from './routeTypes';
 
 type DevCancellableToolName = 'Bash' | 'http_request';
+
+type DelayLookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | dns.LookupAddress[],
+  family?: number,
+) => void;
+
+const DELAY_HOST = 'delay.smoke-cancel.test';
+const DELAY_ADDRESS = '127.0.0.1';
+let delayLookupInstalled = false;
+
+function installDelayLookup(): void {
+  if (delayLookupInstalled) return;
+  const originalLookup = dns.lookup;
+  const lookup = (hostname: string, ...args: unknown[]): void => {
+    if (hostname !== DELAY_HOST) {
+      Reflect.apply(originalLookup, dns, [hostname, ...args]);
+      return;
+    }
+    const callback = args[args.length - 1] as DelayLookupCallback;
+    const options = args.length > 1 && typeof args[0] === 'object' && args[0] !== null
+      ? args[0] as dns.LookupOptions
+      : undefined;
+    if (options?.all) {
+      callback(null, [{ address: DELAY_ADDRESS, family: 4 }]);
+      return;
+    }
+    callback(null, DELAY_ADDRESS, 4);
+  };
+  dns.lookup = lookup as typeof dns.lookup;
+  delayLookupInstalled = true;
+}
 
 interface DevCancellableToolEntry {
   id: string;
@@ -158,10 +191,11 @@ async function createDelayServer(
       }
     });
   });
-  const port = await listen(server, '::ffff:127.0.0.1');
+  installDelayLookup();
+  const port = await listen(server, DELAY_ADDRESS);
   return {
     server,
-    url: `http://[::ffff:7f00:1]:${port}/delay`,
+    url: `http://${DELAY_HOST}:${port}/delay`,
   };
 }
 
