@@ -250,3 +250,28 @@ describe('GUI 接管披露 · 命中已有键时不把另一应用名并进集�
     expect(got).toEqual([{ code: 'gui_takeover', app: 'Calculator' }, null, null]);
   });
 });
+
+describe('GUI 接管披露 · 跳过时不写键（I2）', () => {
+  it('Notes 仅按名字披露后，{Notes, 计算器 bundle} 不披露也不写 bundle 键；之后按 bundle 的 Calculator 仍披露', async () => {
+    const ctx = makeCtx();
+    const got = await disclosuresFor(ctx, [
+      call('i1', 'computer_use', { action: 'click', targetApp: 'Notes' }),
+      call('i2', 'computer_use', { action: 'click', targetApp: 'Notes', bundleId: 'com.apple.calculator' }),
+      call('i3', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+    ]);
+    expect(got).toEqual([
+      { code: 'gui_takeover', app: 'Notes' },
+      null,
+      { code: 'gui_takeover', app: 'Calculator' },
+    ]);
+  });
+
+  it('真实三步：Calculator 按名字 → {Calculator, bundle} → 同 bundle 再来一次，合计只披露一次', async () => {
+    const got = await disclosuresFor(makeCtx(), [
+      call('r1', 'computer_use', { action: 'open_application', targetApp: 'Calculator' }),
+      call('r2', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+      call('r3', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+    ]);
+    expect(got).toEqual([{ code: 'gui_takeover', app: 'Calculator' }, null, null]);
+  });
+});

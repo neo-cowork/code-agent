@@ -169,16 +169,11 @@ export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<s
     if (decision.kind !== 'app') continue;
     const app = decision.app;
     // appGrantKey 有 bundle 时不含名字：先按名字启动、反查补上 bundle、再按
-    // bundle_id 启动会挂出两条预告。披露不是授权，任一键已见过就跳过。
-    // 只有「名字命中」才把这次带来的 bundle 键补进集合（同名反查补 bundle）；
-    // 「授权键命中」不回写名字键，否则同 bundle 却点了别的名字的调用会把
-    // 另一个应用的名字并进已披露集合，后面该应用就不再被预告。
+    // bundle_id 启动会挂出两条预告。披露不是授权，任一键已见过就跳过；跳过时
+    // 一枚键都不写——命中路径上不做跨键推断，否则「同名但 bundle 是另一个应用」
+    // 的调用会把别的应用的键并进集合，吞掉后面那个应用的预告。
     const keys = [appGrantKey(app), `name:${app.name.trim().toLowerCase()}`];
-    if (disclosed.has(keys[0])) continue;
-    if (disclosed.has(keys[1])) {
-      disclosed.add(keys[0]);
-      continue;
-    }
+    if (keys.some((key) => disclosed.has(key))) continue;
     for (const key of keys) disclosed.add(key);
     toolCall.guiTakeoverDisclosure = { code: 'gui_takeover', app: app.name.trim() };
     logCollector.tool('INFO', `GUI takeover disclosure attached (${app.name.trim()})`, {
