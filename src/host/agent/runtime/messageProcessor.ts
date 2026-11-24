@@ -1,3 +1,4 @@
+import { getHostTurnProgress } from '../../../shared/i18n/hostTurnProgress';
 import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
 import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { TraceEventDataMap } from './turnTrace';
@@ -218,11 +219,8 @@ export class MessageProcessor {
     const isForcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
 
     // Research mode: indicate report generation phase
-    if (this.ctx.turn.researchModeActive) {
-      this.runFinalizer.emitTaskProgress('generating', '正在生成报告...');
-    } else {
-      this.runFinalizer.emitTaskProgress('generating', '生成回复中...');
-    }
+    const progress = getHostTurnProgress(getHostUiLocale());
+    this.runFinalizer.emitTaskProgress('generating', this.ctx.turn.researchModeActive ? progress.report : progress.generating);
 
     // User-configurable Stop hook (GAP-006: 完成闸 + 重试安全阀)
     if (!isForcedFinalTextPass && this.ctx.hookManager && !isSimpleTask) {
@@ -272,7 +270,7 @@ export class MessageProcessor {
       const modifiedFiles = Array.from(this.ctx.nudgeManager.getModifiedFiles());
       if (modifiedFiles.length >= DELIVERY_CRITIC.FILE_THRESHOLD) {
         try {
-          this.runFinalizer.emitTaskProgress('generating', '交付前自动审查中...');
+          this.runFinalizer.emitTaskProgress('generating', getHostTurnProgress(getHostUiLocale()).deliveryReview);
           const userFirstMessage = this.ctx.messages.find((m) => m.role === 'user')?.content;
           const verificationOutcome = this.ctx.nudgeManager.getVerificationOutcome();
           const criticResult = await runDeliveryCritic(
@@ -407,7 +405,7 @@ export class MessageProcessor {
 
       this.runFinalizer.emitTaskProgress(
         'generating',
-        stopLooksIncomplete ? '回复疑似未完，继续生成剩余内容...' : '输出过长，继续生成剩余内容...',
+        stopLooksIncomplete ? progress.incomplete : progress.truncated,
       );
       return 'continue';
     }
@@ -620,7 +618,7 @@ export class MessageProcessor {
 
     langfuse.endSpan(this.ctx.turn.currentIterationSpanId, { type: 'text_response' });
 
-    this.runFinalizer.emitTaskProgress('completed', '回复完成');
+    this.runFinalizer.emitTaskProgress('completed', progress.completed);
     this.runFinalizer.emitTaskComplete();
 
     // Telemetry: record turn end (text response)
