@@ -1,6 +1,7 @@
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 import { classifyToolSteps, type DelegationLedgerTask } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
@@ -45,7 +46,8 @@ function latestTurn(projection: TraceProjection): TraceTurn | null {
 
 function userInstructionTitle(turn: TraceTurn | null): string | undefined {
   const content = turn?.nodes.find((node) => node.type === 'user')?.content.trim();
-  return content ? stripCronPromptDecoration(content).trim() || undefined : undefined;
+  // 截图/图片批注带的隐藏 <appshot> 块不是用户原话：任务面板副标题只显示可见文字。
+  return content ? stripCronPromptDecoration(stripAppshotBlocks(content)).trim() || undefined : undefined;
 }
 
 function getTimelineNodes(turn: TraceTurn | null): TurnTimelineNode[] {
