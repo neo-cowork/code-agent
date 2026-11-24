@@ -73,6 +73,12 @@ export interface AppshotCapture {
   /** 窗口在屏幕上的位置（CoreGraphics 坐标），供 Phase 3 飞入动画用 */
   windowFrame: AppshotWindowFrame;
   capturedAtMs: number;
+  /**
+   * 为 true 时截图作为普通图片附件落库（id 非 appshot- 前缀、不带 appshot 元数据）：
+   * appshot- 附件落库时会被剥掉图片字节、回放要靠本机 appshots 目录，聊天图片批注没有那份文件，
+   * 走普通图片附件才能在重载/重启后仍看得到画好框的图。
+   */
+  asPlainImage?: boolean;
 }
 
 /**
@@ -115,6 +121,12 @@ export function buildAppshotXml(capture: AppshotCapture, origin: AppshotOrigin =
   const app = escapeXmlAttr(capture.bundleId ?? '');
   const name = escapeXmlAttr(capture.appName);
   const captured = escapeXmlAttr(new Date(capture.capturedAtMs).toISOString());
+  if (capture.asPlainImage) {
+    // 图片批注：axText 自己就是「我框出了 N 处…」的区域清单（i18n 文案），不套窗口截图的说法。
+    // 评论是用户写的：里面的 </appshot> 会提前收口，破坏隐藏块（可见气泡里会漏出裸标签）。
+    const safeText = text.replace(/<\/appshot/gi, '<\u200B/appshot');
+    return `<appshot app="${app}" name="${name}" captured="${captured}" kind="image-markup">\n${safeText}\n</appshot>`;
+  }
   const context = describeAppshotOrigin(origin, header);
   if (!text) {
     return `<appshot app="${app}" name="${name}" captured="${captured}">\n${context}\n</appshot>`;
@@ -122,6 +134,11 @@ export function buildAppshotXml(capture: AppshotCapture, origin: AppshotOrigin =
   const clipped =
     text.length > APPSHOT_TEXT_MAX ? `${text.slice(0, APPSHOT_TEXT_MAX)}\n…(truncated)` : text;
   return `<appshot app="${app}" name="${name}" captured="${captured}">\n${context}\n\n# Appshot of ${header}\n\n${clipped}\n</appshot>`;
+}
+
+/** 内容里有没有「桌面截图」类 appshot 块。图片批注块（kind="image-markup"）是用户在聊天图上画的框，不算桌面证据。 */
+export function hasDesktopAppshotBlock(content: string): boolean {
+  return /<appshot\b(?![^>]*\bkind="image-markup")/.test(content);
 }
 
 /** 渲染用户消息时剥离 appshot XML 块——用户看干净文本，模型看图+文+元数据。 */
@@ -136,6 +153,19 @@ export function stripAppshotBlocks(content: string): string {
 export function buildAppshotAttachment(capture: AppshotCapture): MessageAttachment | null {
   if (!capture.screenshotDataUrl) return null;
   const approxBytes = Math.round((capture.screenshotDataUrl.length * 3) / 4);
+  if (capture.asPlainImage) {
+    const isJpeg = capture.screenshotDataUrl.startsWith('data:image/jpeg');
+    return {
+      id: `annotated-${capture.requestId}`,
+      type: 'image',
+      category: 'image',
+      name: `${capture.appName}.${isJpeg ? 'jpg' : 'png'}`,
+      size: approxBytes,
+      mimeType: isJpeg ? 'image/jpeg' : 'image/png',
+      data: capture.screenshotDataUrl,
+      thumbnail: capture.screenshotDataUrl,
+    };
+  }
   return {
     id: `appshot-${capture.requestId}`,
     type: 'image',

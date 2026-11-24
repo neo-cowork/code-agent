@@ -1,4 +1,5 @@
 import { statSync } from 'fs';
+import { BACKGROUND_COMMAND_TITLE, resolveBackgroundTaskTitle } from '../../shared/backgroundTaskTitle';
 import { looksSandboxWrapped } from '../sandbox/wrapperMarkers';
 import type {
   Task,
@@ -135,6 +136,7 @@ function queueTerminalNotification(args: {
     return;
   }
 
+  const language = args.locale ?? getAutomationPromptLocale(args.sessionId);
   args.ledger.queueNotification({
     id: `${args.taskId}:terminal:${args.status}`,
     taskId: args.taskId,
@@ -150,7 +152,7 @@ function queueTerminalNotification(args: {
         ? '任务已停止'
         : '后台任务失败',
     message: buildTerminalMessage({
-      label: args.title,
+      label: resolveBackgroundTaskTitle(args, language, BACKGROUND_COMMAND_TITLE[language]),
       status: args.status,
       durationMs: args.durationMs,
       automationPromptLikely: args.automationPromptLikely,
