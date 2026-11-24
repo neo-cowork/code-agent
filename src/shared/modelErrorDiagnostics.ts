@@ -14,6 +14,41 @@ export interface ModelErrorDiagnostic {
   hasFallbackConfigurationIssue?: boolean;
 }
 
+type ModelErrorLocale = 'zh' | 'en';
+type ModelErrorSurface = 'desktop' | 'cli';
+type ActionDiagnosticCode = 'auth_failed' | 'quota_exhausted';
+
+const CLI_COMMAND_PREFIX = '/';
+const CLI_LOGIN_COMMAND = `${CLI_COMMAND_PREFIX}login`;
+const CLI_MODEL_COMMAND = `${CLI_COMMAND_PREFIX}model`;
+
+const DESKTOP_ACTION_SUGGESTIONS = {
+  auth_failed: {
+    zh: '请在设置 → 通用模型中重新填写 API Key，或用输入框右下角的模型按钮切换到其他可用模型。',
+    en: 'Go to Settings → General model to re-enter the API Key, or use the model button at the bottom right of the input to switch models.',
+  },
+  quota_exhausted: {
+    zh: '请充值或更换账户；也可以用输入框右下角的模型按钮切换到其他可用模型。',
+    en: 'Top up or change the account, or use the model button at the bottom right of the input to switch models.',
+  },
+} as const;
+
+const CLI_ACTION_SUGGESTIONS = {
+  auth_failed: {
+    zh: `用 ${CLI_LOGIN_COMMAND} 重新配置 API Key，或用 ${CLI_MODEL_COMMAND} 切换到其他可用模型。`,
+    en: `Use ${CLI_LOGIN_COMMAND} to reconfigure the API Key, or use ${CLI_MODEL_COMMAND} to switch to another available model.`,
+  },
+  quota_exhausted: {
+    zh: `请充值或更换账户；也可以用 ${CLI_MODEL_COMMAND} 切换到其他可用模型。`,
+    en: `Top up or change the account, or use ${CLI_MODEL_COMMAND} to switch to another available model.`,
+  },
+} as const;
+
+function getActionSuggestion(code: ActionDiagnosticCode, locale: ModelErrorLocale, surface: ModelErrorSurface): string {
+  const suggestions = surface === 'cli' ? CLI_ACTION_SUGGESTIONS : DESKTOP_ACTION_SUGGESTIONS;
+  return suggestions[code][locale];
+}
+
 /** 模型服务回了 HTTP 200 但内容不完整（截断/空/网页），已自动重试一次仍失败。 */
 export const INCOMPLETE_RESPONSE_DIAGNOSTIC: ModelErrorDiagnostic = {
   code: 'incomplete_response',
@@ -37,7 +72,8 @@ export function getModelErrorStatus(error: unknown): number | undefined {
 export function classifyModelErrorMessage(
   message: string,
   statusCode?: number,
-  locale: 'zh' | 'en' = 'zh',
+  locale: ModelErrorLocale = 'zh',
+  surface: ModelErrorSurface = 'desktop',
 ): ModelErrorDiagnostic | null {
   const normalized = normalizeMessage(message);
   const lower = normalized.toLowerCase();
@@ -61,9 +97,7 @@ export function classifyModelErrorMessage(
       message: locale === 'en'
         ? 'Model authentication failed: the API Key is invalid, expired, or does not have permission.'
         : '模型鉴权失败：API Key 无效、已过期或没有权限。',
-      suggestion: locale === 'en'
-        ? 'Go to Settings → General model to re-enter the API Key, or use the model button at the bottom right of the input to switch models.'
-        : '请在设置 → 通用模型中重新填写 API Key，或用输入框右下角的模型按钮切换到其他可用模型。',
+      suggestion: getActionSuggestion('auth_failed', locale, surface),
       retryable: false,
     };
   }
@@ -86,9 +120,7 @@ export function classifyModelErrorMessage(
       message: locale === 'en'
         ? 'The model account has insufficient balance or quota, so the request was rejected.'
         : '模型账户余额或配额不足（欠费），请求被拒绝。',
-      suggestion: locale === 'en'
-        ? 'Top up or change the account, or use the model button at the bottom right of the input to switch models.'
-        : '请充值或更换账户；也可以用输入框右下角的模型按钮切换到其他可用模型。',
+      suggestion: getActionSuggestion('quota_exhausted', locale, surface),
       retryable: false,
     };
   }
@@ -151,9 +183,10 @@ export function classifyModelErrorMessage(
 export function summarizeModelErrorForUser(
   message: string,
   statusCode?: number,
-  locale: 'zh' | 'en' = 'zh',
+  locale: ModelErrorLocale = 'zh',
+  surface: ModelErrorSurface = 'desktop',
 ): string {
-  const diagnostic = classifyModelErrorMessage(message, statusCode, locale);
+  const diagnostic = classifyModelErrorMessage(message, statusCode, locale, surface);
   if (diagnostic) {
     const prefix = locale === 'en' && (diagnostic.code === 'auth_failed' || diagnostic.code === 'quota_exhausted')
       ? 'Suggestion: '

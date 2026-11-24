@@ -87,6 +87,23 @@ describe('auth_failed / quota_exhausted（2026-08-30 欠费卡死批）', () => 
     }
   });
 
+  it('纯 CLI surface 保留登录和换模型命令', () => {
+    for (const locale of ['zh', 'en'] as const) {
+      const authSummary = summarizeModelErrorForUser('invalid_api_key', 401, locale, 'cli');
+      expect(authSummary).toContain('/login');
+      expect(authSummary).toContain('/model');
+
+      const quotaSummary = summarizeModelErrorForUser('insufficient_quota', 402, locale, 'cli');
+      expect(quotaSummary).toContain('/model');
+
+      for (const summary of [authSummary, quotaSummary]) {
+        expect(summary).not.toContain('设置 → 通用模型');
+        expect(summary).not.toContain('输入框右下角的模型按钮');
+        if (locale === 'en') expect(summary).not.toMatch(/[\u3400-\u9fff]/u);
+      }
+    }
+  });
+
   it('鉴权文案（含中文）无状态码也判 auth_failed', () => {
     expect(classifyModelErrorMessage('invalid_api_key')).toMatchObject({ code: 'auth_failed' });
     expect(classifyModelErrorMessage('鉴权失败，请检查密钥')).toMatchObject({ code: 'auth_failed' });
