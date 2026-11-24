@@ -54,6 +54,7 @@ import { resetBackgroundTaskLedgerForTest } from '../../../src/host/task/backgro
 import {
   SessionCommandCenter,
   resetSessionCommandCenterForTest,
+  type SessionCommandTask,
 } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 
@@ -99,9 +100,11 @@ class FakeTaskManager extends EventEmitter {
   }
 }
 
+type ChildWake = (task: SessionCommandTask, status: 'completed' | 'failed' | 'cancelled') => Promise<void>;
+
 let manager: FakeTaskManager;
 let center: SessionCommandCenter;
-let wake: ReturnType<typeof vi.fn>;
+let wake: ReturnType<typeof vi.fn<ChildWake>>;
 
 function deferral(sessionId: string, inFlightChildren: number) {
   return [
@@ -163,7 +166,7 @@ beforeEach(() => {
   notifyState.notifyTaskComplete.mockClear();
   logs.info.mockClear();
   logs.warn.mockClear();
-  wake = vi.fn().mockResolvedValue(undefined);
+  wake = vi.fn<ChildWake>(async () => undefined);
   manager = new FakeTaskManager();
   center = new SessionCommandCenter(manager as unknown as TaskManager, {
     projectTerminalResult: vi.fn().mockResolvedValue(undefined),
