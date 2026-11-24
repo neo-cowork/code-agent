@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { AgentFailureCode, HostReasonCode, type PermissionRequest } from '../../../src/shared/contract';
 import type { TraceNode } from '../../../src/shared/contract/trace';
+import { APPROVAL_ANSWER_RESULT_GRACE_MS } from '../../../src/shared/constants';
 import { en } from '../../../src/renderer/i18n/en';
 
 const state = vi.hoisted(() => ({
@@ -119,10 +120,21 @@ describe('parked Write row states', () => {
     state.resolved = [{
       id: 'p1', sessionId: 'session-1', parentToolUseId: 'call-w', tool: 'Write', type: 'file_write',
       details: { path: '/outside/summary-en.md' } as PermissionRequest['details'], timestamp: 1,
-      resolved: true, decision: 'deny',
+      resolved: true, decision: 'deny', answeredAt: Date.now(),
     } as PermissionRequest];
     const text = rowText(writeNode({}), 'session-1');
     expect(text).not.toContain(WORDS.interrupted);
+    expect(text).not.toContain(WORDS.pending);
+  });
+
+  it('answered long ago and still no result: grace is over, reads "Interrupted" (no endless running)', () => {
+    state.resolved = [{
+      id: 'p1', sessionId: 'session-1', parentToolUseId: 'call-w', tool: 'Write', type: 'file_write',
+      details: { path: '/outside/summary-en.md' } as PermissionRequest['details'], timestamp: 1,
+      resolved: true, decision: 'deny', answeredAt: Date.now() - APPROVAL_ANSWER_RESULT_GRACE_MS - 1000,
+    } as PermissionRequest];
+    const text = rowText(writeNode({}), 'session-1');
+    expect(text).toContain(WORDS.interrupted);
     expect(text).not.toContain(WORDS.pending);
   });
 });

@@ -294,6 +294,8 @@ export interface PermissionRequest {
   resolved?: boolean;
   /** 用户选择，或 host 的 timeout / superseded 结果；仅 resolved=true 时有意义。 */
   decision?: PermissionDecision;
+  /** 本机点下决定的时刻（毫秒）；渲染端用它给「已答、结果未到」的工具行一个有限宽限，不进协议。 */
+  answeredAt?: number;
   /** 裁决来自另一个面（手机 companion）；桌面据此收卡，不记成本机点击。 */
   resolvedBy?: 'companion';
 }
