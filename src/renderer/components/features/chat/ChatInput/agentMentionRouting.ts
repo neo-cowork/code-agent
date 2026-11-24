@@ -4,6 +4,8 @@ import { interpolatePlural } from '../../../../i18n/interpolate';
 export interface MentionRoutingAgent {
   id: string;
   name: string;
+  /** 显式 mention 触发 token（如 Neo 工作卡固定 '@neo'）；缺省按 name→id 归一。 */
+  mentionToken?: string;
 }
 
 export interface ParsedAgentMentionRouting {
@@ -16,6 +18,14 @@ export interface AgentMentionAutocompleteResult {
   matches: MentionRoutingAgent[];
 }
 
+// mention token 允许的字符：ASCII 字母数字 + ._- + 汉字（Script=Han，角色名可为中文）。
+// 集中一处定义，下方 normalize/解析/补全的正则共用同一字符类，防止漂移。
+const MENTION_TOKEN_CHARS = 'A-Za-z0-9._\\-\\p{Script=Han}';
+const NON_MENTION_TOKEN_CHARS_RE = new RegExp(`[^${MENTION_TOKEN_CHARS}]+`, 'gu');
+const LEADING_MENTION_PREFIX_RE = new RegExp(`^(?:@[${MENTION_TOKEN_CHARS}]+\\s+)*$`, 'u');
+const TRAILING_MENTION_QUERY_RE = new RegExp(`(?:^|\\s)@([${MENTION_TOKEN_CHARS}]*)$`, 'u');
+const LEADING_MENTION_TOKEN_RE = new RegExp(`^@([${MENTION_TOKEN_CHARS}]+)(?=\\s|$)`, 'u');
+
 function isReservedNeoMention(value: string): boolean {
   return normalizeMentionToken(value) === 'neo';
 }
@@ -25,7 +35,7 @@ function normalizeMentionToken(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/^@+/, '')
-    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(NON_MENTION_TOKEN_CHARS_RE, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }
@@ -41,6 +51,7 @@ function buildAgentAliasSet(agent: MentionRoutingAgent): Set<string> {
 
   addAlias(agent.id);
   addAlias(agent.name);
+  addAlias(agent.mentionToken ?? '');
   return aliases;
 }
 
@@ -62,7 +73,7 @@ function resolveAgentByToken(
 }
 
 function isLeadingMentionPrefix(prefix: string): boolean {
-  return /^(?:@[A-Za-z0-9._-]+\s+)*$/.test(prefix);
+  return LEADING_MENTION_PREFIX_RE.test(prefix);
 }
 
 function getTrailingMentionQuery(value: string): string | null {
@@ -71,7 +82,7 @@ function getTrailingMentionQuery(value: string): string | null {
     return null;
   }
 
-  const trailingMentionMatch = trimmedStart.match(/(?:^|\s)@([A-Za-z0-9._-]*)$/);
+  const trailingMentionMatch = trimmedStart.match(TRAILING_MENTION_QUERY_RE);
   if (!trailingMentionMatch) {
     return null;
   }
@@ -86,7 +97,9 @@ function getTrailingMentionQuery(value: string): string | null {
 }
 
 export function getPreferredAgentMentionToken(agent: MentionRoutingAgent): string {
-  return normalizeMentionToken(agent.name) || normalizeMentionToken(agent.id);
+  return normalizeMentionToken(agent.mentionToken ?? '')
+    || normalizeMentionToken(agent.name)
+    || normalizeMentionToken(agent.id);
 }
 
 function formatAgentList(agents: MentionRoutingAgent[], joiner: string): string {
@@ -175,7 +188,7 @@ export function getLeadingAgentMentionAutocomplete(
   const matches = agents.filter((agent) => {
     // @neo 已从 composer 入口移除（2026-07-29 拍板，工作卡改从 Neo 协同页发起），
     // swarm agent 命名为 neo 也不在直连候选里出现。
-    if (isReservedNeoMention(agent.id) || isReservedNeoMention(agent.name)) {
+    if (isReservedNeoMention(agent.id) || isReservedNeoMention(agent.name) || isReservedNeoMention(agent.mentionToken ?? '')) {
       return false;
     }
     const aliases = buildAgentAliasSet(agent);
@@ -223,7 +236,7 @@ export function parseLeadingAgentMentions(
   let cursor = 0;
 
   while (cursor < trimmedStart.length) {
-    const mentionMatch = trimmedStart.slice(cursor).match(/^@([A-Za-z0-9._-]+)(?=\s|$)/);
+    const mentionMatch = trimmedStart.slice(cursor).match(LEADING_MENTION_TOKEN_RE);
     if (!mentionMatch) break;
     if (isReservedNeoMention(mentionMatch[1])) break;
 

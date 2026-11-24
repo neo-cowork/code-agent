@@ -923,6 +923,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: slotAccess.reason,
+        ...(slotAccess.userMessage !== undefined ? { userMessage: slotAccess.userMessage } : {}),
         metadata: {
           code: FOREIGN_SLOT_DATA_DIR_CODE,
           failureCode: AgentFailureCode.PermissionDenied,

@@ -55,6 +55,7 @@ export interface ToolApprovalPayload {
   forceConfirm?: boolean;
   /** Host-owned origin of the request (copied from permission details): scheduled-task flag/name or the user's own quote. */
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
@@ -117,6 +118,7 @@ export interface ParkedApprovalInboxItem {
   forceConfirm?: boolean;
   /** Host-owned origin: scheduled-task flag/name, or the user's own quote for manual turns. */
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
