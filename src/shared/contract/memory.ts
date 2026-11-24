@@ -259,6 +259,8 @@ export interface MemoryEntry {
   status: MemoryEntryStatus;
   /** Replacement entry, when an archive was superseded by a newer memory. */
   deprecatedBy?: string | null;
+  /** Light Memory filename replaced when this candidate is adopted. */
+  supersedes?: string | null;
   kind: MemoryEntryKind;
   scope: MemoryEntryScope;
   title: string;

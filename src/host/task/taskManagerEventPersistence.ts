@@ -153,7 +153,7 @@ export async function persistTaskManagerEvent(
         }
         notificationService.notifyNeedsInput({
           sessionId,
-          ...buildApprovalNotification(req.tool),
+          ...buildApprovalNotification(req.tool, undefined, sessionId),
           tool: req.tool,
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
