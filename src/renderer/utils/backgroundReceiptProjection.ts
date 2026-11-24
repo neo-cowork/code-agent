@@ -1,12 +1,16 @@
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { Task } from '@shared/contract/backgroundTask';
+import type { MessageMetadata } from '@shared/contract/message';
 import type { TraceNode, TraceProjection } from '@shared/contract/trace';
 import {
   delegatedBackgroundTaskId,
   deriveDelegationPresentation,
 } from '../components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { Translations } from '../i18n';
+import { isTaskTerminalStatus } from './agentActivity';
 import { traceTerminalToolCall } from './toolCallTerminalState';
+
+type HandoffEnd = NonNullable<MessageMetadata['backgroundHandoffEnded']>;
 
 export function projectBackgroundReceipts(
   projection: TraceProjection,
@@ -15,19 +19,26 @@ export function projectBackgroundReceipts(
   t: Translations,
 ): TraceProjection {
   const nodes = projection.turns.flatMap((turn) => turn.nodes);
-  if (!nodes.some(({ metadata }) => metadata?.backgroundTaskStopped || metadata?.backgroundTaskInterrupted || metadata?.backgroundTaskPreannounce)) {
+  if (!tasks.some(({ status }) => isTaskTerminalStatus(status) && status !== 'completed' && status !== 'cancelled')
+    && !nodes.some(({ metadata }) => metadata?.backgroundTaskStopped || metadata?.backgroundTaskInterrupted || metadata?.backgroundTaskPreannounce)) {
     return projection;
   }
 
   const terminalReceiptIds = new Set<string>();
   const stoppedTaskIds = new Set<string>();
   const interruptionReceiptIds = new Set<string>();
+  const interruptedTaskIds = new Set<string>();
   const failedCallIds = new Set<string>();
   const delegateCallsByMessage = new Map<string, string[]>();
+  const handoffEndedByMessage = new Map<string, HandoffEnd>();
+  const lastTextByMessage = new Map<string, TraceNode>();
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
-  for (const { metadata } of nodes) {
+  for (const node of nodes) {
+    const { metadata } = node;
     const taskId = metadata?.backgroundTaskStopped?.taskId ?? metadata?.backgroundTaskInterrupted?.taskId;
     if (taskId) stoppedTaskIds.add(taskId);
+    if (metadata?.backgroundTaskInterrupted) interruptedTaskIds.add(metadata.backgroundTaskInterrupted.taskId);
+    if (node.type === 'assistant_text' && node.messageId && node.content.trim()) lastTextByMessage.set(node.messageId, node);
   }
 
   for (const node of nodes) {
@@ -50,6 +61,12 @@ export function projectBackgroundReceipts(
     }
     const taskId = receipt?.memberId ?? delegatedBackgroundTaskId(call);
     if (stopped || (taskId && stoppedTaskIds.has(taskId))) failedCallIds.add(call.id);
+    if (!node.messageId || receipt?.state === 'cancelled' || receipt?.state === 'completed') continue;
+    if (receipt?.failure === t.backgroundPanel.interrupted || (taskId && interruptedTaskIds.has(taskId))) {
+      handoffEndedByMessage.set(node.messageId, 'interrupted');
+    } else if (receipt?.state === 'failed' && !handoffEndedByMessage.has(node.messageId)) {
+      handoffEndedByMessage.set(node.messageId, 'failed');
+    }
   }
 
   function presentNode(node: TraceNode): TraceNode[] {
@@ -71,7 +88,24 @@ export function projectBackgroundReceipts(
 
   const activeTurn = projection.turns[projection.activeTurnIndex];
   const turns = projection.turns.flatMap((turn) => {
-    const visibleNodes = turn.nodes.flatMap(presentNode);
+    let pending: { messageId: string; traceId: string; end: HandoffEnd } | undefined;
+    const visibleNodes = turn.nodes.flatMap((original) => presentNode(original).map((node) => {
+      const messageId = node.messageId;
+      if (node.toolCall && pending?.messageId !== messageId) pending = undefined;
+      if (!messageId || node.type !== 'assistant_text') return node;
+
+      const end = lastTextByMessage.get(messageId) === original ? handoffEndedByMessage.get(messageId) : undefined;
+      const traceId = node.metadata?.correlation?.traceId;
+      if (!node.content.trim()) {
+        // The preview can be the dispatch message's only text. In that case the
+        // confirmed handoff is the next model reply in the same foreground run.
+        if (end && traceId && original.metadata?.backgroundTaskPreannounce) pending = { messageId, traceId, end };
+        return node;
+      }
+      const backgroundHandoffEnded = end ?? (pending?.traceId === traceId ? pending?.end : undefined);
+      pending = undefined;
+      return backgroundHandoffEnded ? { ...node, metadata: { ...node.metadata, backgroundHandoffEnded } } : node;
+    }));
     if (turn.nodes.length && !visibleNodes.length) return [];
     return visibleNodes.length === turn.nodes.length && visibleNodes.every((node, index) => node === turn.nodes[index])
       ? [turn] : [{ ...turn, nodes: visibleNodes }];
