@@ -99,25 +99,30 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector?: (state: typeof storeState) => unknown) => (
-    selector ? selector(storeState) : storeState
+  useAppStore: Object.assign(
+    (selector?: (state: typeof storeState) => unknown) => (selector ? selector(storeState) : storeState),
+    { getState: () => storeState },
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: Object.assign(
-    (selector: (state: { currentSessionId: string | null; messages: Message[] }) => unknown) => (
-      selector({ currentSessionId: currentSession.id, messages: [] })
+    (selector: (state: { currentSessionId: string | null; messages: Message[]; sessions: never[] }) => unknown) => (
+      selector({ currentSessionId: currentSession.id, messages: [], sessions: [] })
     ),
-    { getState: () => ({ currentSessionId: currentSession.id, messages: [] }) },
+    { getState: () => ({ currentSessionId: currentSession.id, messages: [], sessions: [] }) },
   ),
 }));
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({
   usePermissionStore: () => ({ checkMemory: () => null, saveMemory: vi.fn() }),
 }));
+// 代理行成员数据会顺带读一次 swarm 账本（与审批无关），不计入审批 invoke 的调用断言
+const approvalInvoke = vi.hoisted(() => (channel: string, ...args: unknown[]) => (
+  channel === 'swarm:list-trace-runs' ? Promise.resolve([]) : invoke(channel, ...args)
+));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { isAvailable: () => true, invoke },
+  default: { isAvailable: () => true, invoke: approvalInvoke },
   ipcService: {
-    invoke,
+    invoke: approvalInvoke,
     on: (_channel: string, callback: (payload: unknown) => void) => {
       stallListeners.add(callback);
       return () => { stallListeners.delete(callback); };
