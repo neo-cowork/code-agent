@@ -168,11 +168,11 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX = [{
   return root;
 }
 
-function runChecker(root: string, mode = 'full'): { status: number; output: string } {
+function runChecker(root: string, mode = 'full', now = '2026-07-11T12:00:00.000Z'): { status: number; output: string } {
   try {
     const output = execFileSync(
       process.execPath,
-      [path.join(REPO_ROOT, 'node_modules/tsx/dist/cli.mjs'), CHECKER, '--root', root, '--mode', mode, '--now', '2026-07-11T12:00:00.000Z'],
+      [path.join(REPO_ROOT, 'node_modules/tsx/dist/cli.mjs'), CHECKER, '--root', root, '--mode', mode, '--now', now],
       { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
     return { status: 0, output };
@@ -354,5 +354,37 @@ describe('provider runtime release evidence gate', () => {
     const result = runChecker(root);
     expect(result.status).not.toBe(0);
     expect(result.output).toContain(expected);
+  });
+
+  it.each([
+    ['8 days before expiry', '2026-06-19', null],
+    ['6 days before expiry', '2026-06-17', '2026-07-17'],
+  ])('keeps exit 0 for a verified ledger record %s', (_label, recordDate, expiresOn) => {
+    const root = createWorkspace();
+    const ledger = readJson<{ records: Array<Record<string, unknown>> }>(root, 'docs/capabilities/provider-runtime-live-smoke-ledger.json');
+    ledger.records[0].date = recordDate;
+    writeJson(root, 'docs/capabilities/provider-runtime-live-smoke-ledger.json', ledger);
+
+    const result = runChecker(root, 'static', '2026-07-11T00:00:00.000Z');
+    expect(result, result.output).toMatchObject({ status: 0 });
+    if (expiresOn === null) {
+      expect(result.output).not.toContain('::warning::');
+    } else {
+      expect(result.output).toContain('::warning::');
+      expect(result.output).toContain('openai-live');
+      expect(result.output).toContain(expiresOn);
+    }
+  });
+
+  it('still fails when a verified ledger record is past expiry', () => {
+    const root = createWorkspace();
+    const ledger = readJson<{ records: Array<Record<string, unknown>> }>(root, 'docs/capabilities/provider-runtime-live-smoke-ledger.json');
+    ledger.records[0].date = '2026-06-10';
+    writeJson(root, 'docs/capabilities/provider-runtime-live-smoke-ledger.json', ledger);
+
+    const result = runChecker(root, 'static', '2026-07-11T00:00:00.000Z');
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('older than 30 days');
+    expect(result.output).not.toContain('::warning::');
   });
 });
