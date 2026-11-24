@@ -19,6 +19,8 @@ import {
   WEB_SERVER_CONNECTION_MONITOR,
   WEB_SERVER_DEFAULTS,
 } from '@shared/constants';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
+import { isTauriMode } from './platform';
 import { getApiBaseUrl } from '../api/transport';
 import { languages } from '../i18n';
 import { useAppStore } from '../stores/appStore';
@@ -152,6 +154,13 @@ export function retryNow(): void {
   useServerConnectionStore.getState().setRetryState('checking');
   clearProbeTimer();
   runProbe();
+}
+
+export function getServerReloadHint(text: (typeof languages)['en']['serverConnection']): string {
+  if (!isTauriMode()) return text.unavailableHintWeb;
+  return getCurrentKeybindingPlatform() === 'darwin'
+    ? text.unavailableHintTauriMac
+    : text.unavailableHintTauri;
 }
 
 /** /api/run 网络失败时替代裸 `Load failed` 的人话文案（跟随当前语言设置）。 */
