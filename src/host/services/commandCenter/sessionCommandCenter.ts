@@ -912,7 +912,7 @@ export class SessionCommandCenter {
     // failed，立刻用同一 submissionKey 重试——账本里那个 slot 还是 running，admit() 返回
     // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
     const startable = this.ledger(task.sessionId).settle(task.id, status);
-    if (trackedDelete && status === 'completed') {
+    if (trackedDelete && status === 'completed' && !getBackgroundTaskManager().isTaskRunning(task.sessionId)) {
       void settleBackgroundOnTaskComplete(task.sessionId, task.id, {}, () => (
         this.manager.getSessionState(task.sessionId).status === 'running' || this.manager.hasActivePrimaryRun(task.sessionId)
       )).catch((error: unknown) => {

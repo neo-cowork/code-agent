@@ -3,7 +3,7 @@
 // 指挥台是真 SessionCommandCenter，只有构造缝上的 TaskManager 是假的。
 
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,6 +80,10 @@ class FakeTaskManager extends EventEmitter {
 
   hasActivePrimaryRun(): boolean {
     return primary.active;
+  }
+
+  getSessionState(): { status: string } {
+    return { status: primary.active ? 'running' : 'idle' };
   }
 
   onRunIdle(listener: () => void): () => void {
@@ -186,6 +190,25 @@ afterEach(() => {
 });
 
 describe('background parent settlement waits for delegated children', () => {
+  it('sends one completion notice after a successful approved delegated delete', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'delegate-delete-success-'));
+    const file = join(directory, 'export.tmp');
+    try {
+      writeFileSync(file, 'delete');
+      const sessionId = 'session-delete-success';
+      await background(sessionId);
+      const task = await spawn(sessionId, 1, 'cleanup');
+      recordApprovedRmSettlementTargets(sessionId, task.id, [file]);
+      await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+      unlinkSync(file);
+      await finishChild(sessionId, task.id);
+      await expectParentNotice(sessionId);
+      expect(row(sessionId)?.status).toBe('completed');
+      expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('preserves main approved-delete failure while waiting for all delegated children', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'delegate-delete-'));
     const file = join(directory, 'export.tmp');
