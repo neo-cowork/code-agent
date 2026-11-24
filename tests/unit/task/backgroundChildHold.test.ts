@@ -32,6 +32,9 @@ vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
   notificationService: notifyState,
 }));
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: notifyState,
+}));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: logs,
   createLogger: () => logs,
@@ -256,6 +259,31 @@ describe('background parent settlement waits for delegated children', () => {
       expect(row(sessionId)).toMatchObject({
         status: 'failed', completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE, leftoverPaths: [file],
       });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('retains a delegated delete failure across foreground completion and return to background', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'foreground-delete-'));
+    const file = join(directory, 'export.tmp');
+    try {
+      writeFileSync(file, 'still present');
+      const sessionId = 'session-foreground-delete';
+      await background(sessionId);
+      primary.active = true;
+      const task = await spawn(sessionId, 1, 'cleanup');
+      recordApprovedRmSettlementTargets(sessionId, task.id, [file]);
+      await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+      getBackgroundTaskManager().moveToForeground(sessionId);
+      manager.emitTask({ type: 'task_completed', sessionId, data: { taskId: task.id, conclusion: 'done' } });
+      await vi.waitFor(() => expect(center.list(sessionId)[0]?.status).toBe('failed'));
+      await background(sessionId);
+      primary.active = false;
+      manager.emitIdle();
+      await vi.waitFor(() => expect(row(sessionId)).toMatchObject({
+        status: 'failed', completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE, leftoverPaths: [file],
+      }));
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

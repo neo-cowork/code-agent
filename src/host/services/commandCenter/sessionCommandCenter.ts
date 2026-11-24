@@ -864,7 +864,7 @@ export class SessionCommandCenter {
       task.stopped = undefined;
       detail = getDeleteIncompleteText(resolveSessionTaskResultLocale()).reason;
       logger.warn('Background task failed', { sessionId: task.sessionId, runId: task.id, error: settlement.message });
-      if (getBackgroundTaskManager().isTaskRunning(task.sessionId)) {
+      if (getBackgroundTaskManager().isTaskRunning(task.sessionId) || getBackgroundTaskManager().getDeferredRun(task.sessionId)) {
         getBackgroundTaskManager().rememberDelegatedLeftovers(task.sessionId, task.leftoverPaths);
       }
     }
