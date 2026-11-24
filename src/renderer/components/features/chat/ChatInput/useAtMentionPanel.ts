@@ -255,17 +255,26 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       store.setPendingPinItemIds([...store.pendingPinItemIds, itemId]);
       return;
     }
-    if (sessionPinnedIds.has(itemId)) return;
+    // 面板内的 pin 集合可能过期（chip × 在面板开着时取消过），以 host 现状为准再决定写不写。
     const prev = sessionPinnedIds;
-    const next = new Set(prev);
-    next.add(itemId);
-    setSessionPinnedIds(next);
-    notifyLibraryPinChanged(sessionId);
-    setSessionPin(sessionId, [...next]).catch(() => {
-      setSessionPinnedIds(prev);
+    if (!prev.has(itemId)) {
+      setSessionPinnedIds(new Set(prev).add(itemId));
       notifyLibraryPinChanged(sessionId);
-      toast.error(t.library.pinFailed);
-    });
+    }
+    void (async () => {
+      try {
+        const fresh = await getSessionPin(sessionId);
+        if (fresh.itemIds.includes(itemId)) return;
+        const next = [...fresh.itemIds, itemId];
+        await setSessionPin(sessionId, next);
+        setSessionPinnedIds(new Set(next));
+        notifyLibraryPinChanged(sessionId);
+      } catch {
+        setSessionPinnedIds(prev);
+        notifyLibraryPinChanged(sessionId);
+        toast.error(t.library.pinFailed);
+      }
+    })();
   }, [sessionPinnedIds, sessionId, t]);
 
   const groupLimit = groupLimitForTab(activeTab);

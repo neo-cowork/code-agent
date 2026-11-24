@@ -922,10 +922,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const handleAtLibrarySelect = useCallback((row: AtMentionLibraryRow) => {
     const editor = inputAreaRef.current;
     if (!editor || row.kind !== 'library') return;
+    // 光标可能不在触发词末尾（← 后再 Enter）：向后吞掉词尾残字，向前找 @ 起点
     const caret = editor.getCaretOffset();
-    const triggerMatch = latestValueRef.current.slice(0, caret).match(/@([^\s@]*)$/);
-    const triggerStart = triggerMatch ? caret - triggerMatch[0].length : caret;
-    editor.replaceRangeWithText(triggerStart, caret, '');
+    const text = latestValueRef.current;
+    const tail = text.slice(caret).match(/^@?[^\s@]*/)?.[0] ?? '';
+    const end = caret + tail.length;
+    const triggerMatch = text.slice(0, end).match(/@([^\s@]*)$/);
+    if (!triggerMatch) { editor.focus(); return; }
+    editor.replaceRangeWithText(end - triggerMatch[0].length, end, '');
     editor.focus();
   }, []);
   const atMention = useAtMentionPanel({

@@ -400,7 +400,7 @@ describe('useAtMentionPanel', () => {
     expect(result.current.selectedIndex).toBe(0);
 
     // Enter 在资料库行：幂等钉上，面板关闭（旧断言 isOpen 保持 true 是 FB-2793）
-    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    await act(async () => { result.current.handleKeyDown(keyEvent('Enter')); });
     expect(mocks.setSessionPin).toHaveBeenCalledWith('session-1', ['g1', 'p1']);
     expect(onLibrarySelect).toHaveBeenCalledWith(expect.objectContaining({ kind: 'library', item: expect.objectContaining({ id: 'p1' }) }));
     expect(result.current.isOpen).toBe(false);
@@ -428,7 +428,7 @@ describe('useAtMentionPanel', () => {
     const { result } = setup(vi.fn(), vi.fn(), vi.fn(), onLibrarySelect);
     await openPanel(result);
 
-    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    await act(async () => { result.current.handleKeyDown(keyEvent('Enter')); });
     expect(result.current.isOpen).toBe(false);
     expect(pinned).toEqual(['lib-1']);
     expect(mocks.setSessionPin).toHaveBeenCalledTimes(1);
@@ -462,7 +462,7 @@ describe('useAtMentionPanel', () => {
         onHover={result.current.setSelectedIndex}
       />,
     );
-    fireEvent.click(view.getByRole('button', { name: /dogfood-upload-test/ }));
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: /dogfood-upload-test/ })); });
     expect(result.current.isOpen).toBe(false);
     expect(mocks.setSessionPin).toHaveBeenLastCalledWith('session-1', ['lib-1']);
     cleanup();

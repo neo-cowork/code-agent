@@ -205,4 +205,34 @@ describe('资料库 @ 选中关闭面板且下一次 Enter 发送', () => {
     expect(mocks.setSessionPin).not.toHaveBeenCalled();
     expect(onSend).not.toHaveBeenCalled();
   });
+
+  it('面板里的 pin 集合过期（chip × 已取消）时再选同一行会重新钉上', async () => {
+    pinnedIds = [LIB_ID];
+    render(<ChatInput onSend={vi.fn(async () => true)} />);
+    await waitFor(() => expect(libraryChips()).toHaveLength(1));
+    await openLibraryRow();
+    pinnedIds = [];
+    await act(async () => {
+      fireEvent.keyDown(editor(), { key: 'Enter', keyCode: 13 });
+    });
+    await waitFor(() => expect(mocks.setSessionPin).toHaveBeenCalledTimes(1));
+    expect(pinnedIds).toEqual([LIB_ID]);
+    expect(plainText()).not.toContain('@xyz');
+  });
+
+  it.each([
+    ['光标在触发词中间', 3],
+    ['光标在 @ 前面', 0],
+  ])('%s时 Enter 仍清掉整段 @xyz', async (_name, offset) => {
+    render(<ChatInput onSend={vi.fn(async () => true)} />);
+    await openLibraryRow();
+    const node = Array.from(editor().childNodes).find((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.includes('@xyz'));
+    if (!node) throw new Error('missing text node');
+    window.getSelection()?.collapse(node, offset);
+    await act(async () => {
+      fireEvent.keyDown(editor(), { key: 'Enter', keyCode: 13 });
+    });
+    await waitFor(() => expect(plainText()).not.toMatch(/@|xyz|^z$/));
+    expect(libraryChips()).toHaveLength(1);
+  });
 });
