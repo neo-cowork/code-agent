@@ -388,7 +388,10 @@ export function humanizeToolError(
       toolResultCode: metadata?.code,
       defaultCode: AgentFailureCode.Unknown,
     });
-    const outcome = structuredFailureCode === AgentFailureCode.Timeout
+    // 审批超时是系统按安全规则收口，不是用户点的拒绝：failureCode 仍是 PermissionDenied，
+    // 要靠 hostReason.code 区分，原因行才不会把超时说成「审批被拒绝」。
+    const approvalTimedOut = typeof hostReason !== 'string' && hostReason?.code === HostReasonCode.PermissionDeniedTimeout;
+    const outcome = structuredFailureCode === AgentFailureCode.Timeout || approvalTimedOut
       ? t.outcomeWords['failed-timeout'].timeline
       : structuredFailureCode === AgentFailureCode.PermissionDenied && metadata?.code !== 'FOREIGN_SLOT_DATA_DIR'
         ? t.outcomeWords['failed-approval-denied'].timeline

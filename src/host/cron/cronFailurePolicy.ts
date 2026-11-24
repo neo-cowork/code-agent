@@ -31,6 +31,7 @@ import {
   CRON_FAILURE_CODE,
   classifyCronFailure as classifyCronFailurePresentation,
 } from '../../shared/utils/cronFailureClassification';
+import { cronFailureNoticeSentence } from './cronFailureNoticeCopy';
 
 export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait' | 'login-wall';
 
@@ -151,10 +152,10 @@ const cronNoticeCopy = {
     failed: '定时任务失败：',
     unknownError: '未知错误',
     consecutive: (count: number, lastError: string) =>
-      `连续失败 ${count} 次已自动停用。最后错误：${lastError}。`
+      `连续失败 ${count} 次已自动停用。最后错误：${lastError}`
       + '可在「自动化中心 → 定时任务」重新启用。',
     permanent: (lastError: string) =>
-      `因配置/鉴权类错误停用（重试无效）。错误：${lastError}。`
+      `因配置/鉴权类错误停用（重试无效）。错误：${lastError}`
       + '修正配置后可在「自动化中心 → 定时任务」重新启用。',
   },
   en: {
@@ -170,8 +171,15 @@ const cronNoticeCopy = {
   },
 };
 
-function truncateForNotice(message: string, maxChars = 200): string {
-  return message.length > maxChars ? `${message.slice(0, maxChars)}…` : message;
+function disabledNoticeLastError(error: string | undefined, locale: CronNotificationLocale): string {
+  const { kind } = classifyCronFailurePresentation(error);
+  if (kind === 'cloud_unavailable') {
+    const message = error ?? cronNoticeCopy[locale].unknownError;
+    const detail = message.length > 200 ? `${message.slice(0, 200)}…` : message;
+    return locale === 'zh' ? `${detail}。` : detail;
+  }
+  const sentence = cronFailureNoticeSentence(kind, locale);
+  return locale === 'zh' && !sentence.endsWith('。') ? `${sentence}。` : sentence;
 }
 
 /** 到数停用文案（N-CRON-BUDGET-EXPOSE）：点名上限与重新启用的去处，中英随界面语言。 */
@@ -232,14 +240,13 @@ export function notifyCronJobDisabled(
 ): void {
   const locale = readCronNoticeLocale();
   const copy = cronNoticeCopy[locale];
-  const lastError = execution.error ? truncateForNotice(execution.error) : copy.unknownError;
   const summary = reason === 'consecutive'
-    ? copy.consecutive(CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES, lastError)
+    ? copy.consecutive(CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES, disabledNoticeLastError(execution.error, locale))
     : reason === 'budget'
       ? buildBudgetDisabledSummary(definition, execution.error, locale)
       : reason === 'max_runs'
         ? buildMaxRunsDisabledSummary(definition, locale)
-        : copy.permanent(lastError);
+        : copy.permanent(disabledNoticeLastError(execution.error, locale));
   try {
     notificationService.notifyTaskComplete(
       {
@@ -338,9 +345,11 @@ export function notifyCronAgentExecution(
           ? permissionDenied
             ? buildPermissionDeniedNoticeSummary(permissionDenied, locale)
             : readCronAlertReason(execution.result) ?? copy.completed
-          : loginWall
-            ? undefined
-            : `${copy.failed}${execution.error ?? copy.unknownError}`,
+          : presentation
+            ? `${copy.failed}${presentation.kind === 'cloud_unavailable'
+              ? execution.error ?? copy.unknownError
+              : cronFailureNoticeSentence(presentation.kind, locale)}`
+            : undefined,
         duration: execution.duration ?? 0,
         toolsUsed: [],
         succeeded,

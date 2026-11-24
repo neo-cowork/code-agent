@@ -154,7 +154,11 @@ export const AppshotsSettings: React.FC = () => {
     // 同步给捕获链路：store 缓存（renderer 同步读）+ Rust 原子标志（skip 决策无 IPC 竞态）
     useAppshotsStore.getState().setTargetSession(next);
     if (isNativeCommandRuntimeAvailable()) {
-      void invokeNativeCommandAction('setAppshotsTargetSession', { newSession: next === 'new' }).catch(() => {});
+      void invokeNativeCommandAction('setAppshotsTargetSession', { newSession: next === 'new' }).catch((error) => {
+        logger.warn('Failed to sync appshots target session to native shell', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     }
     await persist(enabled, next);
   };
