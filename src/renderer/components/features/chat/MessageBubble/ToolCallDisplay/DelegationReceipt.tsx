@@ -207,16 +207,18 @@ function DelegationRetryActions({ presentation }: { presentation: DelegationPres
           {text.viewDetails}
         </Button>
       )}
-      <Button
-        variant="ghost"
-        size="sm"
-        data-testid="delegation-retry"
-        disabled={disabled}
-        title={(active || wrongSession || !task) && !sent ? text.retryBusy : undefined}
-        onClick={retry}
-      >
-        {text.retry}
-      </Button>
+      {presentation.outcomeKey !== 'delete-incomplete' && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="delegation-retry"
+          disabled={disabled}
+          title={(active || wrongSession || !task) && !sent ? text.retryBusy : undefined}
+          onClick={retry}
+        >
+          {text.retry}
+        </Button>
+      )}
     </div>
   );
 }

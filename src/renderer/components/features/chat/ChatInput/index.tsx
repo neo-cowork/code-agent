@@ -111,6 +111,7 @@ import { notifyAttachmentMerge } from './attachmentDiscard';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
+import { pdfPageSentence } from './pdfPageSentence';
 import { usePinnedLibraryItems } from './PinnedLibraryChips';
 import { buildMentionAttachment } from './mentionAttachment';
 import { AgentChip } from './AgentChip';
@@ -605,6 +606,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         label: attachment.name,
         category: attachment.category,
         thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
+        description: attachment.category === 'pdf'
+          ? pdfPageSentence(t.chatInput, attachment.pageCount)
+          : undefined,
       });
     }
     for (const item of pinnedLibraryItems) {
@@ -617,7 +621,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
     }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language, chipReconcileEpoch]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language, t, chipReconcileEpoch]);
   const inlineChipsRef = useRef(inlineChips);
   inlineChipsRef.current = inlineChips;
 

@@ -74,6 +74,16 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
     const service = getSessionAutomationService();
     return service.listParkedApprovals();
   },
+  listOutboundDrafts: async () => (await import('../agent/outboundDraft')).listOutboundDrafts(),
+  resolveOutboundDraft: async (_ctx, payload) => {
+    const id = getString(payload, 'id');
+    const decision = getString(payload, 'decision');
+    const revision = getString(payload, 'revision');
+    if (!id || (decision !== 'discard' && (decision !== 'send' || !revision))) {
+      throw new Error('OUTBOUND_DRAFT_INVALID_ACTION');
+    }
+    return (await import('../agent/outboundDraft')).resolveOutboundDraft(id, decision, revision);
+  },
   countPendingReview: (_ctx, _payload) => {
     const service = getSessionAutomationService();
     return service.countPendingReviewByTask();

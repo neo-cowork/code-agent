@@ -1,4 +1,5 @@
 import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { TraceEventDataMap } from './turnTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
@@ -803,7 +804,7 @@ export class MessageProcessor {
         const historyResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
         await this.contextAssembly.addAndPersistMessage({
           id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
-          content: JSON.stringify(historyResults), toolResults: historyResults,
+          content: serializeToolResultsForModel(historyResults), toolResults: historyResults,
         });
       }
       await persistCancelledToolCallClosures({
@@ -878,7 +879,7 @@ export class MessageProcessor {
     const toolMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'tool',
-      content: JSON.stringify(artifactRepairResults),
+      content: serializeToolResultsForModel(artifactRepairResults),
       timestamp: Date.now(),
       toolResults: artifactRepairResults,
       ...(isTerminalWakeNoop ? { isMeta: true } : {}),

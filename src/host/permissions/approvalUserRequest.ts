@@ -32,7 +32,7 @@ function scheduledTaskName(origin: { id?: string; name?: string }): string | und
 
 /**
  * Host-owned quote of what the user actually typed. Any incoming
- * `userRequest` / `startedByAutomation` (model or renderer supplied) is discarded first.
+ * quote or origin fields (model or renderer supplied) are discarded first.
  * Scheduled/background sessions have no human typing, so they get a flag instead of a quote.
  */
 export function withUserRequestQuote(
@@ -42,6 +42,7 @@ export function withUserRequestQuote(
   const details = { ...incoming };
   delete details.userRequest;
   delete details.startedByAutomation;
+  delete details.startedByFirstWake;
   delete details.scheduledTaskName;
   if (!sessionId) return details;
   try {
@@ -49,6 +50,10 @@ export function withUserRequestQuote(
     // Only non-human origins skip the quote. manual/channel/import/retry sessions are the
     // user's own conversations (fork, IM group chat, import) and keep the quote.
     const origin = db.getSession(sessionId)?.origin;
+    if (origin?.metadata?.trigger === 'first_wake') {
+      details.startedByFirstWake = true;
+      return details;
+    }
     const originKind = origin?.kind;
     if (origin && originKind && AUTOMATION_ORIGIN_KINDS.has(originKind)) {
       details.startedByAutomation = true;

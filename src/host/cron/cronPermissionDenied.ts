@@ -12,6 +12,7 @@
 
 import { AgentFailureCode } from '../../shared/contract';
 import { HostReasonCode } from '../../shared/contract/permission';
+import { OUTBOUND_APPROVAL_DEGRADE } from '../../shared/constants/pendingApproval';
 import type {
   CronPermissionDeniedMarker,
   CronPermissionDeniedReason,
@@ -76,7 +77,14 @@ export function deriveCronPermissionDenied(
       const call = callsById.get(result.toolCallId);
       const metadata = result.metadata;
       if (metadata?.failureCode === AgentFailureCode.PermissionDenied) {
-        const hostReason = metadata.hostReason as { code?: unknown } | null | undefined;
+        const hostReason = metadata.hostReason as { code?: unknown; modelText?: unknown } | null | undefined;
+        // The run already produced a draft. Its pending Send is tracked separately in the inbox.
+        if (call?.name === 'mail_send' && hostReason?.code === HostReasonCode.PermissionDeniedTimeout
+          && typeof hostReason.modelText === 'string'
+          && hostReason.modelText.startsWith(`${OUTBOUND_APPROVAL_DEGRADE.saved.code}: `)) {
+          hasProductiveSuccess = true;
+          continue;
+        }
         steps.push({
           tool: call?.name ?? '',
           summary: buildStepSummary(call?.name ?? '', call?.args),
