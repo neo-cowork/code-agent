@@ -62,6 +62,16 @@ describe('mergeEmptyCollaborationSpaces', () => {
     expect(merged.filter((group) => group.projectId === 'proj_loaded')).toHaveLength(1);
   });
 
+  it('keeps a space visible when its hidden blank sessions are only part of an off-page total', () => {
+    const merged = mergeEmptyCollaborationSpaces(
+      [],
+      [space({ id: 'proj_partial', name: '部分加载', visibleSessionCount: 3 })],
+      false,
+      new Map([['proj_partial', 1]]),
+    );
+    expect(merged.map((group) => group.projectId)).toEqual(['proj_partial']);
+  });
+
   it('does not add empty spaces while a search or status filter is active', () => {
     const groups = groupByWorkspace([session({ id: 'hit', projectId: 'proj_hit', workingDirectory: '/a' })], '快速对话', '项目');
     const spaces = [space({ id: 'proj_empty' })];

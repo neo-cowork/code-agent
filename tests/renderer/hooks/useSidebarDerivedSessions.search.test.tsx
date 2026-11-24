@@ -484,7 +484,7 @@ describe('useSidebarDerivedSessions blank rows', () => {
     expect(result.current.visibleSessionIds).toEqual([]);
   });
 
-  it('only synthesizes an empty collaboration group when hidden rows cover its full catalog count', async () => {
+  it('keeps a collaboration space visible when its loaded rows are all hidden blanks, even if older history is off-page', async () => {
     const fullyLoadedSpace: ProjectWithActivity = {
       id: 'fully-loaded',
       name: 'Fully loaded space',
@@ -507,8 +507,8 @@ describe('useSidebarDerivedSessions blank rows', () => {
     const { result } = renderSidebar();
 
     await waitFor(() => {
-      expect(result.current.workspaceGroupedSessions.map((group) => group.projectId))
-        .toEqual([fullyLoadedSpace.id]);
+      expect(result.current.workspaceGroupedSessions.map((group) => group.projectId).sort())
+        .toEqual([fullyLoadedSpace.id, pagedSpace.id].sort());
     });
     expect(result.current.visibleSessionIds).toEqual([]);
   });
