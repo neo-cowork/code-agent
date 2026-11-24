@@ -130,12 +130,15 @@ export async function closeBackgroundRunAtTerminal(
   const isBackground = backgroundManager.isInBackground(sessionId) && backgroundManager.isTaskRunning(sessionId);
   const leftoverPaths = takeApprovedRmLeftovers(sessionId, runId, 'desktop',
     isBackground && eventType === 'agent_complete' && !runError);
-  if (!isBackground) return;
   const input: BackgroundRunSettlementInput = eventType === 'agent_cancelled'
     ? { status: 'interrupted' }
     : runError
       ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
       : { status: 'completed', leftoverPaths };
+  if (!isBackground) {
+    backgroundManager.supersedeDeferredRun(sessionId, input);
+    return;
+  }
   if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
   await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
 }
@@ -188,8 +191,11 @@ export async function settlePrimaryRunSessionStatus(
  */
 export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
-  if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
   const input: BackgroundRunSettlementInput = { status: 'error', errorMessage };
+  if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) {
+    backgroundManager.supersedeDeferredRun(sessionId, input);
+    return;
+  }
   if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
   await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
 }

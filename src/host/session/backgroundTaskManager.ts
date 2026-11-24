@@ -25,7 +25,7 @@ const logger = createLogger('BackgroundTaskManager');
 class BackgroundTaskManager extends EventEmitter {
   private backgroundSessions: Map<string, BackgroundSessionInfo> = new Map();
   // The parent outcome follows the delegated work across panel row replacements.
-  private readonly deferredRuns = new Map<string, { input: BackgroundRunSettlementInput }>();
+  private readonly deferredRuns = new Map<string, { input: BackgroundRunSettlementInput; superseded?: boolean }>();
   private readonly delegatedLeftovers = new Map<string, string[]>();
   private readonly pendingWakes = new WeakMap<BackgroundSessionInfo, Array<() => void>>();
   private mainWindow: AppWindow | null = null;
@@ -79,6 +79,12 @@ class BackgroundTaskManager extends EventEmitter {
       type: 'added',
       task: sessionInfo,
     });
+
+    // 前台新一轮已取代上一轮的推迟结果，且子任务早已结束：新行立即按该结果收口。
+    if (this.deferredRuns.get(sessionId)?.superseded) {
+      const { settleSupersededRunIfIdle } = await import('./backgroundChildHold');
+      await settleSupersededRunIfIdle(sessionId);
+    }
 
     return true;
   }
@@ -274,10 +280,10 @@ class BackgroundTaskManager extends EventEmitter {
 
   /** 前台新一轮自己收口了：它的结果取代上一轮留下的推迟结果（旧失败/停止不再盖住新一轮）。 */
   supersedeDeferredRun(sessionId: string, input: BackgroundRunSettlementInput): void {
-    if (this.deferredRuns.has(sessionId)) this.deferredRuns.set(sessionId, { input });
+    if (this.deferredRuns.has(sessionId)) this.deferredRuns.set(sessionId, { input, superseded: true });
   }
 
-  getDeferredRun(sessionId: string): Readonly<{ input: BackgroundRunSettlementInput }> | undefined {
+  getDeferredRun(sessionId: string): Readonly<{ input: BackgroundRunSettlementInput; superseded?: boolean }> | undefined {
     return this.deferredRuns.get(sessionId);
   }
 

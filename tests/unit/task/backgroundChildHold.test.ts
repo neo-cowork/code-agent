@@ -649,6 +649,39 @@ describe('background parent settlement waits for delegated children', () => {
     await expectParentNotice(sessionId);
   });
 
+  it('settles the new row as completed when the child finishes during a later foreground turn', async () => {
+    const sessionId = 'session-child-ends-in-later-turn';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: 'previous parent failed' });
+    getBackgroundTaskManager().moveToForeground(sessionId);
+    primary.active = true;
+    await finishChild(sessionId, task.id);
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+    primary.active = false;
+    manager.emitIdle();
+    await background(sessionId);
+
+    await vi.waitFor(() => expect(row(sessionId)?.status).toBe('completed'));
+    await expectParentNotice(sessionId);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('an orchestrator foreground success replaces the earlier deferred failure', async () => {
+    const sessionId = 'session-orchestrator-supersedes';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: 'previous parent failed' });
+    getBackgroundTaskManager().moveToForeground(sessionId);
+    await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map());
+    await background(sessionId);
+    await finishChild(sessionId, task.id);
+    await settleBackgroundOnTaskComplete(sessionId, sessionId, {});
+
+    await vi.waitFor(() => expect(row(sessionId)?.status).toBe('completed'));
+    await expectParentNotice(sessionId);
+  });
+
   it('keeps both the parent and the delegated delete leftovers when the parent records first', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'both-leftovers-a-'));
     const fileA = join(directory, 'a.tmp');

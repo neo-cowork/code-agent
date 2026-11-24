@@ -53,6 +53,15 @@ export function deferredParentOutcome(sessionId: string, input: BackgroundRunSet
   return leftoverPaths.length ? { ...outcome, leftoverPaths } : outcome;
 }
 
+/** 转后台时若前台新一轮的结果已取代推迟结果、且没有在途子任务，立刻收口新行。 */
+export async function settleSupersededRunIfIdle(sessionId: string): Promise<void> {
+  const manager = getBackgroundTaskManager();
+  const record = manager.getDeferredRun(sessionId);
+  if (!record?.superseded || !manager.isTaskRunning(sessionId)) return;
+  if (await inFlightDelegatedChildCount(sessionId) > 0) return;
+  await settleBackgroundRun(manager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, record.input)));
+}
+
 /**
  * Web 直连轮（agent.ts 成功路径与 catch）的后台收口。
  * 不在后台、或条目已不是 running：成功路径保持 no-op；失败路径仍 markFailed

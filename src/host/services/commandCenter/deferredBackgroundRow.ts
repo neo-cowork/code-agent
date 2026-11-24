@@ -60,13 +60,16 @@ export async function releaseDelegatedChildSettlement(input: {
   const settle = async (): Promise<void> => {
     if (input.inFlightChildren() > 0 || input.primaryRunActive()) return;
     const live = getBackgroundTaskManager();
-    if (live.getDeferredRun(input.task.sessionId) !== deferred) return;
+    // 按会话重读当前记录：前台新一轮可能已换掉它，按引用比较会让补收永远不触发。
+    const current = live.getDeferredRun(input.task.sessionId);
+    if (!current) return;
     if (!live.isTaskRunning(input.task.sessionId)) {
-      live.clearDeferredRun(input.task.sessionId);
+      // 前台新一轮取代的结果留给之后转后台的新行；没被取代的旧结果作废。
+      if (!current.superseded) live.clearDeferredRun(input.task.sessionId);
       return;
     }
-    const leftoverPaths = unionLeftoverPaths(deferred.input.leftoverPaths, live.getDelegatedLeftovers(input.task.sessionId));
-    const parentOutcome = deferred.input.status === 'completed' ? undefined : deferred.input;
+    const leftoverPaths = unionLeftoverPaths(current.input.leftoverPaths, live.getDelegatedLeftovers(input.task.sessionId));
+    const parentOutcome = current.input.status === 'completed' ? undefined : current.input;
     logger.info('Settling deferred background run from delegated child', {
       sessionId: input.task.sessionId,
       taskId: input.task.id,
