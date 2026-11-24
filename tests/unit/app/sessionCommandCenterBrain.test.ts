@@ -174,12 +174,29 @@ describe('ADR-059 声明式文字前台边界', () => {
 });
 
 describe('withSessionCommandCenterBrain', () => {
-  it.each([false, true])('no-file-noun budget uses only the previous stop marker: %s', stopped => {
+  it.each([
+    ['How are you?', false, 'default', 8],
+    ['Create a PPTX', false, 'deliverable', 30],
+    ['按这个大纲出三张样张', false, 'default', 8],
+    ['按这个大纲出三张样张', true, 'continuation', 30],
+  ] as const)('logs the ordinary foreground rule for %s (previous stop=%s): %s', (prompt, stopped, rule, cap) => {
     const info = vi.fn();
-    const cap = stopped ? 30 : 8;
-    expect(resolveForegroundBrainTurnBudget('按这个大纲出三张样张', stopped, undefined, { info })).toBe(cap);
+    expect(resolveForegroundBrainTurnBudget(prompt, stopped, undefined, { info })).toBe(cap);
     expect(info).toHaveBeenCalledExactlyOnceWith(
-      `Foreground brain budget rule=${stopped ? 'continuation' : 'default'} cap=${cap} maxIterations=${cap}`,
+      `Foreground brain budget rule=${rule} cap=${cap} maxIterations=${cap}`,
+    );
+  });
+
+  it.each([
+    ['', false, 30, 8],
+    ['Create a PPTX', false, 30, 8],
+    ['Continue', true, 30, 8],
+    ['', false, 3, 3],
+  ] as const)('uses the bg-return marker for %j (previous stop=%s), clamping %i to %i', (prompt, stopped, requested, expected) => {
+    const info = vi.fn();
+    expect(resolveForegroundBrainTurnBudget(prompt, stopped, requested, { info }, 'bg-return')).toBe(expected);
+    expect(info).toHaveBeenCalledExactlyOnceWith(
+      `Foreground brain budget rule=bg-return cap=8 maxIterations=${expected}`,
     );
   });
 

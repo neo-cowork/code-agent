@@ -895,8 +895,8 @@ export class ToolExecutionEngine {
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: normalizedResult.success,
-        output: normalizedResult.output,
-        error: normalizedResult.error,
+        output: normalizedResult.output, error: normalizedResult.error,
+        ...(normalizedResult.userMessage !== undefined ? { userMessage: normalizedResult.userMessage } : {}),
         outputPath: normalizedResult.outputPath,
         duration: Date.now() - startTime,
         metadata: { ...normalizedResult.metadata, fromCache: normalizedResult.fromCache ?? false },

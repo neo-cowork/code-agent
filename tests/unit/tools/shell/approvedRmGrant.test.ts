@@ -325,6 +325,13 @@ describe('approved rm production approval boundary', () => {
       expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(false);
     });
 
+    it('a path not on the approved card is not covered: a probe on c alone or on a+c still asks', () => {
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(`test -e ${files[2]}`, cwd, SESSION)).toBe(false);
+      expect(isApprovedRmVerifyProbe(`ls -l ${files[0]} ${files[2]}`, cwd, SESSION)).toBe(false);
+      expect(isApprovedRmVerifyProbe(`for p in ${files[0]} ${files[1]}; do test -e "$p"; done; ls -l ${files[2]}`, cwd, SESSION)).toBe(false);
+    });
+
     it('does not answer for another session, before any approval, or after the window', () => {
       expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION)).toBe(false);
       approveDelete();

@@ -565,7 +565,7 @@ export function createForegroundWake(
         inputHistoryVisibility: 'meta',
         runRegistration: 'auxiliary',
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
-      });
+      }, undefined, undefined, false, undefined, 'bg-return');
       let capturedError: string | null = null;
       let capturedFailure: unknown;
       const options = {

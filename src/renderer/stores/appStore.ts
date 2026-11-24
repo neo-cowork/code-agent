@@ -26,7 +26,7 @@ export function preserveLatestCompressionSignal(
     },
   };
 }
-import { defaultLanguage, readStoredLanguage, storeLanguage } from '../i18n';
+import { applyDocumentLanguage, defaultLanguage, readStoredLanguage, storeLanguage } from '../i18n';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -422,6 +422,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setLanguage: (language) => {
     set({ language });
     storeLanguage(language);
+    applyDocumentLanguage(language);
   },
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
@@ -932,6 +933,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setContextHealth: (health) => set({ contextHealth: health }),
   setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
 }));
+
+// <html lang> 跟随初始语言：index.html 首帧脚本已按 localStorage 快照设过，
+// 这里兜底非 index.html 入口（测试、嵌入页）与快照无效回退默认语言的场景。
+applyDocumentLanguage(useAppStore.getState().language);
 
 // E2E/dev 调试钩子：真机测试用 openSettingsTab 打开设置并跳到指定 tab（同 window.__neo* 例）。
 if (typeof window !== 'undefined' && import.meta.env?.DEV) {
