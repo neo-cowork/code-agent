@@ -34,11 +34,13 @@ export function resolveToolCallTerminalState(input: {
   agentId?: string;
   sessionLive?: boolean;
   awaitingApproval?: boolean;
+  /** The user (or timeout) already answered this call's approval but its result has not arrived. */
+  approvalAnswered?: boolean;
   interruptionReason?: StreamInterruptionReason;
   /** State of the work a delegation call handed off, once that work has its own task/agent record. */
   delegatedWork?: 'working' | 'completed' | 'failed' | 'cancelled';
 }) {
-  const { toolCall, sessionId, sessionLive, awaitingApproval, interruptionReason, delegatedWork } = input;
+  const { toolCall, sessionId, sessionLive, awaitingApproval, approvalAnswered, interruptionReason, delegatedWork } = input;
   const { result, task } = ownOutcome(toolCall, sessionId, input.tasks);
   // 同一轮已交给后台任务的调用：工作没丢，不当失败、也不读作「没执行」。
   const handedOff = result?.metadata?.code === 'HANDED_OFF_TO_BACKGROUND';
@@ -61,6 +63,7 @@ export function resolveToolCallTerminalState(input: {
   else if (row && row.status !== 'standby') state = row.status === 'done' ? 'completed'
     : row.status === 'failed' ? 'failed' : row.status === 'cancelled' ? 'interrupted' : 'running';
   else if (interruptionReason) state = 'interrupted';
+  else if (approvalAnswered) state = 'running';
   else if (sessionLive) state = 'running';
   else state = toolCall?._streaming ? 'hidden' : 'interrupted';
   // A terminal shell task has its own receipt; drop only its result-less background placeholder.

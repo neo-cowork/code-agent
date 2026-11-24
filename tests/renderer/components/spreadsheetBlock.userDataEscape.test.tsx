@@ -26,6 +26,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
         filterAnalysis: '筛选分析',
         sort: '排序',
         clickToSelect: '点击选中，Cmd+点击多选',
+        cellFeedbackTitle: '{ref} · {value}（点选定点反馈）',
+        cellLabel: '单元格 {ref}',
       },
     },
   }),
