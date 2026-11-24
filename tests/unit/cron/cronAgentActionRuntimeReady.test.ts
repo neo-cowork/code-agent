@@ -26,6 +26,7 @@ vi.mock('../../../src/host/cron/cronConnectorLost', () => ({
   precheckLostCliConnectors: () => [],
   recordCronConnectorLost: async () => undefined,
   scanLostMcpConnectors: () => [],
+  refreshLostCoreCliConnectors: async () => ({ kind: 'none' }),
 }));
 
 import { executeCronAgentAction } from '../../../src/host/cron/cronAgentAction';

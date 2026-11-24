@@ -6,6 +6,7 @@ import React from 'react';
 import { ArrowUp, Square, Loader2, RotateCcw } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { IconButton } from '../../../primitives';
+import { StoppingButton } from './StoppingButton';
 
 export interface SendButtonProps {
   /** 是否禁用 */
@@ -71,17 +72,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // 停止已发出但后台任务仍在收线：保持可点（再点一次是幂等的重发），不置灰。
   // 有草稿时主按钮必须仍是发送/排队，不能被「正在停止」劫持成再次 onStop。
   if (isStopping && !hasContent) {
-    return (
-      <IconButton
-        type="button"
-        onClick={onStop}
-        size="sm"
-        icon={<Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        aria-label={t.chatInput.stoppingAria}
-        data-testid="composer-stop-stopping"
-        className={`${baseIconButtonClass} p-0 bg-zinc-700/90 text-zinc-200 hover:bg-zinc-600 active:scale-95`}
-      />
-    );
+    return <StoppingButton onStop={onStop} testId="composer-stop-stopping" />;
   }
 
   // 运行中输入接入中：显示旋转加载图标

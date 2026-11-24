@@ -1,9 +1,5 @@
 import type { HtmlLocalityAnchor } from '../../shared/livePreview/localityFeedback';
 
-const SELECTED_ATTRIBUTE = 'data-code-agent-locality-selected';
-const STYLE_ATTRIBUTE = 'data-code-agent-locality-style';
-const MAX_VISIBLE_TEXT_LENGTH = 120;
-
 export interface HtmlElementSelection {
   selector: string;
   tag: string;
@@ -16,98 +12,6 @@ export interface HtmlLocalitySelectionController {
   getSelectedElement: () => Element | null;
 }
 
-function escapeCssIdentifier(value: string): string {
-  // 必须挂在 CSS 上调用：CSS.escape 是 WebIDL 静态方法，摘下来单独调会丢 this，
-  // 真浏览器抛 Illegal invocation、jsdom 30+ 抛 "not a valid instance of CSS"。
-  if (typeof globalThis.CSS?.escape === 'function') return globalThis.CSS.escape(value);
-
-  return Array.from(value)
-    .map((char, index) => {
-      const codePoint = char.codePointAt(0) ?? 0;
-      if (codePoint === 0) return '\uFFFD';
-      if (
-        (codePoint >= 1 && codePoint <= 31)
-        || codePoint === 127
-        || (index === 0 && codePoint >= 48 && codePoint <= 57)
-        || (index === 1 && codePoint >= 48 && codePoint <= 57 && value.charAt(0) === '-')
-      ) {
-        return `\\${codePoint.toString(16)} `;
-      }
-      if (index === 0 && char === '-' && value.length === 1) return '\\-';
-      if (
-        codePoint >= 128
-        || char === '-'
-        || char === '_'
-        || (codePoint >= 48 && codePoint <= 57)
-        || (codePoint >= 65 && codePoint <= 90)
-        || (codePoint >= 97 && codePoint <= 122)
-      ) {
-        return char;
-      }
-      return `\\${char}`;
-    })
-    .join('');
-}
-
-function selectorSegment(element: Element): string {
-  const tag = element.tagName.toLowerCase();
-  const parent = element.parentElement;
-  if (!parent) return tag;
-
-  const sameTagSiblings = Array.from(parent.children).filter(
-    (sibling) => sibling.tagName === element.tagName,
-  );
-  if (sameTagSiblings.length <= 1) return tag;
-  return `${tag}:nth-of-type(${sameTagSiblings.indexOf(element) + 1})`;
-}
-
-/**
- * Build a deterministic selector rooted in this document. A unique id shortens the
- * path; otherwise nth-of-type disambiguates same-tag siblings all the way to <html>.
- */
-export function buildUniqueCssSelector(element: Element): string {
-  const doc = element.ownerDocument;
-  const segments: string[] = [];
-  let current: Element | null = element;
-
-  while (current) {
-    if (current.id) {
-      const idSelector = `#${escapeCssIdentifier(current.id)}`;
-      if (doc.querySelectorAll(idSelector).length === 1) {
-        segments.unshift(idSelector);
-        break;
-      }
-    }
-
-    segments.unshift(selectorSegment(current));
-    current = current.parentElement;
-  }
-
-  const selector = segments.join(' > ');
-  if (doc.querySelector(selector) !== element) {
-    throw new Error('无法为选中的 HTML 元素生成唯一 CSS 选择器');
-  }
-  return selector;
-}
-
-function getVisibleElementText(element: Element): string | undefined {
-  const renderedText = 'innerText' in element && typeof element.innerText === 'string'
-    ? element.innerText
-    : element.textContent;
-  const normalized = (renderedText ?? '').replace(/\s+/g, ' ').trim();
-  if (!normalized) return undefined;
-  if (normalized.length <= MAX_VISIBLE_TEXT_LENGTH) return normalized;
-  return `${normalized.slice(0, MAX_VISIBLE_TEXT_LENGTH - 1)}…`;
-}
-
-export function describeHtmlElement(element: Element): HtmlElementSelection {
-  return {
-    selector: buildUniqueCssSelector(element),
-    tag: element.tagName.toLowerCase(),
-    text: getVisibleElementText(element),
-  };
-}
-
 export function htmlLocalityLocationLabel(
   anchor: HtmlLocalityAnchor,
   htmlElementFallback: string,
@@ -116,71 +20,175 @@ export function htmlLocalityLocationLabel(
   return anchor.text ? `${tag} ${anchor.text}` : tag;
 }
 
-/**
- * Attach direct same-origin selection handling to one srcdoc document.
- * destroy() releases the old document/element references before a replacement loads.
- */
-export function attachHtmlLocalitySelection(
-  doc: Document,
+// Keep this factory self-contained so the preview can run the same selector code in its iframe.
+export function createHtmlLocalitySelection() {
+  const SELECTED_ATTRIBUTE = 'data-code-agent-locality-selected';
+  const STYLE_ATTRIBUTE = 'data-code-agent-locality-style';
+  const MAX_VISIBLE_TEXT_LENGTH = 120;
+
+  function escapeCssIdentifier(value: string): string {
+    // 必须挂在 CSS 上调用：CSS.escape 是 WebIDL 静态方法，摘下来单独调会丢 this，
+    // 真浏览器抛 Illegal invocation、jsdom 30+ 抛 "not a valid instance of CSS"。
+    if (typeof globalThis.CSS?.escape === 'function') return globalThis.CSS.escape(value);
+
+    return Array.from(value)
+      .map((char, index) => {
+        const codePoint = char.codePointAt(0) ?? 0;
+        if (codePoint === 0) return '\uFFFD';
+        if (
+          (codePoint >= 1 && codePoint <= 31)
+          || codePoint === 127
+          || (index === 0 && codePoint >= 48 && codePoint <= 57)
+          || (index === 1 && codePoint >= 48 && codePoint <= 57 && value.charAt(0) === '-')
+        ) {
+          return `\\${codePoint.toString(16)} `;
+        }
+        if (index === 0 && char === '-' && value.length === 1) return '\\-';
+        if (
+          codePoint >= 128
+          || char === '-'
+          || char === '_'
+          || (codePoint >= 48 && codePoint <= 57)
+          || (codePoint >= 65 && codePoint <= 90)
+          || (codePoint >= 97 && codePoint <= 122)
+        ) {
+          return char;
+        }
+        return `\\${char}`;
+      })
+      .join('');
+  }
+
+  function selectorSegment(element: Element): string {
+    const tag = element.tagName.toLowerCase();
+    const parent = element.parentElement;
+    if (!parent) return tag;
+
+    const sameTagSiblings = Array.from(parent.children).filter(
+      (sibling) => sibling.tagName === element.tagName,
+    );
+    if (sameTagSiblings.length <= 1) return tag;
+    return `${tag}:nth-of-type(${sameTagSiblings.indexOf(element) + 1})`;
+  }
+
   /**
-   * 第二参是被选中的活元素本身。要对它做所见即所得的修改就得拿到它，
-   * 而 controller 是 attach 返回之后才拿得到的，回调里读不到。
-   * 只关心描述的调用方照旧只声明第一个参数即可。
+   * Build a deterministic selector rooted in this document. A unique id shortens the
+   * path; otherwise nth-of-type disambiguates same-tag siblings all the way to <html>.
    */
-  onSelectionChange: (selection: HtmlElementSelection | null, element: Element | null) => void,
-): HtmlLocalitySelectionController {
-  const style = doc.createElement('style');
-  style.setAttribute(STYLE_ATTRIBUTE, '');
-  // ds-allow:start 注入进被预览页面的圈选样式：目标页有自己的 CSS，不用 !important 会被它盖掉，
-  // 高亮和 crosshair 就失效了。样式只活在 srcdoc 文档里，不进本应用的设计系统。
-  style.textContent = `
-    html, body, body * {
-      cursor: crosshair !important;
-    }
-    [${SELECTED_ATTRIBUTE}] {
-      outline: 3px solid #22d3ee !important;
-      outline-offset: 2px !important;
-    }
-  `;
-  // ds-allow:end
-  (doc.head || doc.documentElement).appendChild(style);
+  function buildUniqueCssSelector(element: Element): string {
+    const doc = element.ownerDocument;
+    const segments: string[] = [];
+    let current: Element | null = element;
 
-  let selectedElement: Element | null = null;
+    while (current) {
+      if (current.id) {
+        const idSelector = `#${escapeCssIdentifier(current.id)}`;
+        if (doc.querySelectorAll(idSelector).length === 1) {
+          segments.unshift(idSelector);
+          break;
+        }
+      }
 
-  const clear = () => {
-    selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
-    selectedElement = null;
-    onSelectionChange(null, null);
-  };
-
-  const handleClick = (event: MouseEvent) => {
-    const view = doc.defaultView;
-    if (!view || event.button !== 0 || !(event.target instanceof view.Element)) return;
-    event.preventDefault();
-    event.stopPropagation();
-
-    const target = event.target;
-    if (selectedElement === target) {
-      clear();
-      return;
+      segments.unshift(selectorSegment(current));
+      current = current.parentElement;
     }
 
-    selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
-    selectedElement = target;
-    selectedElement.setAttribute(SELECTED_ATTRIBUTE, '');
-    onSelectionChange(describeHtmlElement(selectedElement), selectedElement);
-  };
+    const selector = segments.join(' > ');
+    if (doc.querySelector(selector) !== element) {
+      throw new Error('无法为选中的 HTML 元素生成唯一 CSS 选择器');
+    }
+    return selector;
+  }
 
-  doc.addEventListener('click', handleClick, true);
+  function getVisibleElementText(element: Element): string | undefined {
+    const renderedText = 'innerText' in element && typeof element.innerText === 'string'
+      ? element.innerText
+      : element.textContent;
+    const normalized = (renderedText ?? '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return undefined;
+    if (normalized.length <= MAX_VISIBLE_TEXT_LENGTH) return normalized;
+    return `${normalized.slice(0, MAX_VISIBLE_TEXT_LENGTH - 1)}…`;
+  }
 
-  return {
-    clear,
-    destroy: () => {
-      doc.removeEventListener('click', handleClick, true);
+  function describeHtmlElement(element: Element): HtmlElementSelection {
+    return {
+      selector: buildUniqueCssSelector(element),
+      tag: element.tagName.toLowerCase(),
+      text: getVisibleElementText(element),
+    };
+  }
+
+  /**
+   * Attach direct same-origin selection handling to one srcdoc document.
+   * destroy() releases the old document/element references before a replacement loads.
+   */
+  function attachHtmlLocalitySelection(
+    doc: Document,
+    /**
+     * 第二参是被选中的活元素本身。要对它做所见即所得的修改就得拿到它，
+     * 而 controller 是 attach 返回之后才拿得到的，回调里读不到。
+     * 只关心描述的调用方照旧只声明第一个参数即可。
+     */
+    onSelectionChange: (selection: HtmlElementSelection | null, element: Element | null) => void,
+  ): HtmlLocalitySelectionController {
+    const style = doc.createElement('style');
+    style.setAttribute(STYLE_ATTRIBUTE, '');
+    // ds-allow:start 注入进被预览页面的圈选样式：目标页有自己的 CSS，不用 !important 会被它盖掉，
+    // 高亮和 crosshair 就失效了。样式只活在 srcdoc 文档里，不进本应用的设计系统。
+    style.textContent = `
+      html, body, body * {
+        cursor: crosshair !important;
+      }
+      [${SELECTED_ATTRIBUTE}] {
+        outline: 3px solid #22d3ee !important;
+        outline-offset: 2px !important;
+      }
+    `;
+    // ds-allow:end
+    (doc.head || doc.documentElement).appendChild(style);
+
+    let selectedElement: Element | null = null;
+
+    const clear = () => {
       selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
       selectedElement = null;
-      style.remove();
-    },
-    getSelectedElement: () => selectedElement,
-  };
+      onSelectionChange(null, null);
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      const view = doc.defaultView;
+      if (!view || event.button !== 0 || !(event.target instanceof view.Element)) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const target = event.target;
+      if (selectedElement === target) {
+        clear();
+        return;
+      }
+
+      selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
+      selectedElement = target;
+      selectedElement.setAttribute(SELECTED_ATTRIBUTE, '');
+      onSelectionChange(describeHtmlElement(selectedElement), selectedElement);
+    };
+
+    doc.addEventListener('click', handleClick, true);
+
+    return {
+      clear,
+      destroy: () => {
+        doc.removeEventListener('click', handleClick, true);
+        selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
+        selectedElement = null;
+        style.remove();
+      },
+      getSelectedElement: () => selectedElement,
+    };
+  }
+
+  return { buildUniqueCssSelector, describeHtmlElement, attachHtmlLocalitySelection };
 }
+
+export const { buildUniqueCssSelector, describeHtmlElement, attachHtmlLocalitySelection } =
+  createHtmlLocalitySelection();
