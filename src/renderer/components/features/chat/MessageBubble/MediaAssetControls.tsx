@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BoxSelect,
   Copy,
   Download,
   ExternalLink,
@@ -20,8 +21,13 @@ import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
 import { importAssetToCanvas } from '../../../design/importAssetToCanvas';
 import { useAppStore } from '../../../../stores/appStore';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 
-export type MediaAssetAction = 'copy' | 'open' | 'save' | 'reveal' | 'lightbox';
+// react-konva 经 AnnotationLayer 进入，懒加载让它留在聊天主 chunk 之外。
+const ChatImageAnnotateModal = lazy(() => import('./ChatImageAnnotateModal')
+  .then((module) => ({ default: module.ChatImageAnnotateModal })));
+
+export type MediaAssetAction = 'copy' | 'open' | 'save' | 'reveal' | 'lightbox' | 'annotate';
 
 export function getMediaAssetFileName(asset: SessionMediaAsset): string {
   if (asset.filename) return asset.filename;
@@ -132,6 +138,8 @@ export function getMediaAssetAvailableActions(
   if (options.hasLightbox && hasRenderableSource) actions.push('lightbox');
   if (hasRenderableSource) actions.push('open', 'save');
   if (asset.path) actions.push('reveal');
+  // 批注只给能渲染出来的就绪图片：失败/生成中、视频音频、无可读来源的都没有。
+  if (asset.kind === 'image' && asset.state === 'ready' && hasRenderableSource) actions.push('annotate');
   return actions;
 }
 
@@ -258,6 +266,8 @@ export function MediaAssetActionBar({
   // 宽度自适应留给带文字标签的工具条（DesignImageToolbar / DiagramToolbar），那里标签是真占宽。
   const rootRef = useRef<HTMLSpanElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [annotateOpen, setAnnotateOpen] = useState(false);
+  const { t } = useI18n();
 
   const itemIds = useMemo<readonly MediaAssetOverflowId[]>(() => {
     const available = getMediaAssetAvailableActions(asset, { hasLightbox: Boolean(onOpenLightbox) });
@@ -266,6 +276,10 @@ export function MediaAssetActionBar({
 
   // 恒定折叠：可折叠域里在场的项全部进 ⋯。
   const overflowed = useMemo(() => new Set<MediaAssetOverflowId>(itemIds), [itemIds]);
+  const canAnnotate = useMemo(
+    () => getMediaAssetAvailableActions(asset).includes('annotate'),
+    [asset],
+  );
 
   // 外点关菜单（document 级监听，不铺全屏背板，避免 handrolled-modal 门）。
   useEffect(() => {
@@ -344,6 +358,23 @@ export function MediaAssetActionBar({
           >
             <Pencil className="h-3.5 w-3.5" />
             {!compact && <span>修改</span>}
+          </button>
+          // ds-allow:end
+        )}
+        {canAnnotate && (
+          // ds-allow:start 与同一条按钮组里既有的动作按钮同款裸 button + buttonClass，单独换 primitive 会在同一行里高低宽窄不齐；这条按钮组整体迁 primitive 时一并处理
+          <button
+            type="button"
+            className={buttonClass}
+            onClick={(event) => {
+              event.stopPropagation();
+              setAnnotateOpen(true);
+            }}
+            title={t.chatImageAnnotate.actionTitle}
+            data-testid="media-asset-annotate"
+          >
+            <BoxSelect className="h-3.5 w-3.5" />
+            {!compact && <span>{t.chatImageAnnotate.actionLabel}</span>}
           </button>
           // ds-allow:end
         )}
@@ -432,6 +463,14 @@ export function MediaAssetActionBar({
               {/* ds-allow:end */}
             </span>
           )}
+        </span>
+      )}
+      {annotateOpen && (
+        // portal 里的点击会沿 React 树冒泡到气泡（如点图开大图），在这里截住。
+        <span role="presentation" onClick={(event) => event.stopPropagation()}>
+          <Suspense fallback={null}>
+            <ChatImageAnnotateModal asset={asset} onClose={() => setAnnotateOpen(false)} />
+          </Suspense>
         </span>
       )}
     </span>
