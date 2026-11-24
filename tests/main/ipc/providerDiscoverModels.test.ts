@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   filterDiscoveredModelsForProvider,
+  handleDiscoverModels,
   parseDiscoveredModelsResponse,
 } from '../../../src/host/ipc/provider.ipc';
 
@@ -127,6 +128,20 @@ describe('provider model discovery parsing', () => {
     expect(idsFor('custom-commonstack-doubao')).toEqual(['doubao-seed-1-6']);
     // LongCat-2.0-Preview 只是从官方目录退役；第三方中转自报的同名模型仍按家族放行可选
     expect(idsFor('custom-commonstack-longcat')).toEqual(['LongCat-2.0-Preview', 'LongCat-2.0']);
+  });
+
+  it('returns the endpoint model list when requested and keeps normal family filtering by default', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({
+      data: [{ id: 'gateway-chat' }, { id: 'mimo-v2.5-pro' }],
+    }));
+    try {
+      const payload = { provider: 'xiaomi', baseUrl: 'https://subscription.test/v1', apiKey: 'test-key' };
+      expect((await handleDiscoverModels(payload)).models.map(({ id }) => id)).toEqual(['mimo-v2.5-pro']);
+      expect((await handleDiscoverModels({ ...payload, includeAllModels: true })).models.map(({ id }) => id))
+        .toEqual(['gateway-chat', 'mimo-v2.5-pro']);
+    } finally {
+      fetch.mockRestore();
+    }
   });
 
   it('does not filter neutral custom providers backed by mixed relays', () => {
