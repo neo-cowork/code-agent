@@ -23,7 +23,7 @@ import {
   type ComputerTargetApp,
 } from '../../permissions/computerAppTarget';
 import { classifyShellDesktopAutomation, containsAppleScriptCommand } from '../../permissions/shellDesktopAutomation';
-import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../../permissions/cuaAppTarget';
+import { cuaToolNeedsAppGrant, parseCuaToolName, resolveCuaAppTarget } from '../../permissions/cuaAppTarget';
 import { isBashToolName } from '../../tools/toolNames';
 import { logCollector } from '../../mcp/logCollector.js';
 import type { RuntimeContext } from './runtimeContext';
@@ -170,10 +170,16 @@ export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<s
     const app = decision.app;
     // appGrantKey 有 bundle 时不含名字：先按名字启动、反查补上 bundle、再按
     // bundle_id 启动会挂出两条预告。披露不是授权，任一键已见过就跳过；跳过时
-    // 一枚键都不写——命中路径上不做跨键推断，否则「同名但 bundle 是另一个应用」
-    // 的调用会把别的应用的键并进集合，吞掉后面那个应用的预告。
+    // 不写键——模型自报的名字/bundle 组合（launch_app 参数、computer_use
+    // targetApp+bundleId）可能把别的应用的键并进集合，吞掉后面那个应用的预告。
+    // 唯一例外：pid/window_id 经驱动反查出的身份（非 launch_app 的 cua 工具）名字与
+    // bundle 同源一致，名字键命中时可补写它的 bundle 键，让后面 bundle-only 的启动并到同一次预告。
     const keys = [appGrantKey(app), `name:${app.name.trim().toLowerCase()}`];
-    if (keys.some((key) => disclosed.has(key))) continue;
+    if (keys.some((key) => disclosed.has(key))) {
+      const driverResolved = cuaToolNeedsAppGrant(toolCall.name) && parseCuaToolName(toolCall.name) !== 'launch_app';
+      if (driverResolved && disclosed.has(keys[1])) disclosed.add(keys[0]);
+      continue;
+    }
     for (const key of keys) disclosed.add(key);
     toolCall.guiTakeoverDisclosure = { code: 'gui_takeover', app: app.name.trim() };
     logCollector.tool('INFO', `GUI takeover disclosure attached (${app.name.trim()})`, {
