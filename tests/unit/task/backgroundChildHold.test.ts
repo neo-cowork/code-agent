@@ -266,6 +266,51 @@ describe('background parent settlement waits for delegated children', () => {
     expect(logs.info).toHaveBeenCalledWith(...deferral(sessionId, 1));
   });
 
+  it.each([
+    {
+      entry: 'web error',
+      fail: (id: string) => settleWebTurnBackgroundRun(id, { status: 'error', errorMessage: 'provider rejected the parent turn' }),
+      expected: 'provider rejected the parent turn',
+    },
+    {
+      entry: 'orchestrator terminal error',
+      fail: (id: string) => closeBackgroundRunAtTerminal(id, 'agent_complete', new Map([
+        [id, { code: RUN_ERROR_CODE_MAX_ITERATIONS }],
+      ])),
+      expected: RUN_ERROR_CODE_MAX_ITERATIONS,
+    },
+    {
+      entry: 'orchestrator run rejection',
+      fail: (id: string) => settleBackgroundRunOnRejection(id, 'parent run rejected'),
+      expected: 'parent run rejected',
+    },
+  ])('preserves the deferred $entry when the last child succeeds', async ({ fail, expected }) => {
+    const sessionId = 'session-parent-error';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+
+    await fail(sessionId);
+    expect(row(sessionId)?.status).toBe('running');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+
+    await finishChild(sessionId, task.id);
+    await expectParentNotice(sessionId, { succeeded: false });
+    expect(row(sessionId)).toMatchObject({ status: 'failed', completionMessage: expected });
+  });
+
+  it('preserves a deferred parent failure when the wake closer gets to the row first', async () => {
+    const sessionId = 'session-wake-after-parent-error';
+    await background(sessionId);
+    primary.active = true;
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: 'parent run failed' });
+    await finishChild(sessionId, task.id);
+
+    await settleBackgroundOnTaskComplete(sessionId, sessionId, { summary: 'wake reported the child result' });
+    expect(row(sessionId)).toMatchObject({ status: 'failed', completionMessage: 'parent run failed' });
+    await expectParentNotice(sessionId, { succeeded: false });
+  });
+
   it('a queued delegated child counts as in flight and the last child settles the row once', async () => {
     const sessionId = 'session-queued';
     await background(sessionId);
@@ -382,15 +427,28 @@ describe('background parent settlement waits for delegated children', () => {
   it('skips the sub-task completion banner while a delegated child is still in flight', async () => {
     const sessionId = 'session-banner';
     await background(sessionId);
-    await spawn(sessionId, 1, 'cleanup');
+    const task = await spawn(sessionId, 1, 'cleanup');
 
-    await settleBackgroundOnTaskComplete(sessionId, 'child-task-id', { summary: '子任务自己的完成' });
+    await settleBackgroundOnTaskComplete(sessionId, task.id, { summary: '子任务自己的完成' });
 
     expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
     expect(row(sessionId)?.status).toBe('running');
     expect(logs.info).toHaveBeenCalledWith(
       'sub-task completion banner skipped: delegated children still in flight',
-      expect.objectContaining({ sessionId, eventKey: 'child-task-id', inFlightChildren: 1 }),
+      expect.objectContaining({ sessionId, eventKey: task.id, inFlightChildren: 1 }),
+    );
+  });
+
+  it('leaves the non-delegated child banner alone in a mixed background session', async () => {
+    const sessionId = 'session-mixed-children';
+    await background(sessionId);
+    await spawn(sessionId, 1, 'cleanup');
+
+    await settleBackgroundOnTaskComplete(sessionId, 'agent-child-id', { summary: '助手自己的完成' });
+
+    expect(row(sessionId)?.status).toBe('running');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId, summary: '助手自己的完成' }),
     );
   });
 

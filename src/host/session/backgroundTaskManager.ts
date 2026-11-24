@@ -10,6 +10,7 @@ import { getSessionManager, notificationService } from '../services';
 import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
 import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
+import type { BackgroundRunSettlementInput } from './backgroundRunSettlement';
 
 const logger = createLogger('BackgroundTaskManager');
 
@@ -23,6 +24,8 @@ const logger = createLogger('BackgroundTaskManager');
  */
 class BackgroundTaskManager extends EventEmitter {
   private backgroundSessions: Map<string, BackgroundSessionInfo> = new Map();
+  // Tie the failure to this background entry so a later background move starts fresh.
+  private readonly deferredRunFailures = new WeakMap<BackgroundSessionInfo, BackgroundRunSettlementInput>();
   private mainWindow: AppWindow | null = null;
 
   /**
@@ -249,6 +252,16 @@ class BackgroundTaskManager extends EventEmitter {
    */
   isTaskRunning(sessionId: string): boolean {
     return this.backgroundSessions.get(sessionId)?.status === 'running';
+  }
+
+  rememberDeferredRunFailure(sessionId: string, failure: BackgroundRunSettlementInput): void {
+    const task = this.backgroundSessions.get(sessionId);
+    if (task?.status === 'running') this.deferredRunFailures.set(task, failure);
+  }
+
+  getDeferredRunFailure(sessionId: string): BackgroundRunSettlementInput | undefined {
+    const task = this.backgroundSessions.get(sessionId);
+    return task?.status === 'running' ? this.deferredRunFailures.get(task) : undefined;
   }
 
   /**

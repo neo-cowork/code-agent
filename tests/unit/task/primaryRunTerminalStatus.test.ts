@@ -20,6 +20,7 @@ const broadcastState = vi.hoisted(() => ({
 const backgroundManagerState = vi.hoisted(() => ({
   isInBackground: vi.fn(),
   isTaskRunning: vi.fn(),
+  getDeferredRunFailure: () => undefined,
   markCompleted: vi.fn(),
   markFailed: vi.fn(),
 }));

@@ -44,13 +44,15 @@ export async function releaseDelegatedChildSettlement(input: {
     if (input.inFlightChildren() > 0 || input.primaryRunActive()) return;
     const live = getBackgroundTaskManager();
     if (!live.isInBackground(input.task.sessionId) || !live.isTaskRunning(input.task.sessionId)) return;
+    const parentFailure = live.getDeferredRunFailure(input.task.sessionId);
     logger.info('Settling deferred background run from delegated child', {
       sessionId: input.task.sessionId,
       taskId: input.task.id,
       status: input.status,
+      ...(parentFailure ? { parentStatus: parentFailure.status } : {}),
     });
     try {
-      await settleBackgroundRun(live, input.task.sessionId, resolveBackgroundRunSettlement({
+      await settleBackgroundRun(live, input.task.sessionId, resolveBackgroundRunSettlement(parentFailure ?? {
         status: input.status === 'cancelled' ? 'interrupted' : input.status === 'failed' ? 'error' : 'completed',
       }));
     } catch (error) {

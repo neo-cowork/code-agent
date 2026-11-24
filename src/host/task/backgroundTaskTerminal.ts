@@ -16,7 +16,7 @@ import type { AgentEvent } from '../../shared/contract';
 import type { SessionStatus } from '../../shared/contract/session';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
-import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/backgroundRunSettlement';
+import { resolveBackgroundRunSettlement, settleBackgroundRun, type BackgroundRunSettlementInput } from '../session/backgroundRunSettlement';
 import { deferBackgroundSettlementWhileChildrenInFlight, inFlightDelegatedChildCount } from '../session/backgroundChildHold';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
@@ -47,6 +47,11 @@ export async function settleBackgroundOnTaskComplete(
   const backgroundManager = getBackgroundTaskManager();
   if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
     if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
+    const deferredFailure = backgroundManager.getDeferredRunFailure(sessionId);
+    if (deferredFailure) {
+      await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredFailure));
+      return;
+    }
     await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
     return;
   }
@@ -56,8 +61,8 @@ export async function settleBackgroundOnTaskComplete(
   }
   // 子任务自己的 task_complete 会再走前台横幅。父行还在等委派子任务时，横幅会变成
   // 第二条 task_complete；父行收口（markCompleted）才是那一条完成通知。
-  if (isSubTask && backgroundManager.isInBackground(sessionId)) {
-    const inFlightChildren = await inFlightDelegatedChildCount(sessionId);
+  if (isSubTask && backgroundManager.isInBackground(sessionId) && backgroundManager.isTaskRunning(sessionId)) {
+    const inFlightChildren = await inFlightDelegatedChildCount(sessionId, eventKey);
     if (inFlightChildren > 0) {
       logger.info('sub-task completion banner skipped: delegated children still in flight', {
         sessionId,
@@ -120,14 +125,14 @@ export async function closeBackgroundRunAtTerminal(
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) {
     return;
   }
-  if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
-  await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(
-    eventType === 'agent_cancelled'
-      ? { status: 'interrupted' }
-      : runError
-        ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
-        : { status: 'completed' },
-  ));
+  const input: BackgroundRunSettlementInput = eventType === 'agent_cancelled'
+    ? { status: 'interrupted' }
+    : runError
+      ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
+      : { status: 'completed' };
+  if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
+  const settlement = input.status === 'completed' ? backgroundManager.getDeferredRunFailure(sessionId) ?? input : input;
+  await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(settlement));
 }
 
 /**
@@ -179,9 +184,10 @@ export async function settlePrimaryRunSessionStatus(
 export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
-  if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
+  const input: BackgroundRunSettlementInput = { status: 'error', errorMessage };
+  if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
   await backgroundManager.markFailed(
     sessionId,
-    resolveBackgroundRunSettlement({ status: 'error', errorMessage }).message,
+    resolveBackgroundRunSettlement(input).message,
   );
 }

@@ -12,16 +12,23 @@ import {
 } from './backgroundRunSettlement';
 
 const logger = createLogger('BackgroundChildHold');
+const loadCommandCenter = () => import('../services/commandCenter/sessionCommandCenter');
 
-export async function inFlightDelegatedChildCount(sessionId: string): Promise<number> {
-  const { getSessionCommandCenter } = await import('../services/commandCenter/sessionCommandCenter');
-  return getSessionCommandCenter().active(sessionId).length;
+export async function inFlightDelegatedChildCount(sessionId: string, taskId?: string): Promise<number> {
+  const { getSessionCommandCenter } = await loadCommandCenter();
+  const tasks = getSessionCommandCenter().active(sessionId);
+  return taskId === undefined || tasks.some(task => task.id === taskId) ? tasks.length : 0;
 }
 
 /** 仍有在途委派子任务时跳过本次收口。调用方不得再 markCompleted / notify。 */
-export async function deferBackgroundSettlementWhileChildrenInFlight(sessionId: string): Promise<boolean> {
-  const inFlightChildren = await inFlightDelegatedChildCount(sessionId);
+export async function deferBackgroundSettlementWhileChildrenInFlight(
+  sessionId: string,
+  input?: BackgroundRunSettlementInput,
+): Promise<boolean> {
+  const { getSessionCommandCenter } = await loadCommandCenter();
+  const inFlightChildren = getSessionCommandCenter().active(sessionId).length;
   if (inFlightChildren === 0) return false;
+  if (input?.status === 'error') getBackgroundTaskManager().rememberDeferredRunFailure(sessionId, input);
   logger.info('Deferring background run settlement until delegated children finish', {
     sessionId,
     inFlightChildren,
@@ -40,8 +47,9 @@ export async function settleWebTurnBackgroundRun(
 ): Promise<void> {
   const manager = getBackgroundTaskManager();
   if (manager.isInBackground(sessionId) && manager.isTaskRunning(sessionId)) {
-    if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
-    await settleBackgroundRun(manager, sessionId, resolveBackgroundRunSettlement(input));
+    if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
+    const settlement = input.status === 'completed' ? manager.getDeferredRunFailure(sessionId) ?? input : input;
+    await settleBackgroundRun(manager, sessionId, resolveBackgroundRunSettlement(settlement));
     return;
   }
   if (input.status === 'error') {
