@@ -46,6 +46,14 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
       toast.error(t.neoContinuation.referencesUnsupported);
       return false;
     }
+    const ctx = envelope.context;
+    if (
+      ctx?.selectedSkillIds?.length || ctx?.selectedConnectorIds?.length || ctx?.selectedMcpServerIds?.length
+      || ctx?.selectedAgent?.id || ctx?.preferredAgentId
+    ) {
+      toast.error(t.neoContinuation.selectionsUnsupported);
+      return false;
+    }
     try {
       const continuation = await submitNeoTagContinuation({
         envelope,
@@ -73,5 +81,5 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
       toast.error(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [send, t.neoContinuation.attachmentsUnsupported, t.neoContinuation.referencesUnsupported]);
+  }, [send, t.neoContinuation.attachmentsUnsupported, t.neoContinuation.referencesUnsupported, t.neoContinuation.selectionsUnsupported]);
 }
