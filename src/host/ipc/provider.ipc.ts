@@ -52,6 +52,7 @@ export interface DiscoverModelsPayload {
   apiKey?: string;
   protocol?: ModelProviderProtocol;
   timeoutMs?: number;
+  includeAllModels?: boolean;
 }
 
 export interface DiscoveredProviderModel {
@@ -422,7 +423,9 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
     const models = parseDiscoveredModelsResponse(data);
     return {
       success: true,
-      models: filterDiscoveredModelsForProvider(payload.provider, models, payload.protocol),
+      models: payload.includeAllModels === true
+        ? models
+        : filterDiscoveredModelsForProvider(payload.provider, models, payload.protocol),
       latencyMs,
     };
   } catch (err) {

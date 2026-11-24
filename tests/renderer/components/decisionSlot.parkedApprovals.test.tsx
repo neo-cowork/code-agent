@@ -11,7 +11,8 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: { listParkedApprovals: api.list },
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => {
-  const ipc = { invoke: api.invoke, on: () => () => {}, isAvailable: () => true };
+  // 代理行成员数据会顺带读一次 swarm 账本（与审批无关），不计入审批 invoke 的调用断言
+  const ipc = { invoke: (channel: string, ...args: unknown[]) => (channel === 'swarm:list-trace-runs' ? Promise.resolve([]) : api.invoke(channel, ...args)), on: () => () => {}, isAvailable: () => true };
   return { default: ipc, ipcService: ipc };
 });
 

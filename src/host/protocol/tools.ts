@@ -27,7 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '@shared/contract/conversationEnvelope';
-import type { PermissionApprovalSource, PermissionRequestReason } from '@shared/contract/permission';
+import type { PermissionApprovalSource, PermissionDenialSource, PermissionRequestReason } from '@shared/contract/permission';
 import type { SwarmRunScope } from '@shared/contract/swarm';
 import type { WorkspaceScope } from '@shared/contract/project';
 import type { AgentEvent } from './events';
@@ -423,7 +423,7 @@ export type CanUseToolFn = (
 
 export type CanUseToolResult =
   | { allow: true; approvalSource?: PermissionApprovalSource }
-  | { allow: false; reason: string };
+  | { allow: false; reason: string; denialSource?: PermissionDenialSource };
 
 // ----------------------------------------------------------------------------
 // 进度回调 — 独立参数，非 ctx 字段
@@ -443,7 +443,7 @@ export interface ToolProgress {
 
 export type ToolResult<Output = unknown> =
   | { ok: true; output: Output; meta?: Record<string, unknown> }
-  | { ok: false; error: string; code?: string; meta?: Record<string, unknown> };
+  | { ok: false; error: string; userMessage?: string; code?: string; meta?: Record<string, unknown> };
 
 // ----------------------------------------------------------------------------
 // Registry 接口（main/tools/registry.ts 实现）
