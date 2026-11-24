@@ -278,6 +278,9 @@ describe('background parent settlement waits for delegated children', () => {
       getBackgroundTaskManager().moveToForeground(sessionId);
       manager.emitTask({ type: 'task_completed', sessionId, data: { taskId: task.id, conclusion: 'done' } });
       await vi.waitFor(() => expect(center.list(sessionId)[0]?.status).toBe('failed'));
+      await vi.waitFor(() => expect(logs.info).toHaveBeenCalledWith(
+        'foreground_wake_skipped_delete_incomplete', expect.objectContaining({ taskId: task.id }),
+      ));
       await background(sessionId);
       primary.active = false;
       manager.emitIdle();
