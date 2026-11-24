@@ -467,7 +467,7 @@ export function MediaAssetActionBar({
       )}
       {annotateOpen && (
         // portal 里的点击会沿 React 树冒泡到气泡（如点图开大图），在这里截住。
-        <span onClick={(event) => event.stopPropagation()}>
+        <span role="presentation" onClick={(event) => event.stopPropagation()}>
           <Suspense fallback={null}>
             <ChatImageAnnotateModal asset={asset} onClose={() => setAnnotateOpen(false)} />
           </Suspense>
