@@ -150,6 +150,21 @@ describe('generateFromPrompt', () => {
     expect(req.messages[0].content).toContain('"restatement"');
   });
 
+  it('language=en/zh 追加 restatement 语言指令；缺省或非法值不追加；提示词带「不写运行时间」规则', async () => {
+    const system = async (payload: Record<string, unknown>) => {
+      h.chat.mockClear();
+      h.chat.mockResolvedValueOnce({ content: '{"name":"x"}' });
+      await call('generateFromPrompt', { prompt: 'x', ...payload });
+      return (h.chat.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+    };
+    const en = await system({ language: 'en' });
+    expect(en).toContain('write restatement.what and restatement.notifyWhen in English');
+    expect(en).toContain('不得提及任务多久运行一次或何时运行');
+    expect(await system({ language: 'zh' })).toContain('in Chinese');
+    expect(await system({})).not.toContain('Language:');
+    expect(await system({ language: 'fr' })).not.toContain('Language:');
+  });
+
   it('未配置默认模型时 generateFromPrompt 仍用出厂 provider/model', async () => {
     h.chat.mockResolvedValueOnce({ content: '{"name":"日报"}' });
     expect(await call('generateFromPrompt', { prompt: '每天' })).toEqual({ success: true, data: { name: '日报' } });

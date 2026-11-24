@@ -194,7 +194,7 @@ async function settleSendWithinTimeout(
 }
 
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const stepLimitContinuation = useStepLimitContinue(params.currentSessionId);
   const {
     value,
@@ -267,7 +267,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     toast.info(cs.scheduleParsingToast);
     let draftInvalid = false;
     try {
-      const draft = await cronClient.generateFromPrompt(description);
+      const draft = await cronClient.generateFromPrompt(description, language);
       const normalized = normalizeScheduleDraft(draft);
       if (!normalized) {
         draftInvalid = true;
@@ -292,7 +292,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     } finally {
       setCreatingSchedule(false);
     }
-  }, [currentSessionId, setCreatingSchedule, storePendingScheduleDraft, t]);
+  }, [currentSessionId, language, setCreatingSchedule, storePendingScheduleDraft, t]);
 
   const confirmScheduleCreation = useCallback(async (): Promise<boolean> => {
     const pending = pendingScheduleDraft;
