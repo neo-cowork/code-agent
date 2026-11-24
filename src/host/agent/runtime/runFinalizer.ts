@@ -936,14 +936,15 @@ export class RunFinalizer {
     if (this.ctx.persistentRoleId) return;
     if (skipRunAutomaticMemory(this.ctx, 'durable_facts')) return;
 
-    const userMessages = this.ctx.messages
+    const userTurns = this.ctx.messages
       .filter((m: { role: string; content?: string; isMeta?: boolean }) =>
         m.role === 'user'
         && !m.isMeta
         && m.content
         && !isLoopAutomationSummaryText(m.content)
       )
-      .map((m: { content?: string }) => m.content || '');
+      .map((m: { content?: string; timestamp?: number }) => ({ text: m.content || '', at: m.timestamp }));
+    const userMessages = userTurns.map((m) => m.text);
 
     if (userMessages.length === 0) return;
 
@@ -958,7 +959,7 @@ export class RunFinalizer {
         && !isLoopAutomationSummaryText(m.content));
     const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
 
-    const judgment = await judgeConversation({ userMessages, lastAssistant: lastAssistantText });
+    const judgment = await judgeConversation({ userMessages, userMessageTimestamps: userTurns.map((m) => m.at), lastAssistant: lastAssistantText });
     // A steer/tool result may arrive while the judge is running.
     if (skipRunAutomaticMemory(this.ctx, 'durable_facts')) return;
 
