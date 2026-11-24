@@ -28,6 +28,8 @@ interface WakeLedgerDecision {
   rationale?: string;
   summary?: string;
   silenceReason?: 'excluded_topic' | 'no_products';
+  /** Keeps the host's all-sources-unreadable diagnostic visible. */
+  preserveReport?: boolean;
 }
 
 export const WAKE_LEDGER_PROMPT = [
@@ -97,7 +99,7 @@ export async function recordWakeDecision(
 
   const write = (writes.get(file) ?? Promise.resolve(false)).then(async () => {
     const rows = await readRows(file);
-    if (row.decision === 'report' && !row.fallbackDecision && row.basisIds.length > 0) {
+    if (row.decision === 'report' && !input.preserveReport && !row.fallbackDecision && row.basisIds.length > 0) {
       const first = firstReportCoveringBasis(rows, row);
       if (first) {
         row.decision = 'suppressed_duplicate';

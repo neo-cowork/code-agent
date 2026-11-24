@@ -282,6 +282,30 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     expect(harness.notifyRoleWakeOutput).not.toHaveBeenCalled();
   });
 
+  it('keeps excluded topics blocked when the match appears only in the basis tag', async () => {
+    harness.mockSettings.value = { roleAssets: { proactivity: {
+      roles: { [RESEARCHER]: { level: 'realtime', topicsExclude: ['mail:401'] } },
+    } } };
+    primeWakeOutput('有一项变化。<decision>report</decision><basis>mail:401</basis>');
+    expect(await wakeRole(RESEARCHER, 'event')).toMatchObject({ decision: 'silence' });
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'silent', reason: 'excluded_topic', basisIds: ['mail:401'] },
+    ]);
+    expect(harness.notifyRoleWakeOutput).not.toHaveBeenCalled();
+  });
+
+  it('reports unreadable sources even if the model repeats a basis from an earlier report', async () => {
+    primeMail(401, '合同待签', 'first-wake');
+    await wakeRole(RESEARCHER, 'cadence');
+    primeWakeOutput('未读取：Mail。邮箱连接失败。<decision>silence</decision><basis>mail:401</basis>', 'unreadable-wake');
+    expect(await wakeRole(RESEARCHER, 'cadence')).toMatchObject({ decision: 'report' });
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'report', basisIds: ['mail:401'] },
+      { decision: 'report', basisIds: ['mail:401'] },
+    ]);
+    expect(harness.notifyRoleWakeOutput).toHaveBeenCalledTimes(2);
+  });
+
   it('records a no-products silence without invoking the model', async () => {
     await wakeRole(RESEARCHER, 'cadence');
     expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([

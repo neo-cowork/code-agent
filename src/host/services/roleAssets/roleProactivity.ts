@@ -420,7 +420,7 @@ export async function wakeRole(
     let decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
     const parsedRationale = parseWakeRationale(finalOutput);
     // exclude 是硬约束：命中则压成 silence。rationale 解析失败不影响原决策。
-    const excludeSource = [finalOutput.replace(ROLE_PROACTIVITY.BASIS_TAG_PATTERN, ''), parsedRationale.rationale ?? ''].join('\n');
+    const excludeSource = [finalOutput, parsedRationale.rationale ?? ''].join('\n');
     const excluded = topicExcludeHits(excludeSource, config.topicsExclude);
     if (excluded) {
       logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
@@ -464,6 +464,7 @@ export async function wakeRole(
 
     const committedDecision = await recordDecision({
       decision, finalOutput, rationale: parsedRationale.rationale, summary,
+      preserveReport: parsedDecision === 'silence',
       ...(excluded ? { silenceReason: 'excluded_topic' } : {}),
     });
     if (committedDecision !== decision) summary = '';
