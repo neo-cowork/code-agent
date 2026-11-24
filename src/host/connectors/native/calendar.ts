@@ -81,6 +81,10 @@ export function isCalendarFailure(error: unknown): error is CalendarFailure {
 
 const WRITE_UNCONFIRMED = 'Calendar did not confirm the change, so the result is unknown. Check the calendar before retrying; do not retry blindly. （日历没有确认这次修改，结果无法确认：请先查看日历是否已改好，不要直接重试。）';
 
+function unconfirmedCalendarWrite(): CalendarFailure {
+  return new CalendarFailure('read_failed', WRITE_UNCONFIRMED, 'write_unconfirmed');
+}
+
 function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
   if (isCalendarFailure(error)) return error;
   switch (bridgeErrorCode(error)) {
@@ -91,7 +95,7 @@ function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
     case 'no_writable_calendar':
       return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.', 'no_writable_calendar');
     // 写操作超时 / 桥断开：改没改成不知道，不能劝模型重试
-    default: return write ? new CalendarFailure('read_failed', WRITE_UNCONFIRMED, 'write_unconfirmed') : new CalendarFailure('read_failed');
+    default: return write ? unconfirmedCalendarWrite() : new CalendarFailure('read_failed');
   }
 }
 
@@ -205,8 +209,10 @@ function toEvent(item: NativeItem): CalendarEventItem {
   };
 }
 
-function eventOf(res: { event?: NativeItem } | undefined): CalendarEventItem {
-  if (!res?.event || typeof res.event.id !== 'string') throw new CalendarFailure('read_failed');
+function eventOf(res: { event?: NativeItem } | undefined, operation: 'read' | 'write'): CalendarEventItem {
+  if (!res?.event || typeof res.event.id !== 'string') {
+    throw operation === 'write' ? unconfirmedCalendarWrite() : new CalendarFailure('read_failed');
+  }
   return toEvent(res.event);
 }
 
@@ -240,7 +246,7 @@ function requireEventArgs(payload: Record<string, unknown>, action: string): { c
 async function getEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
   const { uid } = requireEventArgs(payload, 'get_event');
   const { eventId, occurrenceMs } = parseCalendarUid(uid);
-  return eventOf(await call('/v1/read/calendar-event', { eventId, ...(occurrenceMs !== undefined ? { occurrenceMs } : {}) }));
+  return eventOf(await call('/v1/read/calendar-event', { eventId, ...(occurrenceMs !== undefined ? { occurrenceMs } : {}) }), 'read');
 }
 
 async function createEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
@@ -260,7 +266,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   return eventOf(await call('/v1/write/calendar-event', {
     op: 'create', title, startMs, endMs,
     ...(calendarId ? { calendarId } : {}), ...(location ? { location } : {}), ...(notes ? { notes } : {}),
-  }));
+  }), 'write');
 }
 
 // Start only: the native layer keeps the event's duration (end moves with it). To change the length give both.
@@ -285,7 +291,7 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
     ...(startMs !== undefined ? { startMs } : {}),
     ...(endMs !== undefined ? { endMs } : {}),
     ...(location !== undefined ? { location } : {}),
-  }));
+  }), 'write');
 }
 
 async function deleteEvent(payload: Record<string, unknown>): Promise<{ uid: string; calendar: string; title: string; deleted: boolean }> {
@@ -295,7 +301,7 @@ async function deleteEvent(payload: Record<string, unknown>): Promise<{ uid: str
     op: 'delete', eventId, ...(occurrenceMs !== undefined ? { occurrenceMs } : {}),
   });
   if (res?.deleted !== true) {
-    throw new CalendarFailure('read_failed', undefined, 'write_unconfirmed');
+    throw unconfirmedCalendarWrite();
   }
   return { uid, calendar, title: typeof res.title === 'string' ? res.title : '', deleted: true };
 }
