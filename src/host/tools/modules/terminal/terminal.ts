@@ -293,13 +293,13 @@ class TerminalWriteHandler implements ToolHandler<Record<string, unknown>, strin
       };
     }
 
-    // 3) 审批链。高危命令带 dangerous: 前缀，走 UI 的二次确认流。
+    // 3) 普通写入可复用同一调用的外层审批。高危命令仍走二次确认。
     const permit = await canUseTool(
       terminalWriteSchema.name,
       args,
       validation.riskLevel === 'high'
         ? `dangerous:typing into the user's live terminal: ${input.slice(0, 200)}`
-        : `typing into the user's live terminal: ${input.slice(0, 200)}`,
+        : undefined,
     );
     if (!permit.allow) {
       return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
