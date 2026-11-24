@@ -68,6 +68,7 @@ export async function publishEnvAssistToolNotice(input: {
       return candidate?.phase === 'needs_user' && candidate.class === notice.class && candidate.target?.id === notice.target?.id;
     }) : undefined;
     let persisted = live ?? messages.find((m) => m.id === `env-assist:${notice.id}`);
+    const computedId = notice.id;
     if (live?.metadata?.envAssist) {
       notice.id = live.metadata.envAssist.id;
     } else if (persisted?.metadata?.envAssist?.phase === 'resolved') {
@@ -81,7 +82,7 @@ export async function publishEnvAssistToolNotice(input: {
       metadata: { ...persisted?.metadata, envAssist: notice },
     };
     await manager.addMessageToSession(input.sessionId, message);
-    if (!persisted || live) {
+    if (!persisted || (live && notice.id !== computedId)) {
       input.onEvent({ type: 'env_assist_notice', data: notice });
     }
     if (!persisted) input.onEvent({ type: 'message', data: message });
