@@ -31,6 +31,8 @@ export function projectBackgroundReceipts(
   const failedCallIds = new Set<string>();
   const delegateCallsByMessage = new Map<string, string[]>();
   const handoffEndedByMessage = new Map<string, HandoffEnd>();
+  const delegateCountByMessage = new Map<string, number>();
+  const interruptedCountByMessage = new Map<string, number>();
   const lastTextByMessage = new Map<string, TraceNode>();
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
   for (const node of nodes) {
@@ -61,12 +63,18 @@ export function projectBackgroundReceipts(
     }
     const taskId = receipt?.memberId ?? delegatedBackgroundTaskId(call);
     if (stopped || (taskId && stoppedTaskIds.has(taskId))) failedCallIds.add(call.id);
-    if (!node.messageId || receipt?.state === 'cancelled' || receipt?.state === 'completed') continue;
-    if (receipt?.failure === t.backgroundPanel.interrupted || (taskId && interruptedTaskIds.has(taskId))) {
-      handoffEndedByMessage.set(node.messageId, 'interrupted');
-    } else if (receipt?.state === 'failed' && !handoffEndedByMessage.has(node.messageId)) {
-      handoffEndedByMessage.set(node.messageId, 'failed');
+    if (!node.messageId) continue;
+    // Only a restart interruption means nothing more will arrive; an ordinary failure
+    // still wakes the foreground brain with the outcome. One live/finished/failed call
+    // in the same message also keeps the handoff open, so every call must be interrupted.
+    const interrupted = receipt?.failure === t.backgroundPanel.interrupted || (taskId && interruptedTaskIds.has(taskId));
+    delegateCountByMessage.set(node.messageId, (delegateCountByMessage.get(node.messageId) ?? 0) + 1);
+    if (interrupted && receipt?.state !== 'cancelled' && receipt?.state !== 'completed') {
+      interruptedCountByMessage.set(node.messageId, (interruptedCountByMessage.get(node.messageId) ?? 0) + 1);
     }
+  }
+  for (const [messageId, count] of delegateCountByMessage) {
+    if (interruptedCountByMessage.get(messageId) === count) handoffEndedByMessage.set(messageId, 'interrupted');
   }
 
   function presentNode(node: TraceNode): TraceNode[] {

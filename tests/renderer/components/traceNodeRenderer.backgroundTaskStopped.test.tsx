@@ -134,20 +134,31 @@ describe('background handoff ended note', () => {
   }
 
   it.each([
-    ['zh', '后台任务已中断，结果不会再送达。', '后台任务没有完成，结果不会再送达。'],
-    ['en', 'The background task was interrupted, so no result will follow.',
-      'The background task failed, so no result will follow.'],
-  ] as const)('appends the %s interrupted and failed copy below the unedited reply', (language, interrupted, failed) => {
+    ['zh', '后台任务已中断，结果不会再送达。'],
+    ['en', 'The background task was interrupted, so no result will follow.'],
+  ] as const)('appends the %s interrupted copy below the unedited reply', (language, interrupted) => {
     const running = [messages[0], reply];
     for (const [html, copy] of [
       [render([...running, marker], [], language), interrupted],
       [render(running, [task('failed', 't1', true)], language), interrupted],
-      [render(running, [task('failed')], language), failed],
     ]) {
       expect(html.split(testId)).toHaveLength(2);
       expect(html).toContain(copy);
       expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
       expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
+    }
+  });
+
+  it('leaves an ordinary failure without a note because the foreground is still woken with the outcome', () => {
+    const html = render([messages[0], reply], [task('failed')]);
+    expect(html).toContain(promise);
+    expect(html).not.toContain(testId);
+  });
+
+  it('leaves the handoff open when a sibling delegate in the same message is not interrupted', () => {
+    const combined: Message = { ...reply, toolCalls: [delegate('t1'), delegate('t2')] };
+    for (const sibling of [task('running', 't2'), task('completed', 't2'), task('failed', 't2')]) {
+      expect(render([messages[0], combined, marker], [sibling])).not.toContain(testId);
     }
   });
 
@@ -159,7 +170,7 @@ describe('background handoff ended note', () => {
     expect(html).not.toContain(testId);
   });
 
-  it('renders once under the last text segment and prefers interruption over failure', () => {
+  it('renders once under the last text segment when every delegate was interrupted', () => {
     const combined: Message = {
       ...reply,
       toolCalls: [delegate('t1'), delegate('t2')],
@@ -170,7 +181,7 @@ describe('background handoff ended note', () => {
         { type: 'tool_call', toolCallId: 'call-t2' },
       ],
     };
-    const html = render([messages[0], combined, marker], [task('failed', 't2')]);
+    const html = render([messages[0], combined, marker], [task('failed', 't2', true)]);
     expect(html.split(testId)).toHaveLength(2);
     expect(html).toContain('The background task was interrupted, so no result will follow.');
     expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
@@ -213,7 +224,7 @@ describe('background handoff ended note', () => {
     expect(render([messages[0], dispatch, unrelated, marker], [])).not.toContain(testId);
   });
 
-  it('shows a failed handoff note under the live acknowledgement after merging the snapshot', () => {
+  it('shows an interrupted handoff note under the live acknowledgement after merging the snapshot', () => {
     const text = 'I am sending this to the background.';
     const dispatch: Message = {
       ...reply, content: text, metadata: {
@@ -230,13 +241,13 @@ describe('background handoff ended note', () => {
       metadata: { correlation: { turnId: index === 0 ? 'dispatch-turn' : 'reply-turn' } },
     }))];
     const failed: Task = {
-      ...task('failed'), failure: { message: 'Input file missing', reason: 'session_command_task_failed' },
+      ...task('failed', 't1', true),
     };
     const snapshot = [messages[0], dispatch, acknowledgement];
     const merged = mergeSnapshotWithLiveTail(snapshot, live);
     const html = render(merged.messages, [failed], 'zh');
     expect(html.split(testId)).toHaveLength(2);
-    expect(html).toContain('后台任务没有完成，结果不会再送达。');
+    expect(html).toContain('后台任务已中断，结果不会再送达。');
     expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
     expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
 
