@@ -202,6 +202,11 @@ export class RunFinalizer {
    * 这里只留一个句柄，产线路径一行都不改：没人 await 就是原来的行为。
    */
   private sessionEndMemoryWork: Promise<void> = Promise.resolve();
+  /**
+   * 终局事件发出之后的后台收尾（学习 / 记忆 / 角色醒来 / 建议 / langfuse）。
+   * 产线不等它，避免堵住 UI 上的终局事件；句柄留给生命周期边界排空。
+   */
+  private postTerminalWork: Promise<void> = Promise.resolve();
 
   constructor(protected ctx: RuntimeContext) {}
 
@@ -221,21 +226,34 @@ export class RunFinalizer {
    */
   protected persistSessionEndMemory(): void {
     if (this.ctx.persistLongTermMemory === false) return;
-    recordSessionEnd(
+    const stats = recordSessionEnd(
       this.ctx.messages.length,
       this.ctx.modelConfig.model,
       this.ctx.sessionId,
       this.ctx.modelConfig.provider,
     ).catch(() => { /* non-critical */ });
 
-    this.sessionEndMemoryWork = this.extractAndSaveConversationSummary().catch((err) => {
+    const summary = this.extractAndSaveConversationSummary().catch((err) => {
       logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
     });
+    this.sessionEndMemoryWork = Promise.all([stats, summary]).then(() => undefined);
+    this.enlistPostTerminal(this.sessionEndMemoryWork);
   }
 
   /** 等本轮会话末尾的记忆落盘跑完（失败也算跑完；产线不调用它）。 */
   whenSessionEndMemoryWorkSettled(): Promise<void> {
     return this.sessionEndMemoryWork;
+  }
+
+  /** 把已经开工的后台收尾接进可等待链。工作本身并行，链只负责等它落完。 */
+  private enlistPostTerminal(work: Promise<unknown>): void {
+    const settled = work.then(() => undefined, () => undefined);
+    this.postTerminalWork = Promise.all([this.postTerminalWork, settled]).then(() => undefined);
+  }
+
+  /** 等本轮终局之后的后台收尾落完。sendMessage 不调用它。 */
+  whenPostTerminalWorkSettled(): Promise<void> {
+    return this.postTerminalWork;
   }
 
   // Convenience: emit event through context
@@ -540,9 +558,9 @@ export class RunFinalizer {
     // GAP-005: 学习管线只读本会话 telemetry（本地 DB，开销极低），
     // 不再用 genNum>=5 门槛——短会话里重复 3 次的失败模式同样值得沉淀。
     if (this.ctx.persistLongTermMemory !== false && this.ctx.messages.length > 0) {
-      this.learningPipeline.runSessionEndLearning().catch((err) => {
+      this.enlistPostTerminal(this.learningPipeline.runSessionEndLearning().catch((err) => {
         logger.error('[AgentLoop] Session end learning error:', err);
-      });
+      }));
     }
 
     // User-configurable SessionEnd hook
@@ -561,9 +579,9 @@ export class RunFinalizer {
     // （fire-and-forget；门槛/防递归/预算护栏都在 triggerEventWakes 内部，内部文档 §2.2）
     if (terminalStatus === 'completed') {
       const lastAssistant = [...this.ctx.messages].reverse().find((m) => m.role === 'assistant' && m.content);
-      import('../../services/roleAssets/roleProactivity')
+      this.enlistPostTerminal(import('../../services/roleAssets/roleProactivity')
         .then(({ triggerEventWakes }) => triggerEventWakes(this.ctx.sessionId, iterations, lastAssistant?.content))
-        .catch(silence(logger, 'triggerEventWakes', 'warn'));
+        .catch(silence(logger, 'triggerEventWakes', 'warn')));
     }
 
     // Pre-completion Hook: Only check explicit Tasks (persistent), not auto-parsed todos
@@ -594,7 +612,7 @@ export class RunFinalizer {
     // Async: generate context-aware follow-up suggestions (non-blocking)
     this.generateFollowUpSuggestions();
 
-    langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err));
+    this.enlistPostTerminal(langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err)));
   }
 
   tryParseTodosFromResponse(response: { content?: string; thinking?: string }): void {
@@ -888,8 +906,8 @@ export class RunFinalizer {
   // --------------------------------------------------------------------------
 
   private generateFollowUpSuggestions(): void {
-    // Fire-and-forget: don't block agent completion
-    (async () => {
+    // Fire-and-forget: don't block agent completion. The promise stays on postTerminalWork.
+    this.enlistPostTerminal((async () => {
       try {
         const { generateContextSuggestions } = await import('../../services/core/promptSuggestions');
         const suggestions = await generateContextSuggestions(this.ctx.messages);
@@ -899,7 +917,7 @@ export class RunFinalizer {
       } catch (error) {
         logger.debug('[RunFinalizer] Failed to generate follow-up suggestions', { error });
       }
-    })();
+    })());
   }
 
   /**
