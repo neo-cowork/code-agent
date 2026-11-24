@@ -28,6 +28,7 @@ import {
   writeLightMemoryFile,
   type LightMemoryFile,
 } from '../lightMemory/lightMemoryIpc';
+import { archiveSupersededManualMemory } from '../lightMemory/manualMemoryGuard';
 import { hashInboxContent } from './knowledgeInboxDecision';
 import { resolveProjectMemoryKey } from './projectMemoryKey';
 import {
@@ -279,6 +280,7 @@ export function lightMemoryFileToEntry(file: LightMemoryFile): MemoryEntry {
     schemaVersion: 2,
     status: file.status || 'active',
     deprecatedBy: file.deprecatedBy ?? null,
+    supersedes: file.supersedes ?? null,
     kind,
     scope: file.scope || scopeForEntry(kind, file.projectPath, file.sessionId),
     title: file.name || file.filename.replace(/\.md$/, ''),
@@ -498,7 +500,7 @@ export async function rebuildMemoryMirrorFromLightFiles(
   options: { journal?: MemoryChangeJournalContext } = {},
 ): Promise<MemoryMirrorRebuildResult> {
   const files = await listMemoryFiles();
-  const existingMirrors = db.listMemories({ includeArchived: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
+  const existingMirrors = db.listMemories({ includeArchived: true, includeCandidates: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
     .filter((memory) => memoryEntryMetadata(memory)?.sourceOfTruth === 'light_file');
   const existingByEntryId = new Map<string, MemoryRecord>();
   const existingByFilePath = new Map<string, MemoryRecord>();
@@ -913,13 +915,15 @@ export async function updateMemoryEntry(
       entryId: next.id,
       status: next.status,
       deprecatedBy: next.deprecatedBy,
-      source: current.source.kind,
+      supersedes: current.supersedes,
+      source: current.supersedes ? current.evidence[0]?.source ?? current.source.kind : current.source.kind,
       schemaVersion: next.schemaVersion,
       scope: next.scope,
       projectPath: next.projectPath,
       sessionId: next.sessionId,
       importProvenance: next.source.importProvenance,
     });
+    if (current.status === 'candidate' && file.status === 'active') await archiveSupersededManualMemory(file);
     await rebuildLightMemoryIndex();
     const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db, { journal: options.journal });
     return {
