@@ -51,7 +51,7 @@ afterEach(async () => {
   baseUrl = '';
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  if (dataDir) await fs.rm(dataDir, { recursive: true, force: true });
+  if (dataDir) await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   dataDir = '';
 });
 
