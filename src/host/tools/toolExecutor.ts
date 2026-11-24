@@ -11,6 +11,7 @@ import { getLocale } from '../platform/appPaths';
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import { permissionRequestTypeForLevel } from './permissionRequestType';
+import { buildTerminalApprovalPreview } from './modules/terminal/terminalApprovalPreview';
 import * as nodePath from 'path';
 import * as nodeOs from 'node:os';
 import * as nodeFs from 'node:fs/promises';
@@ -2442,7 +2443,7 @@ export class ToolExecutor {
       permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
-      // Terminal requests already show the command in the command section.
+      // Terminal requests carry a display-only preview built from the actual input.
       if (confirmationPreview && executionToolName !== 'terminal_write') {
         permissionRequest.details.preview = confirmationPreview;
         if (executionToolName === 'delegate_session') permissionRequest.reason = confirmationPreview.summary;
@@ -3099,7 +3100,12 @@ export class ToolExecutor {
         return {
           type: requestType,
           tool: tool.name,
-          details: { ...params, ...(tool.name === 'terminal_write' ? { command: params.input } : {}) },
+          details: {
+            ...params,
+            ...(tool.name === 'terminal_write' && typeof params.input === 'string'
+              ? { preview: buildTerminalApprovalPreview(params.input) }
+              : {}),
+          },
           reasonCode: PermissionRequestReason.Unknown,
           boundary: {
             id: boundaryIdForRequestType(requestType),

@@ -25,6 +25,7 @@ import type {
 import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { sameToolName } from '../toolNames';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
+import { buildTerminalApprovalPreview } from '../modules/terminal/terminalApprovalPreview';
 
 // ----------------------------------------------------------------------------
 // FileReadCache — 进程级单例，避免每次构造 ctx 时重建缓存
@@ -253,7 +254,11 @@ export function buildCanUseToolFromLegacy(
         type,
         tool: requestedToolName,
         // grantEligible 只由 host 写：覆盖参数里同名键，防模型自报。
-        details: { ...details, ...(terminalInput !== undefined ? { command: terminalInput } : {}), grantEligible: grantable },
+        details: {
+          ...details,
+          ...(terminalInput !== undefined ? { preview: buildTerminalApprovalPreview(terminalInput) } : {}),
+          grantEligible: grantable,
+        },
         reason: requestHint?.reason ?? cleanReason ?? (terminalInput === undefined
           ? `protocol tool ${requestedToolName}`
           : `typing into the user's live terminal: ${terminalInput.slice(0, 200)}`),

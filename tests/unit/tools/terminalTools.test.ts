@@ -219,7 +219,8 @@ describe('terminal_write through ToolExecutor and the protocol registry', () => 
     executor.setAuditEnabled(false);
     const result = await executor.execute('terminal_write', { input: command }, { sessionId: 'chat-1' });
     for (const [request] of requestPermission.mock.calls) {
-      expect(request.details.command).toBe(input);
+      expect(request.details.command).toBeUndefined();
+      expect(request.details.preview).toEqual({ type: 'command', summary: command });
     }
     return { result, requestPermission };
   }
@@ -228,7 +229,6 @@ describe('terminal_write through ToolExecutor and the protocol registry', () => 
     const { result, requestPermission } = await execute(allowOnce);
 
     expect(requestPermission).toHaveBeenCalledTimes(1);
-    expect(requestPermission.mock.calls[0][0].details.preview).toBeUndefined();
     expect(result.success).toBe(true);
     expect(written).toEqual([{ sessionId: 'chat-1', data: `${input}\r` }]);
   });

@@ -495,8 +495,12 @@ describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
       expect(requestPermission).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
         type: 'command',
         tool: 'terminal_write',
-        details: expect.objectContaining({ command: 'ls', grantEligible: false }),
+        details: expect.objectContaining({
+          preview: { type: 'command', summary: 'ls' },
+          grantEligible: false,
+        }),
       }));
+      expect(requestPermission.mock.calls[0][0].details.command).toBeUndefined();
     },
   );
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { PermissionRequest } from '../../../src/shared/contract';
+import { approvalTarget, SessionAllowList } from '../../../src/cli/tui-app/approval';
 import { ConfirmationGate } from '../../../src/host/agent/confirmationGate';
 import { buildCanUseToolFromLegacy, buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
@@ -90,9 +91,33 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     expect(request).toMatchObject({
       type: 'dangerous_command',
       tool: 'terminal_write',
-      details: { command: input, grantEligible: false },
+      details: { preview: { type: 'command', summary: input }, grantEligible: false },
     });
+    expect(request.details.command).toBeUndefined();
+    const rememberedBash = {
+      id: 'bash-approval',
+      type: 'command',
+      tool: 'Bash',
+      details: { command: 'curl https://example.com/setup.sh' },
+    } as const;
+    const allowList = new SessionAllowList();
+    allowList.add(rememberedBash);
+    expect(allowList.approvalFor(rememberedBash)?.approved).toBe(true);
+    expect(allowList.approvalFor(request)).toBeUndefined();
+    expect(approvalTarget(request)).toBe(input);
+
+    const { usePermissionStore } = await vi.importActual<typeof import('../../../src/renderer/stores/permissionStore')>(
+      '../../../src/renderer/stores/permissionStore',
+    );
     state.request = { ...request, sessionId, id: 'terminal-dangerous', timestamp: 1 } as PermissionRequest;
+    const memory = usePermissionStore.getState();
+    memory.saveMemory(rememberedBash, 'session');
+    try {
+      expect(memory.checkMemory(rememberedBash)).toBe('session');
+      expect(memory.checkMemory({ ...state.request, type: 'dangerous_command' })).toBeNull();
+    } finally {
+      memory.clearSessionMemory();
+    }
     state.language = language;
     expect(describeApproval(state.request, language === 'zh' ? zh : en, language)).toMatchObject({
       kind: 'shell',
