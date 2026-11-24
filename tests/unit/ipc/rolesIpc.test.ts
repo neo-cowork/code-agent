@@ -221,7 +221,7 @@ describe('roles.ipc (domain:roles)', () => {
         ['unsafe-definition', '../etc'],
         ['coder', 'coder'],
       ]) {
-        await fs.writeFile(path.join(agentsDir, `${filename}.md`), `---\nname: ${name}\n---\nCite sources.\n`);
+        await fs.writeFile(path.join(agentsDir, `${filename}.md`), `---\nname: ${name}\ndescription: Checks sources.\n---\nCite sources.\n`);
       }
 
       const res = await invoke<RolePanelEntry[]>('list');
@@ -230,6 +230,10 @@ describe('roles.ipc (domain:roles)', () => {
         { roleId: 'researcher', memoryCount: 0, lastWork: null },
         { roleId: '自定义角色', memoryCount: 0, lastWork: null },
       ]);
+      expect(res.data?.find(({ roleId }) => roleId === 'researcher')).toMatchObject({
+        source: 'user',
+        description: 'Checks sources.',
+      });
       await expect(fs.stat(path.join(mockConfigDir.dir, 'roles'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
