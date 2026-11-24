@@ -7,6 +7,7 @@ interface MemoryConfirmWords {
   description: string;
   name: string;
   replaces: string;
+  adoptManualReplacement: (title: string) => string;
   deleteMemory: string;
   command: string;
   path: string;
@@ -19,6 +20,7 @@ const ZH: MemoryConfirmWords = {
   description: '说明：',
   name: '名称：',
   replaces: '这会替换一条已有的规则',
+  adoptManualReplacement: (title) => `采纳后将替换你手写的记忆「${title}」。`,
   deleteMemory: '删除（归档）这条记忆：',
   command: '执行：',
   path: '文件：',
@@ -31,6 +33,7 @@ const EN: MemoryConfirmWords = {
   description: 'Description: ',
   name: 'Name: ',
   replaces: 'This replaces an existing rule',
+  adoptManualReplacement: (title) => `Adopting this replaces your hand-written entry “${title}”.`,
   deleteMemory: 'Delete (archive) this memory: ',
   command: 'Run: ',
   path: 'File: ',
