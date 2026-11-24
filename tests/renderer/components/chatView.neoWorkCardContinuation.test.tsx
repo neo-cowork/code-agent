@@ -271,6 +271,85 @@ describe('useNeoWorkCardContinuationSend', () => {
     toastError.mockRestore();
   });
 
+  it('会话已绑定专家、这一轮没有另选时，续接照常提交并清掉目标', async () => {
+    useAppStore.setState({ activeAgentId: 'expert-bound' });
+    const send = vi.fn(async () => true);
+    const continueAndRun = vi.fn(async () => continuationResult());
+    const toastError = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-1');
+    useNeoWorkCardStore.setState({
+      continuationTarget: { workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1' },
+      continueAndRun,
+    });
+    const { result } = renderHook(() => useNeoWorkCardContinuationSend(send));
+
+    await act(async () => {
+      expect(await result.current({
+        content: '再加一页结论',
+        context: {
+          preferredAgentId: 'expert-bound',
+          preferredAgentName: '竞品分析',
+          selectedAgent: {
+            id: 'expert-bound',
+            name: '竞品分析',
+            token: '竞品分析',
+            via: 'agent_chip',
+          },
+        },
+      })).toBe(true);
+    });
+
+    expect(toastError).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(continueAndRun).toHaveBeenCalledWith(expect.objectContaining({
+      workCardId: 'card-1',
+      conversationId: 'sess-1',
+      userText: '再加一页结论',
+    }));
+    expect(useNeoWorkCardStore.getState().continuationTarget).toBeNull();
+    toastError.mockRestore();
+  });
+
+  it.each([
+    {
+      preferredAgentId: 'expert-bound',
+      selectedAgent: { id: 'expert-bound', name: '竞品分析', token: '竞品分析', via: 'slash_picker' as const },
+    },
+    {
+      preferredAgentId: 'expert-bound',
+      selectedAgent: { id: 'expert-bound', name: '竞品分析', token: '竞品分析', via: 'agent_command' as const },
+    },
+    {
+      preferredAgentId: 'expert-bound',
+      selectedAgent: { id: 'expert-bound', name: '竞品分析', token: '竞品分析', via: 'agent_chip' as const },
+      routing: { mode: 'direct' as const, targetAgentIds: ['expert-mentioned'] },
+    },
+    { preferredAgentId: 'expert-other' },
+    {
+      selectedSkillIds: ['skill-a'],
+      preferredAgentId: 'expert-bound',
+      selectedAgent: { id: 'expert-bound', name: '竞品分析', token: '竞品分析', via: 'agent_chip' as const },
+    },
+  ])('会话已绑定专家时，本轮另选专家、@提及或技能仍拒发并保留目标', async (context) => {
+    useAppStore.setState({ activeAgentId: 'expert-bound' });
+    const send = vi.fn(async () => true);
+    const continueAndRun = vi.fn(async () => continuationResult());
+    const toastError = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-1');
+    const target = { workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1' };
+    useNeoWorkCardStore.setState({ continueAndRun });
+    useNeoWorkCardStore.getState().setContinuationTarget(target);
+    const { result } = renderHook(() => useNeoWorkCardContinuationSend(send));
+
+    await act(async () => {
+      expect(await result.current({ content: '再加一页结论', context })).toBe(false);
+    });
+
+    expect(continueAndRun).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('续接消息暂时无法指定'));
+    expect(useNeoWorkCardStore.getState().continuationTarget).toBe(target);
+    toastError.mockRestore();
+  });
+
   it('同一条 roundTurnId 已经在会话里时不再补一条本地消息', async () => {
     const existing: Message = { id: 'turn-round-2', role: 'user', content: '已经在了', timestamp: 1 };
     useSessionStore.setState({ messages: [existing] });

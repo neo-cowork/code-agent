@@ -10,12 +10,31 @@ import { useCallback } from 'react';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
+import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { buildNeoTagContinuationMessage, submitNeoTagContinuation } from './neoTagSubmit';
 
 type SendEnvelopeFn = (envelope: ConversationEnvelope) => Promise<boolean>;
+
+/**
+ * 会话里已经绑着的专家会被 buildEnvelope 写成 preferredAgentId + selectedAgent.via=agent_chip，
+ * 那不是这一轮新选的。这一轮才挡：slash /agent 或命令面板留下的 via、正文里的 @提及，
+ * 以及和当前会话 activeAgentId 对不上的专家。
+ */
+function hasPerTurnExpertChoice(
+  context: ConversationEnvelope['context'],
+  activeAgentId: string | null,
+): boolean {
+  if (!context) return false;
+  const mentioned = context.routing?.mode === 'direct' ? context.routing.targetAgentIds : undefined;
+  if (mentioned && mentioned.length > 0) return true;
+  const selected = context.selectedAgent;
+  if (selected?.via === 'slash_picker' || selected?.via === 'agent_command') return true;
+  if (selected?.id && !(selected.via === 'agent_chip' && selected.id === activeAgentId)) return true;
+  return Boolean(context.preferredAgentId && context.preferredAgentId !== activeAgentId);
+}
 
 useSessionStore.subscribe((state, previous) => {
   if (state.currentSessionId === previous.currentSessionId) return;
@@ -49,7 +68,7 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
     const ctx = envelope.context;
     if (
       ctx?.selectedSkillIds?.length || ctx?.selectedConnectorIds?.length || ctx?.selectedMcpServerIds?.length
-      || ctx?.selectedAgent?.id || ctx?.preferredAgentId
+      || hasPerTurnExpertChoice(ctx, useAppStore.getState().activeAgentId)
     ) {
       toast.error(t.neoContinuation.selectionsUnsupported);
       return false;
