@@ -350,7 +350,7 @@ describe('PermissionClassifier', () => {
     );
 
     expect(result.decision).toBe('approve');
-    expect(result.reason).toContain('只读工具');
+    expect(result.reason).toBe('自动放行：只读操作');
   });
 
   it('asks before running package-manager commands that may mutate dependencies or run scripts', async () => {
@@ -789,7 +789,7 @@ describe('PermissionClassifier', () => {
       );
 
       expect(result.decision).toBe('approve');
-      expect(result.reason).toContain('内部委派工具');
+      expect(result.reason).toBe('自动放行：派后台助手');
     }
   });
 

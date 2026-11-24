@@ -145,6 +145,11 @@ const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 const MAX_CACHE_SIZE = 100;
 
+const READ_ONLY_REASON = '自动放行：只读操作';
+const NETWORK_READ_REASON = '自动放行：联网查看';
+const DELEGATION_REASON = '自动放行：派后台助手';
+const MCP_CONFIRMATION_REASON = '外部工具可能有副作用，需要确认';
+
 // 只读工具 — 无副作用，始终自动批准
 export const READ_ONLY_TOOLS = new Set([
   'read_file', 'Read', 'glob', 'Glob',
@@ -342,7 +347,7 @@ export class PermissionClassifier {
     if (READ_ONLY_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
-        reason: `只读工具 ${toolName}`,
+        reason: READ_ONLY_REASON,
         confidence: 1.0,
         cached: false,
       };
@@ -362,7 +367,7 @@ export class PermissionClassifier {
     if (NETWORK_READ_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
-        reason: `网络只读工具 ${toolName}`,
+        reason: NETWORK_READ_REASON,
         confidence: 0.95,
         cached: false,
       };
@@ -372,7 +377,7 @@ export class PermissionClassifier {
     if (DELEGATION_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
-        reason: `内部委派工具 ${toolName}`,
+        reason: DELEGATION_REASON,
         confidence: 1.0,
         cached: false,
       };
@@ -401,13 +406,12 @@ export class PermissionClassifier {
           cached: false,
         };
       }
-      const reason = `MCP 工具 ${toolName} 可能有副作用`;
       return {
         decision: 'ask',
-        reason,
+        reason: MCP_CONFIRMATION_REASON,
         confidence: 0.9,
         cached: false,
-        traceStep: createTraceStep('permission_classifier', 'R6: mcp_tool', 'ask', reason, startTime),
+        traceStep: createTraceStep('permission_classifier', 'R6: mcp_tool', 'ask', MCP_CONFIRMATION_REASON, startTime),
       };
     }
 
