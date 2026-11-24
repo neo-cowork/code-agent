@@ -9,12 +9,14 @@ type ScheduleRunCost =
   | { kind: 'usd'; perRunUsd: number; perDayUsd: number };
 
 function estimateCost(executions: readonly CronJobExecution[], runsPerDay: number): ScheduleRunCost {
-  const localModelRuns = executions.filter((run) => run.runsOn !== 'cloud' && run.sessionId);
-  const costs = localModelRuns
+  const completedLocalModelRuns = executions.filter(
+    (run) => run.status === 'completed' && run.runsOn !== 'cloud' && run.sessionId,
+  );
+  const costs = completedLocalModelRuns
     .flatMap(({ cost }) => cost !== undefined && Number.isFinite(cost) && cost > 0 ? [cost] : [])
     .sort((a, b) => a - b);
   if (!costs.length) {
-    return localModelRuns.some((run) => run.flatFee) ? { kind: 'flat-fee' } : { kind: 'unknown' };
+    return completedLocalModelRuns.some((run) => run.flatFee) ? { kind: 'flat-fee' } : { kind: 'unknown' };
   }
   const middle = Math.floor(costs.length / 2);
   const perRunUsd = costs.length % 2 === 0

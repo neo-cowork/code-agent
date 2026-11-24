@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract/cron';
 import { ScheduleConfirmCard } from '../../../src/renderer/components/features/chat/ChatInput/ScheduleConfirmCard';
@@ -61,10 +61,18 @@ const paidHistory = [
   execution('flat-fee', { flatFee: true }),
 ];
 const flatFeeHistory = [execution('flat-fee', { flatFee: true })];
+const partialHistory = [
+  execution('running', { status: 'running', cost: 0.01 }),
+  execution('interrupted', { status: 'interrupted', cost: 0.02 }),
+  execution('failed', { status: 'failed', cost: 0.03 }),
+];
 
 const cases = [
   { name: 'highlights 720 local runs and shows the first-run cost message', draft: draft(twoMinutes), history: [], value: 'About 720 runs/day · cost visible after the first run', highlight: true },
   { name: 'uses the median positive local session cost', draft: draft(twoMinutes), history: paidHistory, value: 'About 720 runs/day · about $144.0000/day', highlight: true },
+  { name: 'keeps cost unknown with only partial runs', draft: draft(twoMinutes), history: partialHistory, value: 'About 720 runs/day · cost visible after the first run', highlight: true },
+  { name: 'excludes partial runs from the cost median', draft: draft(twoMinutes), history: [...partialHistory, ...paidHistory], value: 'About 720 runs/day · about $144.0000/day', highlight: true },
+  { name: 'keeps completed flat-fee history with partial costs', draft: draft(twoMinutes), history: [...partialHistory, ...flatFeeHistory], value: 'About 720 runs/day · not billed in USD', highlight: true },
   { name: 'shows a flat-fee history without a dollar figure', draft: draft(twoMinutes), history: flatFeeHistory, value: 'About 720 runs/day · not billed in USD', highlight: true },
   { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost visible after the first run' },
   { name: 'shows less than one run per day for weekly cron', draft: draft({ type: 'cron', expression: '0 9 * * 1', timezone: 'UTC' }), history: [], value: 'Less than one run/day · cost visible after the first run' },
@@ -115,6 +123,8 @@ describe.each([
   it.each(cases)('$name', async ({ draft: pending, history, value, highlight }) => {
     getRecentExecutions.mockResolvedValue(history);
     const view = render(card(pending));
+    // Flush the mocked history before checking copy that can also appear on the initial render.
+    await act(async () => {});
     const row = view.container.querySelector<HTMLElement>(`[${attr}="estimate"]`);
     if (value === undefined) {
       expect(row).toBeNull();
