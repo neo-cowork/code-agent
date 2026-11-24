@@ -47,7 +47,7 @@ import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifact
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { getTaskDeliveryFailure } from './taskDeliveryVerdict';
+import { describeFailedCommand, getTaskDeliveryFailure } from './taskDeliveryVerdict';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
@@ -401,7 +401,9 @@ export class TaskManager extends EventEmitter {
           taskId,
           ...(deliveryFailure
             ? {
-              error: formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale())
+              error: (deliveryFailure === 'command_failed'
+                ? describeFailedCommand(messages, session?.workingDirectory, resolveSessionTaskResultLocale())
+                : formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale()))
                 ?? (finalMessage?.content?.trim() || 'Task delivery failed.'),
             }
             : { conclusion: finalMessage?.content?.trim() }),

@@ -8,6 +8,8 @@ import { getSettingsVocabulary } from './settingsVocabulary';
 const v = getSettingsVocabulary('zh');
 
 export const zhSettingsCore = {
+    pageLoadFailed: '这个设置页面暂时无法打开。',
+    reloadPage: '重新载入',
     tabs: {
       general: '权限与安全',
       model: '通用模型',
