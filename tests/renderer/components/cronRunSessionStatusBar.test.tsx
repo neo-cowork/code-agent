@@ -587,11 +587,27 @@ describe('CronRunSessionStatusBar（组件）', () => {
 });
 
 describe('CronRunSessionIntro（来源小标）', () => {
-  it('first meeting renders neither a scheduled-run label nor a cron status bar', () => {
-    showSession({ ...cronRunSession, origin: { kind: 'cron', metadata: { roleId: '日程管家', trigger: 'first_wake' } } });
-    render(<><CronRunSessionIntro sessionId="session-1" /><CronRunSessionStatusBar sessionId="session-1" /></>);
+  it.each([
+    ['zh', '由专家首次见面自动发起'],
+    ['en', 'Started automatically at your first meeting with this expert'],
+  ] as const)('%s first meeting retains the awaiting row and shows only the first-meeting origin', async (language, label) => {
+    useAppStore.setState({ language });
+    showSession({
+      ...cronRunSession,
+      sourceRunId: undefined,
+      origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } },
+    });
+    listParkedApprovalsMock.mockResolvedValue([{
+      id: 'req-first-wake', kind: 'tool_approval', sessionId: 'session-1', tool: 'calendar',
+      requestedAt: Date.now(), status: 'pending', startedByFirstWake: true,
+    }]);
+    const { container } = render(<><CronRunSessionIntro sessionId="session-1" /><CronRunSessionStatusBar sessionId="session-1" /></>);
+    expect((await screen.findByTestId('first-wake-origin')).textContent).toBe(label);
+    expect(screen.getByTestId('cron-run-status').dataset.state).toBe('awaiting');
+    expect(screen.getByTestId('cron-run-status-approve')).toBeTruthy();
+    expect(screen.getByTestId('cron-run-status-reject')).toBeTruthy();
     expect(screen.queryByTestId('cron-run-intro-label')).toBeNull();
-    expect(screen.queryByTestId('cron-run-status')).toBeNull();
+    expect(container.textContent).not.toMatch(/定时任务|scheduled task/i);
     expect(getExecutionsMock).not.toHaveBeenCalled();
   });
 

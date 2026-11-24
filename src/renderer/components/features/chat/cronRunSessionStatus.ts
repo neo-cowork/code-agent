@@ -23,7 +23,7 @@ export interface CronRunAwaitingApproval {
   label?: string;
   command?: string;
   /** Host-owned origin copied from the parked row (scheduled-task flag/name). */
-  origin?: Pick<ParkedApprovalInboxItem, 'userRequest' | 'startedByAutomation' | 'scheduledTaskName'>;
+  origin?: Pick<ParkedApprovalInboxItem, 'userRequest' | 'startedByAutomation' | 'startedByFirstWake' | 'scheduledTaskName'>;
 }
 
 export type CronRunStatusLine =

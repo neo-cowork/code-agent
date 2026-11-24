@@ -3,7 +3,12 @@ import { STARTUP_TIMEOUTS } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
 export type FirstModelRequestPhase =
-  | 'send_accepted' | 'workspace_planning' | 'web_run_setup' | 'run_started' | 'hook_initialization' | 'skill_discovery'
+  | 'send_accepted' | 'workspace_planning' | 'web_run_setup'
+  | 'web_workspace_materialization' | 'web_durable_run_start' | 'web_running_status' | 'web_model_override'
+  | 'web_cli_imports' | 'web_workspace_backfill' | 'web_cli_agent_init' | 'web_agent_config' | 'web_connector_check'
+  | 'web_history_load' | 'web_turn_config' | 'web_slash_expand' | 'web_loop_setup' | 'web_run_attach'
+  | 'web_session_title' | 'web_user_message_persist' | 'web_user_message_sync'
+  | 'run_started' | 'hook_initialization' | 'skill_discovery'
   | 'planning_bootstrap' | 'parallel_judgment' | 'user_prompt_hook' | 'session_start_hook'
   | 'recent_conversations' | 'session_recovery' | 'seed_memory' | 'activity_context'
   | 'desktop_context' | 'context_ready' | 'model_decision' | 'provider_queue' | 'provider_dispatch';

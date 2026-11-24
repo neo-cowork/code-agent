@@ -118,7 +118,7 @@ describe('首次醒来会话的停车通知', () => {
     expect(arg).toMatchObject({
       sessionId: 'fw-notice-session',
       title: '需要授权',
-      body: '需要授权：写入文件。任务已暂停，回到刚创建专家的对话里点「允许」。',
+      body: '等你确认：写入文件。任务已暂停，回到刚创建专家的对话里点「允许」。',
     });
     expect(arg.body).not.toContain('运行记录');
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);

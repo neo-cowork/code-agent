@@ -56,6 +56,8 @@ export const generativeUIZh = {
     filterAnalysis: '筛选分析',
     sort: '排序',
     clickToSelect: '点击选中，Cmd+点击多选',
+    cellFeedbackTitle: '{ref} · {value}（点选定点反馈）',
+    cellLabel: '单元格 {ref}',
     total: '共',
   },
 };
@@ -112,6 +114,8 @@ export const generativeUIEn = {
     filterAnalysis: 'Filter',
     sort: 'Sort',
     clickToSelect: 'Click to select, Cmd+click for multi-select',
+    cellFeedbackTitle: '{ref} · {value} (click to give pinpoint feedback)',
+    cellLabel: 'Cell {ref}',
     total: 'total',
   },
 };
