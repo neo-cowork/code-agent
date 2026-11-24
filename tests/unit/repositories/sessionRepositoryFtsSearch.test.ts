@@ -57,6 +57,7 @@ import {
 } from '../../../src/host/services/core/repositories/sessionRepositoryFtsSearch';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { TranscriptHistoryService } from '../../../src/host/services/history/transcriptHistoryService';
 
 const TOOL_CALLS_JSON = JSON.stringify([
   {
@@ -225,6 +226,23 @@ describe('liveSessionsOnly through SessionRepository', () => {
     expect(repo.getTranscriptAround('live-hit', options)?.sessionId).toBe('live');
     repo.unarchiveSession('archived');
     expect(repo.getTranscriptAround('archived-0', options)?.sessionId).toBe('archived');
+  });
+
+  it('reserves the transcript verification limit for hits that can be read around', async () => {
+    for (const sessionId of ['deleted', 'archived']) {
+      for (let i = 3; i < 6; i += 1) {
+        seedMessage(rig.db, sessionId, `${sessionId}-${i}`, 'needle 验收', i + 2);
+      }
+    }
+    const options = { limit: 10 };
+    const service = new TranscriptHistoryService(repo);
+
+    expect(repo.searchTranscriptFts('needle', options)).toHaveLength(10);
+    const hits = await service.search('needle', options);
+    expect(hits.map(({ messageId }) => messageId)).toEqual(['live-hit']);
+    await expect(service.around(hits[0].messageId)).resolves.toMatchObject({
+      messages: [{ message: { id: 'live-hit', content: 'needle 验收' }, matched: true }],
+    });
   });
 });
 

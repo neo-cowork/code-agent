@@ -25,7 +25,7 @@ export interface TranscriptSearchOptions {
 }
 
 export interface TranscriptHistoryDatabase {
-  searchTranscriptFts(query: string, options: TranscriptSearchOptions): TranscriptSearchHit[];
+  searchTranscriptFts(query: string, options: TranscriptSearchOptions & { liveSessionsOnly?: boolean }): TranscriptSearchHit[];
   getTranscriptAround(messageId: string, options: { before?: number; after?: number; liveSessionsOnly?: boolean }): TranscriptAroundResult | null;
 }
 
@@ -35,7 +35,7 @@ export class TranscriptHistoryService {
   async search(query: string, options: TranscriptSearchOptions = {}): Promise<TranscriptSearchHit[]> {
     const trimmed = query.trim();
     if (trimmed.length < 3) return [];
-    return this.db.searchTranscriptFts(trimmed, options);
+    return this.db.searchTranscriptFts(trimmed, { ...options, liveSessionsOnly: true });
   }
 
   async around(messageId: string, options: { before?: number; after?: number } = {}): Promise<TranscriptAroundResult | null> {
