@@ -99,7 +99,7 @@ import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useQuestionCardPlaceholder } from './questionCardAnswer';
-import { useComposerDraftPersistence } from './useComposerDraftPersistence';
+import { readComposerRoundtripText, useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraftRequest } from './useScheduleDraftRequest';
@@ -323,7 +323,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   scopeProjectId = null,
 }, ref) => {
   const { t, language } = useI18n();
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(() => readComposerRoundtripText(
+    sessionless ? null : useSessionStore.getState().currentSessionId,
+    sessionless,
+    scopeProjectId,
+  ));
   const inputMemoryTainted = useRef(false);
   useEffect(() => { if (!value) inputMemoryTainted.current = false; }, [value]);
   // @ 文件附件是异步读盘构建的，chip 替换触发词时需要此刻的最新文本（闭包里的 value 可能已旧）
@@ -702,7 +706,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       invokeNativeCommandAction('reportAppshotComposerSlot', {
           slot: { x: r.left, y: r.top, width: r.width, height: r.height },
         })
-        .catch(() => {});
+        .catch((error) => {
+          console.warn('[appshot] Failed to report composer slot to native shell', error);
+        });
     };
     const timer = window.setTimeout(report, 300);
     window.addEventListener('resize', report);
