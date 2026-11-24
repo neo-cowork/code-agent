@@ -41,6 +41,7 @@ const RolesDomainRequestSchema = z.object({
     'updateMemory',
     'updatePersonalization',
     'updateVisual',
+    'wakeLedgerGet',
     'wakeProposalsAccept',
     'wakeProposalsDismiss',
     'wakeProposalsList',

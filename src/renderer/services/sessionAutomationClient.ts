@@ -4,7 +4,7 @@ import type {
   RoleWakeRunStatus,
   SessionAutomationSessionSummary,
 } from '@shared/contract';
-import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
+import type { OutboundDraftActionCode, OutboundDraftInboxItem, ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import ipcService from './ipcService';
 
@@ -76,6 +76,16 @@ export const sessionAutomationClient = {
       IPC_DOMAINS.SESSION_AUTOMATION,
       'listParkedApprovals',
       {},
+    );
+  },
+
+  listOutboundDrafts() {
+    return ipcService.invokeDomain<OutboundDraftInboxItem[]>(IPC_DOMAINS.SESSION_AUTOMATION, 'listOutboundDrafts');
+  },
+
+  resolveOutboundDraft(id: string, decision: 'send' | 'discard', revision: string) {
+    return ipcService.invokeDomain<OutboundDraftActionCode>(
+      IPC_DOMAINS.SESSION_AUTOMATION, 'resolveOutboundDraft', { id, decision, revision },
     );
   },
 

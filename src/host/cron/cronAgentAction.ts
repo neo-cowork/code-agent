@@ -13,7 +13,9 @@ import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
 import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel } from '../../shared/constants';
 import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../shared/utils/cronRuntimeNotReady';
 import { createLogger } from '../services/infra/logger';
-import type { AgentAction, CronJobDefinition } from '../../shared/contract/cron';
+import type { AgentAction, CronJobDefinition, CronExecutionTrigger } from '../../shared/contract/cron';
+import { bindEventReplySession } from '../tools/eventReplySession';
+import { enrichReplyTargetChatNames, resolveEventAccountName } from './cronEventChatNames';
 import {
   buildCronAgentActionResult,
   cronAgentRunHasAlert,
@@ -34,7 +36,7 @@ import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTermin
 import { parseStatedEventDecisions } from './cronEventDecisions';
 import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
-import { precheckLostCliConnectors, recordCronConnectorLost, scanLostMcpConnectors } from './cronConnectorLost';
+import { recordCronConnectorLost, refreshLostCoreCliConnectors, scanLostMcpConnectors } from './cronConnectorLost';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
 
@@ -97,6 +99,7 @@ export async function executeCronAgentAction(
   executionId?: string,
   eventPayloadBlock?: string,
   timeout?: number,
+  eventTrigger?: CronExecutionTrigger,
 ): Promise<unknown> {
   const runStartedAt = Date.now();
   // Heartbeat 任务: 检查 active_hours 窗口
@@ -109,8 +112,36 @@ export async function executeCronAgentAction(
     }
   }
 
-  // 连接器登录丢失预检：无人值守没人看聊天卡，往待过目收件箱记一条（同连接器同日至多一条）
-  await recordCronConnectorLost(definition, precheckLostCliConnectors(action.roleId), () => Date.now());
+  // 核心 CLI 连接器（飞书 / 腾讯会议）：先刷新登录状态。确认未登录则不建会话、不调模型。
+  // 探测超时或失败则照常跑，避免一份过期的「未登录」缓存把任务永久跳过。
+  const connectorPrecheck = await refreshLostCoreCliConnectors(action.roleId);
+  if (connectorPrecheck.kind === 'fail-open') {
+    logger.warn('CLI connector status probe did not refresh; cron run continues', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      probeOutcome: connectorPrecheck.probe,
+      ...(connectorPrecheck.message ? { probeError: connectorPrecheck.message } : {}),
+      waitMs: connectorPrecheck.waitMs,
+    });
+  } else if (connectorPrecheck.kind === 'lost' && definition.scheduleType !== 'at') {
+    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
+    const skipReason = `connector_lost:${connectorPrecheck.ids.join(',')}`;
+    logger.warn('Cron run skipped because a core CLI connector is signed out', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      connectorIds: connectorPrecheck.ids,
+      skipReason,
+    });
+    return { skipped: true, status: 'skipped', skipReason };
+  } else if (connectorPrecheck.kind === 'lost') {
+    // 一次性任务跑完就会停用。跳过它会留下「重新连接后会继续」，但任务已经没了。
+    logger.warn('One-time cron run continues despite a signed-out core CLI connector', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      connectorIds: connectorPrecheck.ids,
+    });
+    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
+  }
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
@@ -128,6 +159,19 @@ export async function executeCronAgentAction(
   if (!orchestrator) {
     throw new Error(CRON_RUNTIME_NOT_READY_MESSAGE_EN);
   }
+  // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
+  // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。
+  // 群名缺位时按账号从通道会话目录补齐（TTL 缓存；失败回落原始会话 id，见 cronEventChatNames）。
+  const rawReplyTargets = eventTrigger?.replyTargets;
+  const eventReplyAccountId = eventTrigger?.accountId;
+  const eventReplyTargets = eventReplyAccountId && rawReplyTargets && rawReplyTargets.length > 0
+    ? await enrichReplyTargetChatNames(eventReplyAccountId, rawReplyTargets)
+    : undefined;
+  const leaveEventReply = eventReplyAccountId && eventReplyTargets && eventReplyTargets.length > 0
+    ? bindEventReplySession(cronSession.id, eventReplyAccountId, eventReplyTargets)
+    : undefined;
+  // 命中规则的可读账号位（账号名；失败回落 accountId，见 cronEventChatNames）。
+  const eventReplyAccountName = eventReplyAccountId ? await resolveEventAccountName(eventReplyAccountId) : undefined;
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
   // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
@@ -165,7 +209,11 @@ export async function executeCronAgentAction(
   warnIfBudgetCapCannotTrigger(definition, cronSession.modelConfig);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
-  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
+  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId, undefined, {
+    // 可读会话位：本批事件带的群名。
+    chatName: eventReplyTargets?.find((target) => target.chatName?.trim())?.chatName,
+    accountName: eventReplyAccountName,
+  });
   try {
     try {
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -258,6 +306,7 @@ export async function executeCronAgentAction(
       console.warn('[CronService] Failed to scan connector-lost tool results after cron run', lostScanError);
     }
   } finally {
+    leaveEventReply?.();
     leaveObserveMode();
     tm.cleanup(cronSession.id);
   }

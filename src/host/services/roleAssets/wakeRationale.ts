@@ -39,6 +39,7 @@ export function stripWakeMarkup(text: string): string {
     .replace(ROLE_PROACTIVITY.DECISION_TAG_PATTERN, '')
     .replace(ROLE_PROACTIVITY.RATIONALE_TAG_PATTERN, '')
     .replace(ROLE_PROACTIVITY.EVIDENCE_TAG_PATTERN, '')
+    .replace(ROLE_PROACTIVITY.BASIS_TAG_PATTERN, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

@@ -49,18 +49,29 @@ function withCronWorkingDirectory(
 
 interface CronWorkingFolderRowProps {
   runsOn: CronRunsOn;
+  /** 运行位置已锁定（编辑已有任务）：不显示「切回本机」提示。 */
+  locationLocked?: boolean;
   metadata: Record<string, unknown> | undefined;
   onMetadataChange: (metadata: Record<string, unknown> | undefined) => void;
 }
 
-export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runsOn, metadata, onMetadataChange }) => {
+export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runsOn, locationLocked, metadata, onMetadataChange }) => {
   const copy = useI18n().t.cronWorkingFolder;
-  // 聚焦时展示并编辑原文；失焦后只改输入框里看到的字。云端分支不渲染输入框，焦点标志一并清掉。
+  // 聚焦时展示并编辑原文；离开本地模式时清除焦点状态。
   const [folderInputFocused, setFolderInputFocused] = React.useState(false);
   if (runsOn !== 'local' && folderInputFocused) setFolderInputFocused(false);
-  if (runsOn !== 'local') return null;
-
   const folder = cronWorkingDirectoryFromMetadata(metadata);
+  if (runsOn !== 'local') {
+    if (runsOn !== 'cloud' || !folder || locationLocked) return null;
+    return (
+      <FormField label={copy.label}>
+        <p className="text-sm text-zinc-400" data-testid="cron-working-folder-cloud-notice">
+          {copy.cloudNotCarried.replace('{name}', cronFolderDisplayName(folder))}
+        </p>
+      </FormField>
+    );
+  }
+
   const rawFolder = metadata?.[CRON_WORKING_DIRECTORY_METADATA_KEY];
   const storedFolder = typeof rawFolder === 'string' ? rawFolder : '';
   const setFolder = (next: string | undefined) => onMetadataChange(withCronWorkingDirectory(metadata, next));
