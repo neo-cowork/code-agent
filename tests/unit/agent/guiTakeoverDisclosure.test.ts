@@ -226,3 +226,27 @@ describe('GUI 接管披露 · unresolved 留痕，metadata / 整桌面读取保�
     toolSpy.mockRestore();
   });
 });
+
+describe('GUI 接管披露 · 命中已有键时不把另一应用名并进集合', () => {
+  it('已披露 Calculator(bundle) 后，带同 bundle 的 Notes 调用被跳过但不吞掉 Notes：随后只带名字的 Notes 仍披露', async () => {
+    const ctx = makeCtx();
+    const got = await disclosuresFor(ctx, [
+      call('k1', 'computer_use', { action: 'open_application', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+      call('k2', 'computer_use', { action: 'click', targetApp: 'Notes', bundleId: 'com.apple.calculator' }),
+      call('k3', 'computer_use', { action: 'click', targetApp: 'Notes' }),
+    ]);
+    expect(got[0]).toEqual({ code: 'gui_takeover', app: 'Calculator' });
+    expect(got[1]).toBeNull();
+    expect(got[2]).toEqual({ code: 'gui_takeover', app: 'Notes' });
+  });
+
+  it('先按名字披露、再带 bundle 的同名调用：并到同一次预告，之后 bundle-only 不再披露', async () => {
+    const ctx = makeCtx();
+    const got = await disclosuresFor(ctx, [
+      call('n1', 'computer_use', { action: 'click', targetApp: 'Calculator' }),
+      call('n2', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+      call('n3', 'computer_use', { action: 'click', targetApp: 'calculator ', bundleId: 'com.apple.calculator' }),
+    ]);
+    expect(got).toEqual([{ code: 'gui_takeover', app: 'Calculator' }, null, null]);
+  });
+});
