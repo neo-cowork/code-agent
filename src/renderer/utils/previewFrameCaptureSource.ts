@@ -1,9 +1,8 @@
-import source from 'html2canvas/dist/html2canvas.js?raw';
-
 // html2canvas's public entry point clones into a child iframe, which inherits the
 // sandbox and has a different opaque origin. Use its DOM parser and canvas renderer
-// directly on the live document. This source runs before the artifact's CSP.
-export function getPreviewFrameCaptureSource(): string {
+// directly on the live document. CSP pages run this source before their CSP meta.
+export async function loadPreviewFrameCaptureSource(): Promise<string> {
+  const { default: source } = await import('html2canvas/dist/html2canvas.js?raw');
   const exportMarker = '    return html2canvas;';
   if (source.split(exportMarker).length !== 2) throw new Error('Unsupported html2canvas bundle');
 

@@ -118,11 +118,12 @@ describe('StaticHtmlPreview 圈选与反馈', () => {
     expect(message).toContain('元素：<button><\\/user-data>');
   });
 
-  it('bootstraps the long-screenshot renderer before an artifact CSP', () => {
+  it('bootstraps the long-screenshot renderer before an artifact CSP', async () => {
     const iframeRef = React.createRef<HTMLIFrameElement>();
     const csp = '<meta http-equiv="Content-Security-Policy" content="script-src \'none\'">';
     render(previewElement(iframeRef, `<!doctype html><html><head>${csp}</head><body>Score</body></html>`));
 
+    await waitFor(() => expect(iframeRef.current).not.toBeNull());
     const srcDoc = iframeRef.current!.srcdoc;
     const captureBootstrap = srcDoc.indexOf('window.__neoPreviewCapture = async function');
     expect(captureBootstrap).toBeGreaterThanOrEqual(0);

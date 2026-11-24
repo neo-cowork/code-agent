@@ -29,6 +29,7 @@ import {
   readPreviewFrameSelection,
   sendPreviewFrameSelectionMode,
 } from '../utils/previewFrameBridge';
+import { loadPreviewFrameCaptureSource } from '../utils/previewFrameCaptureSource';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
 import { ArtifactStandingRefresh, type ArtifactStandingRefreshHandle } from './ArtifactStandingRefresh';
 import { DeliverablePublishBadge } from './DeliverablePublishBadge';
@@ -321,7 +322,22 @@ export function StaticHtmlPreview({
   const { t } = useI18n();
   const pv = t.previewWorkspace.preview;
   const [selectionMode, setSelectionMode] = useState(false);
-  const { revision, srcDoc } = useMemo(() => createPreviewFrameDocument(html), [html, filePath]);
+  const requiresCaptureBootstrap = /content-security-policy/i.test(html);
+  const [captureSource, setCaptureSource] = useState<string>();
+  useEffect(() => {
+    if (!requiresCaptureBootstrap || captureSource !== undefined) return;
+    let active = true;
+    void loadPreviewFrameCaptureSource().then(
+      (source) => { if (active) setCaptureSource(source); },
+      () => { if (active) setCaptureSource(''); },
+    );
+    return () => { active = false; };
+  }, [captureSource, requiresCaptureBootstrap]);
+  const frameDocument = useMemo(() => {
+    if (requiresCaptureBootstrap && captureSource === undefined) return null;
+    return createPreviewFrameDocument(html, captureSource || undefined);
+  }, [captureSource, filePath, html, requiresCaptureBootstrap]);
+  const revision = frameDocument?.revision ?? 0;
   const [selection, setSelection] = useState<{ revision: number; anchor: HtmlLocalityAnchor } | null>(null);
 
   const clearSelection = () => {
@@ -370,21 +386,23 @@ export function StaticHtmlPreview({
         </button>
         {/* ds-allow:end */}
       </div>
-      <iframe
-        key={revision}
-        ref={iframeRef}
-        data-preview-revision={revision}
-        srcDoc={srcDoc}
-        className="min-h-0 flex-1 border-0"
-        title={title}
-        sandbox={ARTIFACT_PREVIEW_SANDBOX}
-        allow="fullscreen; gamepad; autoplay"
-        allowFullScreen
-        onLoad={() => {
-          setSelection(null);
-          sendPreviewFrameSelectionMode(iframeRef.current, selectionMode);
-        }}
-      />
+      {frameDocument && (
+        <iframe
+          key={revision}
+          ref={iframeRef}
+          data-preview-revision={revision}
+          srcDoc={frameDocument.srcDoc}
+          className="min-h-0 flex-1 border-0"
+          title={title}
+          sandbox={ARTIFACT_PREVIEW_SANDBOX}
+          allow="fullscreen; gamepad; autoplay"
+          allowFullScreen
+          onLoad={() => {
+            setSelection(null);
+            sendPreviewFrameSelectionMode(iframeRef.current, selectionMode);
+          }}
+        />
+      )}
       {selection?.revision === revision && (
         <div className="flex shrink-0 items-center gap-2 border-t border-zinc-700 bg-zinc-900 px-3 py-2">
           <div className="min-w-0 flex-1">
