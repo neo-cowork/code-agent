@@ -40,8 +40,6 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { MemberConversationView } from '../../../src/renderer/components/features/expert/MemberConversationView';
-import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
-import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore';
