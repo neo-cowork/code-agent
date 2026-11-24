@@ -5,7 +5,7 @@
 // 2026-07-29 UX round2 任务 14：替代旧 useFileAutocomplete（hooks/ 下已删）。
 // - 触发规则不变：光标前文本尾部匹配 /@([^\s@]*)$/，200ms 防抖拉工作区文件。
 // - 面板打开时（每次 false→true）拉资料库条目 + 本会话 pin，客户端过滤
-//   （filterPinCandidates / matchesLibraryItemSearch），行选中 = 切换 pin。
+//   （filterPinCandidates / matchesLibraryItemSearch）。资料库行选中 = 幂等钉上并关闭。
 // - 键盘导航（↑↓ 跨组循环 / Enter 选中 / Esc 关闭）经 onAutocompleteKeyDown
 //   接进 InputArea，Enter 用 imeCompositionGuard 防中文输入法上屏误选。
 // pin 写库乐观更新、失败回滚，并广播 libraryPinEvents 让 PinnedLibraryChips 即时刷新。
@@ -95,10 +95,12 @@ export interface UseAtMentionPanelParams {
   onFileSelect: (row: AtMentionFileRow) => void;
   onSessionSelect: (row: AtMentionSessionRow) => void;
   onArtifactSelect: (row: AtMentionArtifactRow) => void;
+  /** 资料库行选中后清掉光标前的 @query。chip 由 pin → 内联 chip 对账补上，这里不插第二颗。 */
+  onLibrarySelect: (row: AtMentionLibraryRow) => void;
 }
 
 export function useAtMentionPanel(params: UseAtMentionPanelParams) {
-  const { sessionId, projectId, onFileSelect, onSessionSelect, onArtifactSelect } = params;
+  const { sessionId, projectId, onFileSelect, onSessionSelect, onArtifactSelect, onLibrarySelect } = params;
   const { t } = useI18n();
   const isComposingRef = useImeCompositionRef();
   const pendingPinItemIds = useComposerStore((s) => s.pendingPinItemIds);
@@ -126,6 +128,8 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   onSessionSelectRef.current = onSessionSelect;
   const onArtifactSelectRef = useRef(onArtifactSelect);
   onArtifactSelectRef.current = onArtifactSelect;
+  const onLibrarySelectRef = useRef(onLibrarySelect);
+  onLibrarySelectRef.current = onLibrarySelect;
 
   const pinnedIds = useMemo(
     () => (sessionId ? sessionPinnedIds : new Set(pendingPinItemIds)),
@@ -243,18 +247,18 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
     wasOpenRef.current = false;
   }, []);
 
-  const togglePin = useCallback((itemId: string) => {
+  // 选中只保证钉上，绝不取消。取消只走 chip ×（removePin）。已钉住时不再写一遍。
+  const ensurePinned = useCallback((itemId: string) => {
     if (!sessionId) {
-      useComposerStore.getState().togglePendingPinItemId(itemId);
+      const store = useComposerStore.getState();
+      if (store.pendingPinItemIds.includes(itemId)) return;
+      store.setPendingPinItemIds([...store.pendingPinItemIds, itemId]);
       return;
     }
+    if (sessionPinnedIds.has(itemId)) return;
     const prev = sessionPinnedIds;
     const next = new Set(prev);
-    if (next.has(itemId)) {
-      next.delete(itemId);
-    } else {
-      next.add(itemId);
-    }
+    next.add(itemId);
     setSessionPinnedIds(next);
     notifyLibraryPinChanged(sessionId);
     setSessionPin(sessionId, [...next]).catch(() => {
@@ -314,9 +318,11 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       dismiss();
       return;
     }
-    // 资料库行 = 切换 pin，面板保持打开，一次可以带多条资料进会话
-    togglePin(row.item.id);
-  }, [dismiss, togglePin]);
+    // 资料库行 = 幂等钉上 + 关掉面板。触发词由组件清掉；再带一条要重新输入 @。
+    ensurePinned(row.item.id);
+    onLibrarySelectRef.current(row);
+    dismiss();
+  }, [dismiss, ensurePinned]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>): boolean => {
     const isSelectionEnter = e.key === 'Enter' && !e.shiftKey && !isImeKeyEvent(e.nativeEvent, isComposingRef);
