@@ -275,7 +275,9 @@ const AttachmentItem: React.FC<{
       .then((dataUrl) => {
         if (!cancelled) setLazyAppshotSrc(dataUrl);
       })
-      .catch(() => {});
+      .catch((error) => {
+        console.warn('[appshot] Failed to restore appshot image by id', error);
+      });
     return () => {
       cancelled = true;
     };

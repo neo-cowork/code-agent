@@ -279,6 +279,7 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'STALE_FILE',
   'READ_DIGEST_MISMATCH',
   'READ_REQUIRED_AFTER_SEARCH',
+  'COMMAND_FAILED',
 ]);
 
 /**
@@ -371,14 +372,24 @@ export function humanizeToolError(
     };
   }
   const hostReason = readHostReasonFromMetadata(metadata);
-  const hostReasonCopy = resolveHostReasonCopy(hostReason, t);
+  // Linux 上每条已执行的命令都带 OS_SANDBOX_DEGRADED（环境说明，不是退出原因）。
+  // 结果码已是 COMMAND_FAILED 时，折叠行和琥珀框说命令失败；沙箱不可用（拒绝执行）仍走 hostReason。
+  const commandResultOutranksSandboxNote = metadata?.code === 'COMMAND_FAILED'
+    && typeof hostReason !== 'string'
+    && hostReason?.code === HostReasonCode.OsSandboxDegraded;
+  const hostReasonCopy = commandResultOutranksSandboxNote
+    ? null
+    : resolveHostReasonCopy(hostReason, t);
   if (hostReasonCopy) {
     const structuredFailureCode = inferAgentFailureCode({
       failureCode: metadata?.failureCode,
       toolResultCode: metadata?.code,
       defaultCode: AgentFailureCode.Unknown,
     });
-    const outcome = structuredFailureCode === AgentFailureCode.Timeout
+    // 审批超时是系统按安全规则收口，不是用户点的拒绝：failureCode 仍是 PermissionDenied，
+    // 要靠 hostReason.code 区分，原因行才不会把超时说成「审批被拒绝」。
+    const approvalTimedOut = typeof hostReason !== 'string' && hostReason?.code === HostReasonCode.PermissionDeniedTimeout;
+    const outcome = structuredFailureCode === AgentFailureCode.Timeout || approvalTimedOut
       ? t.outcomeWords['failed-timeout'].timeline
       : structuredFailureCode === AgentFailureCode.PermissionDenied && metadata?.code !== 'FOREIGN_SLOT_DATA_DIR'
         ? t.outcomeWords['failed-approval-denied'].timeline

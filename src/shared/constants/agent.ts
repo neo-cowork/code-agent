@@ -410,6 +410,12 @@ export const AGENT_WAKE = {
 } as const;
 
 
+/**
+ * 审批刚答完、工具结果还没到本页时，行保持「进行中」的宽限。旁观他端发起的 run 时，
+ * 终态广播到对账拉库约 3~6 秒；超过它仍无结果就是真没结果，读作「已中断」，不无限转圈。
+ */
+export const APPROVAL_ANSWER_RESULT_GRACE_MS = 15_000;
+
 /** Subagent progress watchdog; total execution budget remains an independent hard limit. */
 export const SUBAGENT_IDLE = {
   IDLE_MS: 120_000,

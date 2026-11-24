@@ -1,4 +1,9 @@
 import type { AgentTreeNode } from '@shared/contract/agentTree';
+import { createSingleSpawnRunId, parseSwarmTraceStorageId } from '@shared/contract/swarm';
+
+export function isStandaloneSpawnTrace(agentId: string, traceId: string | undefined): boolean {
+  return Boolean(traceId && parseSwarmTraceStorageId(traceId)?.runId === createSingleSpawnRunId(agentId));
+}
 
 /** A fresh context without lifecycle markers is live, but cannot undo a known member terminal. */
 export function reconcileAgentNodeLifecycle(

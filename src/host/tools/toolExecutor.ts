@@ -56,6 +56,7 @@ import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
+import { isApprovedRmVerifyProbe } from './shell/approvedRmVerifyProbe';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -92,6 +93,7 @@ import { computeActionFingerprint, getDenialRegistry } from '../security/denialR
 import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
+import { appendUserEditedArgsNote } from './userEditedArgsNote';
 import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
@@ -1339,7 +1341,19 @@ export class ToolExecutor {
       // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
-      requestPermission: async (request) => {
+      requestPermission: async (rawRequest) => {
+        // 工具体内直发 requestPermission 的调用方（browserRiskGate 等）不带 sessionId，
+        // 补上本次执行的 effectiveSessionId：无人值守停车、用户原话引用、stall 时钟都靠它认会话。
+        // 已带值的不覆盖也不换对象——permissionAskResults 是 WeakMap，shadowAdapter 用同一引用回查。
+        const sessionId = rawRequest.sessionId || effectiveSessionId;
+        // runId 不补：它在审批链上是「后台 lane 身份」（hasBackgroundRunIdentity 凭它停车
+        // backgroundExactFile、收线 drain 跳过、停车行标 backgroundLane），只由 lane 边界
+        // 在跨 lane 转发时盖上（subagentToolRuntime 摊 identity、requestHint）。本 lane 自产
+        // 的请求带上它，哪个 lane 都受害：main 的前台 upload_file 从当场确认被改判停车、
+        // cron 自己的停车行标了 backgroundLane 躲过放弃清理成死卡。
+        const request = sessionId === rawRequest.sessionId
+          ? rawRequest
+          : { ...rawRequest, sessionId };
         if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         // 工具体内的开头授权（shadowAdapter 标 grantEligible）先消费已记住的工具级授权：
         // 此前这条路直接弹卡，点了「本次任务内允许」下一次照问（11-17 真机：读日程连弹三张）。
@@ -1844,6 +1858,13 @@ export class ToolExecutor {
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
       }
 
+      // 2a. 用户刚批准删除的那几个文件，删完后的存在性检查（test/[/ls/stat 字面路径）不再出第二张卡。
+      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification
+        && isApprovedRmVerifyProbe(cmd, bashWorkingDirectory, effectiveSessionId)) {
+        isSafeCommand = true;
+        recordDecision(executionToolName, params, 'auto-approve', 'approved-rm-verify-probe', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      }
+
       // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
       // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
       if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification) {
@@ -1918,6 +1939,7 @@ export class ToolExecutor {
     // /session-allowlist/裸 boolean 等自报来源）不盖章。交付物收尾闸据此豁免「用户已批准写入的
     // 文件」的占位符/Markdown 残留补轮——批准即拍板，不重写、不重弹同一张审批卡。
     let userApproved = false;
+    let userEditedKeys: string[] = [];
     if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -2469,6 +2491,7 @@ export class ToolExecutor {
         const edited = applyEditedArgs(executionToolName, params, ask.updatedArgs);
         if (edited.ok) {
           params = edited.params;
+          userEditedKeys = edited.changedKeys;
           traceBuilder.addStep('plan_approval', 'user_edited_args', 'allow', `用户在审批卡上改了：${edited.changedKeys.join(', ') || '（无实际改动）'}`);
         } else {
           ask.approved = false;
@@ -2848,7 +2871,7 @@ export class ToolExecutor {
           authorization: directiveMemoryAuthorization,
         });
       }
-      return { ...result, metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
+      return { ...appendUserEditedArgsNote(result, params, userEditedKeys), metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
       if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;

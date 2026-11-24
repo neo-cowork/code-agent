@@ -129,7 +129,7 @@ describe('timed-out wait_for_user parks the window', () => {
     h.keptRegistry.register({
       conversationId: 'conversation-p', serviceKey: 'prior-result',
       url: 'https://portal.example.test/invoice', title: 'Prior invoice',
-      browserService: { onSessionChanged: () => () => undefined },
+      browserService: { onSessionChanged: () => () => undefined, listTabs: () => [] },
     });
     poolMocks.releaseAgent.mockClear();
     const result = await browserActionTool.execute({ action: 'wait_for_user', reason: 'Please finish verification' }, {

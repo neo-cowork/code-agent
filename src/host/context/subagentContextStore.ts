@@ -1,3 +1,4 @@
+import type { AgentFailureCode } from '../../shared/contract/agentFailure';
 import type { Message } from '../../shared/contract';
 import type {
   ContextEventSourceKind,
@@ -40,6 +41,8 @@ export interface SubagentContextRecord {
     backgroundAgentId?: string;
     startedAt: number;
     finishedAt?: number;
+    failureCode?: AgentFailureCode;
+    failureReason?: string;
   };
   updatedAt: number;
   /** Explicit graph lifecycle for members that have no SpawnGuard entry. */
