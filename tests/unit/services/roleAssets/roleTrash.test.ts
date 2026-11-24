@@ -164,6 +164,43 @@ describe('roleTrash', () => {
   });
 
   describe('③ 还原：逐文件字节一致；roleId 被占用时拒绝且不覆盖', () => {
+    it('deletes and restores a Markdown-only expert without creating role assets', async () => {
+      const roleId = '研究助手';
+      const definitionPath = path.join(agentsDir(), `${roleId}.md`);
+      const definition = `---\nname: ${roleId}\ndisplay-name: 研究伙伴\n---\nCheck the sources.\n`;
+      await fs.mkdir(agentsDir());
+      await fs.writeFile(definitionPath, definition);
+      expect(await listPersistentRoles()).toEqual([roleId]);
+
+      const deleted = await trashUserRole(roleId);
+      expect(deleted.success).toBe(true);
+      if (!deleted.success) return;
+      expect(await listPersistentRoles()).toEqual([]);
+      expect(await exists(definitionPath)).toBe(false);
+      expect(await exists(rolesDir())).toBe(false);
+      expect(await listTrashedRoles()).toEqual([
+        expect.objectContaining({ trashId: deleted.trashId, roleId, displayName: '研究伙伴' }),
+      ]);
+      expect((await fs.readdir(path.join(trashDir(), deleted.trashId))).sort()).toEqual(['agent.md', 'meta.json']);
+
+      expect(await restoreTrashedRole(deleted.trashId)).toEqual({ success: true, roleId });
+      expect(await fs.readFile(definitionPath, 'utf-8')).toBe(definition);
+      expect(await listPersistentRoles()).toEqual([roleId]);
+      expect(await listTrashedRoles()).toEqual([]);
+      expect(await exists(rolesDir())).toBe(false);
+    });
+
+    it('keeps a core Markdown override outside the trash', async () => {
+      const definitionPath = path.join(agentsDir(), 'coder.md');
+      await fs.mkdir(agentsDir());
+      const definition = '---\nname: coder\n---\nCustom coder.\n';
+      await fs.writeFile(definitionPath, definition);
+
+      expect(await trashUserRole('coder')).toMatchObject({ success: false, code: 'ROLE_DELETE_NOT_FOUND' });
+      expect(await fs.readFile(definitionPath, 'utf-8')).toBe(definition);
+      expect(await listTrashedRoles()).toEqual([]);
+    });
+
     it('round-trip 每个文件字节一致（memories / USER.md / history / MEMORY.md / bindings.json / 定义）', async () => {
       const files = await seedUserRole('撤销角色', '唯一标记');
       const beforeAgents = await snapshotDir(agentsDir());
