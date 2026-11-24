@@ -86,7 +86,9 @@ export function createProtocolSubagentExecutionContext(
             ledgerRecordedByChild: true,
           },
         );
-        if (!result.allow) return false;
+        if (!result.allow) {
+          return result.denialSource ? { approved: false, denialSource: result.denialSource } : false;
+        }
         return result.approvalSource
           ? { approved: true, approvalSource: result.approvalSource }
           : true;
