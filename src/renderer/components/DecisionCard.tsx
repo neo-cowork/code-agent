@@ -42,6 +42,7 @@ export interface DecisionCardProps {
   headerMeta?: string;
   /** 头部右侧终态徽标等；未传时其他消费方 DOM 不变。 */
   headerEnd?: React.ReactNode;
+  headerLine?: string;
   /** 一行问题句（「允许写入 ~/work/report.md？」） */
   question: string;
   /** 结构化详情区（mono 路径/命令块、边界徽章、任务列表等），由各适配层提供 */
@@ -115,6 +116,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   title,
   headerMeta,
   headerEnd,
+  headerLine,
   question,
   details,
   options,
@@ -264,6 +266,10 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
     );
   });
 
+  const headerLineContent = headerLine && (
+    <p className="truncate text-xs text-zinc-400" data-testid={`${testId}-header-line`}>{headerLine}</p>
+  );
+
   return (
     <div className={className} data-testid={testId}>
       <div
@@ -279,7 +285,10 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             <span className={`shrink-0 ${danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>
               {icon}
             </span>
-            <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{question}</span>
+            <div className="min-w-0 flex-1">
+              {headerLineContent}
+              <p className="truncate text-xs text-zinc-200">{question}</p>
+            </div>
             {directActions && actionButtons}
             {onViewModeChange && (
               <Button
@@ -317,6 +326,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </Button>
           )}
         </div>
+
+        {headerLineContent && <div className="shrink-0 px-4 pt-2">{headerLineContent}</div>}
 
         {/* 槽位卡只让详情区滚动；选项与确认区留在可见卡底。其他消费方保持原骨架。 */}
         {pinActions ? (

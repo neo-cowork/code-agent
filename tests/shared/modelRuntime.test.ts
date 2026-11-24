@@ -27,6 +27,54 @@ import { getDefaultModelForProvider, getModelDisplayLabel, getProviderInfo, PROV
 describe('modelRuntime', () => {
   const tinyPngIcon = 'data:image/png;base64,aGVsbG8=';
 
+  it.each([100, 300])('preserves same-named provider sources with tokenrhythm updatedAt=%s', (updatedAt) => {
+    const settings = { models: { providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true, updatedAt: 200,
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元', updatedAt,
+        models: { 'mimo-v2.5-pro': { enabled: true, label: 'MiMo V2.5 Pro' } } },
+    } } } as unknown as AppSettings;
+    const options = buildRuntimeModelOptions(settings, ['xiaomi'], {
+      includeDisabledProviders: ['xiaomi', 'custom-tokenrhythm'],
+    }).filter((option) => option.model === 'mimo-v2.5-pro');
+    expect(options.map((option) => option.provider)).toEqual(['xiaomi', 'custom-tokenrhythm']);
+    expect(options.find((option) => option.provider === 'custom-tokenrhythm')).toMatchObject({
+      providerGroup: 'xiaomi', providerGroupLabel: 'Xiaomi MiMo', providerLabel: '基元', providerSourceLabel: '基元',
+    });
+  });
+
+  it.each([
+    [300, 100, 'zhipu'],
+    [100, 300, 'custom-glm-relay'],
+  ] as const)('dedupes same-id GLM sources by update time (official=%s, relay=%s)', (officialUpdatedAt, relayUpdatedAt, expectedProvider) => {
+    const models = { 'glm-5': { enabled: true }, 'glm-5-plus': { enabled: true } };
+    const settings = { models: { providers: {
+      zhipu: { enabled: true, apiKeyConfigured: true, updatedAt: officialUpdatedAt, models },
+      'custom-glm-relay': { enabled: true, apiKeyConfigured: true, displayName: 'GLM Relay', updatedAt: relayUpdatedAt, models },
+    } } } as unknown as AppSettings;
+    const options = buildRuntimeModelOptions(settings, ['zhipu']);
+    expect([...new Set(options.map((option) => option.provider))]).toEqual([expectedProvider]);
+    expect(options.filter((option) => option.model === 'glm-5').map((option) => option.provider)).toEqual([expectedProvider]);
+    const included = buildRuntimeModelOptions(settings, ['zhipu'], {
+      includeDisabledProviders: [expectedProvider === 'zhipu' ? 'custom-glm-relay' : 'zhipu'],
+    });
+    expect(included.filter((option) => option.model === 'glm-5').map((option) => option.provider))
+      .toEqual(['zhipu', 'custom-glm-relay']);
+    expect(new Set(buildRuntimeModelOptions(settings, ['zhipu'], { dedupeProviderGroups: false })
+      .map((option) => option.provider))).toEqual(new Set(['zhipu', 'custom-glm-relay']));
+  });
+
+  it('preserves an explicitly included current source even without a shared model id', () => {
+    const settings = { models: { providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true, updatedAt: 300 },
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元', updatedAt: 100,
+        models: { 'mimo-session-only': { enabled: true } } },
+    } } } as unknown as AppSettings;
+    expect(buildRuntimeModelOptions(settings, ['xiaomi']).some((option) => option.provider === 'custom-tokenrhythm')).toBe(false);
+    expect(buildRuntimeModelOptions(settings, ['xiaomi'], { includeDisabledProviders: ['custom-tokenrhythm'] }))
+      .toContainEqual(expect.objectContaining({ provider: 'custom-tokenrhythm', model: 'mimo-session-only', providerSourceLabel: '基元' }));
+  });
+
   it('infers useful default capabilities from discovered model ids', () => {
     expect(inferModelCapabilities('mimo-v2.5-pro-1m')).toEqual(
       expect.arrayContaining(['general', 'longContext'])

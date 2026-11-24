@@ -1,5 +1,7 @@
-import { getModelDisplayLabel } from '@shared/constants';
-import type { ModelProvider } from '@shared/contract';
+import type { AppSettings, ModelProvider } from '@shared/contract';
+import { getRuntimeModelLabel, type RuntimeModelOption } from '@shared/modelRuntime';
+import { getModelDisplayLabel, getProviderDisplayName } from '@shared/constants';
+import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import { languages, type Language } from '../../i18n';
 import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
@@ -8,9 +10,28 @@ function shownModelLabel(modelId: string, language: Language): string {
   return localizeModelLabel(modelId, getModelDisplayLabel(modelId), language);
 }
 
+function providerName(provider: string, settings: AppSettings | null | undefined, language: Language): string {
+  return resolveProviderLabel(provider,
+    settings?.models?.providers?.[provider as ModelProvider]?.displayName
+      || getProviderDisplayName(provider) || getProviderDisplayName('custom'), language);
+}
+
+export function formatModelSwitcherLabel(
+  model: string, provider: ModelProvider, settings: AppSettings | null,
+  options: RuntimeModelOption[], language: Language,
+  modelLabel = getRuntimeModelLabel(model, provider, settings),
+): string {
+  const label = localizeModelLabel(model, modelLabel, language);
+  if (!options.some((option) => option.model === model && option.provider !== provider)) return label;
+  const selected = options.find((option) => option.model === model && option.provider === provider);
+  const sourceLabel = selected?.providerSourceLabel || settings?.models?.providers?.[provider]?.displayName || selected?.providerLabel;
+  return `${label} · ${sourceLabel ? resolveProviderLabel(provider, sourceLabel, language) : providerName(provider, settings, language)}`;
+}
+
 export function formatNativeModelSwitcherTooltip(args: {
   language?: Language;
   engineLabel: string;
+  settings?: AppSettings | null;
   currentModel: string;
   displayProvider: ModelProvider;
   displayModel: string;
@@ -28,16 +49,16 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
-  // 模型 id 统一走共享标签表（未登记 id 原样回落）；provider 部分保持原样。
+  const identity = (provider: string, modelLabel: string) => `${providerName(provider, args.settings, language)}/${modelLabel}`;
   const modelLine = args.switchedFrom
     ? labels.switched
-        .replace('{shown}', `${args.shownProvider}/${shownModelLabel(args.shownModel ?? '', language)}`)
-        .replace('{original}', `${args.switchedFrom.provider}/${shownModelLabel(args.switchedFrom.model, language)}`)
+        .replace('{shown}', identity(args.shownProvider ?? args.displayProvider, shownModelLabel(args.shownModel ?? args.displayModel, language)))
+        .replace('{original}', identity(args.switchedFrom.provider, shownModelLabel(args.switchedFrom.model, language)))
     : args.adaptive
       ? labels.adaptive.replace('{model}', shownModelLabel(args.currentModel, language))
       : args.overridden
-        ? labels.overridden.replace('{model}', `${args.displayProvider}/${shownModelLabel(args.displayModel, language)}`).replace('{original}', shownModelLabel(args.currentModel, language))
-        : labels.model.replace('{model}', `${args.displayProvider}/${shownModelLabel(args.displayModel, language)}`);
+        ? labels.overridden.replace('{model}', identity(args.displayProvider, shownModelLabel(args.displayModel, language))).replace('{original}', shownModelLabel(args.currentModel, language))
+        : labels.model.replace('{model}', identity(args.displayProvider, shownModelLabel(args.displayModel, language)));
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,

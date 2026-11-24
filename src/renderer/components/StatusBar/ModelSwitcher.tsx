@@ -1,4 +1,4 @@
-import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from './modelSwitcherTooltips';
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip, formatModelSwitcherLabel } from './modelSwitcherTooltips';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -19,7 +19,6 @@ import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
   groupRuntimeModelOptionsByProvider,
-  getRuntimeModelLabel,
   hasConfiguredRuntimeModels,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
@@ -162,6 +161,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [hasLoadedPickerSettings, setHasLoadedPickerSettings] = useState(false);
   const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const panelText = modelText.switcherPanel;
@@ -215,7 +215,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   );
   const showModelSettingsPrompt = shouldShowModelSettingsPrompt(
     engine.kind,
-    modelSettings,
+    hasLoadedPickerSettings ? modelSettings : null,
     nativeHasConfiguredModels,
   );
   const displayModel = overrideModel || hostModel?.model || currentModel;
@@ -266,23 +266,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
   }, []);
   useEffect(() => {
-    if (!open) {
-      setSettingsLoaded(false);
-      return;
-    }
+    setSettingsLoaded(false);
     const api = window.domainAPI;
     if (!api) {
       setSettingsLoaded(true);
       return;
     }
+    let active = true;
     api.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
       .then((res) => {
-        if (res?.success && res.data) {
+        if (active && res?.success && res.data) {
           setModelSettings(res.data);
+          if (open) setHasLoadedPickerSettings(true);
         }
       })
       .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
-      .finally(() => setSettingsLoaded(true));
+      .finally(() => { if (active) setSettingsLoaded(true); });
+    return () => { active = false; };
   }, [open]);
   useEffect(() => {
     const domainAPI = window.domainAPI;
@@ -600,10 +600,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
   const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
-  const switchedLabel = shown.switchedFrom
-    ? `${localizeModelLabel(shown.model, getRuntimeModelLabel(shown.model, shown.provider, modelSettings), language)}${panelText.switchedSuffix}`
-    : null;
-  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? panelText.auto : localizeModelLabel(displayModel, getRuntimeModelLabel(displayModel, displayProvider, modelSettings), language));
+  const nativeDisplayLabel = overrideAdaptive ? panelText.auto
+    : formatModelSwitcherLabel(shown.model, shown.provider, modelSettings, modelOptions, language) + (shown.switchedFrom ? panelText.switchedSuffix : '');
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -650,6 +648,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         language,
         engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
+        settings: modelSettings,
         displayProvider,
         displayModel,
         adaptive: overrideAdaptive,
@@ -894,7 +893,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-medium">{localizeModelLabel(opt.model, opt.label, language)}</span>
+                                <span className="font-medium">{formatModelSwitcherLabel(opt.model, opt.provider, modelSettings, modelOptions, language, opt.label)}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
                                     className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"

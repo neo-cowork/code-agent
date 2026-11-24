@@ -14,9 +14,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
-import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
+import { createSingleSpawnRunId, createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -106,6 +109,111 @@ describe('成员对话页', () => {
     useAppStore.setState({ pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {} });
   });
   afterEach(() => cleanup());
+
+  it.each([
+    { t: zh, name: '调研员', progress: 'Tool results: Read denied', failureCode: AgentFailureCode.PermissionDenied },
+    { t: en, name: 'Researcher', progress: 'Error: internal provider response', failureCode: AgentFailureCode.Timeout },
+    { t: zh, name: '调研员', progress: 'Tool results: Read denied' },
+    { t: en, name: 'Researcher', progress: 'Error: internal provider response' },
+    { t: en, name: 'Researcher', progress: 'Permission denied: provider workspace', failureCode: AgentFailureCode.PermissionDenied },
+    { t: zh, name: '调研员', progress: '已核对两份统计表，口径一致。', failureCode: AgentFailureCode.StepCapReached,
+      readable: '已核对两份统计表，口径一致。' },
+    { t: en, name: 'Researcher', progress: 'Permission denied: provider workspace', failureCode: AgentFailureCode.PermissionDenied,
+      ledgerOutput: 'Both source tables use the same definition.', readable: 'Both source tables use the same definition.' },
+  ])('uses one role label and localized failure copy across the receipt and member view (%#)', async ({
+    t, name, progress, failureCode, ledgerOutput, readable,
+  }) => {
+    translations = t;
+    const node: AgentTreeNode = {
+      id: 'report-agent', role: 'explore', displayName: 'explore-交接笔记', background: true, status: 'failed',
+      statusLabel: '', progress, failureCode, children: [], worktreeState: { status: 'none' },
+      budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'],
+    };
+    const id = createSwarmTraceStorageId({
+      sessionId: 'session-1', runId: createSingleSpawnRunId(node.id), treeId: 'session-1',
+    });
+    const run = { ...ledgerRun, id, totalAgents: 1 };
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve({
+        ...ledgerDetail, run: { ...ledgerDetail.run, ...run },
+        agents: [{ ...record, runId: id, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: ledgerOutput ?? progress }],
+      });
+      return Promise.resolve(null);
+    });
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => (
+      domain === IPC_DOMAINS.AGENT && action === 'getTree' ? Promise.resolve(treeSnapshot(node)) : Promise.resolve(null)
+    ));
+    useMemberViewStore.setState({ viewingMemberId: node.id });
+    const receipt = deriveDelegationPresentation({
+      id: 'report-call', name: 'spawn_agent', arguments: {},
+      result: { toolCallId: 'report-call', success: true, metadata: { agentId: node.id } },
+    }, [], [node], t);
+    expect(receipt).toBeTruthy();
+    if (!receipt) throw new Error('Expected delegation receipt');
+    render(<>
+      <DelegationHeader presentation={receipt} />
+      <DelegationReceipt presentation={receipt} />
+      <MemberConversationView sessionId="session-1" />
+    </>);
+    const output = await screen.findByTestId('member-final-output');
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(name);
+    expect(screen.getByTestId('delegation-headline').textContent).toContain(`${name} · `);
+    const reason = { ...t.toolStepHumanize.failureCodes, ...t.toolStepHumanize.agentFailureReasons }[
+      failureCode ?? AgentFailureCode.Unknown
+    ];
+    expect(screen.getByTestId('delegation-failure').textContent).toBe(reason);
+    expect(output.textContent).toContain(reason);
+    if (readable) expect(output.textContent).toContain(readable);
+    if (progress !== readable) expect(output.textContent).not.toContain(progress);
+  });
+
+  it.each([
+    ['zh', '市场组调研员', zh, '市场组调研员', '调研员'],
+    ['en', 'Market Research Lead', en, 'Market Research Lead', 'Researcher'],
+    ['zh', 'explore', zh, '调研员', undefined],
+    ['en', 'explore', en, 'Researcher', undefined],
+  ] as const)('localizes the background Team member header and preserves its report (%s, %s)', async (
+    _locale, instanceName, t, title, roleLabel,
+  ) => {
+    translations = t;
+    const runId = createSwarmTraceStorageId({ sessionId: 'session-1', runId: 'team-run', treeId: 'team-tree' });
+    const run = { ...ledgerRun, id: runId, status: 'running' as const };
+    const teamMember = { ...record, runId, name: instanceName, role: 'explore', status: 'running' as const };
+    const detail: SwarmRunDetail = {
+      run: { ...ledgerDetail.run, ...run },
+      agents: [teamMember, { ...writerRecord, runId }],
+      events: [{
+        id: 1, runId, seq: 1, timestamp: 1_000, eventType: 'swarm:agent:updated',
+        agentId: teamMember.agentId, level: 'info', title: '市场组已开始核对口径', summary: '', payload: null,
+      }],
+    };
+    invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
+      channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [run] : detail,
+    ));
+    invokeDomainMock.mockResolvedValue(treeSnapshot({
+      id: teamMember.agentId, role: teamMember.role, displayName: teamMember.name, background: true,
+      status: 'running', statusLabel: '', progress: '正在搜索资料',
+      children: [], worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [],
+      sources: ['parallelCoordinator', 'backgroundRegistry'],
+    }));
+    swarmState.messages = [{
+      id: 'market-progress', from: teamMember.agentId, to: 'lead', content: '已找到原始统计表',
+      timestamp: 1, messageType: 'result',
+    }];
+    useMemberViewStore.setState({ viewingMemberId: teamMember.agentId });
+    await act(async () => { render(<MemberConversationView sessionId="session-1" />); });
+
+    const heading = screen.getByRole('heading', { level: 2 });
+    const header = heading.closest('header');
+    expect(header?.textContent).not.toContain('explore');
+    expect(heading.textContent).toBe(title);
+    expect(header?.querySelector('p')?.textContent).toBe(roleLabel);
+    expect(screen.getByTestId('role-initial-avatar-explore').getAttribute('aria-label')).toBe(title);
+    expect(screen.getByTestId('member-process-messages').textContent).toContain('已找到原始统计表');
+    expect(screen.getByTestId('member-run-trail').textContent).toContain('市场组已开始核对口径');
+    expect(screen.getByTestId('member-final-output').textContent).toContain(teamMember.finalOutput);
+  });
 
   it('进入成员对话页，展示下发任务和产出', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });

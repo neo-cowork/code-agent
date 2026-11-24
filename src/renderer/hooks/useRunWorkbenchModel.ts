@@ -13,6 +13,7 @@
 
 import { useMemo } from 'react';
 import { languages, type Language, type Translations } from '../i18n';
+import { backgroundTaskLabels } from '../utils/agentRoleLabel';
 import { withAutomationPromptTimeoutHint } from '@shared/i18n/sessionTaskSlot';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore, type SessionWithMeta } from '../stores/sessionStore';
@@ -85,6 +86,7 @@ export function buildGlobalTaskRecords(args: {
   /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */
   sessions?: ReadonlyArray<Pick<SessionWithMeta, 'id' | 'title' | 'status'>>;
 }): TaskRecord[] {
+  const t = languages[args.language ?? 'zh'];
   return Object.entries(args.sessionStates)
     .filter(([sessionId, state]) => (
       sessionId !== args.currentSessionId
@@ -103,11 +105,11 @@ export function buildGlobalTaskRecords(args: {
         scope: 'global' as const,
         title: session
           ? getDisplaySessionTitle(session.title, args.language)
-          : `会话 ${sessionId.slice(0, 8)}`,
+          : t.sessionReplay.dialog.ledgerSessionFallback.replace('{id}', sessionId.slice(0, 8)),
         status,
         steps: [{
           title: state.status === 'queued' && state.queuePosition !== undefined
-            ? `队列 #${state.queuePosition}`
+            ? t.sessionReplay.dialog.ledgerQueuePosition.replace('{position}', String(state.queuePosition))
             : presentation.label,
           status,
         }],
@@ -129,28 +131,30 @@ function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['s
 }
 
 function backgroundTaskStatusLabel(task: Task, t: Translations): string {
-  const shell = isShellBackgroundTask(task);
+  const dialog = t.sessionReplay.dialog;
   switch (task.status) {
     case 'queued':
-      return '排队中';
+      return dialog.taskQueued;
     case 'running':
-      return shell ? t.sessionReplay.dialog.running : '执行中';
+      return dialog.running;
     case 'waiting_input':
-      return '等待输入';
+      return dialog.taskWaitingInput;
     case 'stalled':
-      return task.progress?.label ? `启动变慢：${task.progress.label}` : '启动变慢';
+      return task.progress?.label
+        ? dialog.taskStalledLabel.replace('{label}', task.progress.label)
+        : dialog.taskStalled;
     case 'completed':
-      return shell ? t.sessionReplay.dialog.completed : '已完成';
+      return dialog.completed;
     case 'failed':
-      return shell ? t.sessionReplay.dialog.failed : '执行失败';
+      return dialog.failed;
     case 'cancelled':
-      return shell ? t.sessionReplay.dialog.cancelled : '已取消';
+      return dialog.cancelled;
     case 'paused':
-      return '已暂停';
+      return dialog.taskPaused;
     case 'expired':
-      return '已过期';
+      return dialog.taskExpired;
     case 'orphaned':
-      return '运行进程已丢失';
+      return dialog.taskOrphaned;
     default:
       return task.status;
   }
@@ -254,25 +258,25 @@ function lastPathSegment(value: string | undefined): string | null {
   return value.split(/[\\/]/).filter(Boolean).pop() || value;
 }
 
-function outputRefTypeLabel(type: string): string {
+function outputRefTypeLabel(type: string, t: Translations): string {
   switch (type) {
     case 'log':
-      return '运行日志';
+      return t.sessionReplay.dialog.outputRefRunLog;
     case 'text':
-      return '最终输出';
+      return t.sessionReplay.dialog.outputRefFinalOutput;
     case 'report':
-      return '报告';
+      return t.taskStatusPanels.runWorkbench.report;
     case 'trace':
       return 'Trace';
     case 'replay':
       return 'Replay';
     case 'url':
-      return '链接';
+      return t.taskStatusPanels.runWorkbench.link;
     case 'file':
     case 'artifact':
-      return '产物';
+      return t.taskStatusPanels.runWorkbench.artifact;
     default:
-      return '输出';
+      return t.taskStatusPanels.runWorkbench.output;
   }
 }
 
@@ -284,7 +288,7 @@ function buildTaskOutputRefs(task: Task, t: Translations): TaskRecordOutputRef[]
         return { id: ref.id, taskId: task.id, type: 'log', label: t.taskStatusPanels.runWorkbench.viewLog, size: ref.size };
       }
       const pathOrUrl = ref.path || ref.uri || undefined;
-      const fallbackLabel = lastPathSegment(pathOrUrl) || outputRefTypeLabel(ref.type);
+      const fallbackLabel = lastPathSegment(pathOrUrl) || outputRefTypeLabel(ref.type, t);
       return {
         id: ref.id,
         taskId: task.id,
@@ -301,7 +305,7 @@ function buildTaskOutputRefs(task: Task, t: Translations): TaskRecordOutputRef[]
     refs.unshift({
       id: `${task.id}:metadata-log`,
       type: 'log',
-      label: outputRefTypeLabel('log'),
+      label: outputRefTypeLabel('log', t),
       pathOrUrl: metadataLogPath,
     });
   }
@@ -314,10 +318,12 @@ function recordFromMetadata(metadata: Task['metadata'] | undefined, key: string)
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function formatOutputRefStep(ref: TaskRecordOutputRef): string {
+function formatOutputRefStep(ref: TaskRecordOutputRef, t: Translations): string {
   const name = lastPathSegment(ref.pathOrUrl) || ref.label;
-  const label = ref.label || outputRefTypeLabel(ref.type);
-  return name && name !== label ? `${label}：${name}` : label;
+  const label = ref.label || outputRefTypeLabel(ref.type, t);
+  return name && name !== label
+    ? t.sessionReplay.dialog.outputRefNamed.replace('{label}', label).replace('{name}', name)
+    : label;
 }
 
 interface BackgroundTaskResume {
@@ -332,12 +338,13 @@ function backgroundTaskResumeHint(
   // 完成产物由会话流承担唯一展示；右侧概览只保留“已完成”状态。
   // 这里若再返回 final ref/summary，TaskPanel 会把同一产物重新做成结果卡。
   if (task.status === 'completed') return {};
+  const t = languages[language];
   const recoveryPlan = recordFromMetadata(task.metadata, 'recoveryPlan');
   const recoverySummary = typeof recoveryPlan?.summary === 'string' ? recoveryPlan.summary : null;
   if (isShellBackgroundTask(task) && task.status === 'failed') {
     // Older Automation prompt records may have only a recovery summary.
     if (!task.failure && recoverySummary) return { hint: recoverySummary };
-    const failure = backgroundTaskFailureCopy(task, languages[language]);
+    const failure = backgroundTaskFailureCopy(task, t);
     return failure ? {
       hint: withAutomationPromptTimeoutHint(failure, language, task.metadata?.automationPromptLikely === true),
     } : {};
@@ -358,13 +365,21 @@ function backgroundTaskResumeHint(
   const finalRef = outputRefs.find((ref) => ref.type === 'text' || ref.type === 'report' || ref.type === 'artifact' || ref.type === 'file');
   if (finalRef) {
     const name = lastPathSegment(finalRef.pathOrUrl) || finalRef.label;
-    return { hint: `最终输出：${name}` };
+    return {
+      hint: t.sessionReplay.dialog.outputRefNamed
+        .replace('{label}', t.sessionReplay.dialog.outputRefFinalOutput)
+        .replace('{name}', name),
+    };
   }
 
   const logRef = outputRefs.find((ref) => ref.type === 'log');
   if (logRef && (task.status === 'running' || task.status === 'stalled')) {
     const name = lastPathSegment(logRef.pathOrUrl) || logRef.label;
-    return { hint: `日志：${name}` };
+    return {
+      hint: t.sessionReplay.dialog.outputRefNamed
+        .replace('{label}', t.taskStatusPanels.runWorkbench.log)
+        .replace('{name}', name),
+    };
   }
 
   return task.summary && !isShellBackgroundTask(task) ? { hint: task.summary } : {};
@@ -374,8 +389,10 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
   if (!currentSessionId) return [];
   const t = languages[language];
 
-  return tasks
-    .filter((task) => task.sessionId === currentSessionId)
+  const sessionTasks = tasks.filter((task) => task.sessionId === currentSessionId);
+  // 序号按会话账本全集算（与成员列表、回放摘要同源），不受下面 slice 影响
+  const labels = backgroundTaskLabels(sessionTasks, t);
+  return sessionTasks
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
@@ -386,6 +403,8 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         id: `background:${task.id}`,
         scope: 'global' as const,
         title: task.title,
+        source: task.source,
+        displayTitle: labels.get(task.id),
         status,
         ...(status === 'blocked' ? { failed: true } : {}),
         steps: [
@@ -398,7 +417,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
             status,
           }] : []),
           ...outputRefs.map((ref) => ({
-            title: formatOutputRefStep(ref),
+            title: formatOutputRefStep(ref, t),
             status,
           })),
         ],
@@ -415,7 +434,9 @@ export function buildDurableSubagentViews(args: {
   runId: string | null;
   agents: SwarmRunAgentRecord[];
   selectedAgentId: string | null;
+  language?: Language;
 }): SubagentRunView[] {
+  const t = languages[args.language ?? 'zh'];
   return args.agents.map((agent) => {
     const status = normalizeLongTaskStatus(agent.status);
     return {
@@ -423,8 +444,8 @@ export function buildDurableSubagentViews(args: {
       parentRunId: args.runId,
       role: agent.name || agent.role || 'Agent',
       status,
-      inputSummary: agent.dispatchedTask || agent.role || '等待任务',
-      lastOutput: agent.finalOutput || (agent.agentId === args.selectedAgentId ? '当前选中' : ''),
+      inputSummary: agent.dispatchedTask || agent.role || t.sessionReplay.dialog.subagentWaitingTask,
+      lastOutput: agent.finalOutput || (agent.agentId === args.selectedAgentId ? t.sessionReplay.dialog.subagentCurrentSelected : ''),
       resultSummary: agent.finalOutput,
       handoff: agent.error ?? undefined,
     };
@@ -489,6 +510,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
         runId: run.identity.runId,
         agents: durableSwarmDetail?.agents ?? [],
         selectedAgentId: selectedSwarmAgentId,
+        language,
       }).concat(workflowSubagents),
       memoryActivities: buildSessionMemoryActivityEvents(projection),
       outputs: buildOutputArtifactViews(projection),

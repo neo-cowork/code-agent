@@ -47,7 +47,7 @@ import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifact
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { getTaskDeliveryFailure } from './taskDeliveryVerdict';
+import { describeFailedCommand, getTaskDeliveryFailure } from './taskDeliveryVerdict';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
@@ -401,7 +401,9 @@ export class TaskManager extends EventEmitter {
           taskId,
           ...(deliveryFailure
             ? {
-              error: formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale())
+              error: (deliveryFailure === 'command_failed'
+                ? describeFailedCommand(messages, session?.workingDirectory, resolveSessionTaskResultLocale())
+                : formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale()))
                 ?? (finalMessage?.content?.trim() || 'Task delivery failed.'),
             }
             : { conclusion: finalMessage?.content?.trim() }),
@@ -579,12 +581,12 @@ export class TaskManager extends EventEmitter {
    *
    * @param sessionId - 会话 ID
    */
-  async cancelTask(sessionId: string, options?: { keepBackground?: boolean }): Promise<void> {
+  async cancelTask(sessionId: string, options?: { keepBackground?: boolean; persistUserStop?: boolean }): Promise<void> {
     // 后台级联必须先于下面所有按前台状态的 early-return：前台 idle（委派后的常态）时也要停后台。
     // keepBackground：只想摘掉前台（排队中被改道、切会话、进程收尾）的内部调用不是用户 Stop，不动后台。
     const backgroundSettled = options?.keepBackground
       ? Promise.resolve()
-      : this.cancelSessionBackgroundWork(sessionId);
+      : this.cancelSessionBackgroundWork(sessionId, options?.persistUserStop);
     try {
       await this.cancelForegroundTask(sessionId);
     } finally {
@@ -597,11 +599,12 @@ export class TaskManager extends EventEmitter {
    * run_in_background 子代理），返回的 promise 限时等待收线（永不 reject）。
    * 无前台 orchestrator 的入口（web /api/cancel 的 idle 会话）直接调用本方法。
    */
-  cancelSessionBackgroundWork(sessionId: string): Promise<void> {
+  cancelSessionBackgroundWork(sessionId: string, persistUserStop = true): Promise<void> {
     this.emit(SESSION_STOP_REQUESTED_EVENT, { type: SESSION_STOP_REQUESTED_EVENT, sessionId });
     return stopSessionBackgroundWork({
       sessionId,
       backgroundRuns: this.backgroundRuns,
+      persistUserStop,
       cancelBackgroundTask: (taskId) => this.cancelBackgroundTask(taskId),
     });
   }

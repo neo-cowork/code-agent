@@ -32,6 +32,19 @@ import { CRON_GUARDRAILS } from '../../../src/shared/constants';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 import { CRON_CLOUD_UNAVAILABLE_MESSAGE_EN } from '../../../src/shared/utils/cronCloudUnavailable';
+import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../../src/shared/utils/cronRuntimeNotReady';
+import { cronCenterEn, cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
+
+const failureCases = [
+  ['auth', '未认证或登录已过期 {"code":"UNAUTHORIZED"}', 'failureAuth'],
+  ['quota', 'usage limit reached. 5-hour window resets at 2026-11-22T12:00:00Z', 'failureQuotaUnknown'],
+  ['rate_limit', '429 Too Many Requests', 'failureRateLimit'],
+  ['network', 'fetch failed: ECONNRESET', 'failureNetwork'],
+  ['timeout', 'Cron job run exceeded its 60s time limit.', 'failureTimeout'],
+  ['runtime_starting', CRON_RUNTIME_NOT_READY_MESSAGE_EN, 'failureRuntimeStarting'],
+  ['other', '', 'failureOther'],
+  ['other', undefined, 'failureOther'],
+] as const;
 
 afterEach(() => {
   configState.language = 'zh';
@@ -358,7 +371,33 @@ describe('notifyCronAgentExecution：notifySuppressed 完成通知门', () => {
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
     const payload = notifyState.notifyTaskComplete.mock.calls[0]?.[0] as { succeeded: boolean; summary: string };
     expect(payload.succeeded).toBe(false);
-    expect(payload.summary).toContain('provider 500');
+    expect(payload.summary).toBe('定时任务失败：运行失败');
+  });
+
+  it.each([
+    ['en', failureCases[0][1], 'Scheduled task failed: The model account was not authorized (the key is wrong or expired).', /[\p{Script=Han}{}]/u],
+    ['zh', '401 Unauthorized: invalid api key {"code":"UNAUTHORIZED"}', '定时任务失败：模型账号没通过授权（密钥错误或已过期）', /[a-z{}]/i],
+  ] as const)('localizes the %s auth failure without provider text', (language, error, expected, forbidden) => {
+    configState.language = language;
+    notifyCronAgentExecution(agentDefinition, execution('failed', undefined, error), new CronFailureNoticeGate());
+    const payload = notifyState.notifyTaskComplete.mock.calls[0]?.[0] as { code: string; failureKind: string; summary: string };
+    expect(payload).toMatchObject({ code: 'CRON_FAILURE', failureKind: 'auth' });
+    expect(payload.summary).toBe(expected);
+    expect(payload.summary).not.toMatch(forbidden);
+  });
+
+  describe.each([
+    ['en', 'Scheduled task failed: ', cronCenterEn.cronCenter],
+    ['zh', '定时任务失败：', cronCenterZh.cronCenter],
+  ] as const)('%s host failure copy matches Cron Center', (language, prefix, copy) => {
+    it.each(failureCases)('%s uses %s only to classify the failure', (kind, error, key) => {
+      configState.language = language;
+      notifyCronAgentExecution(agentDefinition, execution('failed', undefined, error), new CronFailureNoticeGate());
+      expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({
+        failureKind: kind,
+        summary: prefix + copy[key],
+      }), { force: true, urgent: false });
+    });
   });
 
   it('同因失败冷却照旧生效（与安静门正交）', () => {
@@ -366,6 +405,13 @@ describe('notifyCronAgentExecution：notifySuppressed 完成通知门', () => {
     notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'boom'), gate);
     notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'boom'), gate);
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates by the provider error even when two errors display the same sentence', () => {
+    const gate = new CronFailureNoticeGate();
+    notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'provider failure alpha'), gate);
+    notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'provider failure beta'), gate);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -545,5 +591,42 @@ describe('notifyCronJobDisabled：停用通知载荷带 jobId（三种原因）'
       expect(payload.failureKind).toBeUndefined();
       expect(payload.succeeded).toBe(false);
     }
+  });
+
+  it('preserves the cloud-unavailable disable notice and its existing truncation', () => {
+    configState.language = 'en';
+    const error = CRON_CLOUD_UNAVAILABLE_MESSAGE_EN + ' ' + 'cause '.repeat(40);
+    notifyCronJobDisabled(disabledDefinition, { ...disabledExecution(), error }, 'consecutive');
+    expect(notifyState.notifyTaskComplete.mock.calls[0]?.[0].summary).toBe(
+      'The task was disabled after 5 consecutive failures. Re-enable it under Automation Center → Scheduled tasks. Last error: '
+        + error.slice(0, 200) + '…',
+    );
+  });
+
+  describe.each([
+    ['en', cronCenterEn.cronCenter],
+    ['zh', cronCenterZh.cronCenter],
+  ] as const)('%s disable copy', (language, copy) => {
+    it.each(failureCases)('uses the localized %s sentence for both disable reasons (%s)', (_kind, error, key) => {
+      configState.language = language;
+      const record = { ...disabledExecution(), error: key === 'failureAuth' && language === 'zh'
+        ? '401 Unauthorized: invalid api key {"code":"UNAUTHORIZED"}'
+        : error };
+      notifyCronJobDisabled(disabledDefinition, record, 'consecutive');
+      notifyCronJobDisabled(disabledDefinition, record, 'permanent');
+      const sentence = copy[key];
+      const count = CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES;
+      const zhSentence = sentence.endsWith('。') ? sentence : sentence + '。';
+      const summaries = notifyState.notifyTaskComplete.mock.calls.map((call) => call[0].summary);
+      expect(summaries).toEqual(language === 'en'
+        ? [
+            `The task was disabled after ${count} consecutive failures. Re-enable it under Automation Center → Scheduled tasks. Last error: ${sentence}`,
+            `The task was disabled because of a configuration or authentication error. Fix the configuration, then re-enable it under Automation Center → Scheduled tasks. Error: ${sentence}`,
+          ]
+        : [
+            `连续失败 ${count} 次已自动停用。最后错误：${zhSentence}可在「自动化中心 → 定时任务」重新启用。`,
+            `因配置/鉴权类错误停用（重试无效）。错误：${zhSentence}修正配置后可在「自动化中心 → 定时任务」重新启用。`,
+          ]);
+    });
   });
 });
