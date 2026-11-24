@@ -21,13 +21,14 @@ type DelayLookupCallback = (
 
 const DELAY_HOST = 'delay.smoke-cancel.test';
 const DELAY_ADDRESS = '127.0.0.1';
+const activeDelayServers = new Set<http.Server>();
 let delayLookupInstalled = false;
 
 function installDelayLookup(): void {
   if (delayLookupInstalled) return;
   const originalLookup = dns.lookup;
   const lookup = (hostname: string, ...args: unknown[]): void => {
-    if (hostname !== DELAY_HOST) {
+    if (hostname !== DELAY_HOST || activeDelayServers.size === 0) {
       Reflect.apply(originalLookup, dns, [hostname, ...args]);
       return;
     }
@@ -193,6 +194,8 @@ async function createDelayServer(
   });
   installDelayLookup();
   const port = await listen(server, DELAY_ADDRESS);
+  activeDelayServers.add(server);
+  server.once('close', () => activeDelayServers.delete(server));
   return {
     server,
     url: `http://${DELAY_HOST}:${port}/delay`,

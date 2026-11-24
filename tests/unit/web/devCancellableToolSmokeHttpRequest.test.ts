@@ -1,3 +1,4 @@
+import dns from 'dns';
 import express from 'express';
 import { promises as fs } from 'fs';
 import http from 'http';
@@ -48,6 +49,7 @@ afterEach(async () => {
     server = undefined;
   }
   baseUrl = '';
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   if (dataDir) await fs.rm(dataDir, { recursive: true, force: true });
   dataDir = '';
@@ -58,6 +60,7 @@ describe('dev cancellable http_request smoke', () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dev-cancellable-http-test-'));
     vi.stubEnv('CODE_AGENT_E2E', '1');
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    const lookupSpy = vi.spyOn(dns, 'lookup');
     await startApi();
 
     const startResponse = await fetch(`${baseUrl}/start`, {
@@ -91,5 +94,15 @@ describe('dev cancellable http_request smoke', () => {
     const cleanupResponse = await fetch(`${baseUrl}/${runId}`, { method: 'DELETE' });
     expect(cleanupResponse.status).toBe(200);
     runId = undefined;
+
+    lookupSpy.mockClear();
+    await new Promise<void>((resolve) => {
+      dns.lookup('delay.smoke-cancel.test', { all: true }, () => resolve());
+    });
+    expect(lookupSpy).toHaveBeenCalledWith(
+      'delay.smoke-cancel.test',
+      { all: true },
+      expect.any(Function),
+    );
   }, 60_000);
 });
