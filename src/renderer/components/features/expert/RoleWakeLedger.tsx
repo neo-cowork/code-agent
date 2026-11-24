@@ -41,7 +41,9 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
       .then((list) => { if (!cancelled) setExecutions(list); })
       .catch(() => { if (!cancelled) setExecutions([]); });
     void getRoleWakeFunnel(roleId)
-      .then((counts) => { if (!cancelled) setFunnel(counts); })
+      .then((counts) => {
+        if (!cancelled) setFunnel(Array.isArray(counts?.duplicates) ? counts : 'unavailable');
+      })
       .catch(() => { if (!cancelled) setFunnel('unavailable'); });
     return () => { cancelled = true; };
   }, [roleId, refreshToken]);
