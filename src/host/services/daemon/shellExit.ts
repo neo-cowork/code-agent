@@ -8,12 +8,13 @@
 //     表示「请退出」，wait_then_force_kill 3s 后 TerminateProcess 兜底
 //     （src-tauri main.rs 的 not(unix) 分支）。这条 EOF 是停机指令——忙时
 //     驻留会把优雅窗耗在被硬杀上。默认 win32 仍立即优雅停机。
-//   - Windows「后台继续」是例外：壳在退进程之前 POST /api/quit-guard/detach，
-//     armBackgroundContinueDetach() 把「EOF = 停机指令」摘掉。随后的 EOF
-//     与 macOS/Linux 一样交给空闲判据。停止并退出不会 arm，关 stdin 仍是停机。
-//   - 2026-10-18 append：壳改走 POST /api/quit-intent 声明 background / stop
-//     （旧 detach 路由是 background 的别名）。stop 把 EOF 变成全平台停机指令；
-//     background 让 armed schedules 构成留守原因（daemonStayReasons）。
+//   - 「后台继续」是壳不退出：壳活着就不断 stdin，daemon 看不到 EOF，谈不上
+//     留守判定。armBackgroundContinueDetach() 仍把「EOF = 停机指令」摘掉，
+//     但只经进程内 setDaemonQuitIntent('background') 进入——HTTP 面不再接受
+//     这个值。
+//   - 停止并退出：壳先 POST /api/quit-intent{mode:stop}，stop 把下一次 EOF
+//     变成全平台停机指令；background 让 armed schedules 构成留守原因
+//     （daemonStayReasons）。
 // 纯函数：platform / detach / intent 由调用方传入，便于表驱动单测。
 // ============================================================================
 
@@ -35,7 +36,7 @@ interface DaemonExitRechecker {
 
 let detachArmed = false;
 
-/** 壳在退进程之前声明：接下来的 stdin EOF 是后台继续，不是 Windows 停机指令。 */
+/** 声明：接下来的 stdin EOF 是后台继续，不是 Windows 停机指令。 */
 export function armBackgroundContinueDetach(): void {
   detachArmed = true;
 }
@@ -83,7 +84,7 @@ export function createDaemonExitRechecker(input: {
   shutdown: () => void | Promise<void>;
   /** 缺省：win32 的 stdin EOF 是停机指令。后台继续把这个关掉。 */
   stdinEofIsQuitCommand?: () => boolean;
-  /** 壳声明的退出意图（quit-intent 路由写入）；缺省 none = 既有行为。 */
+  /** 声明的退出意图（quit-intent stop 路由 / 进程内 setter 写入）；缺省 none = 既有行为。 */
   getQuitIntent?: () => DaemonQuitIntent;
 }): DaemonExitRechecker {
   let shellPipeAttached = true;
