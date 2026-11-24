@@ -1,6 +1,6 @@
 import { ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS } from '@shared/constants/timeouts';
 import { createHtmlLocalitySelection, type HtmlElementSelection } from './htmlLocality';
-import { loadPreviewFrameCaptureSource } from './previewFrameCaptureSource';
+import { getPreviewFrameCaptureSource } from './previewFrameCaptureSource';
 import { runPreviewFrameDriver } from './previewFrameDriver';
 
 export const ARTIFACT_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-popups allow-pointer-lock';
@@ -23,9 +23,10 @@ let nextCaptureId = 0;
 
 export function createPreviewFrameDocument(html: string) {
   const revision = ++nextRevision;
-  const script = `(${runPreviewFrameDriver.toString()})(${createHtmlLocalitySelection.toString()},` +
+  const driver = `(${runPreviewFrameDriver.toString()})(${createHtmlLocalitySelection.toString()},` +
     `${revision},${MAX_CAPTURE_PIXELS},${ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS.IMAGE},${MAX_PNG_LENGTH});`;
-  const srcDoc = html.replace(DOCUMENT_START, (start) => `${start}<script>${script}</script>`);
+  const bootstrap = `<script>${getPreviewFrameCaptureSource()}</script><script>${driver}</script>`;
+  const srcDoc = html.replace(DOCUMENT_START, (start) => `${start}${bootstrap}`);
   return { revision, srcDoc };
 }
 
@@ -65,7 +66,6 @@ export function readPreviewFrameSelection(
 export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<Blob> {
   const frame = iframe.contentWindow;
   const revision = Number(iframe.dataset.previewRevision);
-  const source = await loadPreviewFrameCaptureSource();
   if (!frame || !Number.isSafeInteger(revision) || iframe.contentWindow !== frame || !iframe.isConnected) {
     throw new Error('Preview changed');
   }
@@ -114,6 +114,6 @@ export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<Bl
     }, ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS.RESPONSE);
     window.addEventListener('message', handleMessage);
     iframe.addEventListener('load', handleLoad);
-    frame.postMessage({ type: 'neo-preview-screenshot', id, source }, '*');
+    frame.postMessage({ type: 'neo-preview-screenshot', id }, '*');
   });
 }

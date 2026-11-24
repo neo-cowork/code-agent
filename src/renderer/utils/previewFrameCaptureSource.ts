@@ -1,8 +1,9 @@
+import source from 'html2canvas/dist/html2canvas.js?raw';
+
 // html2canvas's public entry point clones into a child iframe, which inherits the
 // sandbox and has a different opaque origin. Use its DOM parser and canvas renderer
-// directly on the live document. This function is embedded into the bundled UMD source.
-export async function loadPreviewFrameCaptureSource(): Promise<string> {
-  const { default: source } = await import('html2canvas/dist/html2canvas.js?raw');
+// directly on the live document. This source runs before the artifact's CSP.
+export function getPreviewFrameCaptureSource(): string {
   const exportMarker = '    return html2canvas;';
   if (source.split(exportMarker).length !== 2) throw new Error('Unsupported html2canvas bundle');
 
@@ -43,5 +44,5 @@ export async function loadPreviewFrameCaptureSource(): Promise<string> {
         return new CanvasRenderer(context, { backgroundColor: backgroundColor,
             width: width, height: height, scale: scale, x: 0, y: 0 }).render(root);
     };
-    return html2canvas;`);
+    return html2canvas;`).replace(/<\/script/gi, '<\\/script');
 }

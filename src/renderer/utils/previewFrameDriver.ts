@@ -29,22 +29,14 @@ export function runPreviewFrameDriver(
 
   const { attachHtmlLocalitySelection } = makeSelection();
   const reply = (message: object) => window.parent.postMessage({ ...message, revision }, '*');
+  const target = window as Window & { __neoPreviewCapture?: Capture };
+  const capture = target.__neoPreviewCapture;
+  delete target.__neoPreviewCapture;
   let selection: HtmlLocalitySelectionController | undefined;
-  let capture: Capture | undefined;
 
-  async function screenshot(id: number, source: string) {
+  async function screenshot(id: number) {
     const type = 'neo-preview-screenshot-done';
     try {
-      if (!capture) {
-        // A classic script loaded only into the opaque frame, from the bundled library.
-        const script = document.createElement('script');
-        const target = window as Window & { __neoPreviewCapture?: Capture };
-        script.textContent = source;
-        (document.head || document.documentElement).appendChild(script);
-        script.remove();
-        capture = target.__neoPreviewCapture;
-        delete target.__neoPreviewCapture;
-      }
       if (!capture) throw new Error('Screenshot renderer unavailable');
       const canvas = await capture(document.documentElement, maxPixels, imageTimeout);
       const png = canvas.toDataURL('image/png');
@@ -74,9 +66,7 @@ export function runPreviewFrameDriver(
         selection?.clear();
         break;
       case 'neo-preview-screenshot':
-        if (typeof message.id === 'number' && typeof message.source === 'string') {
-          void screenshot(message.id, message.source);
-        }
+        if (typeof message.id === 'number') void screenshot(message.id);
         break;
     }
   });
