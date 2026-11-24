@@ -26,6 +26,8 @@ export interface ProbeAuthority {
   /** 本会话附件的本体路径。 */
   attachmentPaths: string[];
   homeDir: string;
+  /** 用户 Read(path) 类规则：返回 false 的路径不得被 pdf 读取（缺省视为允许）。 */
+  readPathAllowed?: (absolutePath: string) => boolean;
 }
 
 export interface ProbeRunResult {
@@ -233,6 +235,20 @@ function lookupOnPath(name: string): string | null {
   return null;
 }
 
+const SYSTEM_BIN_DIRS = new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin', '/opt/homebrew/bin', '/usr/local/bin']);
+const SYSTEM_REAL_PREFIXES = ['/usr/', '/bin/', '/sbin/', '/System/', '/Library/Developer/CommandLineTools/', '/Applications/Xcode.app/', '/opt/homebrew/Cellar/', '/opt/homebrew/opt/', '/usr/local/Cellar/'];
+const MAX_PDF_BYTES = 100 * 1024 * 1024;
+
+/** PATH 上第一个同名可执行文件；只有它落在系统 / 包管理目录才返回，否则 null（工作区、家目录、临时目录里的同名程序不执行）。 */
+function resolveSystemBinary(name: string): string | null {
+  const found = lookupOnPath(name);
+  if (!found) return null;
+  const dir = path.dirname(found);
+  if (!SYSTEM_BIN_DIRS.has(dir) && !/^\/opt\/homebrew\/opt\/[^/]+\/bin$/.test(dir)) return null;
+  const real = safeRealpath(found);
+  return SYSTEM_REAL_PREFIXES.some((prefix) => real.startsWith(prefix)) ? found : null;
+}
+
 class Runner {
   stdout = '';
   stderr = '';
@@ -263,6 +279,15 @@ class Runner {
     put(redirect.err, err);
     put(redirect.out, out);
     if (this.stdout.length + this.stderr.length > MAX_OUTPUT_CHARS) throw new ProbeAbort('output too large');
+  }
+
+  /** `prog … | head -N`：stdout（及 2>&1 并入的 stderr）经 head 截断；末段是 head，无 pipefail，退出码 0。 */
+  private emitThroughHead(redirect: ProbeRedirect, res: ProbeRunResult, headLines: number): number {
+    const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
+    const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+    const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
+    this.emit({ out: 'out', err: 'err' }, lines.slice(0, headLines).join(''), stderr);
+    return 0;
   }
 
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
@@ -317,6 +342,34 @@ class Runner {
         }
         return 0;
       }
+      case 'which': {
+        let missing = false;
+        for (const name of cmd.names) {
+          if (cmd.builtins && SHELL_BUILTINS.has(name)) { this.emit(redirect, `${name}\n`, ''); continue; }
+          const found = lookupOnPath(name);
+          if (found) this.emit(redirect, `${found}\n`, ''); else missing = true;
+        }
+        return missing ? 1 : 0;
+      }
+      case 'version-probe': {
+        const bin = resolveSystemBinary(cmd.name);
+        if (!bin) throw new ProbeAbort('version probe binary not in a system directory');
+        const result = await runFixed(bin, [cmd.flag], this.currentDirectory);
+        if (cmd.headLines !== undefined) return this.emitThroughHead(redirect, result, cmd.headLines);
+        this.emit(redirect, result.stdout, result.stderr);
+        return result.exitCode;
+      }
+      case 'pdf-read': {
+        const target = this.need(cmd.file);
+        if (this.auth.readPathAllowed && !this.auth.readPathAllowed(target)) throw new ProbeAbort('pdf path denied by user rule');
+        const stat = fs.statSync(target);
+        if (!stat.isFile() || stat.size > MAX_PDF_BYTES) throw new ProbeAbort('pdf unavailable or too large');
+        const bin = resolveSystemBinary(cmd.program);
+        if (!bin) throw new ProbeAbort('pdf tool not in a system directory');
+        const result = await runFixed(bin, cmd.program === 'pdftotext' ? [...cmd.options, target, '-'] : [target], this.currentDirectory);
+        this.emit(redirect, result.stdout, result.stderr);
+        return result.exitCode;
+      }
       case 'noop': return 0;
       case 'test': {
         const abs = this.need(cmd.path);
@@ -341,13 +394,7 @@ class Runner {
         const targets = cmd.paths.length > 0 ? cmd.paths : ['.'];
         for (const p of targets) this.need(p);
         const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
-        if (cmd.headLines !== undefined) {
-          const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
-          const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-          const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
-          this.emit({ out: 'out', err: 'err' }, lines.slice(0, cmd.headLines).join(''), stderr);
-          return 0; // The last program is a literal head, with no pipefail.
-        }
+        if (cmd.headLines !== undefined) return this.emitThroughHead(redirect, res, cmd.headLines);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }

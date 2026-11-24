@@ -12,6 +12,7 @@ import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
 import { buildCronEventDecisionText } from '../../shared/cronEventDecisionText';
 import { enterObserveMode, truncateObserveText } from '../tools/observeModeGate';
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
+import { describeEventScheduleRule } from './cronEventDecisions';
 
 /** 通道结果回复在台账里的「工具名」。 */
 const OBSERVE_CHANNEL_REPLY_TOOL = 'channel_reply';
@@ -20,14 +21,27 @@ export function isCronObserveMode(definition: Pick<CronJobDefinition, 'schedule'
   return resolveCronEventActionMode(definition) === 'observe';
 }
 
+/** 命中规则的推导（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：每条 would_act 行都带上。 */
+function matchedRuleFor(
+  definition: CronJobDefinition,
+  options?: { chatName?: string; accountName?: string },
+): string | undefined {
+  return definition.schedule.type === 'event'
+    ? describeEventScheduleRule(definition.schedule, options)
+    : undefined;
+}
+
 /** 观察档任务：登记本次运行会话，返回解除登记函数；非观察档返回空操作。 */
 export function enterObserveModeForCronRun(
   definition: CronJobDefinition,
   sessionId: string,
   executionId: string | undefined,
   store: CronEventDecisionStore = sqliteCronEventDecisionStore,
+  /** 本批事件带的群名/账号显示名（命中规则的可读会话/账号位；缺省回落配置里的原始 id）。 */
+  options?: { chatName?: string; accountName?: string },
 ): () => void {
   if (!isCronObserveMode(definition)) return () => {};
+  const matchedRule = matchedRuleFor(definition, options);
   return enterObserveMode(sessionId, (interception) => {
     store.record([{
       jobId: definition.id,
@@ -35,6 +49,7 @@ export function enterObserveModeForCronRun(
       decision: 'would_act',
       reason: buildCronEventDecisionText('observeActionIntercepted', { tool: interception.toolName }),
       ...(executionId ? { runId: executionId } : {}),
+      ...(matchedRule ? { matchedRule } : {}),
       tool: interception.toolName,
       ...(interception.target ? { target: interception.target } : {}),
       summary: interception.summary,
@@ -50,12 +65,14 @@ export function recordObservedChannelReply(
   body: string,
   store: CronEventDecisionStore = sqliteCronEventDecisionStore,
 ): void {
+  const matchedRule = matchedRuleFor(definition);
   store.record([{
     jobId: definition.id,
     kind: 'action',
     decision: 'would_act',
     reason: buildCronEventDecisionText('observeActionIntercepted', { tool: OBSERVE_CHANNEL_REPLY_TOOL }),
     ...(executionId ? { runId: executionId } : {}),
+    ...(matchedRule ? { matchedRule } : {}),
     tool: OBSERVE_CHANNEL_REPLY_TOOL,
     target,
     summary: truncateObserveText(body, CRON_EVENT_DECISIONS.MAX_SUMMARY_CHARS),
