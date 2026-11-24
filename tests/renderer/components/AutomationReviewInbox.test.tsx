@@ -1319,11 +1319,11 @@ describe('outbound drafts in the review inbox', () => {
     for (const text of [...draft.to, ...draft.cc, ...draft.bcc, draft.subject, draft.body, ...draft.attachmentNames]) {
       expect(screen.getByText(text)).toBeTruthy();
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
     await screen.findByText('Review the recipients, message, and attachments, then select Send again.');
     expect(resolveOutboundDraft).toHaveBeenCalledExactlyOnceWith(draft.id, 'send', 'initial');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/ }));
     await screen.findByTestId('automation-review-all-clear');
     expect(resolveOutboundDraft).toHaveBeenLastCalledWith(draft.id, 'send', 'updated');
     expect(pendingChange).toHaveBeenLastCalledWith(0);
