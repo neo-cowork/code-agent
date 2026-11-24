@@ -1,3 +1,5 @@
+import { stripCalendarReceiptUid } from '../../shared/utils/calendarReceiptText';
+
 interface ToolResultDisplayCopy {
   globEmpty: string;
   directoryEmpty: string;
@@ -8,6 +10,7 @@ const READ_TOOL_NAMES = new Set(['read', 'readfile', 'readdocument']);
 const GLOB_TOOL_NAMES = new Set(['glob']);
 const DIRECTORY_TOOL_NAMES = new Set(['listdirectory']);
 const GREP_TOOL_NAMES = new Set(['grep']);
+const CALENDAR_WRITE_TOOL_NAMES = new Set(['calendarcreateevent', 'calendarupdateevent', 'calendardeleteevent']);
 
 const READ_DIGEST_LINE = /^Read version digest: [a-f0-9]+\r?\n/i;
 const DOCUMENT_EVIDENCE_TAIL =
@@ -43,6 +46,10 @@ export function cleanToolResultDisplayText(
 ): string {
   const normalizedName = normalizedToolName(toolName);
   let cleaned = text;
+
+  if (CALENDAR_WRITE_TOOL_NAMES.has(normalizedName)) {
+    return stripCalendarReceiptUid(text);
+  }
 
   if (READ_TOOL_NAMES.has(normalizedName)) {
     cleaned = cleanReadText(text);

@@ -23,6 +23,23 @@
   ],
   "rules": [
     {
+      "id": "host-connector-copy",
+      "paths": [
+        "src/host/agent/confirmationGate.ts",
+        "src/host/agent/runtime/toolExecutionEngine.ts",
+        "src/host/agent/toolExecution/parallelStrategy.ts",
+        "src/host/config/hostUiLocale.ts",
+        "src/host/tools/modules/connectors/calendar*Event.ts",
+        "src/renderer/utils/toolResultDisplayText.ts",
+        "src/shared/i18n/hostConnectorCopy.ts",
+        "src/shared/utils/calendarReceiptText.ts",
+        "src/shared/utils/toolProgressLabel.ts"
+      ],
+      "files": [
+        "tests/unit/agent/hostConnectorCopy.test.ts"
+      ]
+    },
+    {
       "id": "contracts",
       "paths": [
         "src/shared/contract/**",

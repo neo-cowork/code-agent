@@ -1,3 +1,4 @@
+import type { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type { Logger } from '../../../protocol/tools';
 import {
   appleScriptFailureLogDetail,
@@ -38,6 +39,16 @@ export function describeCalendarWriteFailure(failurePrefix: string, error: unkno
     return error.message;
   }
   return `${failurePrefix}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+export function calendarFailureReceiptPreview(
+  copy: ReturnType<typeof getHostConnectorCopy>['calendar'],
+  separator: string,
+  name: string,
+  error: unknown,
+): string | undefined {
+  const detail = copy.failureDetails[isCalendarFailure(error) ? error.code : 'connector_error'];
+  return detail ? `${name}${separator}${detail}` : undefined;
 }
 
 export function calendarFailureCode(error: unknown): { code?: string } {
