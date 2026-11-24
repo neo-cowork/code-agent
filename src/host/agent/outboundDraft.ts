@@ -16,7 +16,7 @@ import { getDatabase } from '../services/core/databaseService';
 import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { createLogger } from '../services/infra/logger';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
-import { maskMailSendOutboundParams } from '../tools/outboundGuard';
+import { maskMailSendOutboundParams, withPrivateMailDraftDiagnostics } from '../tools/outboundGuard';
 import { hashLedgerFormArgs, parseParkedApprovalPayload } from './parkedApprovalSurvival';
 
 const logger = createLogger('OutboundDraft');
@@ -260,10 +260,10 @@ export async function resolveOutboundDraft(
           : { approved: false, denialSource: 'fail-closed' },
         workingDirectory: session.workingDirectory ?? draft.attachmentBase,
       });
-      const result = await executor.execute(MAIL_SEND, {
+      const result = await withPrivateMailDraftDiagnostics(() => executor.execute(MAIL_SEND, {
         ...args,
         ...(args.attachments ? { attachments: stagedPaths } : {}),
-      }, { sessionId: draft.sessionId, turnId: id, currentToolCallId: id });
+      }, { sessionId: draft.sessionId, turnId: id, currentToolCallId: id }));
       if (result.success) code = 'OUTBOUND_DRAFT_SENT';
     } catch {
       logger.warn('Outbound draft execution threw', { draftId: id });
