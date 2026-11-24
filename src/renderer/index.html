@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" class="dark">
+<html lang="zh-CN" data-theme="dark" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -25,6 +25,12 @@
         root.classList.add(resolved);
         if (resolved === 'high-contrast-dark') root.classList.add('dark');
         if (resolved === 'high-contrast-light') root.classList.add('light');
+
+        // <html lang> 跟随 UI 语言（localStorage key: code-agent-language，与
+        // src/renderer/i18n 的 zh->zh-CN / en->en 映射一致）；未知/缺失回退默认 zh-CN。
+        var storedLang = null;
+        try { storedLang = localStorage.getItem('code-agent-language'); } catch (e) { /* 隐私模式等场景忽略 */ }
+        root.setAttribute('lang', storedLang === 'en' ? 'en' : 'zh-CN');
       })();
     </script>
   </head>

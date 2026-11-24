@@ -21,6 +21,7 @@ import {
 import { backfillTelemetrySessionTitles } from '../../../telemetry/telemetrySessionTitleBackfill';
 import { repairCorruptFtsOnStartup } from './ftsRepair';
 import { runGatedProjectionCheck } from './projectionCheckGate';
+import { INTERACTION_TIMEOUTS } from '../../../../shared/constants/timeouts';
 
 type Logger = ReturnType<typeof createLogger>;
 
@@ -64,6 +65,10 @@ export interface StartupMaintenanceDeps {
 /** 返回崩溃恢复快照（fail-safe：扫描失败返回 null，不阻塞启动） */
 export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySnapshot | null {
   const { db, sessionRepo, memoryRepo, toolExecutionEventRepo, permissionDecisionRepo, logger, step } = deps;
+
+  const now = Date.now();
+  deps.pendingApprovalRepo?.recoverOutboundDraftVerification();
+  deps.pendingApprovalRepo?.expireOutboundDrafts(now - INTERACTION_TIMEOUTS.OUTBOUND_DRAFT_RETENTION, now);
 
   const crashedSessions = sessionRepo.markCrashedActiveSessions(Date.now());
   if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {

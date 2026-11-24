@@ -16,6 +16,7 @@ import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { shouldLogMailFailureDetail } from '../../outboundGuard';
 import { mailSendSchema as schema } from './mailSend.schema';
 
 async function executeMailSend(
@@ -105,6 +106,7 @@ async function executeMailSend(
       error,
       ctx.logger,
       schema.name,
+      shouldLogMailFailureDetail(),
     );
     const to = (args.to as unknown[]).filter((item): item is string => typeof item === 'string');
     return {
