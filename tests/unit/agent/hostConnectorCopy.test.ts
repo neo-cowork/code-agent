@@ -13,6 +13,7 @@ import { cleanToolResultDisplayText } from '../../../src/renderer/utils/toolResu
 import type { ToolArtifact } from '../../../src/shared/contract/artifactBlob';
 import { toolProgressLabel } from '../../../src/shared/utils/toolProgressLabel';
 
+import { withConnectorReconnectGuidance } from '../../../src/host/tools/dispatch/connectorReconnectGuidance';
 import { calendarModule } from '../../../src/host/tools/modules/connectors/calendar';
 import { mailSendModule } from '../../../src/host/tools/modules/connectors/mailSend';
 import { mailDraftModule } from '../../../src/host/tools/modules/connectors/mailDraft';
@@ -229,6 +230,24 @@ describe('mail, reminders and Calendar read receipts', () => {
     vi.mocked(getHostUiLocale).mockReturnValue('zh');
     execute.mockResolvedValue({ data });
     expect(await handler.execute(input, ctx, allow)).toMatchObject({ ok: true, output: chinese });
+  });
+
+  it('localizes disconnected Calendar status through the dispatch guidance', async () => {
+    execute.mockResolvedValue({ data: { connected: false, detailCode: 'calendar_desktop_only', capabilities: [] } });
+    const handler = await calendarModule.createHandler();
+    const result = await handler.execute({ action: 'get_status' }, ctx, async () => ({ allow: true }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expectEnglishDisplay(result.output);
+    const dispatched = withConnectorReconnectGuidance('calendar', result);
+    expect(dispatched.ok).toBe(true);
+    if (!dispatched.ok) throw new Error(dispatched.error);
+
+    expectEnglishDisplay(dispatched.output);
+    const artifact = dispatched.meta?.artifact as ToolArtifact | undefined;
+    const shown = cleanToolResultDisplayText('calendar', dispatched.output, en.rendererHumanPipe.toolDetails);
+    expect(shown).toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
+    expect(artifact?.preview).toBe(shown);
   });
 
   const reads = [

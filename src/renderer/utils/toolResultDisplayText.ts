@@ -1,3 +1,4 @@
+import { CONNECTOR_EXIT_PREFIX } from '../../shared/i18n/connectorReconnect';
 import { stripCalendarListUids, stripReminderRowIds } from '../../shared/utils/connectorReceiptText';
 import { stripCalendarReceiptUid } from '../../shared/utils/calendarReceiptText';
 
@@ -11,6 +12,7 @@ const READ_TOOL_NAMES = new Set(['read', 'readfile', 'readdocument']);
 const GLOB_TOOL_NAMES = new Set(['glob']);
 const DIRECTORY_TOOL_NAMES = new Set(['listdirectory']);
 const GREP_TOOL_NAMES = new Set(['grep']);
+const CONNECTOR_READ_TOOL_NAMES = new Set(['calendar', 'mail', 'reminders']);
 const REMINDER_TOOL_NAMES = new Set(['reminders', 'remindersupdate', 'remindersdelete']);
 const CALENDAR_WRITE_TOOL_NAMES = new Set(['calendarcreateevent', 'calendarupdateevent', 'calendardeleteevent']);
 
@@ -49,6 +51,10 @@ export function cleanToolResultDisplayText(
   const normalizedName = normalizedToolName(toolName);
   let cleaned = text;
 
+  if (CONNECTOR_READ_TOOL_NAMES.has(normalizedName) && text.startsWith(CONNECTOR_EXIT_PREFIX)) {
+    const sentenceEnd = text.indexOf('”', CONNECTOR_EXIT_PREFIX.length);
+    if (sentenceEnd > CONNECTOR_EXIT_PREFIX.length) return text.slice(CONNECTOR_EXIT_PREFIX.length, sentenceEnd);
+  }
   if (normalizedName === 'calendar') return stripCalendarListUids(text);
   if (REMINDER_TOOL_NAMES.has(normalizedName)) return stripReminderRowIds(text);
 
