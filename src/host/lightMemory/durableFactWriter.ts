@@ -2,10 +2,7 @@
 // Durable Fact Writer — 将会话判断器提炼的长期事实写入 Light Memory
 // N-MEM-WRITECONF r5（final scope cut）：candidate 档整体移除（连续 5 轮审查都在
 // 该机制上发现新的数据丢失洞）。唯一保留的质量门是置信度：< DROP_BELOW 丢弃留痕；
-// 其余（含判断器漏给置信度的 MISSING_DEFAULT）按 origin/main 的原行为写 active——
-// 不写 status（读侧按缺省 active 处理）、同名原地覆盖、无派生文件名。
-// supersedes 只作为链接记录在新条目 frontmatter 的 supersedes 字段上，本单不消费；
-// 判断器输出没有任何归档/降级/改写既有条目的路径。
+// 其余按原格式写 active。同名手写记忆交给 reconcileManualMemoryWrite 保护。
 // ============================================================================
 
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
@@ -18,6 +15,7 @@ import {
   sanitizeLightMemoryFilename,
   writeLightMemoryFile,
 } from './lightMemoryIpc';
+import { reconcileManualMemoryWrite } from './manualMemoryGuard';
 
 const logger = createLogger('DurableFactWriter');
 
@@ -82,16 +80,19 @@ export async function writeDurableFacts(
         throw new Error('脱敏后的长期事实缺少必要内容');
       }
 
-      // r5：与 origin/main 同一写入形状——不传 status（main 也不传，读侧按缺省
-      // active 处理）、同名原地覆盖。supersedes 仅当指向真实存在的文件时追加
-      // 一行链接字段，除此之外逐字节与 main 的产物一致。
+      const input = { filename: fact.filename, name, description, type: fact.type, content };
+      const outcome = await reconcileManualMemoryWrite({
+        ...input,
+        filename: sanitizeLightMemoryFilename(input.filename),
+        source: 'session-judge',
+      });
+      if (outcome !== 'proceed') {
+        skipped += 1;
+        continue;
+      }
       const supersedeLink = await resolveSupersedeLink(fact);
       const file = await writeLightMemoryFile({
-        filename: fact.filename,
-        name,
-        description,
-        type: fact.type,
-        content,
+        ...input,
         ...(supersedeLink ? { supersedes: supersedeLink } : {}),
       });
       written += 1;

@@ -13,6 +13,7 @@ import {
 import { sanitizeUserData } from '@shared/livePreview/localityFeedback';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolate } from '../../../../i18n/interpolate';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -433,7 +434,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                         className={`px-3 py-1 border-r border-zinc-700/30 truncate max-w-[200px] ${
                           isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-[var(--badge-info-border)]' : isSelected ? 'bg-blue-500/5' : ''
                         } ${filePath != null ? 'cursor-pointer' : ''} ${isNum ? 'text-right tabular-nums text-zinc-300' : 'text-zinc-400'}`}
-                        title={filePath != null ? `${cellRef} · ${formatCellValue(value)}（点选定点反馈）` : formatCellValue(value)}
+                        title={filePath != null ? interpolate(t.generativeUI.cellFeedbackTitle, { ref: cellRef, value: formatCellValue(value) }) : formatCellValue(value)}
                       >
                         {formatCellValue(value)}
                       </td>
@@ -453,7 +454,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
             // sheetName 必传：DocEdit 的 getWorksheet 在缺省时会默默取第一张表，
             // 多 sheet 工作簿里用户点的是第 2 张表、改的却是第 1 张。
             anchor={{ kind: 'sheet', filePath, cell: selectedCell, sheetName: sheet?.name }}
-            locationLabel={`单元格 ${selectedCell}`}
+            locationLabel={interpolate(t.generativeUI.cellLabel, { ref: selectedCell })}
           />
         </div>
       )}

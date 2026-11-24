@@ -365,15 +365,25 @@ async function findFreeSessionWorkDirectory(
   throw new Error(`session work directory name exhausted after ${COLLISION_SUFFIX_LIMIT} collisions: ${baseName}`);
 }
 
+const WORKSPACE_TITLE_WINDOW_THRESHOLD = 192;
+const WORKSPACE_TITLE_HEAD_LENGTH = 64;
+const WORKSPACE_TITLE_TAIL_LENGTH = 64;
+
 /**
  * The run binds its working directory before checking tool write authority.
  * Preserve smart naming for recognized deliverable and spreadsheet workflows
  * that may materialize this turn. Other native turns can use the rule title.
  */
 export function needsWorkspaceModelTitleForDeliverable(prompt: string): boolean {
-  const { isOfficeFileDeliverable, isExcelTask } = detectTaskFeatures(prompt);
-  const savesToFile = /\b(?:save|export)\s+(?:it\s+)?(?:to|as)\b|保存(?:到|至|为)|另存为|导出到/i.test(prompt);
-  return isOfficeFileDeliverable || isExcelTask || savesToFile || needsArtifactTaskBrief(prompt);
+  // Keep the edges separate so a pattern cannot match across omitted source text.
+  const instructionWindow = prompt.length > WORKSPACE_TITLE_WINDOW_THRESHOLD
+    ? [prompt.slice(0, WORKSPACE_TITLE_HEAD_LENGTH), prompt.slice(-WORKSPACE_TITLE_TAIL_LENGTH)]
+    : [prompt];
+  return instructionWindow.some((instruction) => {
+    const { isOfficeFileDeliverable, isExcelTask } = detectTaskFeatures(instruction);
+    const savesToFile = /\b(?:save|export)\s+(?:it\s+)?(?:to|as)\b|保存(?:到|至|为)|另存为|导出到/i.test(instruction);
+    return isOfficeFileDeliverable || isExcelTask || savesToFile || needsArtifactTaskBrief(instruction);
+  });
 }
 
 /**
