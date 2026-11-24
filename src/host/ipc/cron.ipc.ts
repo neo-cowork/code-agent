@@ -218,6 +218,21 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - restatement.what 和 restatement.notifyWhen 都不得提及任务多久运行一次或何时运行（不写间隔、频率、钟点，如「每两分钟」「每天 9 点」）；运行时间由 schedule 字段单独展示。
 - 只返回 JSON，不要任何解释`;
 
+const CJK_CHAR = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/;
+
+/** 模型回复里的 restatement.what / notifyWhen 是否含 CJK 字符；回复解析不了按「没有」处理（后续走原有 PARSE_ERROR 分支）。 */
+function restatementHasCjk(raw: string): boolean {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return false;
+  try {
+    const restatement = (JSON.parse(match[0]) as { restatement?: unknown }).restatement;
+    if (!isRecord(restatement)) return false;
+    return [restatement.what, restatement.notifyWhen].some((v) => typeof v === 'string' && CJK_CHAR.test(v));
+  } catch {
+    return false;
+  }
+}
+
 /** UI 语言指令：restatement 两句话的语言必须显式声明，模型不会自己从界面语言推断。 */
 const CRON_RESTATEMENT_LANGUAGE_DIRECTIVE = {
   en: '\n\nLanguage: write restatement.what and restatement.notifyWhen in English.',
@@ -392,7 +407,7 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const clock = buildScheduleGenerationClock(new Date(), hostTimeZone);
     // 调用当下解析用户配置的默认 provider/model。没配过才落到出厂默认。
     const { provider, model } = resolveSessionDefaultModelConfig();
-    const response = await router.chat({
+    const chatOnce = () => router.chat({
       provider,
       model,
       messages: [
@@ -401,7 +416,9 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
       ],
       maxTokens: 1024,
     });
-    const raw = response.content || '';
+    let raw = (await chatOnce()).content || '';
+    // 英文界面下模型偶尔仍写中文复述：同请求重试一次；重试结果原样采用（notifyWhen 是通知门规则，不在卡层替换）。
+    if (language === 'en' && restatementHasCjk(raw)) raw = (await chatOnce()).content || '';
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回格式异常，请重试或换个描述方式' } } satisfies IPCResponse;

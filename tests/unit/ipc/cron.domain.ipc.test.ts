@@ -165,6 +165,39 @@ describe('generateFromPrompt', () => {
     expect(await system({ language: 'fr' })).not.toContain('Language:');
   });
 
+  it('en 界面：首次回复复述含中文 → 同请求重试一次并返回英文结果；英文首答只调一次；无 language 不重试', async () => {
+    const zhReply = '{"name":"x","restatement":{"what":"\u68c0\u67e5\u65b0\u5e16\u5b50","notifyWhen":"\u6709\u65b0\u5e16\u5b50\u65f6\u901a\u77e5"}}';
+    const enReply = '{"name":"x","restatement":{"what":"Checks for new posts","notifyWhen":"A new post appears"}}';
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply }).mockResolvedValueOnce({ content: enReply });
+    const retried = await call('generateFromPrompt', { prompt: 'x', language: 'en' });
+    expect(h.chat).toHaveBeenCalledTimes(2);
+    expect(h.chat.mock.calls[1][0]).toEqual(h.chat.mock.calls[0][0]);
+    expect(retried).toEqual({ success: true, data: JSON.parse(enReply) });
+
+    // 重试仍是中文：原样返回重试结果（不在 host 里改写 notifyWhen）
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply }).mockResolvedValueOnce({ content: zhReply });
+    expect(await call('generateFromPrompt', { prompt: 'x', language: 'en' })).toEqual({ success: true, data: JSON.parse(zhReply) });
+    expect(h.chat).toHaveBeenCalledTimes(2);
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: enReply });
+    await call('generateFromPrompt', { prompt: 'x', language: 'en' });
+    expect(h.chat).toHaveBeenCalledTimes(1);
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply });
+    await call('generateFromPrompt', { prompt: 'x' });
+    expect(h.chat).toHaveBeenCalledTimes(1);
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply });
+    await call('generateFromPrompt', { prompt: 'x', language: 'zh' });
+    expect(h.chat).toHaveBeenCalledTimes(1);
+  });
+
   it('未配置默认模型时 generateFromPrompt 仍用出厂 provider/model', async () => {
     h.chat.mockResolvedValueOnce({ content: '{"name":"日报"}' });
     expect(await call('generateFromPrompt', { prompt: '每天' })).toEqual({ success: true, data: { name: '日报' } });
