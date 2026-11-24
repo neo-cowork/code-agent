@@ -46,11 +46,12 @@ interface TranscriptDatabase {
       toolName?: string;
       timeAfter?: number;
       timeBefore?: number;
+      liveSessionsOnly?: boolean;
     }
   ): TranscriptSearchHit[];
   getTranscriptAround(
     messageId: string,
-    options: { before?: number; after?: number }
+    options: { before?: number; after?: number; liveSessionsOnly?: boolean }
   ): { sessionId: string; messages: Array<{ message: Message; matched: boolean }> } | null;
 }
 
@@ -239,6 +240,7 @@ class HistoryHandler implements ToolHandler<Record<string, unknown>, HistoryOutp
         timeBefore: typeof typed.time_before === 'number' ? typed.time_before : undefined,
         sessionId: typed.session_scope === 'current' ? ctx.sessionId : undefined,
         limit,
+        liveSessionsOnly: true,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -283,7 +285,7 @@ class HistoryHandler implements ToolHandler<Record<string, unknown>, HistoryOutp
     const before = clampNumber(typed.before, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW, MEMORY.HISTORY_AROUND_MAX_WINDOW);
     const after = clampNumber(typed.after, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW, MEMORY.HISTORY_AROUND_MAX_WINDOW);
 
-    const around = db.getTranscriptAround(messageId, { before, after });
+    const around = db.getTranscriptAround(messageId, { before, after, liveSessionsOnly: true });
     if (!around) {
       return {
         ok: false,

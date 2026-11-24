@@ -28,7 +28,7 @@ import { MEMORY } from '../../../../shared/constants';
 interface SearchableDatabase {
   searchSessionMessagesFts(
     query: string,
-    options: { limit?: number; sessionId?: string },
+    options: { limit?: number; sessionId?: string; liveSessionsOnly?: boolean },
   ): Array<{
     messageId: string;
     sessionId: string;
@@ -158,6 +158,7 @@ class EpisodicRecallHandler
       rows = db.searchSessionMessagesFts(query, {
         limit,
         sessionId: scope === 'current' ? ctx.sessionId : undefined,
+        liveSessionsOnly: true,
       });
     } catch (err) {
       // FTS5 MATCH syntax error → tell the model how to recover

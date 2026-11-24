@@ -67,7 +67,7 @@ describe('EpisodicRecall tool', () => {
     if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
   });
 
-  it('passes sessionId scope=current to repository', async () => {
+  it('requests live sessions within the current session scope', async () => {
     mockSearch.mockReturnValue([]);
     const handler = await episodicRecallModule.createHandler();
     await handler.execute(
@@ -78,16 +78,18 @@ describe('EpisodicRecall tool', () => {
     expect(mockSearch).toHaveBeenCalledWith('deployment', {
       limit: 5,
       sessionId: 'sess-current',
+      liveSessionsOnly: true,
     });
   });
 
-  it('default scope=all does not pass sessionId', async () => {
+  it('requests live sessions without restricting the default scope to a session ID', async () => {
     mockSearch.mockReturnValue([]);
     const handler = await episodicRecallModule.createHandler();
     await handler.execute({ query: 'deployment' }, makeCtx(), canUseTool);
     expect(mockSearch).toHaveBeenCalledWith('deployment', {
       limit: 5,
       sessionId: undefined,
+      liveSessionsOnly: true,
     });
   });
 

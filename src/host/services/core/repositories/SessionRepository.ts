@@ -850,6 +850,7 @@ export class SessionRepository {
       timeAfter?: number;
       timeBefore?: number;
       includeRewound?: boolean;
+      liveSessionsOnly?: boolean;
     } = {},
   ): Array<{
     messageId: string;
@@ -864,7 +865,7 @@ export class SessionRepository {
 
   getTranscriptAround(
     messageId: string,
-    options: { before?: number; after?: number } = {},
+    options: { before?: number; after?: number; liveSessionsOnly?: boolean } = {},
   ): {
     sessionId: string;
     messages: Array<{ message: Message; matched: boolean }>;

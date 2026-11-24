@@ -121,6 +121,7 @@ describe('History tool', () => {
       timeBefore: 2000,
       sessionId: 'sess-current',
       limit: 7,
+      liveSessionsOnly: true,
     });
   });
 
@@ -207,7 +208,7 @@ describe('History tool', () => {
       expect(out.messages[1].toolCalls?.[0].name).toBe('Bash');
       expect(out.messages[1].toolCalls?.[0].output).toContain('1 passed');
     }
-    expect(mockAround).toHaveBeenCalledWith('m2', { before: 5, after: 5 });
+    expect(mockAround).toHaveBeenCalledWith('m2', { before: 5, after: 5, liveSessionsOnly: true });
   });
 
   it('around clamps before/after to the max window', async () => {

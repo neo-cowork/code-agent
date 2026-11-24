@@ -21,7 +21,7 @@ import {
   rowToMessage,
   visibleHistoryMessageWhere,
 } from './sessionRepositoryParsers';
-import { runSessionMessagesFtsCount, runSessionMessagesFtsSearch, runTranscriptFtsSearch } from './sessionRepositoryFtsSearch';
+import { liveSessionWhere, runSessionMessagesFtsCount, runSessionMessagesFtsSearch, runTranscriptFtsSearch } from './sessionRepositoryFtsSearch';
 import type {
   SessionMessagesFtsCountOptions,
   SessionMessagesFtsHit,
@@ -103,6 +103,7 @@ export class SessionFtsRepository {
       timeAfter?: number;
       timeBefore?: number;
       includeRewound?: boolean;
+      liveSessionsOnly?: boolean;
     } = {},
   ): Array<{
     messageId: string;
@@ -117,7 +118,7 @@ export class SessionFtsRepository {
 
   getTranscriptAround(
     messageId: string,
-    options: { before?: number; after?: number } = {},
+    options: { before?: number; after?: number; liveSessionsOnly?: boolean } = {},
   ): {
     sessionId: string;
     messages: Array<{ message: Message; matched: boolean }>;
@@ -130,7 +131,7 @@ export class SessionFtsRepository {
     const after = clampWindow(options.after, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
 
     const anchor = this.db
-      .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')
+      .prepare(`SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ? ${options.liveSessionsOnly ? `AND ${liveSessionWhere('session_id')}` : ''}`)
       .get(messageId) as { rid: number; session_id: string; timestamp: number } | undefined;
     if (!anchor) {
       return null;

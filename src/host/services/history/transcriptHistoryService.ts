@@ -26,7 +26,7 @@ export interface TranscriptSearchOptions {
 
 export interface TranscriptHistoryDatabase {
   searchTranscriptFts(query: string, options: TranscriptSearchOptions): TranscriptSearchHit[];
-  getTranscriptAround(messageId: string, options: { before?: number; after?: number }): TranscriptAroundResult | null;
+  getTranscriptAround(messageId: string, options: { before?: number; after?: number; liveSessionsOnly?: boolean }): TranscriptAroundResult | null;
 }
 
 export class TranscriptHistoryService {
@@ -41,6 +41,6 @@ export class TranscriptHistoryService {
   async around(messageId: string, options: { before?: number; after?: number } = {}): Promise<TranscriptAroundResult | null> {
     const trimmed = messageId.trim();
     if (!trimmed) return null;
-    return this.db.getTranscriptAround(trimmed, options);
+    return this.db.getTranscriptAround(trimmed, { ...options, liveSessionsOnly: true });
   }
 }
