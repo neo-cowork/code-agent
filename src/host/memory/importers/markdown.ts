@@ -19,6 +19,7 @@ const VALID_KINDS = new Set<MemoryEntryKind>([
   'user',
   'feedback',
   'project',
+  'people',
   'reference',
   'session',
   'pattern',
