@@ -23,6 +23,19 @@ export function cronFolderDisplayName(folder: string): string {
   return name || folder;
 }
 
+/**
+ * 仅用于 web 输入框未聚焦时的展示：把家目录前缀折成 `~`。
+ * 认 `/Users/<name>/`、`/home/<name>/`、`<盘>:\Users\<name>\`。
+ * 不改 metadata；另一账户的家目录也会被折掉（账号名仍然不露出）。
+ */
+function foldHomePrefixForDisplay(path: string): string {
+  const unixHome = /^(?:\/Users|\/home)\/[^/]+\/(.*)$/.exec(path);
+  if (unixHome) return `~/${unixHome[1]}`;
+  const windowsHome = /^[A-Za-z]:\\Users\\[^\\]+\\(.*)$/.exec(path);
+  if (windowsHome) return `~\\${windowsHome[1]}`;
+  return path;
+}
+
 /** 把选中的文件夹写回 metadata（清除时删键；其余键原样保留）。 */
 function withCronWorkingDirectory(
   metadata: Record<string, unknown> | undefined,
@@ -42,10 +55,14 @@ interface CronWorkingFolderRowProps {
 
 export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runsOn, metadata, onMetadataChange }) => {
   const copy = useI18n().t.cronWorkingFolder;
+  // 聚焦时展示并编辑原文；失焦后只改输入框里看到的字。云端分支不渲染输入框，焦点标志一并清掉。
+  const [folderInputFocused, setFolderInputFocused] = React.useState(false);
+  if (runsOn !== 'local' && folderInputFocused) setFolderInputFocused(false);
   if (runsOn !== 'local') return null;
 
   const folder = cronWorkingDirectoryFromMetadata(metadata);
   const rawFolder = metadata?.[CRON_WORKING_DIRECTORY_METADATA_KEY];
+  const storedFolder = typeof rawFolder === 'string' ? rawFolder : '';
   const setFolder = (next: string | undefined) => onMetadataChange(withCronWorkingDirectory(metadata, next));
   const handlePick = async () => {
     try {
@@ -80,11 +97,16 @@ export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runs
       ) : (
         <Input
           data-testid="cron-working-folder-input"
-          value={typeof rawFolder === 'string' ? rawFolder : ''}
+          value={folderInputFocused ? storedFolder : foldHomePrefixForDisplay(storedFolder)}
           // 输入中保留原文（含空格，如「My Notes」）；只在失焦时去首尾空白提交，
           // 空白串等于没选（保存载荷在 buildCronJobInput 里再规整一次）。
+          // 失焦瞬间 DOM 仍是聚焦时的原文，trim 提交的是它，不是折出来的 ~。
           onChange={(event) => setFolder(event.target.value || undefined)}
-          onBlur={(event) => setFolder(event.target.value.trim() || undefined)}
+          onFocus={() => setFolderInputFocused(true)}
+          onBlur={(event) => {
+            setFolderInputFocused(false);
+            setFolder(event.target.value.trim() || undefined);
+          }}
           placeholder={copy.pathPlaceholder}
         />
       )}
