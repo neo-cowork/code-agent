@@ -83,6 +83,7 @@ function assertConsumers(result: { text: string; pageCount: number }, pages: num
     size: 100, mimeType: 'application/pdf', data: result.text, pageCount: result.pageCount,
   };
   const card = renderToStaticMarkup(React.createElement(AttachmentBar, { attachments: [attachment], onRemove: () => {} }));
+  expect(card).toContain(`PDF · ${pages} 页`);
   expect(card).toContain(`${pages} 页`);
   const model = buildMultimodalContent('', [attachment]);
   expect(model).toContainEqual(expect.objectContaining({ type: 'text', text: expect.stringContaining(`(${pages} 页)`) }));

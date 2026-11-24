@@ -106,8 +106,10 @@ describe('cron/heartbeat 停车审批 30 分钟降级拒绝', () => {
     const verdict = await cron;
     expect(verdict).toMatchObject({ approved: false, denialSource: 'timeout' });
     expect(verdict.message).toContain(UNATTENDED_APPROVAL_TIMEOUT);
-    expect(verdict.message).toContain('未读取：<来源>（需要你批准）');
-    expect(verdict.message).toContain('Bash');
+    expect(verdict.message).toBe(
+      'UNATTENDED_APPROVAL_TIMEOUT: 工具 Bash 的审批等了 30 分钟仍无人批准（当前无人在场），已自动拒绝。'
+      + '不要重试这一步；继续处理其他来源，并在最终报告里写明「未读取：<来源>（需要你批准）」。',
+    );
     expect(cronRepo.resolve).toHaveBeenCalledWith(expect.objectContaining({ status: 'rejected' }));
 
     expect(await isStillPending(chan)).toBe(true);
