@@ -261,7 +261,14 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
     message.metadata = { ...message.metadata, stoppedByStepLimit: true };
   }
   message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
-  if (ctx.runtime.historyVisibility === 'meta') {
+  // meta run 里给模型的内部消息一律藏起来；唯一例外是失败的命令（COMMAND_FAILED）：
+  // 用户要能在对话里看到哪条命令失败了。结果消息这里直接不打标，发起它的助手消息在落库后补露。
+  const failedCommandCallIds = ctx.runtime.historyVisibility === 'meta' && message.role === 'tool'
+    ? (message.toolResults ?? [])
+      .filter((result) => !result.success && result.metadata?.code === 'COMMAND_FAILED')
+      .map((result) => result.toolCallId)
+    : [];
+  if (ctx.runtime.historyVisibility === 'meta' && failedCommandCallIds.length === 0) {
     message.isMeta = true;
   }
 
@@ -391,6 +398,7 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
         });
       }
     }
+    if (failedCommandCallIds.length > 0) await revealCommandCallMessages(ctx, failedCommandCallIds);
   } else {
     logger.warn('[ContextAssembly] message NOT persisted to db', {
       sessionId: ctx.runtime.sessionId,
@@ -399,6 +407,29 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
       hasCallback: !!ctx.runtime.persistMessage,
     });
     if (attempted) throw new MessagePersistenceError();
+  }
+}
+
+/**
+ * 发起失败命令的助手消息（先前按 meta 落库）：重写一份对用户可见、但不带旁白正文的副本，
+ * 只露命令行本身（模型对后台 run 的自述不给用户看）。运行时内存里的原消息不动。落库失败只告警，不挡后续。
+ */
+async function revealCommandCallMessages(ctx: ContextAssemblyCtx, toolCallIds: string[]): Promise<void> {
+  for (const assistant of ctx.runtime.messages) {
+    if (assistant.role !== 'assistant' || !assistant.isMeta) continue;
+    if (!assistant.toolCalls?.some((call) => toolCallIds.includes(call.id))) continue;
+    const visibleCopy: Message = { ...assistant, content: '', isMeta: false };
+    try {
+      if (ctx.runtime.persistMessage) await ctx.runtime.persistMessage(visibleCopy);
+      else if (ctx.runtime.sessionId) await getSessionManager().addMessageToSession(ctx.runtime.sessionId, visibleCopy);
+    } catch (error) {
+      logger.warn('[ContextAssembly] failed to reveal failed-command call message', {
+        reason: 'failed_command_reveal_error',
+        sessionId: ctx.runtime.sessionId,
+        messageId: assistant.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
 

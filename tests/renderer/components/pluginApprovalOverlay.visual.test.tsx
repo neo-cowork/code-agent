@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { PluginInstallDisclosure } from '../../../src/renderer/components/features/settings/tabs/PluginInstallDisclosure';
 import { loadPlaywrightChromium } from '../../../src/host/agent/runtime/browser/playwrightRuntime';
+import { waitForGlobalCss } from '../fixtures/waitForGlobalCss';
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh }),
@@ -70,6 +71,9 @@ describe('plugin approval overlay visual evidence', () => {
       + '</main></body></html>',
       { waitUntil: 'networkidle' },
     );
+    // networkidle can return before the Tailwind stylesheet is compiled/applied under load;
+    // never measure an unstyled DOM.
+    await waitForGlobalCss(page);
   }, 30_000);
 
   afterAll(async () => {
