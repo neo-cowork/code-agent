@@ -28,6 +28,7 @@ describe('DraftingStopButton', () => {
       expect(button).toBe(screen.getByRole('button', { name: label }));
       expect(button?.getAttribute('title')).toBe(label);
       expect(button?.querySelector('.animate-spin') !== null).toBe(props.isStopping);
+      expect(button?.textContent).toBe(props.isStopping ? 'Stopping…' : '');
     } else {
       expect(button).toBeNull();
     }

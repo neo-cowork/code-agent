@@ -107,14 +107,25 @@ describe('useCronRunFollowUpSend', () => {
     expect(calls.every(([arg]) => arg.sessionId !== 'record-1')).toBe(true);
   });
 
-  it('中断得太早没有任何助手回复：开普通新会话，任务原文（去掉机器尾段）随问题带过去', async () => {
-    setObservedCronRunStatusForSession('record-1', { kind: 'interrupted' });
-    const messages = [
-      userMessage('查一下今天的日程\n\n【当前时间】2026-11-04T08:27:33.512Z（UTC）。今天本地日期是 2026-11-04。'),
-    ];
+  it.each([
+    ['interrupted', '那次运行中断了，没有留下结果。'],
+    ['failed-generic', '那次运行没有跑完。'],
+  ] as const)('preserves the %s run context when creating a session clears the source chat', async (kind, statusLine) => {
+    setObservedCronRunStatusForSession('record-1', { kind });
+    const createSession = vi.fn(async () => {
+      useSessionStore.setState({ currentSessionId: 'fresh-1', messages: [] });
+      setObservedCronRunStatusForSession('record-1', null);
+      return { id: 'fresh-1' } as SessionWithMeta;
+    });
+    useSessionStore.setState({
+      createSession,
+      messages: [
+        userMessage('查一下今天的日程\n\n【当前时间】2026-11-04T08:27:33.512Z（UTC）。今天本地日期是 2026-11-04。'),
+      ],
+    });
     const send = vi.fn().mockResolvedValue(true);
 
-    const { result } = renderHook(() => useCronRunFollowUpSend(send, () => messages));
+    const { result } = renderHook(() => useCronRunFollowUpSend(send, () => useSessionStore.getState().messages));
     let sent: boolean | undefined;
     await act(async () => {
       sent = await result.current(envelope('这个任务后来怎么样了？'));
@@ -122,12 +133,12 @@ describe('useCronRunFollowUpSend', () => {
 
     expect(sent).toBe(true);
     expect(invokeDomainMock).not.toHaveBeenCalled();
-    expect(useSessionStore.getState().createSession).toHaveBeenCalled();
+    expect(createSession).toHaveBeenCalledOnce();
     const [arg] = (send.mock.calls as Array<[ConversationEnvelope]>)[0];
     expect(arg.sessionId).toBe('fresh-1');
-    expect(arg.content).toContain('那次运行中断了，没有留下结果。');
-    expect(arg.content).toContain('这个任务后来怎么样了？');
     expect(arg.content).toContain('查一下今天的日程');
+    expect(arg.content).toContain(statusLine);
+    expect(arg.content).toContain('这个任务后来怎么样了？');
     expect(arg.content).not.toContain('【当前时间】');
   });
 
@@ -172,6 +183,22 @@ describe('useCronRunFollowUpSend', () => {
       expect(arg.content).toContain('那次运行没有跑完。');
       expect(arg.content).not.toContain('那次运行中断了，没有留下结果。');
     }
+  });
+
+  it('continues an incomplete first meeting with its title and no automatic prompt', async () => {
+    useSessionStore.setState({
+      sessions: [{
+        ...cronRunSession,
+        title: '日程管家 · 初次见面',
+        origin: { kind: 'cron', name: 'role-cadence', metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } },
+      } as SessionWithMeta],
+    });
+    const send = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() => useCronRunFollowUpSend(send, () => [userMessage('internal first-meeting prompt')]));
+    await act(async () => { await result.current(envelope('后来呢？')); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      content: '我想接着聊「日程管家 · 初次见面」。下面是我的问题：\n\n后来呢？',
+    }));
   });
 
   it('fork 失败：返回 false（草稿回滚）并出声，不切会话', async () => {
