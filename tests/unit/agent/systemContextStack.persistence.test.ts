@@ -106,6 +106,76 @@ describe('systemContextStack.addAndPersistMessage', () => {
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', message);
   });
 
+  describe('converted background Bash that fails (meta run)', () => {
+    // 与落库层同口径：按 id 幂等写（重复写 = 更新），回放时只取非 meta 行。
+    function makeLedgerCtx() {
+      const ledger = new Map<string, Message>();
+      const ctx = makeCtx('runtime-session-1');
+      ctx.runtime.historyVisibility = 'meta';
+      ctx.runtime.persistMessage = async (message: Message) => {
+        ledger.set(message.id, { ...message });
+      };
+      const visibleReplay = () => [...ledger.values()].filter((message) => !message.isMeta);
+      return { ctx, visibleReplay };
+    }
+    const delegatedPrompt: Message = { id: 'delegated-prompt', role: 'user', content: 'run check.sh and report', timestamp: 1 };
+    const bashCall: Message = {
+      id: 'assistant-bash',
+      role: 'assistant',
+      content: '',
+      timestamp: 2,
+      toolCalls: [{ id: 'call-1', name: 'Bash', arguments: { command: './check.sh' } }],
+    };
+
+    it('keeps the failed command line visible in the restored replay', async () => {
+      const { ctx, visibleReplay } = makeLedgerCtx();
+      await addAndPersistMessage(ctx, { ...delegatedPrompt });
+      await addAndPersistMessage(ctx, { ...bashCall });
+      await addAndPersistMessage(ctx, {
+        id: 'tool-result',
+        role: 'tool',
+        content: '',
+        timestamp: 3,
+        toolResults: [{ toolCallId: 'call-1', success: false, error: 'exit 3', metadata: { code: 'COMMAND_FAILED', output: 'missing: brief.pdf' } }],
+      });
+
+      const visible = visibleReplay();
+      expect(visible.map((message) => message.id)).toEqual(['assistant-bash', 'tool-result']);
+      expect(visible[0].toolCalls?.[0].arguments).toEqual({ command: './check.sh' });
+    });
+
+    it('does not leak the background run narration next to the failed command', async () => {
+      const { ctx, visibleReplay } = makeLedgerCtx();
+      await addAndPersistMessage(ctx, { ...bashCall, content: 'The blocked call used command substitution; rerunning in plain form.' });
+      await addAndPersistMessage(ctx, {
+        id: 'tool-result',
+        role: 'tool',
+        content: '',
+        timestamp: 3,
+        toolResults: [{ toolCallId: 'call-1', success: false, error: 'exit 3', metadata: { code: 'COMMAND_FAILED', output: 'missing: brief.pdf' } }],
+      });
+
+      const visible = visibleReplay();
+      expect(visible[0].toolCalls?.[0].arguments).toEqual({ command: './check.sh' });
+      expect(JSON.stringify(visible)).not.toContain('rerunning in plain form');
+    });
+
+    it('keeps the delegated prompt and a successful probe hidden', async () => {
+      const { ctx, visibleReplay } = makeLedgerCtx();
+      await addAndPersistMessage(ctx, { ...delegatedPrompt });
+      await addAndPersistMessage(ctx, { ...bashCall });
+      await addAndPersistMessage(ctx, {
+        id: 'tool-result',
+        role: 'tool',
+        content: '',
+        timestamp: 3,
+        toolResults: [{ toolCallId: 'call-1', success: true, output: 'ok' }],
+      });
+
+      expect(visibleReplay()).toEqual([]);
+    });
+  });
+
   it('fills correlation.turnId from runtime turn when ALS has no turnId', async () => {
     const ctx = makeCtx('runtime-session-1');
     ctx.runtime.turn = { currentTurnId: 'turn-from-ctx' };

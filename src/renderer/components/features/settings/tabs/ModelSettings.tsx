@@ -51,16 +51,17 @@ import {
   buildLegacyLongCatProviderMigration,
   buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSavePromotion,
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeProviderIconValidationError,
+  getModelLabel,
   hasCustomEndpointOverride,
   isProviderIdentityManaged,
   mergeDiscoveredModelEntry,
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
-  shouldPromoteProviderToDefault,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
@@ -464,15 +465,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     setIsSaving(true);
     try {
       const providerConfigForSave = buildCurrentProviderConfigForSave(currentProviderConfig?.model || config.model);
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        ...buildProviderSettingsUpdate(config.provider, providerConfigForSave),
-      });
-      setProviderConfigs((prev) => ({
-        ...prev,
-        [config.provider]: providerConfigForSave,
-      }));
-      // 主任务模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管主任务模型，
-      // 否则发送被门禁拦下（"当前主任务模型未配置 API Key"）。
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', buildProviderSettingsUpdate(config.provider, providerConfigForSave));
+      setProviderConfigs((prev) => ({ ...prev, [config.provider]: providerConfigForSave }));
       setAppSettings((prev) => prev ? {
         ...prev,
         models: {
@@ -487,15 +481,20 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         setProviderConfigs(latestSettings.models.providers);
         setAppSettings(latestSettings);
-        if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
-          const promoteUpdate = buildDefaultModelSettingsUpdate(config.provider, providerConfigForSave, latestSettings);
-          await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', promoteUpdate);
-          // 只有 promote 真接管了任务主模型档才回灌 strategy 并提示「已切换」；仅默认指针切换而 main 已可用时不提示（那不是事实）。
-          const promotedTaskStrategy = promoteUpdate.models?.taskStrategy;
+        const promotion = await buildProviderSavePromotion(config.provider, providerConfigForSave, latestSettings, appSettings);
+        if (promotion) {
+          await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', promotion.update);
+          const promotedModel = promotion.config.model || config.model;
+          patchCurrentProviderConfig({ model: promotedModel, models: promotion.config.models });
+          if (promotion.config !== providerConfigForSave && promotedModel !== config.model) {
+            const model = getProviderRuntimeModels(currentProviderInfo, promotion.config).find(({ id }) => id === promotedModel);
+            onChange({ ...config, model: promotedModel, capabilities: model?.capabilities, maxTokens: model?.maxTokens ?? config.maxTokens });
+          }
+          const promotedTaskStrategy = promotion.update.models?.taskStrategy;
           if (promotedTaskStrategy) setTaskStrategy(promotedTaskStrategy);
-          const promotedModel = providerConfigForSave.model || config.model;
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          if (promotedTaskStrategy) toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedModel}`);
+          const promotedLabel = promotion.config === providerConfigForSave ? promotedModel : promotion.config.models?.[promotedModel]?.label || getModelLabel(currentModels, promotedModel);
+          if (promotedTaskStrategy) toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedLabel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {
