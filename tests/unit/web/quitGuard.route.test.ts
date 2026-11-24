@@ -83,7 +83,7 @@ function installCronJobs(jobs: Array<{ enabled: boolean }>): ReturnType<typeof v
 }
 
 describe('createQuitGuardRouter', () => {
-  it('POST /quit-guard/detach arms background-continue so the next stdin EOF is not a quit', async () => {
+  it('POST /quit-guard/detach no longer exists (404) and does not arm background-continue', async () => {
     expect(backgroundContinueDetachArmed()).toBe(false);
     const app = express();
     app.use('/api', createQuitGuardRouter({
@@ -93,17 +93,15 @@ describe('createQuitGuardRouter', () => {
     const baseUrl = await listen(server);
     try {
       const response = await fetch(`${baseUrl}/api/quit-guard/detach`, { method: 'POST' });
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ ok: true });
-      expect(backgroundContinueDetachArmed()).toBe(true);
-      // 别名合同（ADR-083 append 2026-10-18）：detach 等价 quit-intent background
-      expect(getDaemonQuitIntent()).toBe('background');
+      expect(response.status).toBe(404);
+      expect(backgroundContinueDetachArmed()).toBe(false);
+      expect(getDaemonQuitIntent()).toBe('none');
     } finally {
       await close(server);
     }
   });
 
-  it('POST /quit-intent routes background and stop; other bodies get 400', async () => {
+  it('POST /quit-intent accepts only stop; background and other bodies get 400', async () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createQuitGuardRouter({
@@ -119,10 +117,10 @@ describe('createQuitGuardRouter', () => {
       });
 
       const background = await post({ mode: 'background' });
-      expect(background.status).toBe(200);
-      expect(await background.json()).toEqual({ ok: true, mode: 'background' });
-      expect(getDaemonQuitIntent()).toBe('background');
-      expect(backgroundContinueDetachArmed()).toBe(true);
+      expect(background.status).toBe(400);
+      expect(await background.json()).toEqual({ error: 'invalid-quit-intent' });
+      expect(getDaemonQuitIntent()).toBe('none');
+      expect(backgroundContinueDetachArmed()).toBe(false);
 
       const stop = await post({ mode: 'stop' });
       expect(stop.status).toBe(200);
