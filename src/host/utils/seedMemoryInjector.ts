@@ -45,6 +45,7 @@ const USER_MEMORY_KINDS = [
   'user',
   'feedback',
   'project',
+  'people',
   'reference',
   'session',
   'pattern',

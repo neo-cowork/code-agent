@@ -580,6 +580,18 @@ describe('foreground task-result wake', () => {
     expect(prompt).toContain(hint);
   });
 
+  it('tells the wake turn to name the failed step in the user language without an exit code or English error text', async () => {
+    const wake = createForegroundWake(dependencies());
+    await wake(task(), 'completed');
+    const prompt = sendMessage.mock.calls[0][0] as string;
+    expect(prompt).toContain('没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言');
+    expect(prompt).toContain('不要写退出码');
+    expect(prompt).toContain('不要照抄英文报错原文');
+    expect(prompt).toContain('用户自己写过的命令可以点名');
+    expect(prompt).toContain('不要原样引用 agent_ 开头的内部编号');
+    expect(prompt).toContain('改动在分支里时只写分支名');
+  });
+
   it('falls back to the 240-char summary when the task has no resultText (legacy shape)', async () => {
     const wake = createForegroundWake(dependencies());
     await wake({ ...task(), summary: 'x'.repeat(240) }, 'completed');

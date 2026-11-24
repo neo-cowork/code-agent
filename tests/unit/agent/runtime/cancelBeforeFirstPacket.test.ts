@@ -111,6 +111,9 @@ describe('AgentOrchestrator Stop before first model packet', () => {
   afterEach(async () => {
     await Promise.all(writes);
     await orchestrator.drainWorkspaceServices();
+    // 终局之后的记忆/建议日志发生在 sendMessage 返回之后。先排空再 restoreAllMocks，
+    // 否则这些 console.error 会在 worker 关 RPC 时还挂着 onUserConsoleLog。
+    await orchestrator.drainPostTerminalWork();
     resetApplicationRunRegistryForTests();
     vi.restoreAllMocks(); vi.unstubAllEnvs();
     // restoreAllMocks 会把 beforeEach 里的静音一并还原；在收尾动作前重新压上，覆盖
@@ -257,5 +260,25 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     expect(db.prepare('select status from durable_runs').all()).toEqual([{ status: 'completed' }]);
     await orchestrator.cancel('user');
     expect(store.sessions?.getMessages('cancel-session').some((m) => m.content.includes('[cancelled]'))).toBe(false);
+  });
+
+  it('post-terminal summary logs land before drainPostTerminalWork returns', async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      lines.push(args.map((part) => (typeof part === 'string' ? part : '')).join(' '));
+    });
+    vi.mocked(ModelRouter.prototype.inference).mockImplementation(async (_messages, _tools, _config, stream) => {
+      await stream?.({ type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' });
+      return { type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' };
+    });
+    await orchestrator.sendMessage('Summarize these meeting notes in one sentence.', undefined, { mode: 'normal', disableAutoAgent: true });
+    await Promise.all(writes);
+    // 摘要日志在 await judgeConversation 之后。drain 若没有留住这条 promise，下面的匹配在返回时还是空的。
+    const marker = lines.length;
+    await orchestrator.drainPostTerminalWork();
+    expect(lines.slice(marker).join('\n')).toMatch(/Conversation summary saved/);
+    const settled = lines.length;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(lines.slice(settled).join('\n')).not.toMatch(/Conversation summary saved/);
   });
 });
