@@ -736,3 +736,9 @@ export const OS_NOTIFICATION_TIMEOUTS = {
 export const SESSION_WORK_DIRECTORY_TIMEOUTS = {
   TITLE_WAIT_MS: 3_000,
 } as const;
+
+/** Image loading and reply budgets for isolated HTML artifact screenshots. */
+export const ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS = {
+  IMAGE: 15_000,
+  RESPONSE: 30_000,
+} as const;
