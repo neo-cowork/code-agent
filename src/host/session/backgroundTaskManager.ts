@@ -24,8 +24,8 @@ const logger = createLogger('BackgroundTaskManager');
  */
 class BackgroundTaskManager extends EventEmitter {
   private backgroundSessions: Map<string, BackgroundSessionInfo> = new Map();
-  // Each row keeps its own terminal decision while it waits for delegated children.
-  private readonly deferredRuns = new WeakMap<BackgroundSessionInfo, { input: BackgroundRunSettlementInput }>();
+  // The parent outcome follows the delegated work across panel row replacements.
+  private readonly deferredRuns = new Map<string, { input: BackgroundRunSettlementInput }>();
   private readonly pendingWakes = new WeakMap<BackgroundSessionInfo, Array<() => void>>();
   private mainWindow: AppWindow | null = null;
 
@@ -135,6 +135,7 @@ class BackgroundTaskManager extends EventEmitter {
     task.status = 'completed';
     task.progress = 100;
     task.completionMessage = message;
+    this.clearDeferredRun(sessionId);
 
     logger.info('Background task completed', { sessionId, message });
 
@@ -177,6 +178,7 @@ class BackgroundTaskManager extends EventEmitter {
 
     task.status = 'failed';
     task.completionMessage = error || (readUiLanguage() === 'en' ? 'Task failed' : '任务执行失败');
+    this.clearDeferredRun(sessionId);
 
     logger.warn('Background task failed', { sessionId, error });
 
@@ -257,23 +259,26 @@ class BackgroundTaskManager extends EventEmitter {
 
   rememberDeferredRun(sessionId: string, input: BackgroundRunSettlementInput): void {
     const task = this.backgroundSessions.get(sessionId);
-    if (task?.status !== 'running') return;
-    const deferred = this.deferredRuns.get(task);
+    if (task && task.status !== 'running') return;
+    const deferred = this.deferredRuns.get(sessionId);
     if (!deferred) {
-      this.deferredRuns.set(task, { input });
+      this.deferredRuns.set(sessionId, { input });
     } else if (deferred.input.status !== 'interrupted' && input.status !== 'completed') {
       deferred.input = input;
     }
   }
 
   getDeferredRun(sessionId: string): Readonly<{ input: BackgroundRunSettlementInput }> | undefined {
-    const task = this.backgroundSessions.get(sessionId);
-    return task?.status === 'running' ? this.deferredRuns.get(task) : undefined;
+    return this.deferredRuns.get(sessionId);
+  }
+
+  clearDeferredRun(sessionId: string): void {
+    this.deferredRuns.delete(sessionId);
   }
 
   deferWakeUntilParentSettles(sessionId: string, wake: () => void): boolean {
     const task = this.backgroundSessions.get(sessionId);
-    if (task?.status !== 'running' || this.deferredRuns.has(task)) return false;
+    if (task?.status !== 'running' || this.deferredRuns.has(sessionId)) return false;
     const pending = this.pendingWakes.get(task);
     if (pending) pending.push(wake);
     else this.pendingWakes.set(task, [wake]);

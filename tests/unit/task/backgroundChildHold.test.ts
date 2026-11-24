@@ -463,6 +463,68 @@ describe('background parent settlement waits for delegated children', () => {
     );
   });
 
+  it.each(['completed', 'error'] as const)(
+    'settles the replacement background row after a deferred %s parent returns to the background',
+    async (status) => {
+      const sessionId = 'session-background-round-trip';
+      const backgroundManager = getBackgroundTaskManager();
+      await background(sessionId);
+      const task = await spawn(sessionId, 1, 'cleanup');
+      await settleWebTurnBackgroundRun(sessionId, { status, errorMessage: 'parent failed' });
+
+      const original = backgroundManager.moveToForeground(sessionId);
+      expect(original?.status).toBe('running');
+      expect(row(sessionId)).toBeUndefined();
+      await background(sessionId);
+      expect(row(sessionId)).not.toBe(original);
+      expect(row(sessionId)?.status).toBe('running');
+      expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+
+      await finishChild(sessionId, task.id);
+      await vi.waitFor(() => expect(row(sessionId)?.status).toBe(status === 'error' ? 'failed' : 'completed'));
+      await expectParentNotice(sessionId, status === 'error' ? { succeeded: false } : {});
+      if (status === 'error') expect(row(sessionId)?.completionMessage).toBe('parent failed');
+      await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map());
+      expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('settles the replacement row when the child finishes before the primary run goes idle', async () => {
+    const sessionId = 'session-background-idle-round-trip';
+    const backgroundManager = getBackgroundTaskManager();
+    await background(sessionId);
+    primary.active = true;
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+    await finishChild(sessionId, task.id);
+
+    backgroundManager.moveToForeground(sessionId);
+    await background(sessionId);
+    expect(row(sessionId)?.status).toBe('running');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    primary.active = false;
+    manager.emitIdle();
+
+    await vi.waitFor(() => expect(row(sessionId)?.status).toBe('completed'));
+    await expectParentNotice(sessionId);
+  });
+
+  it('discards the previous parent outcome when the last child finishes in the foreground', async () => {
+    const sessionId = 'session-foreground-child-finish';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: 'previous parent failed' });
+    getBackgroundTaskManager().moveToForeground(sessionId);
+    await finishChild(sessionId, task.id);
+    await vi.waitFor(() => expect(wake).toHaveBeenCalledTimes(1));
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+
+    await background(sessionId);
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+    expect(row(sessionId)?.status).toBe('completed');
+    await expectParentNotice(sessionId);
+  });
+
   it('skips the sub-task completion banner while a delegated child is still in flight', async () => {
     const sessionId = 'session-banner';
     await background(sessionId);

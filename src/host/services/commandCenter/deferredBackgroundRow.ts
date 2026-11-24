@@ -8,7 +8,10 @@ import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../sessi
 const logger = createLogger('DeferredBackgroundRow');
 
 export function rememberDelegatedSessionStop(sessionId: string): void {
-  getBackgroundTaskManager().rememberDeferredRun(sessionId, { status: 'interrupted' });
+  const manager = getBackgroundTaskManager();
+  if (manager.isTaskRunning(sessionId) || manager.getDeferredRun(sessionId)) {
+    manager.rememberDeferredRun(sessionId, { status: 'interrupted' });
+  }
 }
 
 type TerminalTaskStatus = 'completed' | 'failed' | 'cancelled';
@@ -54,6 +57,10 @@ export async function releaseDelegatedChildSettlement(input: {
     if (input.inFlightChildren() > 0 || input.primaryRunActive()) return;
     const live = getBackgroundTaskManager();
     if (live.getDeferredRun(input.task.sessionId) !== deferred) return;
+    if (!live.isTaskRunning(input.task.sessionId)) {
+      live.clearDeferredRun(input.task.sessionId);
+      return;
+    }
     const parentOutcome = deferred.input.status === 'completed' ? undefined : deferred.input;
     logger.info('Settling deferred background run from delegated child', {
       sessionId: input.task.sessionId,
