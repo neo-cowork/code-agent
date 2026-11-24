@@ -212,6 +212,28 @@ export function formatSessionTaskCancelledClosing(locale: SessionTaskResultStatu
 
 export type SessionTaskDeliveryFailure = keyof typeof SESSION_TASK_DELIVERY_FAILURE_MESSAGES.zh;
 
+const SESSION_TASK_COMMAND_FAILED_LEAD = {
+  zh: '后台任务没能完成：命令 ',
+  en: 'The background task could not finish: the command ',
+} as const;
+
+/** 后台任务最后一条命令没跑成功：带上命令行与白话原因（路径已按工作区缩短，调用方保证）。 */
+export function formatSessionTaskCommandFailed(
+  locale: SessionTaskResultStatusWordLocale,
+  command: string,
+  reason?: string,
+): string {
+  const lead = SESSION_TASK_COMMAND_FAILED_LEAD[locale];
+  if (locale === 'zh') return `${lead}${command} 没有运行成功${reason ? `（${reason}）` : ''}，已停止。`;
+  return `${lead}${command} did not run successfully${reason ? ` (${reason})` : ''}, so it stopped.`;
+}
+
+/** True when a task_error detail is the command-failed sentence (either locale). */
+export function isSessionTaskCommandFailedDetail(detail: string | undefined): boolean {
+  return detail !== undefined
+    && (detail.startsWith(SESSION_TASK_COMMAND_FAILED_LEAD.zh) || detail.startsWith(SESSION_TASK_COMMAND_FAILED_LEAD.en));
+}
+
 export function formatSessionTaskDeliveryFailure(
   reason: unknown,
   locale: SessionTaskResultStatusWordLocale,
