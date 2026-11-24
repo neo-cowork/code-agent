@@ -356,21 +356,29 @@ export function chipMountAfterCaret(root: HTMLElement): HTMLElement | null {
 }
 
 /** 在当前光标处插入纯文本（可含 '\n'）；无有效选区时追加到末尾。 */
-export function insertPlainTextAtCaret(root: HTMLElement, text: string): void {
+export function insertPlainTextAtCaret(
+  root: HTMLElement,
+  text: string,
+  { anchorCaret = false }: { anchorCaret?: boolean } = {},
+): void {
+  // A trailing newline needs text on the next line for native editing to keep the caret there.
+  // Place the caret before the anchor so Backspace can delete the newline in one keystroke.
+  const node = document.createTextNode(anchorCaret ? text + COMPOSER_CARET_ANCHOR : text);
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0 && root.contains(selection.getRangeAt(0).startContainer)) {
     const range = selection.getRangeAt(0);
     range.deleteContents();
-    const node = document.createTextNode(text);
     range.insertNode(node);
-    range.setStartAfter(node);
+    if (anchorCaret) range.setStart(node, text.length);
+    else range.setStartAfter(node);
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
     return;
   }
-  root.appendChild(document.createTextNode(text));
-  setCaretPlainTextOffset(root, extractComposerPlainText(root).length);
+  root.appendChild(node);
+  if (anchorCaret) applyCaretPosition(node, text.length);
+  else setCaretPlainTextOffset(root, extractComposerPlainText(root).length);
 }
 
 /** 外部 value 同步：清掉全部非 chip 节点，文本整体放到第一颗 chip 前（chip 保持原位）。 */
