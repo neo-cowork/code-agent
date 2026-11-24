@@ -18,19 +18,18 @@ describe('toolUserLabel', () => {
     expect(toolUserLabel(tool, 'en')).not.toMatch(/[\u3400-\u9fff]/);
   });
   it('unknown and missing tools keep generic localized approval copy', () => {
-    expect(permissionNotice(undefined, 'en')).toEqual({ title: 'Approval needed', body: 'Review the proposed action.' });
-    expect(permissionNotice('internal_tool', 'en').body).toBe('Approval needed: Action');
+    expect(permissionNotice(undefined, 'en')).toEqual({ title: 'Approval needed', body: 'An action is waiting for your approval' });
+    expect(permissionNotice('internal_tool', 'en').body).toBe('Needs your approval: Action');
   });
   it('approval 与 parked 两档文案逐字节钉死（zh/en × 有无工具名）', () => {
-    // N-FIX-PERMISSION-NOTICE-NATIVE-BRANCH-DEAD-CODE：删掉无人调用的 'native' 档后，存留两档不许变。
-    expect(permissionNotice('Bash', 'zh', 'approval')).toEqual({ title: '需要授权', body: '需要授权：运行命令' });
-    expect(permissionNotice(undefined, 'zh', 'approval')).toEqual({ title: '需要授权', body: '请求执行权限' });
-    expect(permissionNotice('Bash', 'en', 'approval')).toEqual({ title: 'Approval needed', body: 'Approval needed: Run command' });
-    expect(permissionNotice(undefined, 'en', 'approval')).toEqual({ title: 'Approval needed', body: 'Review the proposed action.' });
-    expect(permissionNotice('Bash', 'zh', 'parked')).toEqual({ title: '需要授权', body: '需要授权：运行命令。任务已暂停，到「自动化」→「运行记录」处理。' });
-    expect(permissionNotice(undefined, 'zh', 'parked')).toEqual({ title: '需要授权', body: '请求执行权限。任务已暂停，到「自动化」→「运行记录」处理。' });
-    expect(permissionNotice('Bash', 'en', 'parked')).toEqual({ title: 'Approval needed', body: 'Approval needed: Run command. The task is paused. Open Agent Neo to review the unattended task.' });
-    expect(permissionNotice(undefined, 'en', 'parked')).toEqual({ title: 'Approval needed', body: 'Review the proposed action.. The task is paused. Open Agent Neo to review the unattended task.' }); // 双句号是现行输出，本单不改文案
+    expect(permissionNotice('Bash', 'zh', 'approval')).toEqual({ title: '需要授权', body: '等你确认：运行命令' });
+    expect(permissionNotice(undefined, 'zh', 'approval')).toEqual({ title: '需要授权', body: '有一项操作等你确认' });
+    expect(permissionNotice('Bash', 'en', 'approval')).toEqual({ title: 'Approval needed', body: 'Needs your approval: Run command' });
+    expect(permissionNotice(undefined, 'en', 'approval')).toEqual({ title: 'Approval needed', body: 'An action is waiting for your approval' });
+    expect(permissionNotice('Bash', 'zh', 'parked')).toEqual({ title: '需要授权', body: '等你确认：运行命令。任务已暂停，到「自动化」→「运行记录」处理。' });
+    expect(permissionNotice(undefined, 'zh', 'parked')).toEqual({ title: '需要授权', body: '有一项操作等你确认。任务已暂停，到「自动化」→「运行记录」处理。' });
+    expect(permissionNotice('Bash', 'en', 'parked')).toEqual({ title: 'Approval needed', body: 'Needs your approval: Run command. The task is paused. Open Agent Neo to review the unattended task.' });
+    expect(permissionNotice(undefined, 'en', 'parked')).toEqual({ title: 'Approval needed', body: 'An action is waiting for your approval. The task is paused. Open Agent Neo to review the unattended task.' });
   });
   it('内置工具给动作名，不露原名', () => {
     expect(toolUserLabel('Bash')).toBe('运行命令');
@@ -45,10 +44,10 @@ describe('toolUserLabel', () => {
   });
   it('授权通知正文只含动作，不含原始工具名或命令', () => {
     const body = permissionNotice('Bash', 'zh').body;
-    expect(body).toBe('需要授权：运行命令');
+    expect(body).toBe('等你确认：运行命令');
     expect(body).not.toMatch(/Bash|rm |npm/);
     expect(permissionNotice('mail_send', 'zh').body).not.toContain('mail_send');
-    expect(permissionNotice(undefined, 'zh').body).toBe('请求执行权限');
+    expect(permissionNotice(undefined, 'zh').body).toBe('有一项操作等你确认');
   });
   it('英文界面给英文动作名', () => {
     expect(toolUserLabel('Bash', 'en')).toBe('Run command');
@@ -60,8 +59,8 @@ describe('toolUserLabel', () => {
     const tool = 'mcp__lark__calendar_v4_calendarEvent_create';
     expect(toolUserLabel(tool)).toBe('在飞书创建日程');
     expect(toolUserLabel(tool, 'en')).toBe('Create an event in Feishu');
-    expect(permissionNotice(tool, 'zh').body).toBe('需要授权：在飞书创建日程');
-    expect(permissionNotice(tool, 'en').body).toBe('Approval needed: Create an event in Feishu');
+    expect(permissionNotice(tool, 'zh').body).toBe('等你确认：在飞书创建日程');
+    expect(permissionNotice(tool, 'en').body).toBe('Needs your approval: Create an event in Feishu');
     for (const text of [toolUserLabel(tool), toolUserLabel(tool, 'en'), permissionNotice(tool, 'zh').body, permissionNotice(tool, 'en').body]) {
       expect(text).not.toMatch(/mcp__|lark|start_time|start time/i);
     }

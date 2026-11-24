@@ -192,4 +192,37 @@ describe('useChatInputAgentCommand', () => {
     expect(handled).toBe(true);
     expect(state.value).toBe('@alpha ');
   });
+
+  it('@ mention 面板：中文前缀命中中文角色，选中插入 @中文名（N-MENTION-CJK-ROLE-FIX）', () => {
+    const state = {
+      value: '@设计',
+      setValue: vi.fn((next: string | ((previous: string) => string)) => {
+        state.value = typeof next === 'function' ? next(state.value) : next;
+      }),
+      setShowSlashPopover: vi.fn(),
+      setSlashFilter: vi.fn(),
+      setPendingAgentSelection: vi.fn(),
+      setActiveAgentId: vi.fn(),
+    };
+    const hook = renderHook(() => useChatInputAgentCommand({
+      value: state.value,
+      swarmAgents: [{ id: 'designer', name: '设计师' }],
+      agentEntries: agents,
+      inputAreaRef: { current: null },
+      focusComposer: vi.fn(),
+      setValue: state.setValue,
+      setShowSlashPopover: state.setShowSlashPopover,
+      setSlashFilter: state.setSlashFilter,
+      setPendingAgentSelection: state.setPendingAgentSelection,
+      setActiveAgentId: state.setActiveAgentId,
+    }));
+
+    expect(hook.result.current.isAgentMentionAutocompleteOpen).toBe(true);
+    expect(hook.result.current.agentMentionAutocomplete?.matches.map((m) => m.id)).toEqual(['designer']);
+
+    act(() => {
+      hook.result.current.handleAgentMentionSelect('designer');
+    });
+    expect(state.value).toBe('@设计师 ');
+  });
 });

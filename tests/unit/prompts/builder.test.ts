@@ -50,6 +50,12 @@ describe('Prompt Builder', () => {
   // buildPrompt
   // --------------------------------------------------------------------------
   describe('buildPrompt', () => {
+    it('tells the model to put every file the user named for deletion into one rm command', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain('When one request names several files to delete, put every path into ONE rm command');
+      expect(prompt).toContain('only those exact paths');
+    });
+
     it('should build a valid prompt', () => {
       const prompt = buildPrompt();
       expect(prompt).toBeDefined();

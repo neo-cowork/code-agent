@@ -190,6 +190,7 @@ export interface PermissionRequest {
     userRequest?: { text: string; truncated: boolean };
     /** Host-owned: the session was started by a scheduled/background task, so there is no user quote. */
     startedByAutomation?: boolean;
+    startedByFirstWake?: boolean;
     /** Host-owned: display name of the scheduled task that started this session; never trusted from tool arguments. */
     scheduledTaskName?: string;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
@@ -198,6 +199,8 @@ export interface PermissionRequest {
     /** 删除类命令在 host 侧解析并盘点出的目标证据。 */
     affectedPath?: string;
     affectedFileCount?: number;
+    /** Host-owned：details.path 按真实上传 / 临时根分类的结论；渲染层只据此用位置词显示。 */
+    pathDisplay?: { path: string; kind: 'upload' | 'temp'; rest: string };
     /**
      * Host 对 file_path 做 path.resolve + stat 后的目标种类。
      * 渲染层只消费：device 出设备文案；regular / unknown / 缺省一律覆盖警告。

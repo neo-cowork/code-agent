@@ -29,6 +29,7 @@ const OUTCOME_KEYS = [
   'failed-dependency',
   'failed-unavailable',
   'failed-upstream',
+  'delete-incomplete',
   'completed',
   'completed-with-warnings',
   'aborted',

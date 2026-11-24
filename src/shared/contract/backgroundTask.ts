@@ -165,6 +165,7 @@ export interface Task {
   durationMs?: number;
   progress?: TaskProgress;
   failure?: TaskFailure;
+  leftoverPaths?: string[];
   metadata?: TaskMetadata;
   events: TaskEvent[];
   outputRefs: TaskOutputRef[];
@@ -190,6 +191,7 @@ export interface UpsertTaskInput {
   durationMs?: number;
   progress?: TaskProgress;
   failure?: TaskFailure;
+  leftoverPaths?: string[];
   metadata?: TaskMetadata;
 }
 

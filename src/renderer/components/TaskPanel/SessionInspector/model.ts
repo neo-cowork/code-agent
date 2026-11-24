@@ -77,6 +77,7 @@ interface ToolDispatchRow {
   success: boolean;
   durationMs: number | null;
   error: string | null;
+  userMessage?: string;
   fromCache: boolean;
   /** 人话活动桶（层1 明细行/活行用；归类规则集中在 classifyToolActivity） */
   bucket: ToolActivityBucket;
@@ -191,6 +192,7 @@ function readToolDispatch(event: TraceLedgerEvent): ToolDispatchRow | null {
     success: data.success === true,
     durationMs: num(data.durationMs),
     error: str(data.error),
+    ...(typeof data.userMessage === 'string' ? { userMessage: data.userMessage } : {}),
     fromCache: data.fromCache === true,
     bucket: classifyToolActivity(toolName),
   };
