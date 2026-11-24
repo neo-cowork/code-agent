@@ -213,6 +213,31 @@ describe('roles.ipc (domain:roles)', () => {
       expect(res.data).toEqual([]);
     });
 
+    it('lists ASCII and Chinese agents-only experts without creating role directories', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      for (const [filename, name] of [
+        ['researcher', 'researcher'],
+        ['自定义角色', '自定义角色'],
+        ['unsafe-definition', '../etc'],
+        ['coder', 'coder'],
+      ]) {
+        await fs.writeFile(path.join(agentsDir, `${filename}.md`), `---\nname: ${name}\ndescription: Checks sources.\n---\nCite sources.\n`);
+      }
+
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.success).toBe(true);
+      expect(res.data?.map(({ roleId, memoryCount, lastWork }) => ({ roleId, memoryCount, lastWork }))).toEqual([
+        { roleId: 'researcher', memoryCount: 0, lastWork: null },
+        { roleId: '自定义角色', memoryCount: 0, lastWork: null },
+      ]);
+      expect(res.data?.find(({ roleId }) => roleId === 'researcher')).toMatchObject({
+        source: 'user',
+        description: 'Checks sources.',
+      });
+      await expect(fs.stat(path.join(mockConfigDir.dir, 'roles'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     it('lists roles with memory count / last work / agent info', async () => {
       await ensureRoleAssetDirs('研究员');
       await writeScopedMemory(

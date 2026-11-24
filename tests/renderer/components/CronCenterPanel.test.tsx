@@ -42,6 +42,7 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
     countPendingReview: () => countPendingReview(),
     listAwaitingApprovalRuns: () => Promise.resolve([]),
+    listOutboundDrafts: async () => [],
     listParkedApprovals: () => listParkedApprovals(),
     listPendingReview: () => listPendingReview(),
   },

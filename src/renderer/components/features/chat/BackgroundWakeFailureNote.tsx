@@ -4,7 +4,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { languages } from '../../../i18n';
 import { agentNodeLabel } from '../../../utils/agentRoleLabel';
-import { containsCjk } from '../../../utils/containsCjk';
+import { containsCjk } from '@shared/containsCjk';
 import { interpolate } from '../../../i18n/interpolate';
 
 /** Persisted host prose stays unchanged in ZH; EN renders from structured metadata. */

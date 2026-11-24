@@ -1,11 +1,8 @@
-// ============================================================================
-// RoleWakeLedger —— 角色页「最近唤醒」+ 每日成本（N-CRON-RUN-LEDGER-VISIBLE）。
-// 只聚合该角色 role-wake 任务的执行记录，走既有 cron IPC（listJobs + getExecutions，
-// 不加新通道）；event 触发的唤醒不产生执行记录，天然不在内。
-// RoleDetailPage 贴 max-lines 线：本组件自包含 section 外壳，页面只加一行 JSX。
-// ============================================================================
 import React, { useEffect, useState } from 'react';
 import type { CronJobExecution } from '@shared/contract';
+import type { RoleWakeFunnel } from '@shared/contract/roleAssets';
+import { interpolate } from '../../../i18n/interpolate';
+import { getRoleWakeFunnel } from '../../../services/rolesClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { cronClient } from '../../../services/cronClient';
 import { SettingsSection } from '../settings/SettingsLayout';
@@ -28,7 +25,9 @@ async function loadRoleWakeExecutions(roleId: string): Promise<CronJobExecution[
 export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }> = ({ roleId, refreshToken = 0 }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
+  const roleCopy = t.expert.roleDetail;
   const [executions, setExecutions] = useState<CronJobExecution[] | null>(null);
+  const [funnel, setFunnel] = useState<RoleWakeFunnel | 'unavailable' | null>(null);
   const loadedRoleIdRef = React.useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -36,15 +35,39 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
     if (loadedRoleIdRef.current !== roleId) {
       loadedRoleIdRef.current = roleId;
       setExecutions(null);
+      setFunnel(null);
     }
     void loadRoleWakeExecutions(roleId)
       .then((list) => { if (!cancelled) setExecutions(list); })
       .catch(() => { if (!cancelled) setExecutions([]); });
+    void getRoleWakeFunnel(roleId)
+      .then((counts) => {
+        if (!cancelled) setFunnel(Array.isArray(counts?.duplicates) ? counts : 'unavailable');
+      })
+      .catch(() => { if (!cancelled) setFunnel('unavailable'); });
     return () => { cancelled = true; };
   }, [roleId, refreshToken]);
   if (executions === null) return null;
   return (
     <SettingsSection title={cc.roleWakeRecentTitle} description={cc.roleWakeRecentDescription}>
+      {funnel === 'unavailable' && <p className="text-xs text-zinc-400">{roleCopy.roleWakeWeeklyUnavailable}</p>}
+      {funnel && funnel !== 'unavailable' && (
+        <div className="mb-3 space-y-1 text-xs text-zinc-400">
+          <p data-testid="role-wake-weekly-funnel">{roleCopy.roleWakeWeeklyTitle} · {interpolate(roleCopy.roleWakeWeeklyCounts, {
+            wakes: funnel.wakes, reports: funnel.reports, suppressed: funnel.suppressed,
+          })}</p>
+          {funnel.duplicates.length > 0 && (
+            <ul className="space-y-1">
+              {funnel.duplicates.map(({ at, firstReportedAt }, index) => (
+                <li key={`${at}-${index}`}>{interpolate(roleCopy.roleWakeDuplicate, {
+                  at: formatDateTime(at, language),
+                  firstReportedAt: formatDateTime(firstReportedAt, language),
+                })}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <CronDailyCostSummary executions={executions} testId="role-wake-daily-cost" />
       {executions.length === 0 ? (
         <div
@@ -63,6 +86,8 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
+              connectorLost: t.cronWakeCadence.connectorLost,
+              nameLanguage: language,
               generic: t.cronWakeCadence.skipGeneric,
             });
             return (

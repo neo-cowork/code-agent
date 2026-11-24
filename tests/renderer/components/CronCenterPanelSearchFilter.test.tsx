@@ -53,6 +53,7 @@ vi.mock('../../../src/renderer/utils/osNotification', () => ({
 
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
+    listOutboundDrafts: async () => [],
     listParkedApprovals: vi.fn().mockResolvedValue([]),
     listPendingReview: vi.fn().mockResolvedValue([]),
     countPendingReview: vi.fn().mockResolvedValue(0),

@@ -158,10 +158,9 @@ write_build_info() {
 # 只认真实 app 可执行路径或本槽监听端口；命令行里提到 app 路径不算实例。
 refuse_if_tauri_slot_in_use "$APP_NAME" "/Applications/$APP_NAME.app" "$DEV_APP_WEB_PORT"
 
-# 只关掉**本槽**的测试包实例，不碰生产、也不碰别的槽。
-# 别用 `pkill -f "$APP_NAME"`：槽 1 的名字 "Agent Neo Dev" 是槽 2 "Agent Neo Dev 2" 的前缀，
-# 装槽 1 会顺手杀掉别人正在验的槽 2。带上 .app/Contents/MacOS/ 让两者不再互相命中。
-pkill -f "$APP_NAME.app/Contents/MacOS/" 2>/dev/null || true
+if [ "${NEO_INSTALL_FORCE:-0}" = "1" ]; then
+  terminate_confirmed_tauri_slot_instances
+fi
 sleep 1
 
 SOURCE_APP="$BUNDLE_DIR/macos/$APP_NAME.app"
