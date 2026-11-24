@@ -13,7 +13,12 @@ interface StallNotice {
   clear?: boolean;
 }
 
-export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
+// agentRowFlagged：右栏专家行已经在提示「暂无进展」。此时 spawn_agent 的卡住提示让位给行徽标，
+// 其他工具的卡住提示照常显示；通知本身保留，行恢复后若仍卡住会重新露出，host 的 clear 照常清掉。
+export const StallNoticeLine: React.FC<{ hidden?: boolean; agentRowFlagged?: boolean }> = ({
+  hidden = false,
+  agentRowFlagged = false,
+}) => {
   const { t } = useI18n();
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const [notice, setNotice] = useState<StallNotice | null>(null);
@@ -42,6 +47,7 @@ export const StallNoticeLine: React.FC<{ hidden?: boolean }> = ({ hidden = false
   }, [hidden]);
 
   if (!notice || hidden || !notice.level) return null;
+  if (agentRowFlagged && notice.detail === 'spawn_agent') return null;
   const stuckOn = notice.phase === 'tool'
     ? humanizeToolStep(notice.detail ?? '', undefined, t, undefined, 'running')
     : '等模型回响';
