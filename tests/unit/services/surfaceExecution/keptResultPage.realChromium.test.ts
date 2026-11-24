@@ -239,6 +239,43 @@ describe('kept result page claim path (real chromium)', () => {
     TIMEOUT_MS,
   );
 
+  it.each(['close_tab', 'native page close'])('keeps the result until the last managed page closes via %s', async (closePath) => {
+    const conversationId = `smoke-conv-last-tab-${closePath}`;
+    const links = new UserBrowserLinkService();
+    const { identity, exec } = startAgentRun(conversationId);
+    try {
+      await exec({ action: 'navigate', url: origin });
+      await exec({ action: 'keep_result_page' });
+      const service = getManagedBrowserProviderAdapter().getBrowserService(identity);
+      const resultTab = service.getActiveTab()!;
+      const context = resultTab.page.context();
+      const poll = () => getKeptResultPageHandler(links, { conversationId });
+      expect(poll().state).toBe('kept');
+
+      await exec({ action: 'new_tab', url: origin });
+      expect(service.listTabs()).toHaveLength(2);
+      await exec({ action: 'close_tab', tabId: service.getActiveTab()!.id });
+      const afterNonLast = poll();
+      console.log('[smoke] poll after non-last close:', JSON.stringify(afterNonLast));
+      expect(afterNonLast.state).toBe('kept');
+
+      if (closePath === 'close_tab') {
+        await exec({ action: 'close_tab', tabId: resultTab.id });
+      } else {
+        await resultTab.page.close();
+      }
+      console.log('[smoke] Chromium pages after last managed close:', JSON.stringify(
+        context.pages().filter((page) => !page.isClosed()).map((page) => page.url()),
+      ));
+      const afterLast = poll();
+      console.log('[smoke] poll after last close:', JSON.stringify(afterLast));
+      expect(afterLast.state).toBe('closed');
+      expect(afterLast.url).toBe(afterNonLast.url);
+    } finally {
+      await getSurfaceExecutionRuntime().endRun(identity);
+    }
+  }, TIMEOUT_MS);
+
   it('closing the browser -> state closed with url retained -> adopt rejects with a plain sentence', async () => {
     const conversationId = 'smoke-conv-closed';
     const links = new UserBrowserLinkService();
