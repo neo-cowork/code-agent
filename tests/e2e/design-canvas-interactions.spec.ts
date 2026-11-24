@@ -22,7 +22,7 @@ test('design canvas import, layer inspector, and camera gestures stay stable', a
   const newSessionBtn = page.getByRole('button', { name: /新任务|新会话/ }).first();
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
-  await expect(page.locator('[data-session-id][aria-current="true"]').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-current-session-id]').first()).toBeVisible({ timeout: 10_000 });
 
   const expandBtn = page.locator('[data-testid="titlebar-expand-workbench"]');
   await expandBtn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});

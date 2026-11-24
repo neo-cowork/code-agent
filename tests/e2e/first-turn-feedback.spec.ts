@@ -130,7 +130,7 @@ test('排队发送只按真实事件推进发送、启动、等待模型和首 t
   const token = await page.evaluate(() => (
     window as unknown as { __CODE_AGENT_TOKEN__?: string }
   ).__CODE_AGENT_TOKEN__);
-  const sessionId = await page.locator('[data-session-id][aria-current="true"]').first().getAttribute('data-session-id');
+  const sessionId = await page.locator('[data-current-session-id]').first().getAttribute('data-current-session-id');
   expect(token).toBeTruthy();
   expect(sessionId).toBeTruthy();
   expect(clientMessageId).toBeTruthy();

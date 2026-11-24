@@ -4,7 +4,7 @@
 //
 // 目标: 验证创建会话的完整 wiring 路径
 //   click 新会话 → domain:session create handler → SessionManager
-//   → DB write → renderer sessionStore → DOM [data-session-id][aria-current="true"]
+//   → DB write → renderer sessionStore → DOM [data-current-session-id]
 //
 // 拦截能力:
 //   - 拦 wiring bug #1 (aebaa4e0 session flush via activeAgentLoops) 的前置
@@ -45,14 +45,14 @@ async function getAuthToken(page: Page): Promise<string> {
 }
 
 async function ensureActiveSession(page: Page): Promise<string> {
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   if (!(await activeSession.isVisible())) {
     const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
   }
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing after creating probe session').toBeTruthy();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
   return sessionId!;
@@ -69,10 +69,10 @@ test('PoC: 点击新会话按钮, 出现 active session 和 chat 输入框', asy
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
 
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing after click').toBeTruthy();
 
   // ChatView 已挂到新 session
@@ -177,9 +177,9 @@ test('PoC: 创建后新 session 出现在侧边栏', async ({ page }) => {
   await newSessionBtn.click();
 
   // 拿到 active session id
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId).toBeTruthy();
 
   // 这个 id 在侧边栏 session 列表里能找到 (不只是 aria-current=true 的)

@@ -19,10 +19,10 @@ async function createCleanSession(page: Page): Promise<string> {
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
 
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing').toBeTruthy();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
   return sessionId!;

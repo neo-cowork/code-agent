@@ -101,7 +101,7 @@ test('可以从侧边栏切换会话', async ({ page, request }) => {
   }
 
   expect(sessionIds.length).toBeGreaterThanOrEqual(2);
-  const currentSessionId = await page.locator('[data-session-id][aria-current="true"]').first().getAttribute('data-session-id');
+  const currentSessionId = await page.locator('[data-current-session-id]').first().getAttribute('data-current-session-id');
   const targetSessionId = sessionIds.find((id) => id !== currentSessionId);
   expect(targetSessionId).toBeTruthy();
 

@@ -824,6 +824,7 @@ export const ChatView: React.FC = () => {
   return (
     <div
         ref={globalDropZoneRef}
+        data-current-session-id={currentSessionId ?? undefined}
         className="flex-1 min-h-0 flex overflow-hidden relative"
         onDragEnter={handleGlobalDragEnter}
         onDragOver={handleGlobalDragOver}

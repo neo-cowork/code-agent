@@ -115,7 +115,7 @@ test('点会话回到聊天区，二级页让位', async ({ page, geometrySensor
   const newTaskBtn = page.getByTestId('sidebar-new-task');
   await expect(newTaskBtn).toBeVisible({ timeout: 15_000 });
   await newTaskBtn.click();
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 15_000 });
 
   await page.getByTestId('sidebar-capability-hub').click();
