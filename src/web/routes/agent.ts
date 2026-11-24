@@ -1985,7 +1985,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
   });
 
-  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory);
+  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory, queuedInputDrain.handleReleasedSession);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 
