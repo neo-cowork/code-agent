@@ -325,9 +325,8 @@ function observeNeoTagRunTerminalEvents(
  * 正向证据：本轮 user turn（id = roundTurnId，startTask 以它为 clientMessageId 落库）
  * 之后有没有非空 assistant 正文。
  *
- * 判源优先级：orchestrator 内存 history（运行期同步写入，无落库竞态）→ 会话 ledger
- * 全量（orchestrator 不可用时的兜底）。两处都找不到锚点 user 消息 = 没有证据，
- * 宁可失败不可冒充完成。
+ * 内存 history 有本轮回复时直接确认。续接同一会话时，内存可能已含锚点和工具消息，
+ * 但缺最新助手回复，即便该回复已经落库。内存无正向证据时再检查会话 ledger。
  */
 function hasVisibleAssistantReplyWithinTurn(messages: Message[]): boolean {
   let hasVisibleReply = false;
@@ -354,24 +353,19 @@ async function runProducedVisibleReply(
   conversationId: string,
   roundTurnId: string,
 ): Promise<boolean> {
-  const hasReplyFrom = (messages: Message[]): boolean | null => {
+  const hasReplyFrom = (messages: Message[]): boolean => {
     const anchorIndex = messages.findIndex(
       (message) => message.id === roundTurnId && message.role === 'user',
     );
-    if (anchorIndex < 0) return null;
-    return hasVisibleAssistantReplyWithinTurn(messages.slice(anchorIndex));
+    return anchorIndex >= 0 && hasVisibleAssistantReplyWithinTurn(messages.slice(anchorIndex));
   };
 
   const orchestrator = taskManager.getOrCreateCurrentOrchestrator?.(conversationId);
   const liveMessages = typeof orchestrator?.getMessages === 'function'
     ? orchestrator.getMessages()
     : undefined;
-  if (liveMessages && liveMessages.length > 0) {
-    const live = hasReplyFrom(liveMessages);
-    if (live !== null) return live;
-  }
-  const ledger = hasReplyFrom(await readFullSessionMessages(conversationId));
-  return ledger ?? false;
+  if (liveMessages && hasReplyFrom(liveMessages)) return true;
+  return hasReplyFrom(await readFullSessionMessages(conversationId));
 }
 
 function runtimeErrorMessage(error: unknown): string {
