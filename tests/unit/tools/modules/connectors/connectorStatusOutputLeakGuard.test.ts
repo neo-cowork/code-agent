@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
-import type { ToolResult } from '../../../../../src/shared/contract';
+import type { ToolContext, CanUseToolFn, Logger, ToolResult } from '../../../../../src/host/protocol/tools';
 
 const execMock = vi.fn();
 const getMock = vi.fn();
