@@ -17,7 +17,29 @@
 // 必须显式 retry 或 cancel 才能放行后续流程。
 // ============================================================================
 
-export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing';
+export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing' | 'outbound_draft';
+
+export interface OutboundDraftInboxItem {
+  id: string;
+  revision: string;
+  scheduledTaskName?: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  attachmentNames: string[];
+  needsReconfirm: boolean;
+}
+
+export type OutboundDraftActionCode =
+  | 'OUTBOUND_DRAFT_SENT'
+  | 'OUTBOUND_DRAFT_DISCARDED'
+  | 'OUTBOUND_DRAFT_EXPIRED'
+  | 'OUTBOUND_DRAFT_CLOSED'
+  | 'OUTBOUND_DRAFT_RECONFIRM'
+  | 'OUTBOUND_DRAFT_ATTACHMENT_UNAVAILABLE'
+  | 'OUTBOUND_DRAFT_SEND_FAILED';
 
 /**
  * kind='tool_approval' 停车行的 payload（B2）。无人值守会话的工具审批请求超时不再 deny，

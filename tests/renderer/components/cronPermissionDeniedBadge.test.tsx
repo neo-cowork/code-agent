@@ -32,6 +32,7 @@ const switchSession = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
     listPendingReview: () => listPendingReview(),
+    listOutboundDrafts: async () => [],
     listParkedApprovals: () => listParkedApprovals(),
     countPendingReview: () => countPendingReview(),
     markReviewed: (id: string) => markReviewed(id),
