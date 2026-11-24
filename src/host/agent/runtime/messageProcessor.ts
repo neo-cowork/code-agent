@@ -32,6 +32,7 @@ import type { RunFinalizer } from './runFinalizer';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
+import { hasDesktopAppshotBlock } from '../../../shared/contract/appshot';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
 import { applyDeclareDeliverablesOutcome, recordDeclareDeliverables } from './declareDeliverablesGate';
@@ -451,7 +452,7 @@ export class MessageProcessor {
       .find((message) => message.role === 'user' && message.visibility !== 'rewound');
     const latestUserContent = latestUserMessage?.content;
     const hasAppshotEvidence =
-      (typeof latestUserContent === 'string' && latestUserContent.includes('<appshot')) ||
+      (typeof latestUserContent === 'string' && hasDesktopAppshotBlock(latestUserContent)) ||
       // 缺 id 的历史附件（持久化/回放脏数据，后台槽会继承主会话历史）必须走
       // getAttachmentId 兜底——裸 `attachment.id.startsWith` 曾让一条脏附件炸穿
       // 整轮纯文本收尾（2026-08-07 converter.ts 同型事故；realrun20 07/08 占位

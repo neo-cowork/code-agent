@@ -5,7 +5,7 @@ import {
   toRegionPercentBox,
 } from '../../../src/renderer/utils/chatImageAnnotation';
 import { chatImageAnnotateEn, chatImageAnnotateZh } from '../../../src/renderer/i18n/chatImageAnnotate';
-import { buildAppshotAttachment, buildAppshotXml } from '../../../src/shared/contract/appshot';
+import { buildAppshotAttachment, buildAppshotXml, hasDesktopAppshotBlock } from '../../../src/shared/contract/appshot';
 
 const zh = chatImageAnnotateZh.chatImageAnnotate;
 const en = chatImageAnnotateEn.chatImageAnnotate;
@@ -103,5 +103,12 @@ describe('消息文本与 capture', () => {
     const xml = buildAppshotXml(capture);
     expect(xml.match(/<\/appshot>/g)).toHaveLength(1);
     expect(xml.endsWith('</appshot>')).toBe(true);
+  });
+  it('图片批注的隐藏块不算桌面截图证据，窗口截图块算', () => {
+    const capture = buildChatImageAnnotationCapture({
+      regions, note: '', copy: zh, bakedPngDataUrl: 'data:image/png;base64,AAAA', requestId: 'r4', capturedAtMs: 0,
+    });
+    expect(hasDesktopAppshotBlock(buildAppshotXml(capture))).toBe(false);
+    expect(hasDesktopAppshotBlock('<appshot app="com.apple.finder" name="Finder">x</appshot>')).toBe(true);
   });
 });

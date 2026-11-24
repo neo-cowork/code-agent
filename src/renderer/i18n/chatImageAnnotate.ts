@@ -19,6 +19,7 @@ export const chatImageAnnotateZh = {
     needRegion: '先在图片上拖出至少一个框。',
     loadFailed: '这张图读取不出来，暂时没法批注。',
     sendFailed: '没能生成带框的图片，请重试。',
+    finishEditFirst: '输入框正在编辑一条排队消息，请先发送或取消那条编辑，再发批注。',
     loading: '正在读取图片…',
     positionGrid: [
       ['左上', '上方', '右上'],
@@ -52,6 +53,7 @@ export const chatImageAnnotateEn: typeof chatImageAnnotateZh = {
     needRegion: 'Draw at least one box on the image first.',
     loadFailed: 'This image could not be read, so it cannot be marked up right now.',
     sendFailed: 'Could not create the image with boxes. Please try again.',
+    finishEditFirst: 'The composer is editing a queued message. Send or cancel that edit first, then send the markup.',
     loading: 'Loading image…',
     positionGrid: [
       ['top-left', 'top', 'top-right'],

@@ -88,6 +88,7 @@ export function QueuedInputTray({
                 key={item.id}
                 className="group flex min-h-9 items-center gap-2 border-b border-zinc-800/60 px-2.5 last:border-b-0"
                 data-testid={`queued-input-row-${item.id}`}
+                data-editing={editingId === item.id ? 'true' : undefined}
               >
                 {paused && (
                   <span

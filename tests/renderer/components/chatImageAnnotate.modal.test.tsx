@@ -87,4 +87,27 @@ describe('ChatImageAnnotateModal 拖框', () => {
     expect(screen.getAllByTestId('chat-image-annotate-box')).toHaveLength(1);
     expect(screen.getByText('区域 1')).toBeTruthy();
   });
+
+  it('输入框正在编辑排队消息时不发批注，给出人话提示', async () => {
+    const row = document.createElement('div');
+    row.setAttribute('data-editing', 'true');
+    document.body.appendChild(row);
+    try {
+      render(<ChatImageAnnotateModal asset={asset} onClose={() => {}} />);
+      const overlay = await screen.findByTestId('chat-image-annotate-overlay');
+      act(() => {
+        fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20, pointerId: 1 });
+        fireEvent.pointerMove(overlay, { clientX: 220, clientY: 120, pointerId: 1 });
+        fireEvent.pointerUp(overlay, { clientX: 220, clientY: 120, pointerId: 1 });
+      });
+      const sent = vi.fn();
+      window.addEventListener('browser-annotation:submit', sent);
+      fireEvent.click(screen.getByTestId('chat-image-annotate-send'));
+      expect((await screen.findByRole('alert')).textContent).toContain('排队消息');
+      expect(sent).not.toHaveBeenCalled();
+      window.removeEventListener('browser-annotation:submit', sent);
+    } finally {
+      row.remove();
+    }
+  });
 });

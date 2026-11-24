@@ -174,6 +174,11 @@ export function ChatImageAnnotateModal({
   const rects = shapes.filter(isRect);
 
   const handleSend = async () => {
+    // 输入框正在编辑排队消息时，提交事件会改写那条排队正文且不带画框图：此时不发。
+    if (document.querySelector('[data-editing="true"]')) {
+      setError(copy.finishEditFirst);
+      return;
+    }
     const displayW = overlayRef.current?.clientWidth ?? 0;
     const displayH = overlayRef.current?.clientHeight ?? 0;
     const img = imgRef.current;
