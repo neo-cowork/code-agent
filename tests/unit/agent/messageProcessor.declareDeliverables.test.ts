@@ -9,6 +9,7 @@ import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeCont
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
 import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
 import type { Message, ToolResult } from '../../../src/shared/contract';
+import { getInabilityReplyGuidance, INABILITY_REPLY_CONTRACT } from '../../../src/shared/inabilityReplyContract';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const sessionManagerState = vi.hoisted(() => ({
@@ -394,6 +395,28 @@ describe('declare_deliverables 不吞整批', () => {
     const denied = deps.persisted.filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
     expect(denied).toHaveLength(3);
     expect(denied.every((result) => result.success === false && result.metadata?.code === 'TOOL_DISABLED_FOR_RUN')).toBe(true);
+  });
+
+  it('keeps retry and shell guidance in the injected system message', async () => {
+    const prompt = 'Please organize my notes folder.';
+    const ctx = buildCtx({ foregroundToolFace: true, allowedToolNames: ['Read'] });
+    ctx.turn.beginRun(prompt);
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    await makeProcessor(ctx, deps, toolEngine).handleToolResponse(toolUseResponse([
+      { id: 'denied-shell', name: 'Bash', arguments: { command: 'mkdir notes-backup' } },
+    ]), false, 1, EVENT_PROC);
+
+    const injection = deps.injected.find((text) => text.startsWith('<tool-run-policy>'));
+    const guidance = getInabilityReplyGuidance(prompt);
+    expect(injection?.split(guidance)).toHaveLength(3);
+    expect(injection).toContain('If user input is needed, state the missing input');
+    const toolMessage = deps.persisted.find((message) => message.role === 'tool');
+    expect(toolMessage?.toolResults?.[0]).toMatchObject({
+      error: guidance, userMessage: INABILITY_REPLY_CONTRACT.en.finalMessage,
+    });
+    expect(toolMessage?.content).not.toContain('If user input is needed, state the missing input');
+    expect(toolMessage?.content).not.toContain(INABILITY_REPLY_CONTRACT.en.finalMessage);
   });
 
   it('提示词里提到范围外的连接器名不会让它的调用被放行（allowedConnectorIds 收窄仍然生效）', async () => {

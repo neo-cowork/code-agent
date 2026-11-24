@@ -14,7 +14,7 @@ export function buildPermissionDecisionState(
   sessionId: string | null,
   globalSessionId: string,
 ): PermissionDecisionState {
-  const resolvedRequest: PermissionRequest = { ...request, resolved: true, decision };
+  const resolvedRequest: PermissionRequest = { ...request, resolved: true, decision, answeredAt: Date.now() };
   const historyKey = sessionId || request.sessionId || globalSessionId;
   const previousHistory = state.resolvedPermissionRequests[historyKey] || [];
   const queuedPermissionRequests: Record<string, PermissionRequest[]> = {};

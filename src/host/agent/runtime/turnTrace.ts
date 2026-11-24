@@ -116,6 +116,7 @@ export interface TraceEventDataMap {
     success: boolean;
     durationMs: number;
     error: string | null;
+    userMessage?: string;
     fromCache: boolean;
     /** True when the bash command actually ran inside the OS jail. */
     sandboxed?: boolean;

@@ -17,7 +17,15 @@ vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: { generativeUI: { clickToSelect: '点击选择' } } }),
+  useI18n: () => ({
+    t: {
+      generativeUI: {
+        clickToSelect: '点击选择',
+        cellFeedbackTitle: '{ref} · {value}（点选定点反馈）',
+        cellLabel: '单元格 {ref}',
+      },
+    },
+  }),
 }));
 
 import { SpreadsheetBlock } from '../../../src/renderer/components/features/chat/MessageBubble/SpreadsheetBlock';

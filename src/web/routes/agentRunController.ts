@@ -175,7 +175,7 @@ export class AgentRunController {
         notificationService.retractNeedsInput(data.id);
         return;
       }
-      const notice = buildApprovalNotification(typeof data.tool === 'string' ? data.tool : undefined);
+      const notice = buildApprovalNotification(typeof data.tool === 'string' ? data.tool : undefined, undefined, this.deps.sessionId);
       notificationService.notifyNeedsInput({
         sessionId: this.deps.sessionId,
         ...notice,
