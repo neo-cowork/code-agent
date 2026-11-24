@@ -1,6 +1,6 @@
 // ============================================================================
 // quitIntent 单测（ADR-083 append 2026-10-18）：壳声明的退出意图状态机。
-//   - setDaemonQuitIntent：background 同时 arm detach（旧 /quit-guard/detach 合同）；
+//   - setDaemonQuitIntent：background 同时 arm detach（摘掉 win32 EOF 停机指令）；
 //   - 意图变化通知 onDaemonQuitIntentChange（daemon 状态文件据此重写）；
 //   - 模块态本文件内自管理：按用例顺序设置，不依赖跨文件隔离。
 // ============================================================================
@@ -39,10 +39,10 @@ describe('setDaemonQuitIntent（ADR-083 append 2026-10-18）', () => {
     setDaemonQuitIntent('background');
   });
 
-  it('直接 arm detach（旧路径）不改意图——意图与 detach arm 是两个状态', () => {
+  it('直接 arm detach 不改意图——意图与 detach arm 是两个状态', () => {
     setDaemonQuitIntent('background'); // 起点归一
     armBackgroundContinueDetach();
     expect(backgroundContinueDetachArmed()).toBe(true);
-    // 语义检查在新用例里做，这里只保证旧入口仍可用（别名路由等价性见路由测试）。
+    // 语义检查在新用例里做，这里只保证进程内 arm 入口仍可用。
   });
 });
