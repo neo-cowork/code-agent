@@ -193,12 +193,12 @@ describe('只读探测文法扩展（后台任务执行器，async_agent）', ()
       }
     });
     it('allowlisted tools still compile', () => {
-      for (const c of ['pdftotext -v', 'pdfinfo -h', 'pdftohtml -v', 'pdftoppm --help', 'npx --version', 'node --version', 'for t in pdftotext pdfinfo; do $t -v; done']) {
+      for (const c of ['pdftotext -v', 'pdfinfo -h', 'pdftohtml -v', 'pdftoppm --help', 'npx --version', 'npm --version', 'node --version', 'for t in pdftotext pdfinfo; do $t -v; done']) {
         expect(compileReadOnlyProbePlan(c, ctx), c).not.toBeNull();
       }
     });
     it('poppler --version/-V (input file names) and npx -h/--help/-V (write npm logs) never compile', () => {
-      for (const c of ['pdftotext --version', 'pdftotext -V', 'pdfinfo --version', 'pdftohtml --version', 'pdftoppm --version', 'pdftoppm -V', 'npx -h', 'npx --help', 'npx -V',
+      for (const c of ['pdftotext --version', 'pdftotext -V', 'pdfinfo --version', 'pdftohtml --version', 'pdftoppm --version', 'pdftoppm -V', 'npx -h', 'npx --help', 'npx -V', 'npm -h', 'npm --help', 'npm -V',
         'for t in pdftotext pdfinfo; do $t --version; done']) {
         expect(compileReadOnlyProbePlan(c, ctx), c).toBeNull();
       }
