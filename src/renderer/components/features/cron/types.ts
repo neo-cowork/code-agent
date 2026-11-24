@@ -332,6 +332,8 @@ function eventLimitsFromDraft(draft: CronJobDraft): { prefilter?: string; maxRun
 export function buildCronJobInput(
   draft: CronJobDraft,
   validation = cronEditorChromeZh.editorChrome.validation,
+  /** 编辑已有任务：位置只读，不能擅自删掉它已存的文件夹。 */
+  isEditing = false,
 ): Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'> {
   if (!draft.name.trim()) {
     throw new Error(validation.nameRequired);
@@ -358,7 +360,7 @@ export function buildCronJobInput(
       .map((tag) => tag.trim())
       .filter(Boolean),
     // 原样回写编辑前的 metadata（编辑器无 metadata 表单）；新建任务没有底稿 → 空。
-    metadata: metadataForRunsOn(normalizeWorkingDirectory(draft.metadata), draft.runsOn) ?? {},
+    metadata: metadataForRunsOn(normalizeWorkingDirectory(draft.metadata), isEditing ? 'local' : draft.runsOn) ?? {},
   };
   if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
     throw new Error(validation.budgetInvalid);

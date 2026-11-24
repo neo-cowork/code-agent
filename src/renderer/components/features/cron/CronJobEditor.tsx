@@ -361,7 +361,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           return;
         }
       }
-      const input = buildCronJobInput(draft, cc.editorChrome.validation);
+      const input = buildCronJobInput(draft, cc.editorChrome.validation, Boolean(job));
       await gateOrPersist(input, job ? 'update' : 'create');
     } catch (error) {
       setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
@@ -884,7 +884,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           )}
 
           {draft.actionType === 'agent' && (
-            <CronAgentActionFields draft={draft} setField={setField} errors={errors} />
+            <CronAgentActionFields draft={draft} setField={setField} errors={errors} isEditing={Boolean(job)} />
           )}
 
           {draft.actionType === 'webhook' && (

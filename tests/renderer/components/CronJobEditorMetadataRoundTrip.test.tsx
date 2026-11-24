@@ -171,3 +171,18 @@ describe('复制任务与工作文件夹（N-FIX-CRON-COPY-DROPS-WORKDIR）', ()
     expect(input.metadata).toEqual({});
   });
 });
+
+describe('编辑已有云端任务（I1 回归）', () => {
+  it('云端任务带 workingDirectory：改名保存不删文件夹，也不显示「切回本机」提示', async () => {
+    const job = makeRefreshJob({ runsOn: 'cloud', metadata: { workingDirectory: '/tmp/Notes' } });
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue('Refresh status.md')).toBeTruthy());
+    fireEvent.click(screen.getByText('执行动作'));
+    expect(screen.queryByTestId('cron-working-folder-cloud-notice')).toBeNull();
+    fireEvent.click(screen.getByText('保存修改'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob.mock.calls[0][1].metadata).toEqual({ workingDirectory: '/tmp/Notes' });
+  });
+});
