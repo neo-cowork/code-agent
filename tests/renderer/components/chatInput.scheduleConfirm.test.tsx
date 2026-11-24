@@ -11,6 +11,7 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 const mocks = vi.hoisted(() => ({
   generateFromPrompt: vi.fn(),
   createJob: vi.fn(),
+  getRecentExecutions: vi.fn().mockResolvedValue([]),
   toast: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
@@ -18,6 +19,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: {
     generateFromPrompt: mocks.generateFromPrompt,
     createJob: mocks.createJob,
+    getRecentExecutions: mocks.getRecentExecutions,
   },
 }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: mocks.toast }));

@@ -12,6 +12,7 @@ import { backgroundPanelEn } from './backgroundPanel';
 import { voiceEn } from './voice'; import { cronWorkingFolderEn } from './cronWorkingFolder'; import { cronWakeCadenceEn } from './cronWakeCadence';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
+import { cronScheduleEstimateEn } from './cronScheduleEstimate';
 import { deliveryExperienceEn } from './deliveryExperience';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
@@ -937,15 +938,14 @@ export const en = {
   ...expertEn,
 
   ...teamEn,
-  ...rolePackEn,
-  ...knowledgeMemoryEn,
+  ...rolePackEn, ...knowledgeMemoryEn,
   ...chatTranscriptEn,
   ...attachmentPreviewEn,
   ...chatInputEn,
   ...backgroundPanelEn,
   ...voiceEn,
   ...sidebarEn,
-  ...cronCenterEn, ...cronWorkingFolderEn, ...cronWakeCadenceEn,
+  ...cronScheduleEstimateEn, ...cronCenterEn, ...cronWorkingFolderEn, ...cronWakeCadenceEn,
   ...previewWorkspaceEn,
   ...deliveryExperienceEn,
   ...modalPrimitivesEn,
