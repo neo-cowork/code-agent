@@ -128,6 +128,9 @@ export class AgentOrchestrator {
   // 火后即忘、不阻塞前台 turn，但链串在这个实例上，让生命周期边界（应用退出、测试拆除）
   // 有一个可等待的排空出口（drainWorkspaceServices）。两条私有链各自 catch 进 logger.warn，恒不 reject。
   private workspaceServicesChain: Promise<unknown> = Promise.resolve();
+  // finalizeRun 在终局事件之后的记忆/建议/学习是 fire-and-forget（不阻塞 UI）。
+  // 句柄留在实例上，测试拆除用 drainPostTerminalWork 等它落完再关 worker。
+  private postTerminalChain: Promise<void> = Promise.resolve();
 
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
@@ -352,6 +355,7 @@ export class AgentOrchestrator {
           });
         }
       } else {
+        this.retainPostTerminalWork();
         this.agentLoop = null;
         this.onEvent({
           type: 'agent_cancelled',
@@ -521,6 +525,20 @@ export class AgentOrchestrator {
    * 否则链上的 console 写入会晚于调用方的生命周期（N-AGENTORCH-TEARDOWN-FLAKE）。
    */
   async drainWorkspaceServices(): Promise<void> { await this.workspaceServicesChain; }
+
+  /**
+   * 等本实例各轮终局之后的后台收尾落完。sendMessage 不等它（终局事件先到 UI）；
+   * 测试 afterEach 在 vi.restoreAllMocks 之前调用，收尾日志就不会挂到 worker 关闭后的 RPC 上。
+   */
+  async drainPostTerminalWork(): Promise<void> { await this.postTerminalChain; }
+
+  private retainPostTerminalWork(): void {
+    // Lightweight loops without a run finalizer have no post-terminal work to retain.
+    const pending = this.agentLoop?.whenPostTerminalWorkSettled?.();
+    if (!pending) return;
+    const settled = pending.then(() => undefined, () => undefined);
+    this.postTerminalChain = this.postTerminalChain.then(() => settled, () => settled);
+  }
 
   /** Set once on a newly-created background orchestrator from the foreground host run. */
   setWorkspaceScopeAuthority(workspaceScope: WorkspaceScope): void {
@@ -1085,6 +1103,7 @@ export class AgentOrchestrator {
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);
       this.messageHistory.captureCompressionState();
+      this.retainPostTerminalWork();
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
       this.activeRunPromise = null;
