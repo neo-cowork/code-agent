@@ -210,6 +210,7 @@ export const ROLE_ASSETS = {
   FIRST_WAKE_FILENAME: 'first-wake.json',
   /** 每日醒来外部增量提议：roles/<roleId>/wake-proposals.json */
   WAKE_PROPOSALS_FILENAME: 'wake-proposals.json',
+  WAKE_LEDGER_FILENAME: 'wake-ledger.jsonl',
   /** 首次醒来的工具调用轮数预算（独立于巡检醒来：提示词要求 ≤3 次只读探查后作答，
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
@@ -277,6 +278,10 @@ export const ROLE_PROACTIVITY = {
   RATIONALE_MAX_CHARS: 240,
   /** 提取不到决策标记时的保守兜底决策 */
   FALLBACK_DECISION: 'report',
+  BASIS_TAG_PATTERN: /<basis>\s*([^<>]*?)\s*<\/basis>/i,
+  WAKE_LEDGER_MAX_ROWS: 256,
+  WAKE_LEDGER_DEDUP_DAYS: 30,
+  WAKE_LEDGER_FUNNEL_DAYS: 7,
   /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
   /** 醒来 run 返回后等待 task_complete 收口链排空的上限（防泄漏兜底，非时序依赖） */

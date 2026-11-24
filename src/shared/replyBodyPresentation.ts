@@ -20,12 +20,12 @@ export function presentReplyBody(input: string, lang: InternalTextLanguage = 'zh
   const evidence: string[] = [];
   if (!options.protocol) return { text: input, rationale: undefined, evidence: undefined, technicalDetails: undefined };
   const seen = new Set<string>();
-  const tagNames = options.protocol === 'cron' ? ['cron_event_decision'] : ['decision', 'rationale', 'evidence'];
+  const tagNames = options.protocol === 'cron' ? ['cron_event_decision'] : ['decision', 'rationale', 'evidence', 'basis'];
   const tags = tagNames.join('|');
   const masked = input.split('');
   const removed: Array<[number, number]> = [];
-  const conceal = (start: number, end: number) => {
-    technical.push(input.slice(start, end));
+  const conceal = (start: number, end: number, showTechnical = true) => {
+    if (showTechnical) technical.push(input.slice(start, end));
     removed.push([start, end]);
     masked.fill('\0', start, end);
   };
@@ -53,23 +53,23 @@ export function presentReplyBody(input: string, lang: InternalTextLanguage = 'zh
     const start = match.index;
     const value = input.slice(start + match[0].indexOf('>') + 1, start + match[0].lastIndexOf('</'));
     const name = match[1].toLowerCase();
-    if (name !== 'decision') {
+    if (name === 'rationale' || name === 'evidence') {
       const clean = humanizeInternalText(value.trim(), lang).text;
       if (clean && !seen.has(clean)) {
         seen.add(clean);
         (name === 'evidence' ? evidence : reasons).push(clean);
       }
     }
-    conceal(start, start + match[0].length);
+    conceal(start, start + match[0].length, name !== 'basis');
   }
   // Incomplete controls are hidden only while the explicitly marked message is streaming.
   if (options.isStreaming) {
     const pending = new RegExp(`<(?:${tags})\\b(?:[^>]*>[\\s\\S]*|[^>]*)$`, 'i').exec(masked.join(''));
-    if (pending) conceal(pending.index, input.length);
+    if (pending) conceal(pending.index, input.length, !/^<basis\b/i.test(pending[0]));
     const visible = masked.join('');
     const lastAngle = visible.lastIndexOf('<');
     if (lastAngle >= 0 && tagNames.some((tag) => tag.startsWith(visible.slice(lastAngle + 1).toLowerCase()))) {
-      conceal(lastAngle, input.length);
+      conceal(lastAngle, input.length, !'basis'.startsWith(visible.slice(lastAngle + 1).toLowerCase()));
     }
   }
   let cursor = 0;
