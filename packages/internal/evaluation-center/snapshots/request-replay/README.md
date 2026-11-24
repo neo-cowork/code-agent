@@ -60,6 +60,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-11-23 / N-FIX-BASH-BG-CONVERT-FAILED-COMMAND-HIDDEN-ISMETA / 敏感变更：src/host/agent/runtime/contextAssembly/systemContextStack.ts（仅 `historyVisibility==='meta'` 的后台 run 里，失败的 Bash 结果与发起它的助手消息不再打 isMeta；录制语料 7 会话均无 meta run、无 COMMAND_FAILED，请求组装字节不变）。本机重录时全部会话的 system 提示词与工具 schema 哈希都漂（含不带 Bash 的 single-turn-qa），与本改动无关，是本机录制环境（无 API key / 时区）与已提交语料环境不一致，故不提交本机重录产物，以本行作为同 PR 快照目录更新。
 - 2026-11-22 / N-FIX-CONTEXT-POPOVER-STALE-AND-AGENT-FAIL-UNNAMED-FU1-FU2-FU1-NATURAL-FAIL-WEB-FU1 / 后台派发提示的元数据增加工具调用 ID，用于界面关联任务。重录 7 会话 16 轮并自验通过，快照目录零差异。
 - 2026-11-19 / N-FIX-EN-SPACE-TERM-UNIFY / 敏感变更：src/host/prompts/spaceContextPrompt.ts、spaceCreate/spaceList/spaceQuery.schema.ts（英文「collaboration space」统一为「Space」，仅描述文案；space_* 为延迟工具、录制语料未加载）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
 - 2026-11-18 / N-FIX-REMINDER-MODEL-ADDS-UNREQUESTED-NOTES / 敏感变更：src/host/tools/modules/connectors/remindersCreate.schema.ts；录制语料未触及该改动段，本机 `acceptance:snapshot-replay:record` 重录零漂移（收活循环代录，PR 号见 ship 回执）。
