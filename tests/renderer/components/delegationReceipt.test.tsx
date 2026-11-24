@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   snapshot: null as AgentTreeSnapshot | null,
   openPreview: vi.fn(),
   sendPrompt: vi.fn(),
+  runningSessions: new Set<string>(),
   setViewingMemberId: vi.fn(),
   pendingPermissionRequest: null as PermissionRequest | null,
   pendingPermissionSessionId: null as string | null,
@@ -34,8 +35,8 @@ vi.mock('../../../src/renderer/hooks/useAgentTreeSnapshot', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: (selector: (state: { currentSessionId: string }) => unknown) => (
-    selector({ currentSessionId: 'session-1' })
+  useSessionStore: (selector: (state: { currentSessionId: string; runningSessionIds: Set<string> }) => unknown) => (
+    selector({ currentSessionId: 'session-1', runningSessionIds: mocks.runningSessions })
   ),
 }));
 
@@ -651,9 +652,9 @@ it.each([
 
 
 it.each([
-  ['zh', '未完成', '已完成', '删除没有成功，文件还在'],
-  ['en', 'Incomplete', 'finished', 'The files are still there because the deletion did not succeed'],
-] as const)('uses the %s incomplete title and reason in the delegation card', (language, incomplete, completed, reason) => {
+  ['zh', '未完成', '已完成', '删除没有成功，文件还在', '重试', '换个方式'],
+  ['en', 'Incomplete', 'finished', 'The files are still there because the deletion did not succeed', 'Retry', 'Try another way'],
+] as const)('shows both %s recovery actions only on the incomplete delegation card', (language, incomplete, completed, reason, retry, alternate) => {
   mocks.language = language;
   mocks.tasks = [task({
     status: 'failed',
@@ -665,13 +666,61 @@ it.each([
   const failed = renderCall();
   expect(failed.getByTestId('delegation-headline').textContent).toBe(`export.csv · ${incomplete}`);
   expect(failed.queryByTestId('delegation-retry')).toBeNull();
+  expect(failed.getByRole('button', { name: retry, exact: true })).toBeTruthy();
+  expect(failed.getByRole('button', { name: alternate, exact: true })).toBeTruthy();
   expect(failed.getByTestId('delegation-failure').textContent).toBe(reason);
   expect((failed.container.textContent ?? '').replace(incomplete, '')).not.toMatch(/完成|completed|deleted all files|\/temporary/i);
   failed.unmount();
   mocks.tasks = [task({ status: 'completed' })];
   const success = renderCall();
   expect(success.getByTestId('delegation-headline').textContent?.toLowerCase()).toContain(completed.toLowerCase());
+  expect(success.queryByRole('button', { name: retry, exact: true })).toBeNull();
+  expect(success.queryByRole('button', { name: alternate, exact: true })).toBeNull();
+  success.unmount();
+  mocks.tasks = [task({ status: 'failed' })];
+  const ordinary = renderCall();
+  expect(ordinary.getByTestId('delegation-retry').textContent).toBe(retry);
+  expect(ordinary.queryByRole('button', { name: alternate, exact: true })).toBeNull();
   cleanup();
   mocks.language = 'zh';
   mocks.tasks = [];
+});
+
+
+const incompleteTask = () => task({
+  status: 'failed',
+  failure: { reason: BACKGROUND_TASK_DELETE_INCOMPLETE, message: 'rm output' },
+  leftoverPaths: ['/home/fixture/exports/spring.csv', 'C:\\Users\\fixture\\autumn.csv'],
+});
+
+it.each([
+  ['重试', '请在后台再试一次，删除这些还在的文件：spring.csv, autumn.csv。'],
+  ['换个方式', '上次删除受阻，这些文件还在：spring.csv, autumn.csv。请试试别的办法。'],
+])('clicking %s on the incomplete receipt sends one localized, filename-only message', (action, prompt) => {
+  mocks.tasks = [incompleteTask()];
+  const view = renderCall();
+  fireEvent.click(view.getByRole('button', { name: action, exact: true }));
+  fireEvent.click(view.getByRole('button', { name: '重试', exact: true }));
+  fireEvent.click(view.getByRole('button', { name: '换个方式', exact: true }));
+  expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+  expect(mocks.sendPrompt).toHaveBeenCalledWith(prompt, {
+    clientMessageId: expect.stringMatching(/^delete-incomplete-retry-task-1-[a-f0-9-]+$/),
+  });
+});
+
+it('disables both incomplete receipt actions during an active turn', () => {
+  mocks.tasks = [incompleteTask()];
+  mocks.runningSessions.add('session-1');
+  try {
+    const view = renderCall();
+    for (const name of ['重试', '换个方式']) {
+      const button = view.getByRole<HTMLButtonElement>('button', { name, exact: true });
+      expect(button.disabled).toBe(true);
+      expect(button.title).toBe('请等当前任务完成后再重试');
+      fireEvent.click(button);
+    }
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+  } finally {
+    mocks.runningSessions.clear();
+  }
 });

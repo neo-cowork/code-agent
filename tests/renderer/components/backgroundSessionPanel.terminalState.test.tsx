@@ -8,10 +8,11 @@
 // 其余原样展示；running 条目才有 spinner 与计时。
 
 import React from 'react';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
+import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -85,9 +86,9 @@ describe('状态行映射（经渲染）', () => {
   });
 
   it.each([
-    ['zh', '任务未完成', '已完成', '删除没有成功，文件还在'],
-    ['en', 'Task incomplete', 'Completed', 'The files are still there because the deletion did not succeed'],
-  ] as const)('shows the %s incomplete panel row and keeps the completed row', (language, incomplete, completed, reason) => {
+    ['zh', '任务未完成', '已完成', '删除没有成功，文件还在', '重试', '换个方式'],
+    ['en', 'Task incomplete', 'Completed', 'The files are still there because the deletion did not succeed', 'Retry', 'Try another way'],
+  ] as const)('shows both %s recovery actions only on the incomplete background row', (language, incomplete, completed, reason, retry, alternate) => {
     useAppStore.setState({ language });
     try {
       renderPanelWith(backgroundTask({
@@ -96,6 +97,9 @@ describe('状态行映射（经渲染）', () => {
         completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
         leftoverPaths: ['/temporary/exports/export.csv'],
       }));
+      expect(screen.getByRole('button', { name: retry, exact: true })).toBeTruthy();
+      expect(screen.getByRole('button', { name: alternate, exact: true })).toBeTruthy();
+      expect(screen.getByTestId('background-session-clear')).toBeTruthy();
       const row = screen.getByTestId('background-session-item');
       expect(row.textContent).toContain('export.csv');
       expect(row.textContent).not.toMatch(/已完成|Deleted all files/);
@@ -105,6 +109,13 @@ describe('状态行映射（经渲染）', () => {
       cleanup();
       renderPanelWith(backgroundTask({ status: 'completed' }));
       expect(itemLine()).toBe(completed);
+      expect(screen.queryByTestId('delete-incomplete-actions')).toBeNull();
+      cleanup();
+      renderPanelWith(backgroundTask({ status: 'failed' }));
+      expect(screen.queryByTestId('delete-incomplete-actions')).toBeNull();
+      cleanup();
+      renderPanelWith(backgroundTask({ completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE }));
+      expect(screen.queryByTestId('delete-incomplete-actions')).toBeNull();
     } finally {
       cleanup();
       useAppStore.setState({ language: 'zh' });
@@ -275,5 +286,65 @@ describe('面板行主名读实时会话标题', () => {
 
     act(() => { useSessionStore.setState({ sessions: [] }); });
     expect(row()).toContain('看看 workspace');
+  });
+});
+
+
+describe('incomplete background row actions', () => {
+  const failedDelete = () => backgroundTask({
+    status: 'failed',
+    completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
+    leftoverPaths: ['/home/fixture/exports/spring.csv'],
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    useSessionStore.setState({ currentSessionId: null, backgroundSessions: [], messages: [], runningSessionIds: new Set() });
+  });
+
+  it('opens the owning session and sends the selected prompt once', async () => {
+    useSessionStore.setState({ currentSessionId: 'other-session' });
+    const sendPrompt = vi.spyOn(useMessageActionStore.getState(), 'sendPrompt').mockResolvedValue();
+    const open = vi.spyOn(useSessionStore.getState(), 'switchSession').mockImplementation(async (sessionId) => {
+      useSessionStore.setState({ currentSessionId: sessionId });
+    });
+    renderPanelWith(failedDelete());
+
+    fireEvent.click(screen.getByRole('button', { name: '换个方式', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '重试', exact: true }));
+    await waitFor(() => expect(sendPrompt).toHaveBeenCalledTimes(1));
+    expect(open).toHaveBeenCalledExactlyOnceWith('s1');
+    expect(sendPrompt).toHaveBeenCalledWith('上次删除受阻，这些文件还在：spring.csv。请试试别的办法。', {
+      clientMessageId: expect.stringMatching(/^delete-incomplete-retry-s1-/),
+    });
+  });
+
+  it('rechecks persisted retries after opening the owning session', async () => {
+    const task = failedDelete();
+    useSessionStore.setState({ currentSessionId: 'other-session' });
+    const sendPrompt = vi.spyOn(useMessageActionStore.getState(), 'sendPrompt').mockResolvedValue();
+    vi.spyOn(useSessionStore.getState(), 'switchSession').mockImplementation(async (sessionId) => {
+      useSessionStore.setState({
+        currentSessionId: sessionId,
+        messages: [{
+          id: `delete-incomplete-retry-s1-${task.startedAt}-previous`,
+          role: 'user',
+          content: 'previous retry',
+          timestamp: task.startedAt + 100,
+        }],
+      });
+    });
+    renderPanelWith(task);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试', exact: true })); });
+    expect(sendPrompt).not.toHaveBeenCalled();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '换个方式', exact: true }).disabled).toBe(true);
+  });
+
+  it('disables both panel actions while the owning session is active', () => {
+    useSessionStore.setState({ currentSessionId: 'other-session', runningSessionIds: new Set(['s1']) });
+    renderPanelWith(failedDelete());
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '重试', exact: true }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '换个方式', exact: true }).disabled).toBe(true);
   });
 });
