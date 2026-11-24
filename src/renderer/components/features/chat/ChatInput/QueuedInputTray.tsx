@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
 import type { QueuedInput } from '@shared/contract/queuedInput';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 
@@ -103,7 +104,7 @@ export function QueuedInputTray({
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate text-xs text-text-primary">
-                  {item.envelope.content}
+                  {stripAppshotBlocks(item.envelope.content)}
                 </span>
                 <div
                   className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
