@@ -5,7 +5,9 @@
 // 一言不发（content 空），首次直接驱动 Keynote 界面的调用仍会在落库消息、
 // tool_call_start 事件上携带结构化披露，且顺序在 executor 派发之前；同 app
 // 第二次不重复。删掉 messageProcessor 里的 attachGuiTakeoverDisclosures 注入点，
-// 这些断言必须翻红（验收②反向变异锚点）。
+// 这些断言必须翻红（验收②反向变异锚点）。后台 delegate_task 成员不进
+// SubagentExecutor，走本文件的 MessageProcessor；删掉同一行注入，下面的
+// Calculator 名字/bundle 序列同样必须翻红。
 // ============================================================================
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResponse } from '../../../src/host/agent/loopTypes';
@@ -43,10 +45,25 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getToolAnnotationsMap: () => new Map(),
     getToolDefinitions: () => [],
-    callTool: vi.fn(async () => ({
-      success: true,
-      metadata: { mcpStructuredContent: { apps: [{ pid: 123, name: 'Keynote', bundle_id: 'com.apple.iWork.Keynote' }] } },
-    })),
+    callTool: vi.fn(async (_id: string, _server: string, toolName: string) => {
+      if (toolName === 'list_windows') {
+        return {
+          success: true,
+          metadata: { mcpStructuredContent: { windows: [{ window_id: 77, app_name: 'Calculator', pid: 456 }] } },
+        };
+      }
+      return {
+        success: true,
+        metadata: {
+          mcpStructuredContent: {
+            apps: [
+              { pid: 123, name: 'Keynote', bundle_id: 'com.apple.iWork.Keynote' },
+              { pid: 456, name: 'Calculator', bundle_id: 'com.apple.calculator' },
+            ],
+          },
+        },
+      };
+    }),
     parseMCPToolName: () => null,
   }),
 }));
@@ -56,9 +73,19 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
+import { EventEmitter } from 'node:events';
 import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import { TaskProgressSchema } from '../../../src/shared/ipc/schemas/backgroundTask';
+import { SessionCommandCenter } from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+import {
+  getBackgroundTaskLedger,
+  resetBackgroundTaskLedgerForTest,
+} from '../../../src/host/task/backgroundTaskLedger';
+import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
@@ -294,4 +321,121 @@ APPLESCRIPT` }, 'Keynote'],
       log.mockRestore();
     }
   });
+
+  it('background member path discloses Calculator once across name, pid lookup, and bundle id', async () => {
+    const timeline: string[] = [];
+    const ctx = buildCtx();
+    ctx.toolExecutor = {
+      execute: vi.fn(async (name: string) => {
+        timeline.push(`executor:execute:${name}`);
+        return { toolCallId: '', success: true, output: 'ok' };
+      }),
+    };
+    const deps = buildDeps(ctx, timeline);
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    const manager = new DisclosureTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+    });
+    const calls = [
+      { id: 'launch-name', name: 'mcp__cua-driver__launch_app', arguments: { name: 'Calculator' } },
+      { id: 'state-pid', name: 'mcp__cua-driver__get_window_state', arguments: { pid: 456 } },
+      { id: 'shot', name: 'mcp__cua-driver__screenshot', arguments: { window_id: 77 } },
+      { id: 'computer', name: 'computer_use', arguments: { action: 'click', targetApp: 'Calculator', x: 10, y: 10 } },
+      { id: 'launch-bundle', name: 'mcp__cua-driver__launch_app', arguments: { bundle_id: 'com.apple.calculator' } },
+      { id: 'launch-notes', name: 'mcp__cua-driver__launch_app', arguments: { name: 'Notes' } },
+    ];
+    try {
+      const spawned = await center.spawn({
+        sessionId: 'session-calc',
+        title: '核对计算器显示',
+        shortName: '计算器',
+        laneKey: 'lane-calc',
+        submissionKey: 'submission-calc',
+        prompt: '打开计算器，读当前显示，再看同一个窗口有没有数字 7',
+        workspaceScope: createWorkspaceScope('project-gui', [{
+          sourceId: 'source-gui',
+          path: '/tmp/gui-project',
+          role: 'primary',
+          access: 'read_write',
+        }]),
+      });
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      const taskId = spawned.task.id;
+      ctx.onEvent = vi.fn((event: AgentEvent) => {
+        timeline.push(`event:${event.type}`);
+        manager.emitAgent('session-calc', event, taskId);
+      });
+      const engine = new ToolExecutionEngine(ctx as unknown as RuntimeContext);
+      engine.setModules(
+        deps.contextAssembly as never,
+        deps.runFinalizer as never,
+        { setPlanMode: vi.fn(), isPlanMode: vi.fn().mockReturnValue(false) } as never,
+      );
+      const processor = new MessageProcessor(
+        ctx as unknown as RuntimeContext,
+        deps.contextAssembly as unknown as ContextAssembly,
+        deps.runFinalizer as unknown as RunFinalizer,
+        engine,
+      );
+      const action = await processor.handleToolResponse({
+        type: 'tool_use',
+        content: '',
+        toolCalls: calls,
+        runtimeDiagnostics: { visibleToolNames: calls.map((call) => call.name) },
+      } as unknown as ModelResponse, false, 1, EVENT_PROC);
+      expect(action).toBe('continue');
+
+      const assistant = deps.persisted.find((message) => message.role === 'assistant' && message.toolCalls?.length);
+      const byId = (id: string) => assistant?.toolCalls?.find((call) => call.id === id)?.guiTakeoverDisclosure;
+      expect(byId('launch-name')).toEqual({ code: 'gui_takeover', app: 'Calculator' });
+      expect(byId('state-pid')).toBeUndefined();
+      expect(byId('shot')).toBeUndefined();
+      expect(byId('computer')).toBeUndefined();
+      expect(byId('launch-bundle')).toBeUndefined();
+      expect(byId('launch-notes')).toEqual({ code: 'gui_takeover', app: 'Notes' });
+      expect(timeline.filter((label) => label === 'executor:execute:mcp__cua-driver__screenshot').length).toBe(1);
+
+      const progress = TaskProgressSchema.parse(
+        getBackgroundTaskLedger().listTasks({ sessionId: 'session-calc' }).find((task) => task.id === taskId)?.progress,
+      );
+      expect(progress.guiDisclosures).toEqual([
+        { app: 'Calculator', callId: 'launch-name' },
+        { app: 'Notes', callId: 'launch-notes' },
+      ]);
+      console.info(`GUI_DISCLOSURE_BG_PATH ${JSON.stringify({
+        launchName: byId('launch-name') ?? null,
+        statePid: byId('state-pid') ?? null,
+        shot: byId('shot') ?? null,
+        computer: byId('computer') ?? null,
+        launchBundle: byId('launch-bundle') ?? null,
+        notes: byId('launch-notes') ?? null,
+        guiDisclosures: progress.guiDisclosures,
+      })}`);
+    } finally {
+      center.dispose();
+    }
+  });
 });
+
+class DisclosureTaskManager extends EventEmitter {
+  startBackgroundTask = vi.fn().mockResolvedValue(undefined);
+  interruptBackgroundTask = vi.fn().mockResolvedValue(true);
+  cancelBackgroundTask = vi.fn().mockResolvedValue(true);
+  private readonly agentObservers = new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>();
+
+  observeAgentEvents(observer: (sessionId: string, event: AgentEvent, taskId?: string) => void): () => void {
+    this.agentObservers.add(observer);
+    return () => { this.agentObservers.delete(observer); };
+  }
+
+  emitAgent(sessionId: string, event: AgentEvent, taskId?: string): void {
+    for (const observer of this.agentObservers) observer(sessionId, event, taskId);
+  }
+
+  emitTask(event: TaskManagerEvent): void {
+    this.emit(event.type, event);
+  }
+}

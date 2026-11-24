@@ -158,14 +158,14 @@ describe('list_experts', () => {
 
     it('(c) 未知角色名、含 / 或 .. 的非法名字、以及非持久化 agent 文件均返回未找到且不泄漏路径', async () => {
       vi.stubEnv('CODE_AGENT_DATA_DIR', devSlot1);
-      // 准备一个只有 agents/<name>.md 但没有 roles/<name>/ 目录的非持久化 agent
+      // 用户覆盖核心 agent，它仍是非持久化 agent。
       await fs.writeFile(
-        path.join(devSlot1, 'agents', '临时工.md'),
-        '---\nname: 临时工\ndescription: 瞬时代理\n---\n\n瞬时内容 TRANSIENT_SECRET',
+        path.join(devSlot1, 'agents', 'coder.md'),
+        '---\nname: coder\ndescription: 瞬时代理\n---\n\n瞬时内容 TRANSIENT_SECRET',
         'utf-8',
       );
 
-      for (const badName of ['不存在的专家', '../研究员', 'a/b', '..', '临时工']) {
+      for (const badName of ['不存在的专家', '../研究员', 'a/b', '..', 'coder']) {
         const result = await runTool({ name: badName });
         expect(result.ok, `name=${badName} should fail`).toBe(false);
         const text = JSON.stringify(result);

@@ -5,6 +5,7 @@
  * timeline sentence and a compact badge, while the same outcome/audience pair
  * must always resolve to one label and one reason phrase.
  */
+import { getDeleteIncompleteText } from '@shared/i18n/deleteIncomplete';
 import { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNodeStatus } from '@shared/contract/agentTree';
 import type { StreamInterruptionReason } from '@shared/contract';
@@ -31,6 +32,7 @@ export type OutcomeKey =
   | 'failed-upstream'
   | 'completed'
   | 'completed-with-warnings'
+  | 'delete-incomplete'
   | 'aborted'
   | 'goal-met';
 
@@ -97,6 +99,17 @@ export function resolveAgentNodeOutcomeKey(
     default:
       return 'interrupted-unknown';
   }
+}
+
+function deleteIncompleteWords(locale: 'zh' | 'en', label: string): OutcomeWords['delete-incomplete'] {
+  const { title, reason } = getDeleteIncompleteText(locale);
+  return {
+    timeline: { label, reason },
+    badge: { label, reason },
+    detail: { label: title, reason },
+    notification: { label: title, reason },
+    assistant: { label: `{name} · ${label}`, reason },
+  };
 }
 
 export const outcomeWordsZh: OutcomeWordsBundle = {
@@ -234,6 +247,7 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       notification: { label: '服务出错了', reason: '上游服务返回错误' },
       assistant: { label: '{name} · 没有完成', reason: '上游服务返回错误' },
     },
+    'delete-incomplete': deleteIncompleteWords('zh', '未完成'),
     completed: {
       timeline: { label: '已完成', reason: '步骤已全部执行' },
       badge: { label: '完成', reason: '步骤已全部执行' },
@@ -400,6 +414,7 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       notification: { label: 'Service error', reason: 'The upstream service returned an error' },
       assistant: { label: "{name} · didn't finish", reason: 'The upstream service returned an error' },
     },
+    'delete-incomplete': deleteIncompleteWords('en', 'Incomplete'),
     completed: {
       timeline: { label: 'Completed', reason: 'All steps finished' },
       badge: { label: 'Done', reason: 'All steps finished' },

@@ -15,6 +15,7 @@ interface CronWorkingFolderCopy {
   detailLabel: string;
   detailMissing: string;
   detailMissingHint: string;
+  cloudNotCarried: string;
 }
 
 export const cronWorkingFolderZh: { cronWorkingFolder: CronWorkingFolderCopy } = {
@@ -30,6 +31,7 @@ export const cronWorkingFolderZh: { cronWorkingFolder: CronWorkingFolderCopy } =
     detailLabel: '工作文件夹',
     detailMissing: '未选择工作文件夹',
     detailMissingHint: '编辑任务，选一个文件夹，运行时才能读到里面的文件。',
+    cloudNotCarried: '文件夹“{name}”在这台电脑上，不会带到云端。想保留它，请把运行位置切回这台电脑。',
   },
 };
 
@@ -46,5 +48,6 @@ export const cronWorkingFolderEn: { cronWorkingFolder: CronWorkingFolderCopy } =
     detailLabel: 'Working folder',
     detailMissing: 'No working folder selected',
     detailMissingHint: 'Edit the task and pick a folder so it can read the files inside.',
+    cloudNotCarried: 'The folder “{name}” is on this computer and is not carried to the cloud. Switch back to this computer to keep it.',
   },
 };

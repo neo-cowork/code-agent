@@ -6,6 +6,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../src/shared/constants';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import type { ToolCall } from '../../../src/shared/contract';
 import { en } from '../../../src/renderer/i18n/en';
@@ -124,6 +125,23 @@ function backgroundTask(overrides: Partial<Task>): Task {
 }
 
 describe('SessionAgentsPanel', () => {
+  it.each([
+    ['zh', '未完成', '完成', '删除没有成功，文件还在'],
+    ['en', 'Incomplete', 'Done', 'The files are still there because the deletion did not succeed'],
+  ] as const)('shows incomplete and its reason on the %s task badge, and keeps the success badge', async (lang, incomplete, done, reason) => {
+    language = lang;
+    useBackgroundTaskStore.setState({ tasks: [
+      backgroundTask({ id: 'delete-failed', status: 'failed', failure: { reason: BACKGROUND_TASK_DELETE_INCOMPLETE, message: 'rm output' } }),
+      backgroundTask({ id: 'delete-done', status: 'completed' }),
+    ] });
+    render(<SessionAgentsPanel />);
+    const failed = (await screen.findByTestId('agents-panel-status-delete-failed')).textContent ?? '';
+    expect(failed).toContain(incomplete);
+    expect(failed).toContain(reason);
+    expect(failed.replace(incomplete, '')).not.toMatch(/完成|completed|\bdone\b/i);
+    expect(screen.getByTestId('agents-panel-status-delete-done').textContent).toBe(done);
+  });
+
   beforeEach(() => {
     language = 'zh';
     invokeMock.mockReset();
