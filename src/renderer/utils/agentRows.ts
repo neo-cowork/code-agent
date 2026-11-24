@@ -1,4 +1,5 @@
-import { reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
+import { isStandaloneSpawnTrace, reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
+import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
@@ -50,7 +51,7 @@ export interface MemberRowSource {
   error?: string | null;
   failureCategory?: string | null;
   agent?: { error?: string | null };
-  record?: { error?: string | null; failureCategory?: string | null };
+  record?: { runId?: string; error?: string | null; failureCategory?: string | null };
 }
 
 export interface AgentRow {
@@ -205,7 +206,10 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = candidate;
         row.outcomeKey = outcome;
-        if (node.background && t === languages.en) {
+        const traceId = member.record?.runId;
+        const legacyUnnamed = t === languages.en && member.name === member.roleId
+          && !parseSwarmTraceStorageId(traceId ?? '');
+        if (node.background && (isStandaloneSpawnTrace(member.key, traceId) || legacyUnnamed)) {
           row.name = agentNodeLabel(node, t.agentRoleLabels);
           row.displayName = undefined;
         }

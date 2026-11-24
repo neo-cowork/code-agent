@@ -64,6 +64,30 @@ d.Packer.toBuffer(new d.Document({sections:[{children:[new d.Paragraph('minutes'
     expect(result?.artifacts?.[0]).toMatchObject({ role: 'deliverable', label: 'minutes.docx', path: join(dir, 'minutes.docx') });
   });
 
+  it('puts the .pptx written by a Bash step on backgroundTaskResult.artifacts', async () => {
+    const createdAt = Date.now() - 1000;
+    const script = join(dir, 'gen-pptx.cjs');
+    writeFileSync(script, `const Pptx=require(${JSON.stringify(require.resolve('pptxgenjs'))});
+void (async()=>{const p=new Pptx();p.addSlide().addText('Sales',{x:1,y:1,w:5,h:1,isTextBox:true});await p.writeFile({fileName:'sales.pptx'});})();`);
+    const bash = await (await bashModule.createHandler()).execute({ command: 'node gen-pptx.cjs' }, makeCtx(dir), async () => ({ allow: true }));
+    expect(bash.ok).toBe(true);
+    if (!bash.ok) return;
+    const finished = { ...task(createdAt), deliverableArtifacts: collectDeliverableFileArtifacts([{ toolCallId: 'call-bash', success: true, metadata: bash.meta } as never]) };
+
+    await projectTerminalResult(finished, 'completed');
+
+    const result = harness.added[0].message.metadata?.backgroundTaskResult;
+    expect(result?.artifacts).toHaveLength(1);
+    expect(result?.artifacts?.[0]).toMatchObject({
+      kind: 'document',
+      role: 'deliverable',
+      sourceTool: 'Bash',
+      label: 'sales.pptx',
+      path: join(dir, 'sales.pptx'),
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    });
+  });
+
   it('writes no artifacts field when the run produced no file', async () => {
     await projectTerminalResult(task(Date.now() - 1000), 'completed');
     expect(harness.added[0].message.metadata?.backgroundTaskResult).not.toHaveProperty('artifacts');
