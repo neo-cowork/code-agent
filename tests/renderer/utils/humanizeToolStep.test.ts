@@ -9,6 +9,19 @@ import { humanizeInterruptedToolAction } from '../../../src/renderer/utils/strea
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
+describe('event reply step', () => {
+  it.each([
+    ['pending-approval', '请求回复消息', 'Request to reply to a message'],
+    ['running', '正在处理回复', 'Processing the reply'],
+    ['completed', '已处理回复', 'Processed the reply'],
+    ['failed', '处理回复未成功', 'Could not process the reply'],
+  ] as const)('shows the localized %s label without implying delivery', (status, expectedZh, expectedEn) => {
+    const args = { text: 'RR51-PONG', event_id: 'event-1' };
+    expect(humanizeToolStep('reply_to_event', args, zh, undefined, status)).toBe(expectedZh);
+    expect(humanizeToolStep('reply_to_event', args, en, undefined, status)).toBe(expectedEn);
+  });
+});
+
 describe('humanizeToolStep — per-category snapshots (zh)', () => {
   it('read: file path shortened', () => {
     expect(humanizeToolStep('Read', { file_path: '/Users/me/project/docs/报告.md' }, zh))

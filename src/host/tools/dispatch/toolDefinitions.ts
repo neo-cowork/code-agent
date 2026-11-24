@@ -37,6 +37,7 @@ import type { InjectedToolSchema } from '../../services/toolSearch/singleInjecti
 import { measureSentToolTokens } from '../../services/toolSearch/sentToolSchema';
 import { isDecideToolAvailable } from '../modules/network/decideAvailability';
 import { isToolAvailable, unavailableUnlockHintLine } from '../modules/network/toolAvailability';
+import { EVENT_REPLY_TOOL_NAME, isEventReplySession } from '../eventReplySession';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -276,6 +277,25 @@ function withCrossSessionDelegationTools(
     .map((name) => getToolDefinitionWithCloudMeta(name))
     .filter((tool): tool is ToolDefinition => tool !== undefined && !existing.has(tool.name));
   return delegationTools.length > 0 ? [...tools, ...delegationTools] : tools;
+}
+
+/**
+ * 事件回复工具注入（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：reply_to_event 只进
+ * 「绑定了本批入站事件目的地」的事件 run 会话的工具表（绑定登记见 eventReplySession，
+ * cronAgentAction 起跑时写入）。其余会话一律剥掉——deferred 模式它本来就不在
+ * core/deferred 目录，这里兜住 'all' 模式（getAllToolDefinitions 全量进表）的漏面，
+ * 保证模型可见工具字节只在这些 run 里变化。纯函数，单测守住「未绑定零污染」底线。
+ */
+export function withEventReplyTools(
+  tools: ToolDefinition[],
+  sessionId: string | undefined,
+): ToolDefinition[] {
+  const withoutEventReply = tools.some((tool) => tool.name === EVENT_REPLY_TOOL_NAME)
+    ? tools.filter((tool) => tool.name !== EVENT_REPLY_TOOL_NAME)
+    : tools;
+  if (!sessionId || !isEventReplySession(sessionId)) return withoutEventReply;
+  const definition = getToolDefinitionWithCloudMeta(EVENT_REPLY_TOOL_NAME);
+  return definition ? [...withoutEventReply, definition] : withoutEventReply;
 }
 
 /**
