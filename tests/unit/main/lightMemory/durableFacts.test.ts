@@ -39,8 +39,9 @@ vi.mock('../../../../src/host/model/quickModel', () => ({
   memoryTask: memoryModelMocks.memoryTask,
 }));
 
+const withTimeoutSpy = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/host/services/infra/timeoutController', () => ({
-  withTimeout: <T>(promise: Promise<T>) => promise,
+  withTimeout: <T>(promise: Promise<T>, ms: number) => { withTimeoutSpy(ms); return promise; },
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', async (importOriginal) => {
@@ -269,6 +270,19 @@ describe('默认助手长期事实写回', () => {
     expect(await listFactFiles(memoryDir)).toEqual([]);
   });
 
+  it('heuristic 降级时标题与要点先脱敏再截断，不留半截卡号', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue({ success: false, error: '模型不可用' });
+
+    const judgment = await judgeConversation({
+      userMessages: ['对了我报销用的卡号是 4111 1111 1111 1111，别往外说，会员页改版下周三提测。'],
+    });
+
+    expect(judgment.source).toBe('heuristic');
+    const text = [judgment.title, ...judgment.worthKnowledge].join('\n');
+    expect(text).not.toMatch(/4111/);
+    expect(text).toContain('[credit card hidden]');
+  });
+
   it('逐条拒绝非法文件名和类型，同批合法条目照常写入', async () => {
     memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
       durableFacts: [
@@ -286,6 +300,54 @@ describe('默认助手长期事实写回', () => {
     await writeDurableFacts(judgment.durableFacts);
 
     expect(await listFactFiles(memoryDir)).toEqual(['fact-1.md', 'fact-5.md']);
+  });
+
+  it('判断器返回 people / project 事实时放行并按类型落盘，prompt 要求相对日期换成绝对日期', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
+      durableFacts: [
+        { ...makeFact(1), type: 'people' },
+        { ...makeFact(2), type: 'project' },
+      ],
+    }));
+
+    const judgment = await judgeConversation({ userMessages: ['张三是我们组的设计，会员页改版下周三提测。'] });
+    expect(judgment.durableFacts.map((fact) => fact.type)).toEqual(['people', 'project']);
+    const prompt = memoryModelMocks.memoryTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('type=people');
+    expect(prompt).toContain('拆成两条分别收');
+    expect(prompt).toContain('绝对日期');
+    expect(prompt).toMatch(/会话日期：\d{4}-\d{2}-\d{2}（/);
+    await writeDurableFacts(judgment.durableFacts);
+
+    expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toContain('type: people');
+    expect(await fs.readFile(path.join(memoryDir, 'fact-2.md'), 'utf-8')).toContain('type: project');
+  });
+
+  it('判官调用用 SESSION_JUDGE.TIMEOUT_MS，且留得下推理模型的尾延迟（≥20s）', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [] }));
+    withTimeoutSpy.mockClear();
+
+    await judgeConversation({ userMessages: ['随便聊聊。'] });
+
+    expect(withTimeoutSpy).toHaveBeenCalledWith(SESSION_JUDGE.TIMEOUT_MS);
+    expect(SESSION_JUDGE.TIMEOUT_MS).toBeGreaterThanOrEqual(20_000);
+    expect(memoryModelMocks.memoryTask).toHaveBeenCalledWith(expect.any(String), SESSION_JUDGE.MAX_TOKENS);
+  });
+
+  it('每条用户消息带自己的日期：昨天说的「明天提测」不按判官运行当天换算', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [] }));
+    const yesterday = new Date(2026, 10, 22, 10, 0, 0).getTime();
+    const today = new Date(2026, 10, 23, 18, 0, 0).getTime();
+
+    await judgeConversation({
+      userMessages: ['会员页改版明天提测。', '好的，谢谢。'],
+      userMessageTimestamps: [yesterday, today],
+    });
+
+    const prompt = memoryModelMocks.memoryTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('用户消息1（2026-11-22（');
+    expect(prompt).toContain('用户消息2（2026-11-23（');
+    expect(prompt).toContain('会话日期：2026-11-23（');
   });
 
   it('模型返回五条事实时只保留并写入前三条', async () => {

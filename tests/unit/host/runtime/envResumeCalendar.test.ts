@@ -161,6 +161,6 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
 
   it('the production continue route is registered with the real resume probe (static wiring)', () => {
     const agentRoutes = readFileSync(path.join(__dirname, '../../../../src/web/routes/agent.ts'), 'utf8');
-    expect(agentRoutes).toContain('registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory);');
+    expect(agentRoutes).toContain('registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory, queuedInputDrain.handleReleasedSession);');
   });
 });
