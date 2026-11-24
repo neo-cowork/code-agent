@@ -71,6 +71,7 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { generateMessageId } from '../../shared/utils/id';
+import { stripAppshotBlocks } from '../../shared/contract/appshot';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
@@ -1427,7 +1428,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
-      const titleSource = visiblePrompt.trim() || requestAttachments[0]?.name || visiblePrompt;
+      // 截图/图片批注带的隐藏 <appshot> 块不是标题材料：先剥掉再取，剥空（纯截图）才退到附件名。
+      const titleSource = stripAppshotBlocks(visiblePrompt).trim() || requestAttachments[0]?.name || visiblePrompt;
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。

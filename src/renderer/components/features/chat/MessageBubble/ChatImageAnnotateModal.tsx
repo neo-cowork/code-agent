@@ -56,20 +56,20 @@ async function fitUnderPersistLimit(pngDataUrl: string): Promise<string> {
     el.onerror = reject;
     el.src = pngDataUrl;
   });
-  let result = pngDataUrl;
   for (const [scale, quality] of SHRINK_STEPS) {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     const ctx = canvas.getContext('2d');
-    if (!ctx) break;
+    if (!ctx) throw new Error('canvas unavailable');
     ctx.fillStyle = 'white'; // JPEG 无透明通道，底色垫白
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    result = canvas.toDataURL('image/jpeg', quality);
-    if (result.length <= BAKED_MAX_DATA_URL_CHARS) break;
+    const result = canvas.toDataURL('image/jpeg', quality);
+    if (result.length <= BAKED_MAX_DATA_URL_CHARS) return result;
   }
-  return result;
+  // 缩到最小一档仍超限：发出去重载后字节会被剥掉，宁可让用户重试也不发一条会丢图的消息。
+  throw new Error('baked image too large to persist');
 }
 
 function isRect(shape: AnnotShape): shape is RectShape {
@@ -88,10 +88,16 @@ export function ChatImageAnnotateModal({
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [shapes, setShapes] = useState<AnnotShape[]>([]);
+  const [shapes, setShapesState] = useState<AnnotShape[]>([]);
+  // 指针事件连发时 state 还没重渲染：松手判定与规整必须读同步 ref，不能读上一帧的 shapes。
+  const shapesRef = useRef<AnnotShape[]>([]);
+  const setShapes = useCallback((next: AnnotShape[]) => {
+    shapesRef.current = next;
+    setShapesState(next);
+  }, []);
   const [comments, setComments] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [drawing, setDrawing] = useState(false);
+  const drawingRef = useRef(false);
   const [sending, setSending] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -129,22 +135,23 @@ export function ChatImageAnnotateModal({
     if (!dataUrl || sending) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const point = pointerPoint(event);
-    setShapes((current) => reduceAnnot(current, { type: 'down', tool: 'rect', ...point }));
-    setDrawing(true);
+    setShapes(reduceAnnot(shapesRef.current, { type: 'down', tool: 'rect', ...point }));
+    drawingRef.current = true;
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!drawing) return;
+    if (!drawingRef.current) return;
     const point = pointerPoint(event);
-    setShapes((current) => reduceAnnot(current, { type: 'move', ...point }));
+    setShapes(reduceAnnot(shapesRef.current, { type: 'move', ...point }));
   };
 
   const handlePointerUp = () => {
-    if (!drawing) return;
-    setDrawing(false);
-    const last = shapes[shapes.length - 1];
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    const current = shapesRef.current;
+    const last = current[current.length - 1];
     if (!last || !isRect(last) || Math.abs(last.w) < MIN_REGION_PX || Math.abs(last.h) < MIN_REGION_PX) {
-      setShapes((current) => current.slice(0, -1));
+      setShapes(current.slice(0, -1));
       return;
     }
     // 规整成左上角 + 正宽高，后面的方位换算与烘焙都不必再处理反向拖拽。
@@ -155,12 +162,12 @@ export function ChatImageAnnotateModal({
       w: Math.abs(last.w),
       h: Math.abs(last.h),
     };
-    setShapes((current) => [...current.slice(0, -1), normalized]);
-    setComments((current) => [...current, '']);
+    setShapes([...current.slice(0, -1), normalized]);
+    setComments((prev) => [...prev, '']);
   };
 
   const removeRegion = (index: number) => {
-    setShapes((current) => current.filter((_, i) => i !== index));
+    setShapes(shapesRef.current.filter((_, i) => i !== index));
     setComments((current) => current.filter((_, i) => i !== index));
   };
 
