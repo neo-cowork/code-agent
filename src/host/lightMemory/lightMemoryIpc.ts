@@ -28,7 +28,7 @@ export interface LightMemoryFile {
   status?: MemoryEntryStatus;
   /** 本条已被 <filename> 取代（archived 条目上由 archiveMemoryFile 写入）。 */
   deprecatedBy?: string;
-  /** 本条取代了 <filename>（新条目上的前向链接，N-MEM-WRITECONF r5 起记录，暂无消费方）。 */
+  /** Forward link to the entry this memory supersedes. */
   supersedes?: string;
   source?: string;
   schemaVersion?: number;
@@ -186,15 +186,15 @@ const LIGHT_MEMORY_FILENAME_MAX = 96;
  * 写入与「按名查找/同名检测」两侧必须共用这一份规范化——只取 basename 不做
  * sanitize 的查找会漏掉大小写/非法字符/超长差异对应的真实文件。
  */
-export function sanitizeLightMemoryFilename(filename: string): string {
+export function sanitizeLightMemoryFilename(filename: string, suffix = ''): string {
   const basename = path.basename(filename.trim());
   const withoutExt = basename.endsWith('.md') ? basename.slice(0, -3) : basename;
   const safe = withoutExt
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, LIGHT_MEMORY_FILENAME_MAX);
-  return `${safe || `memory-${Date.now()}`}.md`;
+    .slice(0, LIGHT_MEMORY_FILENAME_MAX - suffix.length);
+  return `${safe || `memory-${Date.now()}`}${suffix}.md`;
 }
 
 function toLightMemoryFile(filename: string, content: string, updatedAt: Date): LightMemoryFile {
@@ -295,7 +295,7 @@ export async function listMemoryFiles(): Promise<LightMemoryFile[]> {
 /**
  * Read a single memory file.
  */
-export async function readMemoryFile(filename: string): Promise<LightMemoryFile | null> {
+export async function readMemoryFile(filename: string, options: { strict?: boolean } = {}): Promise<LightMemoryFile | null> {
   const sanitized = path.basename(filename);
   const filePath = path.join(getMemoryDir(), sanitized);
 
@@ -305,7 +305,8 @@ export async function readMemoryFile(filename: string): Promise<LightMemoryFile 
       fs.stat(filePath),
     ]);
     return toLightMemoryFile(sanitized, content, stat.mtime);
-  } catch {
+  } catch (error) {
+    if (options.strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return null;
   }
 }
@@ -329,7 +330,7 @@ export async function writeLightMemoryFile(input: {
   memoryTainted?: boolean;
   /** Only the interactive directive confirmation path may set this. */
   directiveConfirmedByUser?: boolean;
-}): Promise<LightMemoryFile> {
+}, options: { createOnly?: boolean } = {}): Promise<LightMemoryFile> {
   assertDirectivePersistenceAuthorized(input.type, input.directiveConfirmedByUser === true);
   const dir = getMemoryDir();
   await fs.mkdir(dir, { recursive: true });
@@ -360,6 +361,7 @@ export async function writeLightMemoryFile(input: {
   const fileContent = `---\n${frontmatter}\n---\n\n${body}\n`;
   const filePath = path.join(dir, filename);
   await atomicWriteMemoryText(filePath, fileContent, {
+    createOnly: options.createOnly,
     validate: (written) => {
       const issue = frontmatterHealthIssue(parseFrontmatter(written));
       if (issue) throw new Error(`Invalid Light Memory file: ${issue}`);
