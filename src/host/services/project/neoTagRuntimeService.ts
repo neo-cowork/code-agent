@@ -332,17 +332,17 @@ function hasVisibleAssistantReplyWithinTurn(messages: Message[]): boolean {
   let hasVisibleReply = false;
   for (let index = 1; index < messages.length; index += 1) {
     const message = messages[index];
-    // 普通用户追发消息开启下一轮；steer 和 skill 注入消息仍属于当前运行。
+    // 普通用户追发消息开启下一轮；steer、skill 和隐藏的运行消息不切断本轮。
     if (message.role === 'user') {
       if (message.metadata?.runtimeSteer === true) {
         // steer 前的进度文本不能冒充对最新 steer 的最终回复。
         hasVisibleReply = false;
         continue;
       }
-      if (message.source === 'skill') continue;
+      if (message.isMeta || message.source === 'skill') continue;
       return hasVisibleReply;
     }
-    if (message.role !== 'assistant') continue;
+    if (message.role !== 'assistant' || message.isMeta) continue;
     if (typeof message.content === 'string' && message.content.trim().length > 0) hasVisibleReply = true;
   }
   return hasVisibleReply;

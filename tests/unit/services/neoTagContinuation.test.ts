@@ -168,9 +168,11 @@ describe('continueAndRunNeoWorkCard', () => {
   it.each([
     { scenario: 'persisted reply', reply: '已补上结论。', nextTurn: false, expectedStatus: 'in_result_review' },
     { scenario: 'empty reply', reply: ' ', nextTurn: false, expectedStatus: 'failed' },
+    { scenario: 'background-only reply', reply: '后台任务已完成。', nextTurn: false, meta: true, expectedStatus: 'failed' },
     { scenario: 'reply to a later user message', reply: '另一个请求完成了。', nextTurn: true, expectedStatus: 'failed' },
   ])('ends a same-conversation continuation in $expectedStatus for $scenario', async ({
     reply,
+    meta,
     nextTurn,
     expectedStatus,
   }) => {
@@ -194,7 +196,7 @@ describe('continueAndRunNeoWorkCard', () => {
         if (nextTurn) {
           persisted.push({ id: 'turn_3', role: 'user', content: '另一个请求', timestamp: 6 });
         }
-        persisted.push({ id: 'reply_2', role: 'assistant', content: reply, timestamp: 7 });
+        persisted.push({ id: 'reply_2', role: 'assistant', content: reply, timestamp: 7, isMeta: meta });
         sessionsById.set('conv_A', {
           messages: persisted,
         });
