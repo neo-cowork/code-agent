@@ -634,6 +634,69 @@ describe('background parent settlement waits for delegated children', () => {
     await expectParentNotice(sessionId);
   });
 
+  it('a later successful foreground run replaces the earlier deferred failure before returning to background', async () => {
+    const sessionId = 'session-later-run-supersedes';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: 'previous parent failed' });
+    getBackgroundTaskManager().moveToForeground(sessionId);
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+    await background(sessionId);
+    await finishChild(sessionId, task.id);
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+
+    expect(row(sessionId)?.status).toBe('completed');
+    await expectParentNotice(sessionId);
+  });
+
+  it('keeps both the parent and the delegated delete leftovers when the parent records first', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'both-leftovers-a-'));
+    const fileA = join(directory, 'a.tmp');
+    const fileB = join(directory, 'b.tmp');
+    try {
+      writeFileSync(fileA, 'x');
+      writeFileSync(fileB, 'x');
+      const sessionId = 'session-both-leftovers-parent-first';
+      const runId = 'primary-run-a';
+      await background(sessionId);
+      const task = await spawn(sessionId, 1, 'cleanup');
+      recordApprovedRmSettlementTargets(sessionId, runId, [fileA]);
+      recordApprovedRmSettlementTargets(sessionId, task.id, [fileB]);
+      await settleBackgroundOnTaskComplete(sessionId, sessionId, {}, undefined, runId);
+      await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map(), runId);
+      manager.emitTask({ type: 'task_completed', sessionId, data: { taskId: task.id, conclusion: 'done' } });
+      await vi.waitFor(() => expect(center.list(sessionId)[0]?.status).toBe('failed'));
+      await expectParentNotice(sessionId, { succeeded: false, code: BACKGROUND_TASK_DELETE_INCOMPLETE });
+      expect(row(sessionId)?.leftoverPaths).toEqual(expect.arrayContaining([fileA, fileB]));
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps both the parent and the delegated delete leftovers when the child ends first', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'both-leftovers-b-'));
+    const fileA = join(directory, 'a.tmp');
+    const fileB = join(directory, 'b.tmp');
+    try {
+      writeFileSync(fileA, 'x');
+      writeFileSync(fileB, 'x');
+      const sessionId = 'session-both-leftovers-child-first';
+      const runId = 'primary-run-b';
+      await background(sessionId);
+      const task = await spawn(sessionId, 1, 'cleanup');
+      recordApprovedRmSettlementTargets(sessionId, runId, [fileA]);
+      recordApprovedRmSettlementTargets(sessionId, task.id, [fileB]);
+      manager.emitTask({ type: 'task_completed', sessionId, data: { taskId: task.id, conclusion: 'done' } });
+      await vi.waitFor(() => expect(center.list(sessionId)[0]?.status).toBe('failed'));
+      await settleBackgroundOnTaskComplete(sessionId, sessionId, {}, undefined, runId);
+      await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map(), runId);
+      await expectParentNotice(sessionId, { succeeded: false, code: BACKGROUND_TASK_DELETE_INCOMPLETE });
+      expect(row(sessionId)?.leftoverPaths).toEqual(expect.arrayContaining([fileA, fileB]));
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('skips the sub-task completion banner while a delegated child is still in flight', async () => {
     const sessionId = 'session-banner';
     await background(sessionId);

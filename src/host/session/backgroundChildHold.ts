@@ -36,14 +36,21 @@ export async function deferBackgroundSettlementWhileChildrenInFlight(
   return true;
 }
 
+/** 父轮与委派子任务各自的删除残留合并成一份，谁先收口都不丢另一边。 */
+export function unionLeftoverPaths(...lists: Array<readonly string[] | undefined>): string[] {
+  return [...new Set(lists.flatMap(list => list ?? []))];
+}
+
 export function deferredParentOutcome(sessionId: string, input: BackgroundRunSettlementInput): BackgroundRunSettlementInput {
   const manager = getBackgroundTaskManager();
   const parent = manager.getDeferredRun(sessionId)?.input;
-  if (parent?.status === 'interrupted' || (input.status === 'completed'
-    && (parent?.status === 'error' || parent?.leftoverPaths?.length))) return parent;
-  const leftoverPaths = manager.getDelegatedLeftovers(sessionId);
-  if (input.status === 'completed' && leftoverPaths?.length) return { ...input, leftoverPaths };
-  return input;
+  const outcome = parent?.status === 'interrupted' || (input.status === 'completed'
+    && (parent?.status === 'error' || parent?.leftoverPaths?.length)) ? parent : input;
+  if (outcome.status !== 'completed') return outcome;
+  const leftoverPaths = unionLeftoverPaths(
+    outcome.leftoverPaths, input.leftoverPaths, parent?.leftoverPaths, manager.getDelegatedLeftovers(sessionId),
+  );
+  return leftoverPaths.length ? { ...outcome, leftoverPaths } : outcome;
 }
 
 /**
@@ -61,6 +68,7 @@ export async function settleWebTurnBackgroundRun(
     await settleBackgroundRun(manager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
     return;
   }
+  manager.supersedeDeferredRun(sessionId, input);
   if (input.status === 'error') {
     await manager.markFailed(sessionId, resolveBackgroundRunSettlement(input).message);
   }

@@ -3,6 +3,7 @@
 
 import { createLogger } from '../infra/logger';
 import { getBackgroundTaskManager } from '../../session/backgroundTaskManager';
+import { unionLeftoverPaths } from '../../session/backgroundChildHold';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../session/backgroundRunSettlement';
 
 const logger = createLogger('DeferredBackgroundRow');
@@ -64,9 +65,8 @@ export async function releaseDelegatedChildSettlement(input: {
       live.clearDeferredRun(input.task.sessionId);
       return;
     }
-    const leftoverPaths = live.getDelegatedLeftovers(input.task.sessionId);
-    const parentOutcome = deferred.input.status === 'completed' && !deferred.input.leftoverPaths?.length
-      ? undefined : deferred.input;
+    const leftoverPaths = unionLeftoverPaths(deferred.input.leftoverPaths, live.getDelegatedLeftovers(input.task.sessionId));
+    const parentOutcome = deferred.input.status === 'completed' ? undefined : deferred.input;
     logger.info('Settling deferred background run from delegated child', {
       sessionId: input.task.sessionId,
       taskId: input.task.id,

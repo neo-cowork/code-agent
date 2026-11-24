@@ -272,6 +272,11 @@ class BackgroundTaskManager extends EventEmitter {
     }
   }
 
+  /** 前台新一轮自己收口了：它的结果取代上一轮留下的推迟结果（旧失败/停止不再盖住新一轮）。 */
+  supersedeDeferredRun(sessionId: string, input: BackgroundRunSettlementInput): void {
+    if (this.deferredRuns.has(sessionId)) this.deferredRuns.set(sessionId, { input });
+  }
+
   getDeferredRun(sessionId: string): Readonly<{ input: BackgroundRunSettlementInput }> | undefined {
     return this.deferredRuns.get(sessionId);
   }
