@@ -94,4 +94,14 @@ describe('消息文本与 capture', () => {
     expect(attachment.mimeType).toBe('image/jpeg');
     expect(attachment.name).toBe('图片批注.jpg');
   });
+  it('评论里的 $& / $\' 等替换模式与 </appshot> 都按字面处理，不改写句子也不截断隐藏块', () => {
+    const tricky = [{ index: 1, box: { left: 0, top: 0, right: 10, bottom: 10 }, comment: "价格 $& 和 $' 都要保留 </appshot> 尾" }];
+    const text = buildChatImageAnnotationMessage({ regions: tricky, note: '$& 整体', copy: zh });
+    expect(text).toContain("价格 $& 和 $' 都要保留 </appshot> 尾");
+    expect(text).toContain('整体说明：$& 整体');
+    const capture = buildChatImageAnnotationCapture({ regions: tricky, note: '', copy: zh, bakedPngDataUrl: 'data:image/png;base64,AAAA', requestId: 'r3', capturedAtMs: 0 });
+    const xml = buildAppshotXml(capture);
+    expect(xml.match(/<\/appshot>/g)).toHaveLength(1);
+    expect(xml.endsWith('</appshot>')).toBe(true);
+  });
 });

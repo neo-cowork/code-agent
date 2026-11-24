@@ -83,6 +83,11 @@ function describeRegionPosition(box: RegionPercentBox, copy: ChatImageAnnotation
   return copy.positionGrid[row][col];
 }
 
+/** interpolate 底层是 String#replace：用户文字里的 $& $' $` 会被当替换模式改写，这里把 $ 转义成字面量。 */
+function literal(text: string): string {
+  return text.replace(/\$/g, '$$$$');
+}
+
 function buildRegionList(regions: ChatImageAnnotationRegion[], copy: ChatImageAnnotationCopy): string {
   return regions
     .slice()
@@ -94,7 +99,7 @@ function buildRegionList(regions: ChatImageAnnotationRegion[], copy: ChatImageAn
       x2: region.box.right,
       y1: region.box.top,
       y2: region.box.bottom,
-      comment: region.comment.trim() || copy.noComment,
+      comment: literal(region.comment.trim()) || copy.noComment,
     }))
     .join('\n');
 }
@@ -109,7 +114,7 @@ export function buildChatImageAnnotationMessage(input: {
     buildRegionList(input.regions, input.copy),
   ];
   const note = input.note.trim();
-  if (note) lines.push(interpolate(input.copy.noteLine, { note }));
+  if (note) lines.push(interpolate(input.copy.noteLine, { note: literal(note) }));
   return lines.join('\n');
 }
 

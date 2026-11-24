@@ -132,7 +132,7 @@ export function ChatImageAnnotateModal({
   }, []);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dataUrl || sending) return;
+    if (!dataUrl || sending || drawingRef.current) return;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const point = pointerPoint(event);
     setShapes(reduceAnnot(shapesRef.current, { type: 'down', tool: 'rect', ...point }));
@@ -224,6 +224,10 @@ export function ChatImageAnnotateModal({
       onClose={onClose}
       title={copy.modalTitle}
       size="full"
+      // 发送开始后不可取消：烘焙是异步的，此时关掉弹窗消息仍会发出，用户却以为取消了。
+      closeOnBackdropClick={!sending}
+      closeOnEsc={!sending}
+      showCloseButton={!sending}
       portal
       footer={(
         <div className="flex items-center justify-end gap-2">
@@ -258,6 +262,7 @@ export function ChatImageAnnotateModal({
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
               >
                 {rects.map((rect, i) => (
                   <div
@@ -295,6 +300,7 @@ export function ChatImageAnnotateModal({
               <Textarea
                 rows={2}
                 value={comment}
+                disabled={sending}
                 placeholder={copy.commentPlaceholder}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -308,6 +314,7 @@ export function ChatImageAnnotateModal({
             <Textarea
               rows={2}
               value={note}
+              disabled={sending}
               placeholder={copy.notePlaceholder}
               onChange={(event) => setNote(event.target.value)}
             />

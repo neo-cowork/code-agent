@@ -123,7 +123,9 @@ export function buildAppshotXml(capture: AppshotCapture, origin: AppshotOrigin =
   const captured = escapeXmlAttr(new Date(capture.capturedAtMs).toISOString());
   if (capture.asPlainImage) {
     // 图片批注：axText 自己就是「我框出了 N 处…」的区域清单（i18n 文案），不套窗口截图的说法。
-    return `<appshot app="${app}" name="${name}" captured="${captured}">\n${text}\n</appshot>`;
+    // 评论是用户写的：里面的 </appshot> 会提前收口，破坏隐藏块（可见气泡里会漏出裸标签）。
+    const safeText = text.replace(/<\/appshot/gi, '<\u200B/appshot');
+    return `<appshot app="${app}" name="${name}" captured="${captured}">\n${safeText}\n</appshot>`;
   }
   const context = describeAppshotOrigin(origin, header);
   if (!text) {

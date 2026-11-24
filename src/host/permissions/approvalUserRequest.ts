@@ -65,7 +65,10 @@ export function withUserRequestQuote(
       // isMeta user rows are host/model-injected (e.g. a delegated-task brief the model wrote), not the human's words.
       if (message.role !== 'user' || message.isMeta || isTelemetryRecoveredMessage(message)) continue;
       if (typeof message.content !== 'string') continue;
-      const text = stripAppshotBlocks(stripInlineAttachmentBlocks(message.content)).replace(/\s+/g, ' ').trim();
+      const visible = stripInlineAttachmentBlocks(message.content);
+      const text = stripAppshotBlocks(visible).replace(/\s+/g, ' ').trim();
+      // 最新一条只有截图块、没有用户文字：不引用更早的话（用户会按错的原话批准/拒绝），卡片不带引用。
+      if (!text && visible.includes('<appshot')) return details;
       if (!text) continue;
       const chars = Array.from(text);
       const truncated = chars.length > APPROVAL_USER_REQUEST_MAX_CHARS;

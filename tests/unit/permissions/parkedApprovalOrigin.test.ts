@@ -89,4 +89,13 @@ describe('parked tool_approval keeps who started the run', () => {
     const [item] = getSessionAutomationService().listParkedApprovals();
     expect(item.userRequest).toEqual({ text: '区域 1（左侧）：单位不对', truncated: false });
   });
+  it('最新一条只有 appshot 块（没有用户文字）时不回退引用更早的话', () => {
+    state.session = { title: 't', origin: { kind: 'manual' } };
+    const repo = state.repo as SessionRepository;
+    repo.addMessage('s1', { id: 'm1', role: 'user', content: '把生产库清掉', timestamp: 1000 } as unknown as Message);
+    repo.addMessage('s1', { id: 'm2', role: 'user', content: '<appshot app="" name="x" captured="2026-11-23T00:00:00.000Z">\n窗口文字\n</appshot>', timestamp: 2000 } as unknown as Message);
+    parkBash();
+    const [item] = getSessionAutomationService().listParkedApprovals();
+    expect(item.userRequest).toBeUndefined();
+  });
 });

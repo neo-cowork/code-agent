@@ -67,4 +67,24 @@ describe('ChatImageAnnotateModal 拖框', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('读取不出来');
     expect(screen.queryByTestId('chat-image-annotate-overlay')).toBeNull();
   });
+
+  it('绘制中收到 pointercancel：丢弃进行中的框，不留下比评论多出来的框', async () => {
+    render(<ChatImageAnnotateModal asset={asset} onClose={() => {}} />);
+    const overlay = await screen.findByTestId('chat-image-annotate-overlay');
+
+    act(() => {
+      fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20, pointerId: 1 });
+      fireEvent.pointerMove(overlay, { clientX: 30, clientY: 25, pointerId: 1 });
+      fireEvent.pointerCancel(overlay, { pointerId: 1 });
+    });
+    expect(screen.queryAllByTestId('chat-image-annotate-box')).toHaveLength(0);
+
+    act(() => {
+      fireEvent.pointerDown(overlay, { clientX: 20, clientY: 20, pointerId: 2 });
+      fireEvent.pointerMove(overlay, { clientX: 220, clientY: 120, pointerId: 2 });
+      fireEvent.pointerUp(overlay, { clientX: 220, clientY: 120, pointerId: 2 });
+    });
+    expect(screen.getAllByTestId('chat-image-annotate-box')).toHaveLength(1);
+    expect(screen.getByText('区域 1')).toBeTruthy();
+  });
 });
