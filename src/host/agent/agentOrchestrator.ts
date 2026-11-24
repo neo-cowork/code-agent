@@ -533,7 +533,8 @@ export class AgentOrchestrator {
   async drainPostTerminalWork(): Promise<void> { await this.postTerminalChain; }
 
   private retainPostTerminalWork(): void {
-    const pending = this.agentLoop?.whenPostTerminalWorkSettled();
+    // Lightweight loops without a run finalizer have no post-terminal work to retain.
+    const pending = this.agentLoop?.whenPostTerminalWorkSettled?.();
     if (!pending) return;
     const settled = pending.then(() => undefined, () => undefined);
     this.postTerminalChain = this.postTerminalChain.then(() => settled, () => settled);
