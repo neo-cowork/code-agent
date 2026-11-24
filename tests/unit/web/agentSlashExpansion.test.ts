@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDefaultWorkDirectory, getLegacyDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
-import { containsCjk } from '../../../src/renderer/utils/containsCjk';
+import { containsCjk } from '../../../src/shared/containsCjk';
 import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../../src/shared/i18n/chooseFolderEntry';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
