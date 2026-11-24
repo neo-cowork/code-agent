@@ -29,18 +29,19 @@ describe('tool-error-scan.py', () => {
     const dir = tempDir();
     const db = path.join(dir, 'fixture.db');
     const out = path.join(dir, 'counts.json');
-    const result = JSON.stringify([{
+    const result = {
       toolCallId: 'call-fixture',
       success: false,
       error: 'This location belongs to another Neo. Use MemoryRead to inspect its memories instead.',
       userMessage: '不能读取另一个对话的独立记忆目录。',
-    }]);
+    };
+    const modelResult = { toolCallId: result.toolCallId, success: result.success, error: result.error };
     const fixture = new Database(db);
     applyTestSessionSchema(fixture);
     fixture.prepare("INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at) VALUES (?, 'fixture', 'test', 'test', 0, 0)")
       .run('session-fixture');
-    fixture.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)')
-      .run('message-fixture', 'session-fixture', 'tool', result, 0);
+    fixture.prepare('INSERT INTO messages (id, session_id, role, content, tool_results, timestamp) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('message-fixture', 'session-fixture', 'tool', JSON.stringify([modelResult]), JSON.stringify([result]), 0);
     fixture.close();
 
     const scanned = spawnSync('python3', [scanner, '--patterns', patterns, '--db', db, '--out', out], { encoding: 'utf8' });

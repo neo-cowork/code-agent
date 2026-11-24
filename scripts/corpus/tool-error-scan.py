@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Count internal-text leaks on tool-card error rows in explicit SQLite DBs.
 
-Each messages row with role='tool' is parsed as a JSON array of tool results.
-Only results with success === false and a non-empty error are scanned. A row
-contributes at most one hit per category. visible_text is result.userMessage
-when that field is defined, otherwise result.error; raw_error_hits always uses
-result.error. DBs are opened read-only and paths below the default data dirs
+Each messages row with role='tool' has model-facing results in content and full
+results in tool_results, paired by toolCallId. Only results with success ===
+false and a non-empty error are scanned. A row contributes at most one hit per
+category. visible_text is the full result's userMessage when that field is
+defined, otherwise result.error; raw_error_hits always uses result.error from
+content. DBs are opened read-only and paths below the default data dirs
 (~/.code-agent and ~/.code-agent-dev) are refused before opening SQLite.
 """
 
@@ -77,20 +78,27 @@ def scan_db(db_path, rules, totals):
     connection = sqlite3.connect(uri, uri=True)
     try:
         connection.execute("PRAGMA query_only=ON")
-        for (content,) in connection.execute("SELECT content FROM messages WHERE role='tool'"):
+        for content, stored_results in connection.execute("SELECT content, tool_results FROM messages WHERE role='tool'"):
             try:
                 results = json.loads(content or "")
+                display_results = json.loads(stored_results or "[]")
             except (json.JSONDecodeError, TypeError):
                 continue
             if not isinstance(results, list):
                 continue
+            display_by_call = {
+                result.get("toolCallId"): result
+                for result in display_results
+                if isinstance(result, dict)
+            } if isinstance(display_results, list) else {}
             for result in results:
                 if not isinstance(result, dict) or result.get("success") is not False:
                     continue
                 error = result.get("error")
                 if not isinstance(error, str) or not error.strip():
                     continue
-                visible_text = result["userMessage"] if "userMessage" in result else error
+                display_result = display_by_call.get(result.get("toolCallId"), result)
+                visible_text = display_result["userMessage"] if "userMessage" in display_result else error
                 totals["rows_scanned"] += 1
                 for category in CATEGORIES:
                     category_totals = totals["categories"][category]
