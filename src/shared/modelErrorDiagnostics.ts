@@ -156,7 +156,7 @@ export function summarizeModelErrorForUser(
   const diagnostic = classifyModelErrorMessage(message, statusCode, locale);
   if (diagnostic) {
     const prefix = locale === 'en' && (diagnostic.code === 'auth_failed' || diagnostic.code === 'quota_exhausted')
-      ? 'Suggestion:'
+      ? 'Suggestion: '
       : '建议：';
     return `${diagnostic.message}\n${prefix}${diagnostic.suggestion}`;
   }

@@ -83,7 +83,7 @@ describe('auth_failed / quota_exhausted（2026-08-30 欠费卡死批）', () => 
       }
       expect(diagnostic.message).toContain(locale === 'en' ? enMessage : zhMessage);
       expect(diagnostic.suggestion).toContain(locale === 'en' ? enAction : zhAction);
-      expect(summary).toContain(locale === 'en' ? '\nSuggestion:' : '\n建议：');
+      expect(summary).toContain(locale === 'en' ? '\nSuggestion: ' : '\n建议：');
     }
   });
 
