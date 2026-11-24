@@ -4,7 +4,17 @@ vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => ({ getSession: async (id: string) => ({ id, title: 'Research' }) }),
   notificationService: { notifyTaskComplete: vi.fn() },
 }));
-vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('../../../src/host/platform', () => ({
+  app: { getPath: () => '/tmp', isPackaged: false },
+  AppWindow: class MockAppWindow {
+    static getAllWindows() { return []; }
+  },
+  broadcastToRenderer: vi.fn(),
+}));
 import Database from 'better-sqlite3';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';

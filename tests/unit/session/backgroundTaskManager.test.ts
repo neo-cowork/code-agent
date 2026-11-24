@@ -30,6 +30,12 @@ vi.mock('../../../src/host/services', () => ({
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -39,7 +45,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 vi.mock('../../../src/host/platform', () => ({
-  AppWindow: class MockAppWindow {},
+  app: { getPath: () => '/tmp', isPackaged: false },
+  AppWindow: class MockAppWindow {
+    static getAllWindows() { return []; }
+  },
   broadcastToRenderer: vi.fn(),
 }));
 
