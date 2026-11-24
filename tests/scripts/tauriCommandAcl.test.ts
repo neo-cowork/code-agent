@@ -42,6 +42,20 @@ function authorizedCommands(): string[] {
 }
 
 describe('Tauri app command ACL', () => {
+  it('native_*.rs 里每个 #[tauri::command] 都已在 generate_handler! 注册', () => {
+    const dir = path.join(root, 'src-tauri/src');
+    const defined = new Set<string>();
+    for (const file of fs.readdirSync(dir).filter((name) => /^native_.*\.rs$/.test(name))) {
+      const src = fs.readFileSync(path.join(dir, file), 'utf8');
+      for (const m of src.matchAll(/#\[tauri::command[^\]]*\]\s*pub\s+(?:async\s+)?fn\s+([a-z][a-z0-9_]*)/g)) {
+        defined.add(m[1]);
+      }
+    }
+    expect(defined.size, 'native_*.rs 里解析不到任何 tauri command，锚点失效').toBeGreaterThan(10);
+    const registered = new Set(registeredCommands());
+    expect([...defined].filter((name) => !registered.has(name)).sort()).toEqual([]);
+  });
+
   it('每条注册的命令都恰好被授权一次', () => {
     const registered = registeredCommands();
     const authorized = authorizedCommands();

@@ -4,6 +4,7 @@ import type { TraceTurn } from '@shared/contract/trace';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
+import { isMostlyEnglish } from '../../../utils/isMostlyEnglish';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 
 export interface TurnThinkingSegment {
@@ -158,9 +159,14 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
     '{seconds}',
     String(Math.max(1, Math.ceil(durationMs / 1000))),
   );
+  const showEnglishNote = !activeSegmentId && language === 'zh' && isMostlyEnglish(
+    segments.map((segment) => humanizeInternalText(segment.text, 'zh').text).join('\n'),
+  );
   const digestLabel = activeSegmentId
     ? t.chat.thinkingActiveWithDuration.replace('{duration}', duration)
-    : interpolate(interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length), { duration });
+    : showEnglishNote
+      ? interpolate(t.chat.thinkingDigestEnglishNote, { duration })
+      : interpolate(interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length), { duration });
 
   return (
     <div
