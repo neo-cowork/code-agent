@@ -7,7 +7,7 @@
 //   角色和记忆是户口，实例是上班。
 //
 // 职责：
-// - 角色绑定检测：roles/<roleId>/ 或有效的用户 agents/<roleId>.md → 持久角色（核心 agent 文件除外）
+// - 角色绑定检测：roles/<roleId>/ 或与注册 ID 一致的用户 agents/<roleId>.md → 持久角色（核心 agent 文件除外）
 // - 三层记忆读写：角色记忆 / 项目记忆（全局记忆由现有 Light Memory 负责，不动）
 // - 注入块构建：实例化时把角色记忆索引 + 项目记忆索引 + 最近履历拼进 system prompt
 // - 履历写入：产物清单（不记任务记产物，设计 §4.3）
@@ -123,7 +123,8 @@ async function isPersistentAgentFile(agentsDir: string, filename: string, roleId
   try {
     const content = await fs.readFile(path.join(agentsDir, filename), 'utf-8');
     const agent = parseAgentMd(content, filename);
-    return agent !== null && isSafeRoleId(agent.id) && !isCoreAgent(agent.id);
+    // The filename ID must also be the registry ID used for wake and memory.
+    return agent?.id === roleId;
   } catch {
     return false;
   }

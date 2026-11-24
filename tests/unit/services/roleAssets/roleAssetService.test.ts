@@ -187,6 +187,16 @@ describe('roleAssetService', () => {
       expect(await isPersistentRole('invalid')).toBe(false);
     });
 
+    it('excludes a user Markdown file whose registered id differs from its filename', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'schedule-steward.md'), '---\nname: 日程管家\n---\nCheck the calendar.\n');
+
+      expect(await listPersistentRoles()).toEqual([]);
+      expect(await isPersistentRole('schedule-steward')).toBe(false);
+      expect(await isPersistentRole('日程管家')).toBe(false);
+    });
+
     it('merges role directories and agent files in stable order without duplicates', async () => {
       const agentsDir = path.join(mockConfigDir.dir, 'agents');
       await fs.mkdir(agentsDir);
