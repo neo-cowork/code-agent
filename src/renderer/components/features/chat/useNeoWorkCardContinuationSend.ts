@@ -8,6 +8,7 @@
 
 import { useCallback } from 'react';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
+import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { useAuthStore } from '../../../stores/authStore';
 import { useNeoWorkCardStore } from '../../../stores/neoWorkCardStore';
@@ -30,11 +31,16 @@ useSessionStore.subscribe((state, previous) => {
  * 失败 toast 并保留目标（草稿可重发）；成功后补上本地用户消息并清掉目标。
  */
 export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelopeFn {
+  const { t } = useI18n();
   return useCallback(async (envelope) => {
     const sessionId = useSessionStore.getState().currentSessionId;
     const target = useNeoWorkCardStore.getState().continuationTarget;
     if (target?.conversationId !== sessionId || (envelope.sessionId && envelope.sessionId !== sessionId)) {
       return await send(envelope);
+    }
+    if (envelope.attachments?.length) {
+      toast.error(t.neoContinuation.attachmentsUnsupported);
+      return false;
     }
     try {
       const continuation = await submitNeoTagContinuation({
@@ -63,5 +69,5 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
       toast.error(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [send]);
+  }, [send, t.neoContinuation.attachmentsUnsupported]);
 }

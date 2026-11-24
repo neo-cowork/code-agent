@@ -204,6 +204,28 @@ describe('useNeoWorkCardContinuationSend', () => {
     toastError.mockRestore();
   });
 
+  it('续接附件无法传给工作卡时保留目标并让输入框恢复草稿', async () => {
+    const send = vi.fn(async () => true);
+    const continueAndRun = vi.fn();
+    const toastError = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-1');
+    useNeoWorkCardStore.setState({ continueAndRun });
+    useNeoWorkCardStore.getState().setContinuationTarget({
+      workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1',
+    });
+    const { result } = renderHook(() => useNeoWorkCardContinuationSend(send));
+    await act(async () => {
+      expect(await result.current({
+        content: '参考这张图',
+        attachments: [{ id: 'att-1', type: 'image', name: 'note.png', category: 'image', mimeType: 'image/png', size: 1 }],
+      })).toBe(false);
+    });
+    expect(continueAndRun).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith('续接消息暂时无法发送附件。请移除附件，或退出续接后再发送。');
+    expect(useNeoWorkCardStore.getState().continuationTarget?.workCardId).toBe('card-1');
+    toastError.mockRestore();
+  });
+
   it('同一条 roundTurnId 已经在会话里时不再补一条本地消息', async () => {
     const existing: Message = { id: 'turn-round-2', role: 'user', content: '已经在了', timestamp: 1 };
     useSessionStore.setState({ messages: [existing] });
@@ -294,7 +316,6 @@ describe('ChatView 接着做发送', () => {
       sent = await captured.onSend!({
         content: '再加一页结论',
         clientMessageId: 'cm-1',
-        attachments: [{ id: 'att-1', type: 'image', name: 'note.png', category: 'image', mimeType: 'image/png', size: 1 }],
       });
     });
 
@@ -305,7 +326,7 @@ describe('ChatView 接着做发送', () => {
       conversationId: 'sess-1',
       userText: '再加一页结论',
       requesterUserId: 'user-7',
-      selectedArtifactIds: ['att-1'],
+      selectedArtifactIds: [],
       clientSourceMessageId: 'cm-1',
     });
     expect(sendMessageMock).not.toHaveBeenCalled();
