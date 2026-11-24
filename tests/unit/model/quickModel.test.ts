@@ -348,6 +348,24 @@ describe('thinking 模型回落时自动关闭思考', () => {
     },
   );
 
+  it('neohorse-1.5-flash-preview 用作记忆模型（会话判官走这条）时关闭 thinking，正文不会被推理挤空', async () => {
+    mockConfig({
+      memory: { provider: 'xiaomi', model: 'neohorse-1.5-flash-preview' },
+      keys: { xiaomi: 'xk' },
+      providers: { xiaomi: { enabled: true } },
+    });
+    const fetchMock = mockFetchOnce('{"worth":true}');
+
+    await expect(memoryTask('判断这段会话', 768)).resolves.toMatchObject({
+      success: true,
+      provider: 'xiaomi',
+      model: 'neohorse-1.5-flash-preview',
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.max_tokens).toBe(768);
+  });
+
   it('passes the caller abort signal through to fetch', async () => {
     mockConfig({ keys: { zhipu: 'zk' } });
     const fetchMock = mockFetchOnce('ok');
