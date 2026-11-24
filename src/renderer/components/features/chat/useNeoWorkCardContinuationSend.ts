@@ -16,22 +16,14 @@ import { buildNeoTagContinuationMessage, submitNeoTagContinuation } from './neoT
 
 type SendEnvelopeFn = (envelope: ConversationEnvelope) => Promise<boolean>;
 
-let continuationSessionWatchInstalled = false;
-
-function installContinuationSessionWatch(): void {
-  if (continuationSessionWatchInstalled) return;
-  continuationSessionWatchInstalled = true;
-  useSessionStore.subscribe((state, previous) => {
-    if (state.currentSessionId === previous.currentSessionId) return;
-    const target = useNeoWorkCardStore.getState().continuationTarget;
-    if (!target) return;
-    // 接着做先写入目标再打开会话。到达的会话就是目标会话时，标记要留下。
-    if (target.conversationId === state.currentSessionId) return;
-    useNeoWorkCardStore.getState().setContinuationTarget(null);
-  });
-}
-
-installContinuationSessionWatch();
+useSessionStore.subscribe((state, previous) => {
+  if (state.currentSessionId === previous.currentSessionId) return;
+  const { continuationTarget, setContinuationTarget } = useNeoWorkCardStore.getState();
+  // 接着做先写入目标再打开会话。到达目标会话时保留标记。
+  if (continuationTarget && continuationTarget.conversationId !== state.currentSessionId) {
+    setContinuationTarget(null);
+  }
+});
 
 /**
  * 发送包装：当前会话与续接目标的 conversationId 一致时走同卡续接。
@@ -41,7 +33,7 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
   return useCallback(async (envelope) => {
     const sessionId = useSessionStore.getState().currentSessionId;
     const target = useNeoWorkCardStore.getState().continuationTarget;
-    if (!target || !sessionId || target.conversationId !== sessionId) {
+    if (target?.conversationId !== sessionId || (envelope.sessionId && envelope.sessionId !== sessionId)) {
       return await send(envelope);
     }
     try {
@@ -58,11 +50,14 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
         workCardId: target.workCardId,
         roundTurnId: continuation.roundTurnId,
       });
-      const messages = useSessionStore.getState().messages;
-      if (!messages.some((message) => message.id === roundMessage.id)) {
-        useSessionStore.getState().addMessage(roundMessage);
+      const session = useSessionStore.getState();
+      if (session.currentSessionId === sessionId && !session.messages.some((message) => message.id === roundMessage.id)) {
+        session.addMessage(roundMessage);
       }
-      useNeoWorkCardStore.getState().setContinuationTarget(null);
+      const workCard = useNeoWorkCardStore.getState();
+      if (workCard.continuationTarget === target) {
+        workCard.setContinuationTarget(null);
+      }
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));

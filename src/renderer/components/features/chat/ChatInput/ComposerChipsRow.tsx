@@ -2,6 +2,7 @@ import type { RefObject } from 'react';
 import type { AppshotCapture } from '@shared/contract/appshot';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { AppshotChip } from './AppshotChip';
+import { NeoContinuationChip } from './NeoContinuationChip';
 
 interface ComposerChipsRowProps {
   pendingAppshot: AppshotCapture | null;
@@ -18,16 +19,16 @@ interface ComposerChipsRowProps {
   appshotSlotRef: RefObject<HTMLDivElement | null>;
 }
 
-// 文字区上方 chip（非文字流内容）：appshot、pin 资料。
+// 文字区上方 chip（非文字流内容）：工作卡续接、appshot。
 // 命令 / 当轮 skill / @文件附件已内联进文字流（InputArea 的 inlineChips，
 // 2026-07-29 WorkBuddy phrase chip 模型）；专家在底栏有专门位置，
 // 会话级挂载（MCP/连接器）在底栏权限徽章旁（MountedConnectorIcons），都不进这里。
-// @neo 续接 chip 已随 @neo 交互一并从 composer 移除（2026-07-29 拍板）。
 export function ComposerChipsRow({ pendingAppshot, clearAppshot, appshotSlotRef }: ComposerChipsRowProps) {
   // reserved = 截图已就绪、等 overlay 飞抵后的 handoff 再零位移显形（无双影）
   const reserved = useAppshotsStore((s) => s.phase === 'reserved');
   return (
     <>
+      <NeoContinuationChip />
       {/* 行上不带任何 margin/padding（两态恒为 0）：锚点下缘到输入框的距离只要求
           「空/满两态一致」，不要求非零——之前的恒定 mb-2 在空闲时也占 8px，把正文
           顶离 16px 轨（真机 2026-08-05）。chip 显形时的呼吸空间由正文区自己的 pt-4

@@ -700,8 +700,8 @@ export const ChatView: React.FC = () => {
   }, [currentSessionId, streamSnapshot?.turnId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
-    return sendWithWorkCardContinuation(buildEnvelope(content, attachments));
-  }, [buildEnvelope, sendWithWorkCardContinuation]);
+    return handleSendEnvelopeWithCronFollowUp(buildEnvelope(content, attachments));
+  }, [buildEnvelope, handleSendEnvelopeWithCronFollowUp]);
 
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);

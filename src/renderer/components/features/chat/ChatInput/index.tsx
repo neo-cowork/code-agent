@@ -77,7 +77,6 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { ComposerChipsRow } from './ComposerChipsRow';
-import { NeoContinuationChip } from './NeoContinuationChip';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { ModelSlot } from '../../../StatusBar/ModelSlot';
 import ipcService from '../../../../services/ipcService';
@@ -1616,14 +1615,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onHistoryReset={resetInputHistoryIndex}
             onAutocompleteKeyDown={handleComposerAutocompleteKeyDown}
             chips={(
-              <>
-                <NeoContinuationChip />
-                <ComposerChipsRow
-                  pendingAppshot={pendingAppshot}
-                  clearAppshot={clearAppshot}
-                  appshotSlotRef={appshotSlotRef}
-                />
-              </>
+              <ComposerChipsRow
+                pendingAppshot={pendingAppshot}
+                clearAppshot={clearAppshot}
+                appshotSlotRef={appshotSlotRef}
+              />
             )}
             inlineChips={inlineChips}
             onRemoveInlineChip={handleRemoveInlineChip}

@@ -137,6 +137,48 @@ describe('useNeoWorkCardContinuationSend', () => {
     expect(useNeoWorkCardStore.getState().continuationTarget?.workCardId).toBe('card-stale');
   });
 
+  it('发往其他会话的消息不消耗当前会话的续接目标', async () => {
+    const send = vi.fn(async () => true);
+    const continueAndRun = vi.fn();
+    useNeoWorkCardStore.setState({ continueAndRun });
+    useNeoWorkCardStore.getState().setContinuationTarget({
+      workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1',
+    });
+    const { result } = renderHook(() => useNeoWorkCardContinuationSend(send));
+    const envelope = { content: '普通消息', sessionId: 'sess-other' };
+
+    await act(async () => {
+      await result.current(envelope);
+    });
+
+    expect(send).toHaveBeenCalledWith(envelope);
+    expect(continueAndRun).not.toHaveBeenCalled();
+    expect(useNeoWorkCardStore.getState().continuationTarget?.workCardId).toBe('card-1');
+  });
+
+  it('切换会话后，旧请求返回时不补显到新会话或清掉新目标', async () => {
+    const pending = Promise.withResolvers<ContinueNeoWorkCardResult>();
+    useNeoWorkCardStore.setState({ continueAndRun: () => pending.promise });
+    useNeoWorkCardStore.getState().setContinuationTarget({
+      workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1',
+    });
+    const { result } = renderHook(() => useNeoWorkCardContinuationSend(vi.fn(async () => true)));
+
+    await act(async () => {
+      const sent = result.current({ content: '再加一页结论' });
+      await useSessionStore.getState().switchSession('sess-other');
+      useNeoWorkCardStore.getState().setContinuationTarget({
+        workCardId: 'card-2', title: '周报', conversationId: 'sess-other',
+      });
+      pending.resolve(continuationResult());
+      expect(await sent).toBe(true);
+    });
+
+    expect(useSessionStore.getState().currentSessionId).toBe('sess-other');
+    expect(useSessionStore.getState().messages).toEqual([]);
+    expect(useNeoWorkCardStore.getState().continuationTarget?.workCardId).toBe('card-2');
+  });
+
   it('失败时 toast 并保留目标，不透传', async () => {
     const send = vi.fn(async () => true);
     const continueAndRun = vi.fn(async () => {
@@ -195,7 +237,7 @@ describe('useNeoWorkCardContinuationSend', () => {
     expect(continueAndRun).toHaveBeenCalledWith(expect.objectContaining({ requesterUserId: 'local-user' }));
   });
 
-  it('先写下目的地会话的目标，再切到那个会话，目标还在；再切走才清掉', () => {
+  it('先写下目的地会话的目标，再切到那个会话，目标还在；再切走才清掉', async () => {
     useSessionStore.setState({ currentSessionId: 'sess-a', sessions: [sessionRecord('sess-a')] });
     renderHook(() => useNeoWorkCardContinuationSend(vi.fn(async () => true)));
 
@@ -210,25 +252,25 @@ describe('useNeoWorkCardContinuationSend', () => {
       conversationId: 'sess-b',
     });
 
-    act(() => {
-      useSessionStore.setState({ currentSessionId: 'sess-b' });
+    await act(async () => {
+      await useSessionStore.getState().switchSession('sess-b');
     });
     expect(useNeoWorkCardStore.getState().continuationTarget?.conversationId).toBe('sess-b');
 
-    act(() => {
-      useSessionStore.setState({ currentSessionId: 'sess-c' });
+    await act(async () => {
+      await useSessionStore.getState().switchSession('sess-c');
     });
     expect(useNeoWorkCardStore.getState().continuationTarget).toBeNull();
   });
 
-  it('人已经在目标会话里，再切到别的会话，续接目标被清掉', () => {
+  it('人已经在目标会话里，再切到别的会话，续接目标被清掉', async () => {
     useNeoWorkCardStore.setState({
       continuationTarget: { workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1' },
     });
     renderHook(() => useNeoWorkCardContinuationSend(vi.fn(async () => true)));
 
-    act(() => {
-      useSessionStore.setState({ currentSessionId: 'sess-other' });
+    await act(async () => {
+      await useSessionStore.getState().switchSession('sess-other');
     });
 
     expect(useNeoWorkCardStore.getState().continuationTarget).toBeNull();
@@ -249,7 +291,7 @@ describe('ChatView 接着做发送', () => {
     let sent = false;
     await act(async () => {
       sent = await captured.onSend!({
-        content: '@neo 再加一页结论',
+        content: '再加一页结论',
         clientMessageId: 'cm-1',
         attachments: [{ id: 'att-1', type: 'image', name: 'note.png', category: 'image', mimeType: 'image/png', size: 1 }],
       });
@@ -271,7 +313,7 @@ describe('ChatView 接着做发送', () => {
       expect.objectContaining({
         id: 'turn-round-2',
         role: 'user',
-        content: '@neo 再加一页结论',
+        content: '再加一页结论',
         metadata: {
           neoTag: {
             workCardId: 'card-1',
