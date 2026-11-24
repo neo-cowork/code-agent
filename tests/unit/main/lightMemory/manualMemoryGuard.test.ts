@@ -75,7 +75,7 @@ describe.each([
     const filePath = path.join(memoryDir, filename);
     const digest = createHash('sha256').update(replacement.toLowerCase()).digest('hex').slice(0, 8);
     const pending = filename.replace(/\.md$/, `-pending-${digest}.md`);
-    return { filename, filePath, pending, before: await fs.readFile(filePath) };
+    return { originalId: entry.id, filename, filePath, pending, before: await fs.readFile(filePath) };
   }
 
   async function proposeAndGetId(filename: string, pending: string): Promise<string> {
@@ -116,6 +116,7 @@ describe.each([
     const files = await fs.readdir(memoryDir);
     expect(files.filter((file) => file.includes('-pending-'))).toEqual([pending]);
     await batchReviewMemoryEntries(repo, { entryIds: [id], decision: 'reject' });
+    expect(repo.listMemoryJournal({ entryId: id, limit: 1 })[0]?.actor).toBe('user_manual');
     expect(await readMemoryFile(pending)).toMatchObject({ status: 'rejected', supersedes: filename, source });
     const rejected = await fs.readFile(path.join(memoryDir, pending));
     await write(filename);
@@ -138,12 +139,14 @@ describe.each([
   });
 
   it.each(['batch approval', 'single-entry update'])('archives the original and preserves its body on %s', async (mode) => {
-    const { filename, pending } = await createManual();
+    const { originalId, filename, pending } = await createManual();
     const id = await proposeAndGetId(filename, pending);
     if (mode === 'batch approval') {
       expect(await batchReviewMemoryEntries(repo, { entryIds: [id], decision: 'approve' })).toMatchObject({
         updated: [{ id, status: 'active' }], skipped: [],
       });
+      const actors = [id, originalId].map((entryId) => repo.listMemoryJournal({ entryId, limit: 1 })[0]?.actor);
+      expect(actors).toEqual(['user_manual', 'user_manual']);
     } else {
       expect(await updateMemoryEntry(repo, { entryId: id, status: 'active' })).toMatchObject({
         entry: { id, status: 'active' },
