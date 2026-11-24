@@ -484,6 +484,35 @@ describe('useSidebarDerivedSessions blank rows', () => {
     expect(result.current.visibleSessionIds).toEqual([]);
   });
 
+  it('only synthesizes an empty collaboration group when hidden rows cover its full catalog count', async () => {
+    const fullyLoadedSpace: ProjectWithActivity = {
+      id: 'fully-loaded',
+      name: 'Fully loaded space',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+      spacePromotedAt: 1,
+      visibleSessionCount: 2,
+      activeTopicCount: 0,
+      lastActivityAt: null,
+    };
+    const pagedSpace = { ...fullyLoadedSpace, id: 'partially-loaded', name: 'Space with older history' };
+    projectClient.listProjectsWithActivity.mockResolvedValue([fullyLoadedSpace, pagedSpace]);
+    state.session.sessions = [
+      { ...blank, id: 'first-placeholder', projectId: fullyLoadedSpace.id },
+      { ...blank, id: 'second-placeholder', projectId: fullyLoadedSpace.id },
+      { ...blank, id: 'latest-placeholder', projectId: pagedSpace.id },
+    ];
+
+    const { result } = renderSidebar();
+
+    await waitFor(() => {
+      expect(result.current.workspaceGroupedSessions.map((group) => group.projectId))
+        .toEqual([fullyLoadedSpace.id]);
+    });
+    expect(result.current.visibleSessionIds).toEqual([]);
+  });
+
   it('keeps a blank row with a runtime or non-idle task state visible before the count updates', () => {
     state.session.sessionRuntimes.set(blank.id, { lastActivityAt: 20 });
     state.session.sessions.push({ ...blank, id: 'running' }, { ...blank, id: 'idle' });
