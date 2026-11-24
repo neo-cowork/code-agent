@@ -34,7 +34,11 @@ export function getModelErrorStatus(error: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined;
 }
 
-export function classifyModelErrorMessage(message: string, statusCode?: number): ModelErrorDiagnostic | null {
+export function classifyModelErrorMessage(
+  message: string,
+  statusCode?: number,
+  locale: 'zh' | 'en' = 'zh',
+): ModelErrorDiagnostic | null {
   const normalized = normalizeMessage(message);
   const lower = normalized.toLowerCase();
 
@@ -54,8 +58,12 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (authFailed) {
     return {
       code: 'auth_failed',
-      message: '模型鉴权失败：API Key 无效、已过期或没有权限。',
-      suggestion: '用 /login <provider> 重新配置 API Key，或用 /model 切换到其他可用模型。',
+      message: locale === 'en'
+        ? 'Model authentication failed: the API Key is invalid, expired, or does not have permission.'
+        : '模型鉴权失败：API Key 无效、已过期或没有权限。',
+      suggestion: locale === 'en'
+        ? 'Go to Settings → General model to re-enter the API Key, or use the model button at the bottom right of the input to switch models.'
+        : '请在设置 → 通用模型中重新填写 API Key，或用输入框右下角的模型按钮切换到其他可用模型。',
       retryable: false,
     };
   }
@@ -75,8 +83,12 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (quotaExhausted) {
     return {
       code: 'quota_exhausted',
-      message: '模型账户余额或配额不足（欠费），请求被拒绝。',
-      suggestion: '请充值或更换账户；也可以用 /model 切换到其他可用模型。',
+      message: locale === 'en'
+        ? 'The model account has insufficient balance or quota, so the request was rejected.'
+        : '模型账户余额或配额不足（欠费），请求被拒绝。',
+      suggestion: locale === 'en'
+        ? 'Top up or change the account, or use the model button at the bottom right of the input to switch models.'
+        : '请充值或更换账户；也可以用输入框右下角的模型按钮切换到其他可用模型。',
       retryable: false,
     };
   }
@@ -136,10 +148,17 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   return null;
 }
 
-export function summarizeModelErrorForUser(message: string, statusCode?: number): string {
-  const diagnostic = classifyModelErrorMessage(message, statusCode);
+export function summarizeModelErrorForUser(
+  message: string,
+  statusCode?: number,
+  locale: 'zh' | 'en' = 'zh',
+): string {
+  const diagnostic = classifyModelErrorMessage(message, statusCode, locale);
   if (diagnostic) {
-    return `${diagnostic.message}\n建议：${diagnostic.suggestion}`;
+    const prefix = locale === 'en' && (diagnostic.code === 'auth_failed' || diagnostic.code === 'quota_exhausted')
+      ? 'Suggestion:'
+      : '建议：';
+    return `${diagnostic.message}\n${prefix}${diagnostic.suggestion}`;
   }
 
   const normalized = normalizeMessage(message);

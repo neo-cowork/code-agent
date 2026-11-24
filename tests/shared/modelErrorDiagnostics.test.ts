@@ -38,12 +38,52 @@ describe('model error diagnostics', () => {
 });
 
 describe('auth_failed / quota_exhausted（2026-08-30 欠费卡死批）', () => {
-  it('401/403 状态码直接判鉴权失败，不可重试，给配置建议', () => {
+  it('401/403 状态码直接判鉴权失败，不可重试，给桌面配置建议', () => {
     for (const statusCode of [401, 403]) {
       const diagnostic = classifyModelErrorMessage('upstream rejected the request', statusCode);
       expect(diagnostic).toMatchObject({ code: 'auth_failed', retryable: false });
-      expect(diagnostic?.suggestion).toContain('/login');
-      expect(diagnostic?.suggestion).toContain('/model');
+      expect(diagnostic?.suggestion).not.toContain('/login');
+      expect(diagnostic?.suggestion).not.toContain('/model');
+      expect(diagnostic?.suggestion).not.toContain('<provider>');
+      expect(diagnostic?.suggestion).toContain('设置 → 通用模型');
+    }
+  });
+
+  it.each([
+    {
+      code: 'auth_failed',
+      raw: 'invalid_api_key',
+      statusCode: 401,
+      zhMessage: '模型鉴权失败',
+      enMessage: 'Model authentication failed',
+      zhAction: '设置 → 通用模型',
+      enAction: 'Settings → General model',
+    },
+    {
+      code: 'quota_exhausted',
+      raw: 'insufficient_quota',
+      statusCode: 402,
+      zhMessage: '余额或配额不足',
+      enMessage: 'insufficient balance or quota',
+      zhAction: '输入框右下角的模型按钮',
+      enAction: 'model button at the bottom right of the input',
+    },
+  ])('$code 的中英文 summary 都只给桌面可执行动作', ({ code, raw, statusCode, zhMessage, enMessage, zhAction, enAction }) => {
+    for (const locale of ['zh', 'en'] as const) {
+      const diagnostic = classifyModelErrorMessage(raw, statusCode, locale);
+      expect(diagnostic).toMatchObject({ code, retryable: false });
+      if (!diagnostic) throw new Error(`Missing diagnostic for ${code}`);
+
+      const summary = summarizeModelErrorForUser(raw, statusCode, locale);
+      for (const text of [diagnostic.message, diagnostic.suggestion, summary]) {
+        expect(text).not.toContain('/login');
+        expect(text).not.toContain('/model');
+        expect(text).not.toContain('<provider>');
+        if (locale === 'en') expect(text).not.toMatch(/[\u3400-\u9fff]/u);
+      }
+      expect(diagnostic.message).toContain(locale === 'en' ? enMessage : zhMessage);
+      expect(diagnostic.suggestion).toContain(locale === 'en' ? enAction : zhAction);
+      expect(summary).toContain(locale === 'en' ? '\nSuggestion:' : '\n建议：');
     }
   });
 
@@ -64,6 +104,10 @@ describe('auth_failed / quota_exhausted（2026-08-30 欠费卡死批）', () => 
     expect(summary).toContain('余额或配额不足');
     expect(summary).toContain('建议：');
     expect(summary).not.toContain('Native Durable Run');
+  });
+
+  it('其它诊断码传 en 仍保持既有中文输出', () => {
+    expect(summarizeModelErrorForUser('Bad Gateway', 502, 'en')).toBe(summarizeModelErrorForUser('Bad Gateway', 502));
   });
 
   it('裸 429 限流不算欠费（quota 语义只认文案/402）', () => {

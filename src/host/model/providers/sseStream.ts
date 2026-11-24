@@ -14,6 +14,7 @@ import { normalizeOpenAIUsage } from './wrappers/usageNormalization';
 import { PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INACTIVITY_TIMEOUT } from '../../../shared/constants';
 import { splitThinkTags } from '../../../shared/modelMarkupStrip';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 
 /**
  * 规范化工具名称
@@ -359,7 +360,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           if (onStream) {
             onStream({
               type: 'error',
-              error: summarizeModelErrorForUser(errorMessage),
+              error: summarizeModelErrorForUser(errorMessage, undefined, getHostUiLocale()),
               errorCode: String(res.statusCode),
             });
           }
@@ -707,7 +708,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
         if (onStream) {
           onStream({
             type: 'error',
-            error: summarizeModelErrorForUser(err.message),
+            error: summarizeModelErrorForUser(err.message, undefined, getHostUiLocale()),
           });
         }
         reject(err);
@@ -721,7 +722,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       if (onStream) {
         onStream({
           type: 'error',
-          error: summarizeModelErrorForUser(err.message),
+          error: summarizeModelErrorForUser(err.message, undefined, getHostUiLocale()),
           errorCode: errCode,
         });
       }

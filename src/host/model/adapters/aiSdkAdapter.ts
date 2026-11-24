@@ -75,6 +75,7 @@ import {
 } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import { logger, makeAiSdkFetch } from './aiSdkFetch';
 import {
   isInferenceClientTimeoutError,
@@ -1158,7 +1159,7 @@ async function streamViaAiSdk(params: {
       healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal), model: config.model, error: err });
       const finalErr = toBadSuccessBodyUserError(effectiveErr);
       if (!signal?.aborted) {
-        onStream({ type: 'error', error: summarizeModelErrorForUser(finalErr instanceof Error ? finalErr.message : msg), ...(code ? { errorCode: code } : {}) });
+        onStream({ type: 'error', error: summarizeModelErrorForUser(finalErr instanceof Error ? finalErr.message : msg, undefined, getHostUiLocale()), ...(code ? { errorCode: code } : {}) });
       }
       logInferenceFailure(effectiveErr, 'streamText', config, messages);
       throw finalErr;
