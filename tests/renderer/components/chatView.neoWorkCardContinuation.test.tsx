@@ -57,19 +57,20 @@ import { toast } from '../../../src/renderer/hooks/useToast';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
 import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const appState = useAppStore.getState();
 const authState = useAuthStore.getState();
 const sessionState = useSessionStore.getState();
 const originalContinueAndRun = useNeoWorkCardStore.getState().continueAndRun;
 
-function sessionRecord(id: string) {
+function sessionRecord(id: string): SessionWithMeta {
   return {
     id,
     title: id,
     createdAt: 1,
     updatedAt: 1,
+    modelConfig: { provider: 'openai', model: 'test-model' },
     messageCount: 0,
     turnCount: 0,
   };
