@@ -111,6 +111,15 @@ describe('编辑器工作文件夹行（桌面壳）', () => {
     expect(screen.queryByTestId('cron-working-folder-row')).toBeNull();
     expect(screen.queryByTestId('cron-working-folder-input')).toBeNull();
   });
+
+  it('家目录路径仍只显示最后一段，不折成 ~', async () => {
+    const job = makeJob({ metadata: { workingDirectory: '/Users/me/Documents/My Notes' } });
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    fireEvent.click(await screen.findByText('执行动作'));
+    expect(screen.getByTestId('cron-working-folder-name').textContent).toBe('My Notes');
+    expect(screen.getByTestId('cron-working-folder-name').getAttribute('title')).toBe('/Users/me/Documents/My Notes');
+    expect(screen.queryByTestId('cron-working-folder-input')).toBeNull();
+  });
 });
 
 describe('编辑器工作文件夹行（web 构建）', () => {
@@ -118,7 +127,9 @@ describe('编辑器工作文件夹行（web 构建）', () => {
     platform.tauri = false;
     render(<CronJobEditor isOpen job={makeJob()} onClose={() => undefined} />);
     fireEvent.click(await screen.findByText('执行动作'));
-    fireEvent.change(screen.getByTestId('cron-working-folder-input'), { target: { value: '/srv/notes' } });
+    const folderInput = screen.getByTestId('cron-working-folder-input');
+    fireEvent.focus(folderInput);
+    fireEvent.change(folderInput, { target: { value: '/srv/notes' } });
     const input = await saveEdit();
     expect(input.metadata).toEqual({ workingDirectory: '/srv/notes' });
   });
@@ -181,19 +192,23 @@ describe('web 路径输入：输入中保留原文，失焦/保存才去空白',
 
   beforeEach(() => { platform.tauri = false; latest = undefined; });
 
-  it('(a) 逐字输入 /Users/me/My Notes：空格不被吞，提交值保持原样', () => {
+  it('(a) 逐字输入 /Users/me/My Notes：聚焦时保留空格与完整路径，失焦后展示折成 ~，提交值不变', () => {
     render(<Harness />);
     const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
     typeChars(input, '/Users/me/My Notes');
     expect(input.value).toBe('/Users/me/My Notes');
     expect(latest).toEqual({ workingDirectory: '/Users/me/My Notes' });
     fireEvent.blur(input);
+    expect(input.value).toBe('~/My Notes');
+    expect(input.value).not.toContain('/Users/');
     expect(latest).toEqual({ workingDirectory: '/Users/me/My Notes' });
   });
 
   it('(b) 首尾空白：失焦提交 /tmp/notes；未失焦直接保存也被规整', () => {
     render(<Harness />);
     const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
     typeChars(input, '  /tmp/notes  ');
     expect(savedMetadata())
       .toEqual({ workingDirectory: '/tmp/notes' });
@@ -204,9 +219,72 @@ describe('web 路径输入：输入中保留原文，失焦/保存才去空白',
   it('(c) 只有空格：视为没选文件夹（失焦清键，保存载荷不带该键）', () => {
     render(<Harness />);
     const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
     typeChars(input, '   ');
     expect(savedMetadata()).toEqual({});
     fireEvent.blur(input);
     expect(latest).toBeUndefined();
+  });
+
+  it('Linux 家目录失焦后折成 ~，metadata 仍是完整路径', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
+    typeChars(input, '/home/demo/Documents/My Notes');
+    expect(input.value).toBe('/home/demo/Documents/My Notes');
+    fireEvent.blur(input);
+    expect(input.value).toBe('~/Documents/My Notes');
+    expect(latest).toEqual({ workingDirectory: '/home/demo/Documents/My Notes' });
+  });
+
+  it('Windows 家目录失焦后折成 ~，metadata 仍是完整路径', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    const stored = 'C:\\Users\\demo\\Documents\\My Notes';
+    fireEvent.focus(input);
+    typeChars(input, stored);
+    expect(input.value).toBe(stored);
+    fireEvent.blur(input);
+    expect(input.value).toBe('~\\Documents\\My Notes');
+    expect(input.value).not.toContain('\\Users\\');
+    expect(latest).toEqual({ workingDirectory: stored });
+  });
+
+  it('不在家目录下的路径失焦后原样显示', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
+    typeChars(input, '/srv/shared/notes');
+    fireEvent.blur(input);
+    expect(input.value).toBe('/srv/shared/notes');
+    expect(latest).toEqual({ workingDirectory: '/srv/shared/notes' });
+  });
+
+  it('再次聚焦显示完整路径，失焦又折回 ~', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
+    typeChars(input, '/Users/me/Documents/My Notes');
+    fireEvent.blur(input);
+    expect(input.value).toBe('~/Documents/My Notes');
+    fireEvent.focus(input);
+    expect(input.value).toBe('/Users/me/Documents/My Notes');
+    expect(latest).toEqual({ workingDirectory: '/Users/me/Documents/My Notes' });
+    fireEvent.blur(input);
+    expect(input.value).toBe('~/Documents/My Notes');
+    expect(latest).toEqual({ workingDirectory: '/Users/me/Documents/My Notes' });
+  });
+
+  it('带空格的 My Notes：输入过程与失焦展示都保留空格', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
+    typeChars(input, '/Users/me/My Notes');
+    expect(input.value).toContain('My Notes');
+    expect(latest).toEqual({ workingDirectory: '/Users/me/My Notes' });
+    fireEvent.blur(input);
+    expect(input.value).toBe('~/My Notes');
+    expect(input.value).toContain('My Notes');
+    expect(latest).toEqual({ workingDirectory: '/Users/me/My Notes' });
   });
 });
