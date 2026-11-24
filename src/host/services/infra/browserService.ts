@@ -404,7 +404,7 @@ export class BrowserService implements Disposable {
    * 缓存引用仍为真；这里结合连接、未关页面与子进程 OS 句柄（EPERM 视为存活）判活。
    */
   isProcessAlive(): boolean {
-    if (!this.browser?.isConnected() || !this.context?.pages().some((page) => !page.isClosed())) return false;
+    if (!this.browser?.isConnected() || !Array.from(this.tabs.values()).some(({ page }) => !page.isClosed())) return false;
     if (!this.browserProcess) return true;
     const pid = this.browserProcess.pid;
     if (!pid || pid <= 0) return false;
