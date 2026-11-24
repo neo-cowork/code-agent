@@ -1,3 +1,4 @@
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { Task } from '@shared/contract/backgroundTask';
 import { AgentFailureCode, inferAgentFailureCode, isAgentFailureCode } from '@shared/contract/agentFailure';
@@ -50,10 +51,15 @@ export function agentOutputAfterFailure(node: AgentTreeNode, t: Translations, le
 
 /** Session-work recovery has its own stable reason, distinct from parent-gone. */
 export function backgroundTaskFailureCopy(task: Task, t: Translations): string | null {
+  if (task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE) return t.outcomeWords['delete-incomplete'].detail.reason;
   if (task.failure?.reason === 'session_command_task_interrupted_by_restart') return t.backgroundPanel.interrupted;
   const shellCopy = shellBackgroundTaskFailureCopy(task, t.backgroundPanel);
   if (shellCopy || isShellBackgroundTask(task)) return shellCopy;
   return agentFailureCopy(isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary);
+}
+
+export function deleteIncompleteFileNames(paths?: readonly string[]): string | undefined {
+  return paths?.length ? paths.map((path) => path.split(/[\\/]/).at(-1)).join(', ') : undefined;
 }
 
 export function isShellBackgroundTask(task: Pick<Task, 'source'>): boolean {

@@ -52,6 +52,7 @@ import {
   buildSessionToolCapabilityViews,
 } from '../utils/runWorkbenchProjection';
 import { buildWorkflowTimeline } from '../utils/workflowTimeline';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
 import { backgroundTaskFailureCopy, isShellBackgroundTask } from '../utils/agentFailureCopy';
 import { useDurableSwarmRunDetail } from './useDurableSwarmRunDetail';
 
@@ -131,6 +132,7 @@ function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['s
 }
 
 function backgroundTaskStatusLabel(task: Task, t: Translations): string {
+  if (task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE) return t.outcomeWords['delete-incomplete'].detail.label;
   const dialog = t.sessionReplay.dialog;
   switch (task.status) {
     case 'queued':
@@ -351,6 +353,10 @@ function backgroundTaskResumeHint(
   }
   if (isShellBackgroundTask(task) && ['running', 'cancelled'].includes(task.status)) return {};
   if (recoverySummary) return { hint: recoverySummary };
+
+  if (task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE) {
+    return { hint: backgroundTaskFailureCopy(task, languages[language]) ?? undefined };
+  }
 
   if (!isShellBackgroundTask(task) && task.failure?.message) {
     // 失败原因先过语义化清洗（ADR-050 / FB-746）：「Cannot read properties of …」这类
