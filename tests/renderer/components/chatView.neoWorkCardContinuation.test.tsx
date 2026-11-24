@@ -226,6 +226,27 @@ describe('useNeoWorkCardContinuationSend', () => {
     toastError.mockRestore();
   });
 
+  it.each([
+    { artifactReferences: [{ id: 'artifact', name: 'summary.md', sessionId: 'sess-1' }] },
+    { sessionReferences: [{ id: 'sess-other', title: '上一段讨论' }] },
+  ])('续接引用无法传给工作卡时保留目标和草稿', async (context) => {
+    const send = vi.fn(async () => true);
+    const continueAndRun = vi.fn(async () => continuationResult());
+    const toastError = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-1');
+    const target = { workCardId: 'card-1', title: '竞品摘要', conversationId: 'sess-1' };
+    useNeoWorkCardStore.setState({ continueAndRun });
+    useNeoWorkCardStore.getState().setContinuationTarget(target);
+    const { result } = renderHook(() => useNeoWorkCardContinuationSend(send));
+    await act(async () => {
+      expect(await result.current({ content: '请参考', context })).toBe(false);
+    });
+    expect(continueAndRun).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('引用'));
+    expect(useNeoWorkCardStore.getState().continuationTarget).toBe(target);
+    toastError.mockRestore();
+  });
+
   it('同一条 roundTurnId 已经在会话里时不再补一条本地消息', async () => {
     const existing: Message = { id: 'turn-round-2', role: 'user', content: '已经在了', timestamp: 1 };
     useSessionStore.setState({ messages: [existing] });

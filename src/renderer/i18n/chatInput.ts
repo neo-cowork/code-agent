@@ -292,6 +292,7 @@ export const chatInputZh = {
     removeAria: '移除续接',
     waitForReply: '等当前回复结束后，再发送这条续接消息。',
     attachmentsUnsupported: '续接消息暂时无法发送附件。请移除附件，或退出续接后再发送。',
+    referencesUnsupported: '续接消息暂时无法附带引用。请移除引用，或退出续接后再发送。',
   },
   neoMentionRouting: {
     workCardName: 'Neo 工作卡',
@@ -777,6 +778,7 @@ export const chatInputEn: typeof chatInputZh = {
     removeAria: 'Remove continuation',
     waitForReply: 'Wait for the current reply to finish before sending this follow-up.',
     attachmentsUnsupported: 'Work card follow-ups cannot send attachments yet. Remove the attachments or exit the follow-up and send again.',
+    referencesUnsupported: 'Work card follow-ups cannot include references yet. Remove the references or exit the follow-up and send again.',
   },
   neoMentionRouting: {
     workCardName: 'Neo work card',

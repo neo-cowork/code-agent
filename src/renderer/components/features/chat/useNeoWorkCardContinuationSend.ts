@@ -42,6 +42,10 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
       toast.error(t.neoContinuation.attachmentsUnsupported);
       return false;
     }
+    if (envelope.context?.artifactReferences?.length || envelope.context?.sessionReferences?.length) {
+      toast.error(t.neoContinuation.referencesUnsupported);
+      return false;
+    }
     try {
       const continuation = await submitNeoTagContinuation({
         envelope,
@@ -69,5 +73,5 @@ export function useNeoWorkCardContinuationSend(send: SendEnvelopeFn): SendEnvelo
       toast.error(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [send, t.neoContinuation.attachmentsUnsupported]);
+  }, [send, t.neoContinuation.attachmentsUnsupported, t.neoContinuation.referencesUnsupported]);
 }

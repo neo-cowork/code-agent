@@ -769,6 +769,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
+        if (!opts?.steer && !opts?.toBackground) {
+          const routing = routeEnvelopeToQuestionCard(currentSessionId, stamped, t.userQuestion.composerHint);
+          if (routing) return routing;
+        }
         const continuation = useNeoWorkCardStore.getState().continuationTarget;
         if (
           currentSessionId && continuation?.conversationId === currentSessionId
@@ -779,10 +783,6 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             return false;
           }
           return settleSendWithinTimeout(onSend(stamped));
-        }
-        if (!opts?.steer && !opts?.toBackground) {
-          const routing = routeEnvelopeToQuestionCard(currentSessionId, stamped, t.userQuestion.composerHint);
-          if (routing) return routing;
         }
         if (isProcessing && !neverQueueToSession && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
