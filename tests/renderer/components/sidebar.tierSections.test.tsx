@@ -39,13 +39,16 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/components/features/sidebar/SidebarProjectGroup', () => ({
-  SidebarProjectGroup: ({ group }: { group: { key: string } }) =>
-    React.createElement('div', { 'data-testid': `sidebar-project-group-${group.key}` }),
+  SidebarProjectGroup: vi.fn(({ group }: { group: { key: string } }) =>
+    React.createElement('div', { 'data-testid': `sidebar-project-group-${group.key}` })),
 }));
 
 import { zh } from '../../../src/renderer/i18n/zh';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
 import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../../src/shared/i18n/chooseFolderEntry';
+import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import { SidebarSessionList } from '../../../src/renderer/components/features/sidebar/SidebarSessionList';
+import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 // 三个分区各一组：协作空间（meta.spacePromotedAt 非空）/ 独立空间（有 projectId 未升级）/ 快速对话（无 projectId）。
 const groups = [
@@ -114,6 +117,19 @@ describe('SidebarSessionList tier section headers', () => {
     sessionUiState.collapsedTiers = {};
     sessionUiState.setTierCollapsed.mockReset();
     appState.openProjectSpaceCreate.mockReset();
+  });
+
+  it('keeps the schedule badge for cron jobs and omits it from first-meeting project rows', () => {
+    const sessions = [
+      {
+        id: 'first-wake', title: '日程管家 · 初次见面', type: 'schedule',
+        origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } },
+      },
+      { id: 'cron', title: '每日简报', type: 'schedule', origin: { kind: 'cron', id: 'job-1', name: '每日简报' } },
+    ] as SessionWithMeta[];
+    renderList({ groups: [{ key: 'drawer-test-project', projectId: 'p2', sessions }] });
+    const group = vi.mocked(SidebarProjectGroup).mock.calls.find(([props]) => props.group.key === 'drawer-test-project')?.[0];
+    expect(group?.buildProjectDrawerSessions(sessions).map(({ typeLabel }) => typeLabel)).toEqual([null, '定时']);
   });
 
   it('renders each tier header as a keyboard-reachable toggle without session counts', () => {

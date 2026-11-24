@@ -106,6 +106,7 @@ class ToolAttemptTrace {
       outcome,
       success: result.success, durationMs,
       error: result.error ? redactSecrets(result.error) : null,
+      ...(result.userMessage !== undefined ? { userMessage: redactSecrets(result.userMessage) } : {}),
       fromCache: result.metadata?.fromCache === true,
       ...(typeof result.metadata?.sandboxed === 'boolean' ? { sandboxed: result.metadata.sandboxed } : {}),
       consecutiveErrors: this.consecutiveErrors,

@@ -60,6 +60,7 @@ vi.mock('../../../src/host/agent/agentRegistry', () => ({
     },
   ],
   resolveAgent: () => undefined,
+  reloadAgentRegistry: vi.fn(async () => {}),
 }));
 
 // configService：有状态 mock（setProactivity 写入 → detail 读出）

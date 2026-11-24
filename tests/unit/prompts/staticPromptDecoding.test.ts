@@ -80,11 +80,14 @@ describe('常驻层体量', () => {
     // 规则本身已从 485 字符收紧到 430、并对首行做了无损微剪（213→194），仍超旧上限 84。
     // 屏幕控制是慢而不可核的动作面，这条规则是护栏内容，与 GHOSTRULES 同类；
     // 不接受再用它顶纯功能描述类的膨胀。
+    // 3190 → 3250（2026-11-23，N-FIX-APPROVED-RM-ONE-ASK-TWO-CARDS，实测 3245）：一句话点名多个
+    // 待删文件必须合成一条 rm，用户只点一次审批卡（实测模型拆成两轮各一条 rm = 两张卡）。
+    // 已压到两句；属审批卡数量护栏，不接受再用它顶别的膨胀。
     // Measure canonical production text; globalSetup's temporary data-dir path has variable length.
     vi.stubEnv('CODE_AGENT_DATA_DIR', undefined);
     try {
       const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-      expect(total).toBeLessThanOrEqual(3190);
+      expect(total).toBeLessThanOrEqual(3250);
     } finally {
       vi.unstubAllEnvs();
     }
