@@ -264,7 +264,11 @@ export function buildCanUseToolFromLegacy(
             allow: true,
             ...(ask?.approved && ask.approvalSource ? { approvalSource: ask.approvalSource } : {}),
           }
-        : { allow: false, reason: reason ?? 'denied by user' };
+        : {
+            allow: false,
+            reason: reason ?? 'denied by user',
+            ...(ask && !ask.approved && ask.denialSource ? { denialSource: ask.denialSource } : {}),
+          };
     } catch (err) {
       return {
         allow: false,

@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AppSettings, ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
+import { getProviderInfo } from '../../../src/shared/constants';
+import { ipcService } from '../../../src/renderer/services/ipcService';
 import type { ProviderInfo } from '../../../src/shared/constants';
 import { PROVIDER_ICON_ASSET_URI_PREFIX } from '../../../src/shared/modelRuntime';
 import {
@@ -8,11 +10,11 @@ import {
   buildLegacyLongCatProviderMigration,
   buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSavePromotion,
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeProviderIconValidationError,
   describeKeylessReadiness,
-  shouldPromoteProviderToDefault,
   getModelLabel,
   hasCustomEndpointOverride,
   isModelMetadataLocked,
@@ -471,7 +473,7 @@ describe('ModelSettings management helpers', () => {
     });
   });
 
-  it('promotes a freshly configured provider to default only when the current default model is unusable', () => {
+  it('promotes a freshly configured provider to default only when the current default model is unusable', async () => {
     const savedConfig: ModelProviderSettings = { enabled: true, apiKeyConfigured: true, model: 'gpt-5.5' };
     // 出厂默认指针停在没 key 的 xiaomi → 配好 openai 后应自动接管默认
     const settingsWithDeadDefault = {
@@ -481,7 +483,7 @@ describe('ModelSettings management helpers', () => {
         providers: { xiaomi: { enabled: true } },
       },
     } as unknown as AppSettings;
-    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsWithDeadDefault)).toBe(true);
+    expect(await buildProviderSavePromotion('openai', savedConfig, settingsWithDeadDefault, null)).toBeDefined();
 
     // 当前默认模型已可用 → 不抢默认
     const settingsWithLiveDefault = {
@@ -491,11 +493,11 @@ describe('ModelSettings management helpers', () => {
         providers: { moonshot: { enabled: true, apiKeyConfigured: true } },
       },
     } as unknown as AppSettings;
-    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsWithLiveDefault)).toBe(false);
+    expect(await buildProviderSavePromotion('openai', savedConfig, settingsWithLiveDefault, null)).toBeUndefined();
 
     // 刚保存的 provider 自己没配好 key / 被禁用 → 不 promote
-    expect(shouldPromoteProviderToDefault('openai', { enabled: true }, settingsWithDeadDefault)).toBe(false);
-    expect(shouldPromoteProviderToDefault('openai', { enabled: false, apiKeyConfigured: true }, settingsWithDeadDefault)).toBe(false);
+    expect(await buildProviderSavePromotion('openai', { enabled: true }, settingsWithDeadDefault, null)).toBeUndefined();
+    expect(await buildProviderSavePromotion('openai', { enabled: false, apiKeyConfigured: true }, settingsWithDeadDefault, null)).toBeUndefined();
 
     // 默认指针就是刚保存的 provider：保存后 settings 已可用 → 无需再切
     const settingsDefaultIsSelf = {
@@ -505,7 +507,31 @@ describe('ModelSettings management helpers', () => {
         providers: { openai: { enabled: true, apiKeyConfigured: true } },
       },
     } as unknown as AppSettings;
-    expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsDefaultIsSelf)).toBe(false);
+    expect(await buildProviderSavePromotion('openai', savedConfig, settingsDefaultIsSelf, null)).toBeUndefined();
+  });
+
+  it.each([
+    { listed: ['gateway-chat', 'mimo-v2.6-flash'], selected: 'mimo-v2.6-flash' },
+    { listed: ['mimo-v2.6-flash', getProviderInfo('xiaomi')!.defaultModel], selected: getProviderInfo('xiaomi')!.defaultModel },
+    { listed: ['__proto__', 'gateway-chat', 'another-gateway-chat'], selected: 'gateway-chat' },
+  ])('picks $selected from discovery for promotion', async ({ listed, selected }) => {
+    const discover = vi.spyOn(ipcService, 'invokeDomain').mockResolvedValueOnce({
+      success: true,
+      models: listed.map((id) => ({
+        id, label: id, capabilities: ['general'], supportsTool: true, supportsVision: false, supportsStreaming: true,
+      })),
+    });
+    try {
+      const settings = {
+        models: { default: 'openai', providers: { openai: { enabled: true } } },
+      } as unknown as AppSettings;
+      discover.mockResolvedValueOnce(settings);
+      const config = { enabled: true, apiKeyConfigured: true, baseUrl: 'https://subscription.test/v1' };
+      const promotion = await buildProviderSavePromotion('xiaomi', config, settings, settings);
+      expect(promotion?.update.models?.providers.xiaomi.model).toBe(selected);
+    } finally {
+      discover.mockRestore();
+    }
   });
 
   it('treats local models as keyless and locks only built-in catalog metadata', () => {
