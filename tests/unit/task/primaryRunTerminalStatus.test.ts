@@ -21,6 +21,7 @@ const backgroundManagerState = vi.hoisted(() => ({
   isInBackground: vi.fn(),
   isTaskRunning: vi.fn(),
   getDeferredRun: () => undefined,
+  getDelegatedLeftovers: () => undefined,
   markCompleted: vi.fn(),
   markFailed: vi.fn(),
 }));

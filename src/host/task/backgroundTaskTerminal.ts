@@ -18,6 +18,7 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { resolveBackgroundRunSettlement, settleBackgroundRun, type BackgroundRunSettlementInput } from '../session/backgroundRunSettlement';
 import { deferredParentOutcome, deferBackgroundSettlementWhileChildrenInFlight, inFlightDelegatedChildCount } from '../session/backgroundChildHold';
+import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../session/approvedRmSettlementTargets';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager, notificationService } from '../services';
@@ -42,19 +43,22 @@ export async function settleBackgroundOnTaskComplete(
   eventKey: string,
   data: { summary?: string; duration?: number; toolsUsed?: string[] },
   isPrimaryRunActive?: () => boolean,
+  runId?: string,
 ): Promise<void> {
   const isSubTask = eventKey !== sessionId;
   const backgroundManager = getBackgroundTaskManager();
   if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
+    if (hasApprovedRmSettlementTargets(sessionId, runId)) return;
     if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
     const outcome = deferredParentOutcome(sessionId, { status: 'completed' });
-    if (outcome.status !== 'completed') {
+    if (outcome.status !== 'completed' || outcome.leftoverPaths?.length) {
       await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(outcome));
       return;
     }
     await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
     return;
   }
+  if (isSubTask && hasApprovedRmSettlementTargets(sessionId, eventKey)) return;
   if (isSubTask && isPrimaryRunActive?.()) {
     logger.info('sub-task completion banner skipped: primary run active', { sessionId, eventKey });
     return;
@@ -118,18 +122,20 @@ export async function closeBackgroundRunAtTerminal(
   sessionId: string,
   eventType: 'agent_complete' | 'agent_cancelled',
   errors: Map<string, BackgroundRunErrorRecord>,
+  runId?: string,
 ): Promise<void> {
   const runError = errors.get(sessionId);
   errors.delete(sessionId);
   const backgroundManager = getBackgroundTaskManager();
-  if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) {
-    return;
-  }
+  const isBackground = backgroundManager.isInBackground(sessionId) && backgroundManager.isTaskRunning(sessionId);
+  const leftoverPaths = takeApprovedRmLeftovers(sessionId, runId, 'desktop',
+    isBackground && eventType === 'agent_complete' && !runError);
+  if (!isBackground) return;
   const input: BackgroundRunSettlementInput = eventType === 'agent_cancelled'
     ? { status: 'interrupted' }
     : runError
       ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
-      : { status: 'completed' };
+      : { status: 'completed', leftoverPaths };
   if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
   await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
 }

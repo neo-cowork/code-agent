@@ -37,8 +37,12 @@ export async function deferBackgroundSettlementWhileChildrenInFlight(
 }
 
 export function deferredParentOutcome(sessionId: string, input: BackgroundRunSettlementInput): BackgroundRunSettlementInput {
-  const parent = getBackgroundTaskManager().getDeferredRun(sessionId)?.input;
-  if (parent?.status === 'interrupted' || (parent?.status === 'error' && input.status === 'completed')) return parent;
+  const manager = getBackgroundTaskManager();
+  const parent = manager.getDeferredRun(sessionId)?.input;
+  if (parent?.status === 'interrupted' || (input.status === 'completed'
+    && (parent?.status === 'error' || parent?.leftoverPaths?.length))) return parent;
+  const leftoverPaths = manager.getDelegatedLeftovers(sessionId);
+  if (input.status === 'completed' && leftoverPaths?.length) return { ...input, leftoverPaths };
   return input;
 }
 

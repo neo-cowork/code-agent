@@ -20,6 +20,7 @@ interface SettledChild {
   id: string;
   sessionId: string;
   stopped?: { kind?: string };
+  leftoverPaths?: string[];
 }
 
 export async function releaseDelegatedChildSettlement(input: {
@@ -33,7 +34,9 @@ export async function releaseDelegatedChildSettlement(input: {
 }): Promise<void> {
   const background = getBackgroundTaskManager();
   const stoppedKind = input.task.stopped?.kind;
-  if (input.terminalResultDelivered && (stoppedKind === 'step_cap' || stoppedKind === 'no_conclusion')) {
+  if (input.task.leftoverPaths) {
+    logger.info('foreground_wake_skipped_delete_incomplete', { taskId: input.task.id });
+  } else if (input.terminalResultDelivered && (stoppedKind === 'step_cap' || stoppedKind === 'no_conclusion')) {
     logger.info('foreground_wake_skipped_stop_note_delivered', { taskId: input.task.id, kind: stoppedKind });
   } else {
     const wake = () => {
@@ -61,7 +64,9 @@ export async function releaseDelegatedChildSettlement(input: {
       live.clearDeferredRun(input.task.sessionId);
       return;
     }
-    const parentOutcome = deferred.input.status === 'completed' ? undefined : deferred.input;
+    const leftoverPaths = live.getDelegatedLeftovers(input.task.sessionId);
+    const parentOutcome = deferred.input.status === 'completed' && !deferred.input.leftoverPaths?.length
+      ? undefined : deferred.input;
     logger.info('Settling deferred background run from delegated child', {
       sessionId: input.task.sessionId,
       taskId: input.task.id,
@@ -69,9 +74,11 @@ export async function releaseDelegatedChildSettlement(input: {
       ...(parentOutcome ? { parentStatus: parentOutcome.status } : {}),
     });
     try {
-      await settleBackgroundRun(live, input.task.sessionId, resolveBackgroundRunSettlement(parentOutcome ?? {
-        status: input.status === 'cancelled' ? 'interrupted' : input.status === 'failed' ? 'error' : 'completed',
-      }));
+      await settleBackgroundRun(live, input.task.sessionId, resolveBackgroundRunSettlement(parentOutcome ?? (
+        leftoverPaths?.length
+          ? { status: 'completed', leftoverPaths }
+          : { status: input.status === 'cancelled' ? 'interrupted' : input.status === 'failed' ? 'error' : 'completed' }
+      )));
     } catch (error) {
       logger.warn('Failed to settle deferred background run from delegated child', {
         sessionId: input.task.sessionId,

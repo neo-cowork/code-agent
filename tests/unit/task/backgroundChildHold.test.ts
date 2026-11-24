@@ -3,11 +3,15 @@
 // 指挥台是真 SessionCommandCenter，只有构造缝上的 TaskManager 是假的。
 
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
 import { SESSION_STOP_REQUESTED_EVENT } from '../../../src/host/task/taskManagerTypes';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { recordApprovedRmSettlementTargets } from '../../../src/host/session/approvedRmSettlementTargets';
 
 const sessionManagerState = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -182,6 +186,57 @@ afterEach(() => {
 });
 
 describe('background parent settlement waits for delegated children', () => {
+  it('preserves main approved-delete failure while waiting for all delegated children', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'delegate-delete-'));
+    const file = join(directory, 'export.tmp');
+    try {
+      writeFileSync(file, 'still present');
+      const sessionId = 'session-delete-leftover';
+      await background(sessionId);
+      const first = await spawn(sessionId, 1, 'one');
+      const second = await spawn(sessionId, 2, 'two');
+      recordApprovedRmSettlementTargets(sessionId, first.id, [file]);
+      await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+
+      manager.emitTask({ type: 'task_completed', sessionId, data: { taskId: first.id, conclusion: 'done' } });
+      await vi.waitFor(() => expect(center.list(sessionId).find(task => task.id === first.id)?.status).toBe('failed'));
+      expect(row(sessionId)?.status).toBe('running');
+      expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+
+      await finishChild(sessionId, second.id);
+      await expectParentNotice(sessionId, { succeeded: false, code: BACKGROUND_TASK_DELETE_INCOMPLETE });
+      expect(row(sessionId)).toMatchObject({
+        status: 'failed', completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE, leftoverPaths: [file],
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the primary approved-delete result while a delegated child is running', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'parent-delete-'));
+    const file = join(directory, 'export.tmp');
+    try {
+      writeFileSync(file, 'still present');
+      const sessionId = 'session-parent-delete-leftover';
+      const runId = 'primary-delete-run';
+      await background(sessionId);
+      const task = await spawn(sessionId, 1, 'cleanup');
+      recordApprovedRmSettlementTargets(sessionId, runId, [file]);
+      await settleBackgroundOnTaskComplete(sessionId, sessionId, {}, undefined, runId);
+      await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map(), runId);
+      expect(row(sessionId)?.status).toBe('running');
+      expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+
+      await finishChild(sessionId, task.id);
+      await expectParentNotice(sessionId, { succeeded: false, code: BACKGROUND_TASK_DELETE_INCOMPLETE });
+      expect(row(sessionId)).toMatchObject({
+        status: 'failed', completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE, leftoverPaths: [file],
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('settleBackgroundOnTaskComplete defers while a delegated child is in flight and settles after it ends', async () => {
     const sessionId = 'session-task-complete';
     await background(sessionId);

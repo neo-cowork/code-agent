@@ -8,7 +8,7 @@ import { AppWindow, broadcastToRenderer } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
 import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
+import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
 import type { BackgroundRunSettlementInput } from './backgroundRunSettlement';
 
@@ -26,6 +26,7 @@ class BackgroundTaskManager extends EventEmitter {
   private backgroundSessions: Map<string, BackgroundSessionInfo> = new Map();
   // The parent outcome follows the delegated work across panel row replacements.
   private readonly deferredRuns = new Map<string, { input: BackgroundRunSettlementInput }>();
+  private readonly delegatedLeftovers = new Map<string, string[]>();
   private readonly pendingWakes = new WeakMap<BackgroundSessionInfo, Array<() => void>>();
   private mainWindow: AppWindow | null = null;
 
@@ -172,11 +173,12 @@ class BackgroundTaskManager extends EventEmitter {
    * 失败与完成同一档「默默长跑、终态才冒头」——焦点门不该吞掉失败提醒
    * （2026-10-11 验收：撞 max-step 上限的失败轮无任何提示）。
    */
-  async markFailed(sessionId: string, error?: string, duration?: number): Promise<void> {
+  async markFailed(sessionId: string, error?: string, duration?: number, leftoverPaths?: string[]): Promise<void> {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
     task.status = 'failed';
+    if (leftoverPaths) task.leftoverPaths = leftoverPaths;
     task.completionMessage = error || (readUiLanguage() === 'en' ? 'Task failed' : '任务执行失败');
     this.clearDeferredRun(sessionId);
 
@@ -193,6 +195,7 @@ class BackgroundTaskManager extends EventEmitter {
     notificationService.notifyTaskComplete({
       sessionId,
       sessionTitle: task.title,
+      ...(error === BACKGROUND_TASK_DELETE_INCOMPLETE ? { code: error } : {}),
       summary: error === RUN_ERROR_CODE_MAX_ITERATIONS
         ? '已达最大执行轮次，任务停止（部分结果已保留）'
         : `任务失败: ${error || '未知错误'}`,
@@ -263,7 +266,8 @@ class BackgroundTaskManager extends EventEmitter {
     const deferred = this.deferredRuns.get(sessionId);
     if (!deferred) {
       this.deferredRuns.set(sessionId, { input });
-    } else if (deferred.input.status !== 'interrupted' && input.status !== 'completed') {
+    } else if (deferred.input.status !== 'interrupted'
+      && (input.status !== 'completed' || (deferred.input.status === 'completed' && input.leftoverPaths?.length))) {
       deferred.input = input;
     }
   }
@@ -274,6 +278,16 @@ class BackgroundTaskManager extends EventEmitter {
 
   clearDeferredRun(sessionId: string): void {
     this.deferredRuns.delete(sessionId);
+    this.delegatedLeftovers.delete(sessionId);
+  }
+
+  rememberDelegatedLeftovers(sessionId: string, paths: string[]): void {
+    const current = this.delegatedLeftovers.get(sessionId) ?? [];
+    this.delegatedLeftovers.set(sessionId, [...new Set([...current, ...paths])]);
+  }
+
+  getDelegatedLeftovers(sessionId: string): string[] | undefined {
+    return this.delegatedLeftovers.get(sessionId);
   }
 
   deferWakeUntilParentSettles(sessionId: string, wake: () => void): boolean {

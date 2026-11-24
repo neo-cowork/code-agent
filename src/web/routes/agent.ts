@@ -74,6 +74,8 @@ import { generateMessageId } from '../../shared/utils/id';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { settleWebTurnBackgroundRun } from '../../host/session/backgroundChildHold';
+import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
+import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -1759,9 +1761,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // task_complete / agent 终态分支）：每个终态都要收——只认 completed 时，max-step
       // 撞顶（error 事件带 MAX_ITERATIONS code）/失败/取消轮会把面板和侧栏 spinner
       // 挂在 running 永不收线（2026-10-11 验收实测 12/22 分钟不落，reload 后依旧）。
+      const backgroundManager = getBackgroundTaskManager();
+      const isBackground = backgroundManager.isTaskRunning(sessionId);
+      const leftoverPaths = takeApprovedRmLeftovers(sessionId, runContext.runId, 'web',
+        isBackground && finalStatus === 'completed');
       const errorData = runController.lastTerminalErrorData;
       await settleWebTurnBackgroundRun(sessionId, {
         status: finalStatus,
+        leftoverPaths,
         errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
         errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
       });
@@ -1868,6 +1875,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
+      if (runContext) takeApprovedRmLeftovers(sessionId, runContext.runId, 'web', false);
       // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线只清本 run 自己的（无 runId/agentId
       // 身份）挂起审批；后台任务/子代理 lane 的审批消费方还活着，机器拒绝会让「批准后后台任务
       // 继续」变成不可能，卡也会跟着变成点了就 unknown_request 的死卡。还留着后台审批的岛

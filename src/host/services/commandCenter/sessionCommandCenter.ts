@@ -1,6 +1,12 @@
 import { readableBrowserPage, browserPageFromOutput } from '../../agent/subagentStepCapConclusion';
 import { collectDeliverableFileArtifacts } from '../../tools/artifacts/collectDeliverableFileArtifacts';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
+import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../../session/approvedRmSettlementTargets';
+import { settleBackgroundOnTaskComplete } from '../../task/backgroundTaskTerminal';
+import { resolveBackgroundRunSettlement } from '../../session/backgroundRunSettlement';
+import { notificationService } from '../infra/notificationService';
+import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
+import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
@@ -23,6 +29,7 @@ import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { BackgroundShellHold } from './backgroundShellHold';
 import { releaseDelegatedChildSettlement, rememberDelegatedSessionStop } from './deferredBackgroundRow';
+import { getBackgroundTaskManager } from '../../session/backgroundTaskManager';
 import {
   clearSessionCommandTaskMarker,
   markSessionCommandTaskRunning,
@@ -74,6 +81,7 @@ export interface SessionCommandTask {
   createdAt: number;
   updatedAt: number;
   detail?: string;
+  leftoverPaths?: string[];
   summary?: string;
   /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
   resultText?: string;
@@ -587,7 +595,8 @@ export class SessionCommandCenter {
           : {}),
       });
       if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
-      await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined);
+      await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined,
+        stopped.kind !== 'step_cap');
       return;
     }
     if (event.type === 'task_error') {
@@ -842,9 +851,24 @@ export class SessionCommandCenter {
     status: TerminalTaskStatus,
     detail?: string,
     artifacts?: NormalizedToolArtifactMeta[],
+    checkDelete = status === 'completed',
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
-    if (status === 'failed' && !task.stopped) {
+    const trackedDelete = hasApprovedRmSettlementTargets(task.sessionId, task.id);
+    const leftoverPaths = takeApprovedRmLeftovers(task.sessionId, task.id, 'delegated', checkDelete);
+    const settlement = resolveBackgroundRunSettlement({ status: 'completed', leftoverPaths });
+    if (settlement.leftoverPaths) {
+      status = 'failed';
+      task.leftoverPaths = settlement.leftoverPaths;
+      task.deliverableArtifacts = undefined;
+      task.stopped = undefined;
+      detail = getDeleteIncompleteText(resolveSessionTaskResultLocale()).reason;
+      logger.warn('Background task failed', { sessionId: task.sessionId, runId: task.id, error: settlement.message });
+      if (getBackgroundTaskManager().isTaskRunning(task.sessionId)) {
+        getBackgroundTaskManager().rememberDelegatedLeftovers(task.sessionId, task.leftoverPaths);
+      }
+    }
+    if (status === 'failed' && !task.stopped && !task.leftoverPaths) {
       const stopped = resolveStoppedTaskOutcome({ status: 'failed', detail, lastUrl: this.lastUrlByTask.get(task.id) });
       task.stopped = { content: stopped.notice ?? stopped.detail, kind: stopped.kind ?? 'error' };
     }
@@ -863,6 +887,15 @@ export class SessionCommandCenter {
     task.resultText = composeTaskResultForModel(task, detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
+    if (task.leftoverPaths && !getBackgroundTaskManager().isTaskRunning(task.sessionId)) {
+      notificationService.notifyTaskComplete({
+        sessionId: task.sessionId,
+        sessionTitle: task.title,
+        toolsUsed: [],
+        succeeded: false,
+        code: BACKGROUND_TASK_DELETE_INCOMPLETE,
+      }, { force: true });
+    }
     if (status === 'completed' && artifacts?.length) {
       try {
         this.projectOutputRefs(task, artifacts);
@@ -879,6 +912,13 @@ export class SessionCommandCenter {
     // failed，立刻用同一 submissionKey 重试——账本里那个 slot 还是 running，admit() 返回
     // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
     const startable = this.ledger(task.sessionId).settle(task.id, status);
+    if (trackedDelete && status === 'completed') {
+      void settleBackgroundOnTaskComplete(task.sessionId, task.id, {}, () => (
+        this.manager.getSessionState(task.sessionId).status === 'running' || this.manager.hasActivePrimaryRun(task.sessionId)
+      )).catch((error: unknown) => {
+        logger.warn('Unable to send completion notice', { taskId: task.id, message: String(error) });
+      });
+    }
 
     // 投影与唤醒各用各的 try：投影失败（登录恢复窗口里 addMessageToSession 抛
     // Session not found）绝不能把唤醒一起跳过——旧代码两者同一个 try，一抛就只剩
@@ -948,8 +988,9 @@ export class SessionCommandCenter {
         startedAt: task.status === 'running' ? task.updatedAt : undefined,
         completedAt: TERMINAL.has(task.status) ? task.updatedAt : undefined,
         progress: task.progress,
+        ...(task.leftoverPaths ? { leftoverPaths: task.leftoverPaths } : {}),
         ...(task.status === 'failed' && task.detail
-          ? { failure: { message: task.detail, reason: 'session_command_task_failed' } }
+          ? { failure: { message: task.detail, reason: task.leftoverPaths ? BACKGROUND_TASK_DELETE_INCOMPLETE : 'session_command_task_failed' } }
           : {}),
         metadata: {
           shortName: task.shortName,

@@ -34,6 +34,7 @@ import { useMessageActionStore } from '../../../../src/renderer/stores/messageAc
 import { useComposerStore } from '../../../../src/renderer/stores/composerStore';
 import { useChatInputSubmit, type UseChatInputSubmitParams } from '../../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
 import { ComposerCoreActions } from '../../../../src/renderer/components/features/chat/ChatInput/ComposerCoreActions';
+import { DraftingStopButton } from '../../../../src/renderer/components/features/chat/ChatInput/DraftingStopButton';
 
 const summary: Message = { id: 'summary', role: 'assistant', content: '已保存部分汇总，还有记录需要核对。', timestamp: 2000, metadata: { stoppedByStepLimit: true } };
 const history: Message[] = [{ id: 'request', role: 'user', content: '汇总活动交接记录', timestamp: 1000 }, summary];
@@ -137,31 +138,42 @@ describe('step-limit Continue in the production message list and composer', () =
     expect(stopping.disabled).toBe(false);
     expect(stopping.getAttribute('aria-label')).toBe('正在停止');
     expect(stopping.innerHTML).toContain('animate-spin');
+    expect(stopping.contains(screen.getByText('正在停止…'))).toBe(true);
     fireEvent.click(stopping);
     expect(stop).toHaveBeenCalledTimes(2);
 
     rerender(composer(false, false));
+    expect(screen.queryByText('正在停止…')).toBeNull();
     expect(screen.queryByTestId('composer-stop-stopping')).toBeNull();
     expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('keeps the primary button as send (not Stop) when a draft exists while stopping', () => {
+  it('keeps the primary button as send and shows one stopping label for a draft', () => {
     const stop = vi.fn();
     const submit = vi.fn((event: React.FormEvent) => event.preventDefault());
-    render(
+    const composer = (isStopping: boolean) => (
       <form onSubmit={submit}>
+        <DraftingStopButton isProcessing={isStopping} hasContent isStopping={isStopping} onStop={stop} />
         <ComposerCoreActions
           actions={['send']} voice={{} as never} sessionId="session"
-          hasMessages configured isProcessing isStopping hasContent onStop={stop}
+          hasMessages configured isProcessing={isStopping} isStopping={isStopping} hasContent onStop={stop}
         />
-      </form>,
+      </form>
     );
+    const { rerender } = render(composer(true));
     expect(screen.queryByTestId('composer-stop-stopping')).toBeNull();
+    const labels = screen.getAllByText('正在停止…');
+    expect(labels).toHaveLength(1);
+    expect(screen.getByTestId('composer-stop-while-drafting').contains(labels[0])).toBe(true);
     const send = screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement;
     expect(send.disabled).toBe(false);
     fireEvent.click(send);
     expect(submit).toHaveBeenCalledTimes(1);
     expect(stop).not.toHaveBeenCalled();
+
+    rerender(composer(false));
+    expect(screen.queryByText('正在停止…')).toBeNull();
+    expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('empty-send without a marked summary remains a no-op', async () => {
