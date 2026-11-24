@@ -258,6 +258,53 @@ describe('成员对话页', () => {
     expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
   });
 
+  it.each([
+    ['zh', zh, '接下来我会直接操作「Calculator」的界面——这件事没有现成的连接器或网页路径可用。'],
+    ['en', en, "Next I'll operate Calculator directly on screen — there's no connector or browser route for this."],
+  ] as const)('plain member page and delegation receipt render the same disclosure (%s)', async (_locale, t, expected) => {
+    translations = t;
+    const guiDisclosures = [{ app: 'Calculator', callId: 'launch-name' }];
+    const task: Task = {
+      id: 'task-calc',
+      sessionId: 'session-1',
+      source: 'session_command_center',
+      toolCallId: 'call-delegate',
+      title: _locale === 'zh' ? '打开计算器并读显示' : 'Check the calculator display',
+      status: 'completed',
+      createdAt: 1,
+      updatedAt: 2,
+      events: [],
+      outputRefs: [],
+      progress: { current: 2, guiDisclosures },
+    };
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: task.id });
+
+    const member = render(<MemberConversationView sessionId="session-1" />);
+    const memberNotice = (await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent);
+    expect(memberNotice).toEqual([expected]);
+    member.unmount();
+
+    const presentation = deriveDelegationPresentation({
+      id: 'call-delegate',
+      name: 'delegate_task',
+      arguments: { title: task.title, task: '打开计算器，读当前显示' },
+      result: {
+        toolCallId: 'call-delegate',
+        success: true,
+        output: 'ok',
+        metadata: { sessionTask: { tasks: [{ taskId: task.id }] } },
+      },
+    }, [task], [], t);
+    if (!presentation) throw new Error('expected a delegation presentation');
+    expect(presentation.guiDisclosures).toEqual(guiDisclosures);
+    render(<DelegationReceipt presentation={presentation} />);
+    const receiptNotice = screen.getAllByTestId('gui-takeover-disclosure').map((row) => row.textContent);
+    expect(receiptNotice).toEqual(memberNotice);
+  });
+
   it('点顶部「← 返回主会话」回主会话', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });
 
