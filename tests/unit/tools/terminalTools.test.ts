@@ -228,6 +228,7 @@ describe('terminal_write through ToolExecutor and the protocol registry', () => 
     const { result, requestPermission } = await execute(allowOnce);
 
     expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(requestPermission.mock.calls[0][0].details.preview).toBeUndefined();
     expect(result.success).toBe(true);
     expect(written).toEqual([{ sessionId: 'chat-1', data: `${input}\r` }]);
   });
