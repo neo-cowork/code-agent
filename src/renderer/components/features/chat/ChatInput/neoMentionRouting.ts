@@ -9,12 +9,14 @@ export interface ParsedNeoTagInvocation {
 /**
  * @neo 是保留 mention，路由到 Neo 工作卡而非 swarm agent。
  * 作为合成候选注入 @ mention 下拉，让用户可见、可点选（发现性），
- * 选中后插入 `@neo `（token = 归一化 name = 'neo'），触发工作卡链路。
+ * 选中后插入 `@neo `（mentionToken 显式钉死 'neo'，与 parseLeadingNeoTagInvocation
+ * 的 /^@neo(?:\s+|$)/i 对应——name 是中文展示文案，不能再靠归一化碰巧产出 'neo'）。
  */
 export const NEO_TAG_MENTION_AGENT: MentionRoutingAgent & { role: string } = {
   id: '__neo_tag__',
   name: zh.neoMentionRouting.workCardName,
   role: zh.neoMentionRouting.workCardRole,
+  mentionToken: 'neo',
 };
 
 export const NEO_TOPIC_MENTION_PREFIX = '__neo_topic__:';

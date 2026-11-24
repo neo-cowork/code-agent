@@ -2,9 +2,12 @@ import { formatDateTime } from '../../../../utils/formatDateTime';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { estimateScheduleRuns } from '@shared/cronScheduleEstimate';
+import type { CronJobExecution } from '@shared/contract/cron';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
 import { formatCronScheduleLabelWithZone } from '../../../../utils/formatCronJobTime';
-import { redactCronDisplayText } from '../../cron/types';
+import { languages } from '../../../../i18n';
+import { formatRunCostUsd, redactCronDisplayText } from '../../cron/types';
 
 interface ScheduleConfirmLabels {
   what: string;
@@ -31,9 +34,10 @@ export interface ScheduleEventConfirmLabels {
 }
 
 interface ScheduleConfirmRow {
-  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail';
+  key: 'what' | 'when' | 'estimate' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail';
   label: string;
   value: string;
+  hint?: string;
 }
 
 export interface NormalizedScheduleDraft {
@@ -237,6 +241,7 @@ export function buildScheduleConfirmRows(
   labels: ScheduleConfirmLabels,
   lang: CronHumanLang = 'zh',
   eventLabels?: ScheduleEventConfirmLabels,
+  estimateHistory?: readonly CronJobExecution[],
 ): readonly ScheduleConfirmRow[] {
   // 草案已经过 normalizeScheduleDraft，但这里仍按不可信输入读：任何字段非字符串都当缺失，不抛错。
   const input = draft.input as unknown as Record<string, unknown>;
@@ -298,10 +303,36 @@ export function buildScheduleConfirmRows(
     ];
   }
 
-  return [
+  const actionType = draft.input.action?.type;
+  const estimate = estimateHistory && schedule && actionType
+    ? estimateScheduleRuns(schedule, draft.input.runsOn, actionType, estimateHistory)
+    : undefined;
+  const rows: ScheduleConfirmRow[] = [
     { key: 'what', label: labels.what, value: what },
     { key: 'when', label: labels.when, value: when },
-    ...(isAgentAction ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }] : []),
-    { key: 'result', label: labels.result, value: result },
   ];
+  if (estimate) {
+    const copy = languages[lang].cronScheduleEstimate;
+    const { runsPerDay, exact } = estimate;
+    const count = runsPerDay < 1
+      ? copy.lessThanDaily
+      : exact ? copy.about(runsPerDay) : copy.atMost(runsPerDay);
+    const cadence = exact ? count : copy.shortestGap(count);
+    const { cost } = estimate;
+    const costText = {
+      usd: cost.kind === 'usd' ? copy.usd(formatRunCostUsd(cost.perDayUsd)) : '',
+      'flat-fee': copy.flatFee,
+      unknown: copy.unknown,
+      none: '',
+    }[cost.kind];
+    rows.push({
+      key: 'estimate',
+      label: copy.label,
+      value: costText ? `${cadence} · ${costText}` : cadence,
+      hint: estimate.highlight ? copy.frequent : undefined,
+    });
+  }
+  if (isAgentAction) rows.push({ key: 'notifyWhen', label: labels.notifyWhen, value: notifyWhen });
+  rows.push({ key: 'result', label: labels.result, value: result });
+  return rows;
 }

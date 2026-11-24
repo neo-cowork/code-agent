@@ -704,6 +704,9 @@
         "error": {
           "type": "string"
         },
+        "userMessage": {
+          "type": "string"
+        },
         "outputPath": {
           "type": "string"
         },
@@ -1209,6 +1212,9 @@
               "additionalProperties": false
             },
             "startedByAutomation": {
+              "type": "boolean"
+            },
+            "startedByFirstWake": {
               "type": "boolean"
             },
             "scheduledTaskName": {

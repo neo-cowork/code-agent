@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeActionFingerprint, getDenialRegistry } from '../../../src/host/security/denialRegistry';
@@ -20,6 +20,10 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { getToolLedgerSink, setToolLedgerSink, type ToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
+import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
+import { resolveToolCallTerminalState } from '../../../src/renderer/utils/toolCallTerminalState';
 import { agentErrorZh, agentErrorEn } from '../../../src/renderer/i18n/agentError';
 import type { AgentEvent, AppSettings } from '../../../src/shared/contract';
 import { HostReasonCode, type PermissionDenialSource } from '../../../src/shared/contract/permission';
@@ -199,6 +203,58 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     expect(db.prepare('SELECT status FROM pending_approvals ORDER BY submitted_at').all())
       .toEqual([{ status: 'rejected' }, { status: 'approved' }]);
     expect(await readFile(file, 'utf8')).toBe(args.content);
+  });
+
+  it('denied Bash write: same-message retry is refused silently, a new user message asks again and allow-once runs it', async () => {
+    const { tool, getHumanPrompts } = executor('user', undefined, false, { allowAfterDenial: true });
+    const out = join(cwd, 'draft-note.txt');
+    await writeFile(out, 'x\n');
+    const args = { command: 'find . -name draft-note.txt -delete' };
+
+    const denied = await tool.execute('Bash', args, options);
+    expect(denied.success).toBe(false);
+    expect(getHumanPrompts()).toBe(1);
+    expect(await readFile(out, 'utf8')).toBe('x\n');
+
+    const retry = await tool.execute('Bash', args, options);
+    expect(retry.success).toBe(false);
+    process.stdout.write(`same-message retry error: ${retry.error}\n`);
+    expect(retry.error).toContain('Bash was not executed');
+    expect(getHumanPrompts()).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM pending_approvals').get()).toEqual({ n: 1 });
+    expect(await readFile(out, 'utf8')).toBe('x\n');
+
+    const allowed = await tool.execute('Bash', args, { ...options, sourceMessageId: 'user-2' });
+    expect(getHumanPrompts()).toBe(2);
+    expect(allowed.success).toBe(true);
+    expect(allowed.metadata?.code).not.toBe('TOOL_DISABLED_FOR_RUN');
+    expect(allowed.error ?? '').not.toContain('TOOL_DISABLED_FOR_RUN');
+    expect(db.prepare('SELECT status FROM pending_approvals ORDER BY submitted_at').all())
+      .toEqual([{ status: 'rejected' }, { status: 'approved' }]);
+    const decisions = db.prepare('SELECT final_outcome, history_outcome FROM permission_decisions ORDER BY id').all() as Array<{ final_outcome: string; history_outcome: string }>;
+    process.stdout.write(`permission_decisions: ${JSON.stringify(decisions)}\n`);
+    expect(decisions.map((d) => d.history_outcome)).toEqual(['ask-denied', 'policy-deny', 'ask-approved']);
+    expect(decisions.map((d) => d.final_outcome)).toEqual(['deny', 'deny', 'allow']);
+    await expect(readFile(out, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+
+    for (const [label, t] of [['zh', zh], ['en', en]] as const) {
+      const title = (call: { success: boolean; error?: string; output?: string; metadata?: Record<string, unknown> }) => {
+        const toolCall = { id: 'tc', name: 'Bash', arguments: args, result: { toolCallId: 'tc', ...call } };
+        const terminal = resolveToolCallTerminalState({ toolCall });
+        return humanizeToolStep('Bash', args, t, undefined, call.success ? 'completed' : 'failed', undefined,
+          { notRun: terminal.notRun, skipped: terminal.skipped, handedOff: terminal.handedOff });
+      };
+      const deniedTitle = title(denied);
+      const retryTitle = title(retry);
+      const executedTitle = title(allowed);
+      process.stdout.write(`${label} titles: ${JSON.stringify({ deniedTitle, retryTitle, executedTitle })}\n`);
+      const ranWord = label === 'zh' ? '运行了' : 'Ran';
+      const notRunWord = label === 'zh' ? '没有执行' : /did not run|not run|wasn't run/i;
+      expect(deniedTitle).not.toContain(ranWord);
+      expect(retryTitle).not.toContain(ranWord);
+      if (typeof notRunWord === 'string') expect(executedTitle).not.toContain(notRunWord);
+      else expect(executedTitle).not.toMatch(notRunWord);
+    }
   });
 
   it('tomorrow is a new run when no source message exists', async () => {

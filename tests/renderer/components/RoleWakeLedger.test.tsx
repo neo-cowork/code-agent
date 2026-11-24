@@ -6,10 +6,12 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-const { listJobs, getExecutions } = vi.hoisted(() => ({
+const { listJobs, getExecutions, getRoleWakeFunnel } = vi.hoisted(() => ({
   listJobs: vi.fn(),
   getExecutions: vi.fn(),
+  getRoleWakeFunnel: vi.fn(async () => ({ wakes: 0, reports: 0, suppressed: 0, fallbackSent: 0, duplicates: [] as Array<{ at: number; firstReportedAt: number }> })),
 }));
+vi.mock('../../../src/renderer/services/rolesClient', () => ({ getRoleWakeFunnel }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: vi.fn() },
 }));
@@ -62,6 +64,20 @@ afterEach(() => {
 });
 
 describe('RoleWakeLedger', () => {
+  it('shows the seven-day counts and the previous report date, including wakes absent from cron', async () => {
+    listJobs.mockResolvedValue([]);
+    getRoleWakeFunnel.mockResolvedValueOnce({
+      wakes: 7, reports: 2, suppressed: 1, fallbackSent: 1,
+      duplicates: [{ at: NOW, firstReportedAt: YESTERDAY }],
+    });
+    render(<RoleWakeLedger roleId="role-a" />);
+    expect((await screen.findByTestId('role-wake-weekly-funnel')).textContent).toBe(
+      '过去 7 天 · 7 次唤醒 · 2 次报告 · 1 次未重复推送',
+    );
+    expect(screen.getByText(/未重复推送，已于 .* 报告/)).toBeTruthy();
+    expect(getRoleWakeFunnel).toHaveBeenCalledWith('role-a');
+  });
+
   it('a flat-fee wake reads "not billed in USD" in the row and the daily line', async () => {
     listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
     getExecutions.mockResolvedValue([
@@ -121,6 +137,22 @@ describe('RoleWakeLedger', () => {
     expect(values).toContain('未运行：角色处于静默档，不主动醒来');
     expect(values).toContain('未运行：处于免打扰时段，本次不补');
     expect(values).toContain('$0.1100');
+  });
+
+  it('connector_lost 行显示飞书，不露连接器 id', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w-lost', {
+        result: { status: 'skipped', skipReason: 'connector_lost:feishu', skipped: true },
+      }),
+    ]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent))
+        .toContain('未运行：飞书已退出登录，重新连接后会继续');
+    });
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('feishu');
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('connector_lost');
   });
 
   it('每日小计出现在角色页（与自动化中心同组件同口径）', async () => {

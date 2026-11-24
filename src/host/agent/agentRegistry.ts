@@ -57,6 +57,7 @@ let customAgentMap: Map<string, RegisteredAgent> = new Map();
 
 let watcher: ReturnType<typeof chokidar.watch> | null = null;
 let reloadTimer: NodeJS.Timeout | null = null;
+let pendingReload = Promise.resolve();
 let currentWorkingDir: string | undefined;
 
 const events = new EventEmitter();
@@ -125,7 +126,7 @@ function scheduleReload(): void {
   if (reloadTimer) clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     reloadTimer = null;
-    void reloadAll();
+    void reloadAgentRegistry();
   }, RELOAD_DEBOUNCE_MS);
 }
 
@@ -285,7 +286,7 @@ export async function initAgentRegistry(workingDir?: string): Promise<void> {
   }
 
   currentWorkingDir = workingDir;
-  await reloadAll();
+  await reloadAgentRegistry();
 
   const dirs = getAgentsMdDir(workingDir);
   const watchPaths = [dirs.user];
@@ -348,10 +349,12 @@ export async function disposeAgentRegistry(): Promise<void> {
 }
 
 /**
- * 测试 hook：手动触发一次重扫（绕过 debounce）。
+ * Rescan now for callers that need a newly written definition before the watcher fires.
  */
-export async function forceReloadAgentRegistryForTest(): Promise<void> {
-  await reloadAll();
+export async function reloadAgentRegistry(): Promise<void> {
+  // Serialize scans so a watcher scan cannot publish an older snapshot after this one.
+  pendingReload = pendingReload.then(reloadAll);
+  await pendingReload;
 }
 
 /**

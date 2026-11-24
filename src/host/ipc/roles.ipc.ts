@@ -847,6 +847,14 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     }
     return { success: true, data: await getFirstWakeSnapshot(roleId) };
   },
+  wakeLedgerGet: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (typeof roleId !== 'string' || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const { readRoleWakeFunnel } = await import('../services/roleAssets/roleWakeLedger');
+    return { success: true, data: await readRoleWakeFunnel(roleId) };
+  },
   // --- 每日醒来的外部增量提议卡（N-ROLE-WAKE-FIND-WORK） ---
   wakeProposalsList: async (_ctx, payload) => {
     const { roleId } = (payload ?? {}) as RoleIdPayload;
