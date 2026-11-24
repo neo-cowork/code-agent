@@ -180,15 +180,30 @@ describe('composerRichTextModel', () => {
     insertPlainTextAtCaret(root, '\n', { anchorCaret: true });
 
     expect(extractComposerPlainText(root)).toBe('before\n');
+    expect(root.textContent).toBe(`before\n${COMPOSER_CARET_ANCHOR}`);
     expect(getCaretPlainTextOffset(root)).toBe('before\n'.length);
     const caret = window.getSelection()!.getRangeAt(0);
-    expect(caret.startContainer.textContent).toBe(`\n${COMPOSER_CARET_ANCHOR}`);
-    expect(caret.startOffset).toBe(1);
+    expect(caret.startContainer.textContent).toBe(suffix || `\n${COMPOSER_CARET_ANCHOR}`);
+    expect(caret.startOffset).toBe(suffix ? 0 : 1);
     setCaretPlainTextOffset(root, 'before\n'.length);
     expect(getCaretPlainTextOffset(root)).toBe('before\n'.length);
     insertPlainTextAtCaret(root, 'after');
     expect(extractComposerPlainText(root)).toBe('before\nafter');
     expect(getCaretPlainTextOffset(root)).toBe('before\nafter'.length);
+  });
+
+  it('uses the existing text to position the caret after a mid-text line break', () => {
+    const root = buildRoot(document.createTextNode('beforeafter'));
+    setSelection(root.firstChild!, 'before'.length);
+
+    insertPlainTextAtCaret(root, '\n', { anchorCaret: true });
+
+    expect(root.textContent).toBe('before\nafter');
+    expect(extractComposerPlainText(root)).toBe('before\nafter');
+    expect(getCaretPlainTextOffset(root)).toBe('before\n'.length);
+    const caret = window.getSelection()!.getRangeAt(0);
+    expect(caret.startContainer.textContent).toBe('after');
+    expect(caret.startOffset).toBe(0);
   });
 
   it('在文本节点中途插入 chip 会断开文本节点', () => {

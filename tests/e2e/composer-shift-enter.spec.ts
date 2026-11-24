@@ -162,3 +162,18 @@ for (const scenario of scenarios) {
     expect(result.nodes).not.toContain('DIV');
   });
 }
+
+test('Delete removes the first character after a mid-text Shift+Enter', async ({ page, browserName }) => {
+  const editor = await openComposer(page, false);
+  await page.keyboard.type('AAACCC');
+  await selectInText(editor, 'AAACCC', 3);
+  await page.keyboard.press('Shift+Enter');
+  const before = await readEditor(editor);
+  console.log(JSON.stringify({ browserName, step: 'before Delete', ...before }));
+  expect(before.plain).toBe('AAA\nCCC');
+
+  await page.keyboard.press('Delete');
+  const after = await readEditor(editor);
+  console.log(JSON.stringify({ browserName, step: 'after Delete', ...after }));
+  expect(after.plain).toBe('AAA\nCC');
+});

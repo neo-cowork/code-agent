@@ -361,24 +361,40 @@ export function insertPlainTextAtCaret(
   text: string,
   { anchorCaret = false }: { anchorCaret?: boolean } = {},
 ): void {
-  // A trailing newline needs text on the next line for native editing to keep the caret there.
-  // Place the caret before the anchor so Backspace can delete the newline in one keystroke.
-  const node = document.createTextNode(anchorCaret ? text + COMPOSER_CARET_ANCHOR : text);
+  const node = document.createTextNode(text);
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0 && root.contains(selection.getRangeAt(0).startContainer)) {
     const range = selection.getRangeAt(0);
     range.deleteContents();
     range.insertNode(node);
-    if (anchorCaret) range.setStart(node, text.length);
-    else range.setStartAfter(node);
+    if (anchorCaret) {
+      // Range.insertNode can leave an empty text node when splitting at the end.
+      let next = node.nextSibling;
+      while (next instanceof Text && next.length === 0) next = next.nextSibling;
+      if (next instanceof Text) {
+        range.setStart(next, 0);
+      } else if (next) {
+        range.setStartBefore(next);
+      } else {
+        // Only an empty trailing line needs an anchor. The caret stays before it for Backspace.
+        node.appendData(COMPOSER_CARET_ANCHOR);
+        range.setStart(node, text.length);
+      }
+    } else {
+      range.setStartAfter(node);
+    }
     range.collapse(true);
     selection.removeAllRanges();
     selection.addRange(range);
     return;
   }
   root.appendChild(node);
-  if (anchorCaret) applyCaretPosition(node, text.length);
-  else setCaretPlainTextOffset(root, extractComposerPlainText(root).length);
+  if (anchorCaret) {
+    node.appendData(COMPOSER_CARET_ANCHOR);
+    applyCaretPosition(node, text.length);
+  } else {
+    setCaretPlainTextOffset(root, extractComposerPlainText(root).length);
+  }
 }
 
 /** 外部 value 同步：清掉全部非 chip 节点，文本整体放到第一颗 chip 前（chip 保持原位）。 */
