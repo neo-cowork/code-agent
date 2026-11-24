@@ -43,10 +43,17 @@ function describeExit(shellId: string, fallbackExitCode: number | undefined): st
   const state = getBackgroundTask(shellId);
   const exitCode = state?.exitCode ?? fallbackExitCode;
   const output = tailOutput((state?.output ?? []).join(''));
-  const head = exitCode === 0 || (exitCode === undefined && state?.status === 'completed')
-    ? '后台命令已正常结束。'
-    : `后台命令已结束，但没有成功完成（退出码 ${exitCode ?? '未知'}）。`;
-  return output ? `${head}输出：${output}` : `${head}没有输出内容。`;
+  // 成功分支保持原句。失败不写数字退出码：这条笔记会进唤醒提示，父模型会把数字和英文原文复述给用户。
+  // 原文仍留下，标明只供判断原因（缺文件和没权限不能混成一句空话）。
+  const succeeded = exitCode === 0 || (exitCode === undefined && state?.status === 'completed');
+  if (succeeded) {
+    const head = '后台命令已正常结束。';
+    return output ? `${head}输出：${output}` : `${head}没有输出内容。`;
+  }
+  const head = '后台命令已结束，但没有成功完成。';
+  return output
+    ? `${head}以下输出只供你判断原因，不要写进给用户的回复：${output}`
+    : `${head}没有输出内容。`;
 }
 
 export class BackgroundShellHold {

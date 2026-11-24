@@ -255,7 +255,9 @@ describe('SessionCommandCenter holds settle while the child own background shell
     await waitFor(() => h.woken.length === 1);
     expect(h.woken[0].status).toBe('completed');
     expect(h.status()).toBe('completed');
-    expect(h.woken[0].resultText).toContain('退出码 3');
+    expect(h.woken[0].resultText).not.toContain('退出码');
+    expect(h.woken[0].resultText).toContain('没有成功完成');
+    expect(h.woken[0].resultText).toContain('只供你判断原因');
     expect(h.woken[0].resultText).toContain('oops');
   });
 
