@@ -145,7 +145,7 @@ vi.mock('../../../src/host/services/checkpoint/taskPatchService', () => ({
 }));
 
 vi.mock('../../../src/host/context/subagentContextStore', () => ({
-  getSubagentContextStore: () => ({ upsert: vi.fn(), list: () => [] }),
+  getSubagentContextStore: () => ({ get: () => null, upsert: vi.fn(), list: () => [] }),
 }));
 
 vi.mock('../../../src/host/context/contextInterventionState', () => ({

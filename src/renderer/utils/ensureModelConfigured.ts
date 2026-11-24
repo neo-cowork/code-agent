@@ -54,7 +54,9 @@ export async function ensureModelConfigured(
   try {
     const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
     if (!configured) {
-      const providerName = getLocalizedProviderDisplayName(provider, language) || t.modelSetup.thisModel;
+      const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
+        || getLocalizedProviderDisplayName(provider, language)
+        || t.modelSetup.thisModel;
       if (isWebMode()) {
         toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
       } else if (hasConfiguredRuntimeModels(settings)) {
