@@ -8,6 +8,8 @@ import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 
 import { Notification, broadcastToRenderer } from '../../platform';
 import { hasInteractiveUi } from '../../platform/windowBridge';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../shared/constants';
+import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
@@ -528,9 +530,13 @@ class NotificationService implements Disposable {
     const { sessionTitle, summary, duration, toolsUsed } = data;
 
     // 构建通知内容
-    const en = readNotificationLocale() === 'en';
+    const locale = readNotificationLocale();
+    const en = locale === 'en';
+    const incomplete = data.code === BACKGROUND_TASK_DELETE_INCOMPLETE ? getDeleteIncompleteText(locale) : undefined;
     let body = '';
-    if (summary) {
+    if (incomplete) {
+      body = incomplete.reason;
+    } else if (summary) {
       body = summary;
     } else if (toolsUsed.length > 0) {
       body = en
@@ -545,7 +551,7 @@ class NotificationService implements Disposable {
 
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
-    const title = `${shell} - ${localizeCronSessionTitle(sessionTitle, en ? 'en' : 'zh')}`;
+    const title = incomplete?.title ?? `${shell} - ${localizeCronSessionTitle(sessionTitle, locale)}`;
     this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,

@@ -21,6 +21,7 @@ import { createLogger } from '../infra/logger';
 import { isSafeRoleId } from './roleAssetPaths';
 import { ensureRoleAssetDirs, isPersistentRole } from './roleAssetService';
 import { writeRolePersonalization } from './rolePersonalization';
+import { reloadAgentRegistry } from '../../agent/agentRegistry';
 import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
 import { diffRoleDefinition } from './roleEditChange';
 
@@ -348,6 +349,7 @@ export async function installRoleDraft(
     // 新建角色 → 入队一次「首次醒来」（只读介绍 + 可委托建议）。改已有不入队。
     // 入队失败绝不把一次成功的 confirm 变成失败——只记日志。
     if (!isEdit) {
+      await reloadAgentRegistry();
       try {
         const { enqueueFirstWake } = await import('./roleFirstWake');
         const firstWake = await enqueueFirstWake(meta.roleId);
