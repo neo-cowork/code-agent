@@ -5,6 +5,7 @@ import type {
 import type { AgentErrorCategory, AgentErrorMetadata } from '../../../shared/contract/message';
 import { isChineseRateLimitMessage } from '../../../shared/utils/agentErrorClassification';
 import { classifyModelErrorMessage } from '../../../shared/modelErrorDiagnostics';
+import { getHostUiLocale, getHostUiSurface } from '../../config/hostUiLocale';
 
 function firstStatusCode(message: string): number | undefined {
   const match = message.match(/\b(401|403|404|408|409|423|429|500|502|503|504)\b/);
@@ -35,7 +36,7 @@ export function classifyAgentEngineFailure(args: {
     ...(args.exitCode !== undefined ? { exitCode: args.exitCode } : {}),
   };
 
-  const modelDiagnostic = classifyModelErrorMessage(message);
+  const modelDiagnostic = classifyModelErrorMessage(message, undefined, getHostUiLocale(), getHostUiSurface());
   if (modelDiagnostic) {
     return {
       ...base,
