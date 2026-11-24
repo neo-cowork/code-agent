@@ -5,6 +5,8 @@
 import { permissionVocabularyEn } from './permissionVocabulary';
 
 export const enSettingsCore = {
+    pageLoadFailed: 'This settings page can’t load right now.',
+    reloadPage: 'Reload',
     tabs: {
       general: 'Permissions & security',
       model: 'General model',
