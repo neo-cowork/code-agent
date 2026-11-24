@@ -1,7 +1,7 @@
-import dns from 'dns';
 import express from 'express';
 import { promises as fs } from 'fs';
 import http from 'http';
+import type { AddressInfo } from 'net';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -60,7 +60,6 @@ describe('dev cancellable http_request smoke', () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dev-cancellable-http-test-'));
     vi.stubEnv('CODE_AGENT_E2E', '1');
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
-    const lookupSpy = vi.spyOn(dns, 'lookup');
     await startApi();
 
     const startResponse = await fetch(`${baseUrl}/start`, {
@@ -76,8 +75,25 @@ describe('dev cancellable http_request smoke', () => {
     const started = await startResponse.json() as CancellableState;
     expect(startResponse.status, JSON.stringify(started)).toBe(200);
     runId = started.id;
-    expect(isPrivateOrLocalHost(new URL(started.url).hostname)).toBe(false);
+    const delayHost = new URL(started.url).hostname;
+    expect(isPrivateOrLocalHost(delayHost)).toBe(false);
     expect(started.requestStarted).toBeTruthy();
+
+    const trapRequests: string[] = [];
+    const trap = http.createServer((req, res) => {
+      trapRequests.push(req.url || '/');
+      res.end('trap');
+    });
+    await new Promise<void>((resolve) => {
+      trap.listen(0, '127.0.0.1', () => resolve());
+    });
+    try {
+      const trapPort = (trap.address() as AddressInfo).port;
+      await expect(fetch(`http://${delayHost}:${trapPort}/`)).rejects.toThrow();
+      expect(trapRequests).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve) => trap.close(() => resolve()));
+    }
 
     const cancelResponse = await fetch(`${baseUrl}/${runId}/cancel`, {
       method: 'POST',
@@ -94,15 +110,5 @@ describe('dev cancellable http_request smoke', () => {
     const cleanupResponse = await fetch(`${baseUrl}/${runId}`, { method: 'DELETE' });
     expect(cleanupResponse.status).toBe(200);
     runId = undefined;
-
-    lookupSpy.mockClear();
-    await new Promise<void>((resolve) => {
-      dns.lookup('delay.smoke-cancel.test', { all: true }, () => resolve());
-    });
-    expect(lookupSpy).toHaveBeenCalledWith(
-      'delay.smoke-cancel.test',
-      { all: true },
-      expect.any(Function),
-    );
   }, 60_000);
 });

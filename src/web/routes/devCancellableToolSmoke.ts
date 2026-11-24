@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import dns from 'dns';
 import { promises as fs } from 'fs';
 import http from 'http';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import type { ToolExecutionResult } from '../../host/tools/types';
@@ -13,37 +13,49 @@ import type { WebRouteLogger } from './routeTypes';
 
 type DevCancellableToolName = 'Bash' | 'http_request';
 
-type DelayLookupCallback = (
-  error: NodeJS.ErrnoException | null,
-  address: string | dns.LookupAddress[],
-  family?: number,
-) => void;
-
+// The http_request smoke needs a delay URL that passes the SSRF guard, which
+// rejects every literal loopback form. `DELAY_HOST` is a reserved-TLD name that
+// is not private per the guard and does not resolve publicly. Connections to it
+// are redirected to 127.0.0.1 at the socket layer, but only while the target
+// port is a live delay server port — every other port falls through to real
+// DNS and fails exactly as the unresolvable name did before.
 const DELAY_HOST = 'delay.smoke-cancel.test';
 const DELAY_ADDRESS = '127.0.0.1';
-const activeDelayServers = new Set<http.Server>();
-let delayLookupInstalled = false;
+const activeDelayPorts = new Set<number>();
+let delayConnectInstalled = false;
 
-function installDelayLookup(): void {
-  if (delayLookupInstalled) return;
-  const originalLookup = dns.lookup;
-  const lookup = (hostname: string, ...args: unknown[]): void => {
-    if (hostname !== DELAY_HOST || activeDelayServers.size === 0) {
-      Reflect.apply(originalLookup, dns, [hostname, ...args]);
-      return;
-    }
-    const callback = args[args.length - 1] as DelayLookupCallback;
-    const options = args.length > 1 && typeof args[0] === 'object' && args[0] !== null
-      ? args[0] as dns.LookupOptions
-      : undefined;
-    if (options?.all) {
-      callback(null, [{ address: DELAY_ADDRESS, family: 4 }]);
-      return;
-    }
-    callback(null, DELAY_ADDRESS, 4);
+function rewriteDelayConnectTarget(args: unknown[]): unknown[] {
+  const first = args[0];
+  if (Array.isArray(first)) {
+    // net.connect hands Socket#connect an args array already tagged as
+    // normalized; replacing element 0 in place keeps that tag intact.
+    first[0] = rewriteDelayConnectOptions(first[0]);
+    return args;
+  }
+  if (first && typeof first === 'object') {
+    const next = rewriteDelayConnectOptions(first);
+    return next === first ? args : [next, ...args.slice(1)];
+  }
+  if (typeof first === 'number' && args[1] === DELAY_HOST && activeDelayPorts.has(first)) {
+    return [first, DELAY_ADDRESS, ...args.slice(2)];
+  }
+  return args;
+}
+
+function rewriteDelayConnectOptions(options: unknown): unknown {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) return options;
+  const candidate = options as { host?: unknown; port?: unknown };
+  if (candidate.host !== DELAY_HOST || !activeDelayPorts.has(Number(candidate.port))) return options;
+  return { ...candidate, host: DELAY_ADDRESS };
+}
+
+function installDelayConnectInterceptor(): void {
+  if (delayConnectInstalled) return;
+  const originalConnect = net.Socket.prototype.connect;
+  net.Socket.prototype.connect = function connect(this: net.Socket, ...args: unknown[]) {
+    return Reflect.apply(originalConnect, this, rewriteDelayConnectTarget(args)) as net.Socket;
   };
-  dns.lookup = lookup as typeof dns.lookup;
-  delayLookupInstalled = true;
+  delayConnectInstalled = true;
 }
 
 interface DevCancellableToolEntry {
@@ -192,10 +204,10 @@ async function createDelayServer(
       }
     });
   });
-  installDelayLookup();
+  installDelayConnectInterceptor();
   const port = await listen(server, DELAY_ADDRESS);
-  activeDelayServers.add(server);
-  server.once('close', () => activeDelayServers.delete(server));
+  activeDelayPorts.add(port);
+  server.once('close', () => activeDelayPorts.delete(port));
   return {
     server,
     url: `http://${DELAY_HOST}:${port}/delay`,
