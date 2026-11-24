@@ -43,9 +43,12 @@ function describeExit(shellId: string, fallbackExitCode: number | undefined): st
   const state = getBackgroundTask(shellId);
   const exitCode = state?.exitCode ?? fallbackExitCode;
   const output = tailOutput((state?.output ?? []).join(''));
-  const head = exitCode === 0 || (exitCode === undefined && state?.status === 'completed')
-    ? '后台命令已正常结束。'
-    : `后台命令已结束，但没有成功完成（退出码 ${exitCode ?? '未知'}）。`;
+  // 成功句保持原样。失败不写数字退出码。
+  // 同一条笔记会进任务 detail，成员页和账本直接显示 summary / resultMarkdown，
+  // 所以这里不能写给模型的指令。原文仍留下，标法和成功分支一样；
+  // 别把英文原文写进回复的规则在唤醒提示和 shell 收尾指令里。
+  const succeeded = exitCode === 0 || (exitCode === undefined && state?.status === 'completed');
+  const head = succeeded ? '后台命令已正常结束。' : '后台命令已结束，但没有成功完成。';
   return output ? `${head}输出：${output}` : `${head}没有输出内容。`;
 }
 
