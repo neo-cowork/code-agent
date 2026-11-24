@@ -36,8 +36,22 @@ describe('session command center short_name normalization', () => {
   });
 
   it.each([
+    ['サーバー設定', 'サーバー'],
+    ['メール送信', 'メール送'],
+    ['コードレビュー', 'コードレ'],
+    ['ﾊﾟｿｺﾝ設定', 'ﾊﾟｿｺ'],
+    ['ﾒｰﾙ送信', 'ﾒｰﾙ送'],
+    ['PDFサーバー設定', 'サーバー'],
+    ['は\u309Aそこん設定', 'は\u309Aそこ'],
+  ])('keeps Japanese sound marks in %s → %s', (input, expected) => {
+    expect(normalizeSessionTaskShortName(input, '研究任务')).toBe(expected);
+  });
+
+  it.each([
     ['PDF계약', '계약'],
     ['B超', 'B超'],
+    ['QuarterlyReport。', 'QR'],
+    ['QuarterlyReport\u0323', 'QR'],
   ])('normalizes %s → %s', (input, expected) => {
     expect(normalizeSessionTaskShortName(input, '研究任务')).toBe(expected);
   });
@@ -73,28 +87,28 @@ describe('session command center mixed-script task names', () => {
     resetBackgroundTaskLedgerForTest();
   });
 
-  function spawnContract(rawShortName: string, title: string) {
+  function spawnTask(rawShortName: string, title: string) {
     return center.spawn({
       sessionId,
       title,
       shortName: normalizeSessionTaskShortName(rawShortName, title),
       laneKey: title,
       submissionKey: title,
-      prompt: 'Extract the key contract clauses.',
+      prompt: title,
       workspaceScope,
     });
   }
 
   it('uses the CJK short name in the started receipt', async () => {
-    const result = await spawnContract('PDF合同', 'PDF clauses');
+    const result = await spawnTask('PDF合同', 'PDF clauses');
     expect(result.outcome).toBe('started');
     if (result.outcome !== 'started') throw new Error('Expected a started task');
     expect(describeDelegateTaskResult(result)).toContain('后台任务「合同」已开始');
   });
 
   it('requires a choice between tasks that share the same normalized name', async () => {
-    await spawnContract('PDF合同', 'PDF clauses');
-    await spawnContract('Word合同', 'Word clauses');
+    await spawnTask('PDF合同', 'PDF clauses');
+    await spawnTask('Word合同', 'Word clauses');
 
     expect(center.resolve(sessionId, '合同')).toMatchObject({
       outcome: 'ambiguous',
@@ -106,6 +120,15 @@ describe('session command center mixed-script task names', () => {
     expect(center.resolve(sessionId, '2')).toMatchObject({
       outcome: 'resolved',
       task: { title: 'Word clauses', shortName: '合同' },
+    });
+  });
+
+  it('resolves a Japanese task by its short name with sound marks', async () => {
+    await spawnTask('サーバー設定', 'Update configuration');
+
+    expect(center.resolve(sessionId, 'サーバー')).toMatchObject({
+      outcome: 'resolved',
+      task: { title: 'Update configuration', shortName: 'サーバー' },
     });
   });
 });

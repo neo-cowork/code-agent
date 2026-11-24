@@ -53,7 +53,10 @@ export function normalizeSessionTaskShortName(value: string, title: string): str
   if (chars.length >= 2 && chars.length <= 4) return compact;
 
   if (chars.length > 4) {
-    const cjkChars = compact.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu);
+    // Kana shares modifier letters across scripts. Also retain its two combining voicing marks.
+    const cjkChars = compact.match(
+      /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3099\u309A]|(?=\p{Modifier_Letter})[\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}]/gu,
+    );
     if (cjkChars) {
       if (cjkChars.length >= 2) return cjkChars.slice(0, 4).join('');
       chars = cjkChars;
