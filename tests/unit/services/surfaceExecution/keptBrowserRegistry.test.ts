@@ -23,6 +23,7 @@ function createFakePool() {
 function createFakeService() {
   const listeners = new Set<(reason: string) => void>();
   return {
+    listTabs: vi.fn<() => Array<{ id: string }>>(() => []),
     onSessionChanged: vi.fn((listener: (reason: string) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -132,6 +133,24 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
 
     input.browserService.emit('crashed');
     expect(registry.get('conversation-a')?.state).toBe('closed');
+  });
+
+  it('closes the kept entry only when close_tab removes the last managed tab', () => {
+    const { pool, released } = createFakePool();
+    const registry = new KeptBrowserRegistry(pool);
+    const input = baseInput();
+    registry.register(input);
+
+    input.browserService.listTabs.mockReturnValue([{ id: 'remaining-tab' }]);
+    input.browserService.emit('close_tab');
+    expect(registry.snapshot(input.conversationId).state).toBe('kept');
+    expect(released).toEqual([]);
+
+    input.browserService.listTabs.mockReturnValue([]);
+    input.browserService.emit('close_tab');
+    expect(registry.get(input.conversationId)?.state).toBe('closed');
+    expect(registry.snapshot(input.conversationId).state).toBe('closed');
+    expect(released).toEqual([input.serviceKey]);
   });
 
   it('a newer keep closes the older kept window (one kept window per conversation)', () => {
@@ -442,7 +461,9 @@ function configuredService({
 } = {}): BrowserService {
   const service = new BrowserService('liveness-test-agent');
   Reflect.set(service, 'browser', { isConnected: () => connected });
-  Reflect.set(service, 'context', { pages: () => [{ isClosed: () => !open }] });
+  const trackedPage = { isClosed: () => !open };
+  Reflect.set(service, 'context', { pages: () => [trackedPage, { isClosed: () => false }] });
+  Reflect.set(service, 'tabs', new Map([['tab-1', { page: trackedPage }]]));
   Reflect.set(service, 'browserProcess', processHandle);
   return service;
 }
@@ -469,7 +490,7 @@ describe('BrowserPool.isServiceAlive and BrowserService.isProcessAlive', () => {
     expect(registry.snapshot('conversation-a').state).toBe('closed');
   });
 
-  it('checks connected browser, open pages, and OS pid liveness (including EPERM and ESRCH)', () => {
+  it('checks the connection, tracked pages, and OS pid liveness (including EPERM and ESRCH)', () => {
     expect(configuredService().isProcessAlive()).toBe(true);
     expect(configuredService({ connected: false }).isProcessAlive()).toBe(false);
     expect(configuredService({ open: false }).isProcessAlive()).toBe(false);
