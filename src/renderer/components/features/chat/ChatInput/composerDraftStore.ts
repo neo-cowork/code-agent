@@ -34,6 +34,29 @@ export function consumeComposerDraftHold(): boolean {
   return held;
 }
 
+/**
+ * ChatInput 被全屏页（设置、实验室…）卸载又回来时，卸载处记下草稿 key；
+ * 回来的那次挂载据此把文字直接放回输入框。冷启动 / 切会话 / 重开应用不在集合里，
+ * 仍走「放回输入框」提示条。
+ */
+const composerDraftRoundtripKeys = new Set<string>();
+
+export function markComposerDraftRoundtrip(key: string | null): void {
+  if (key) composerDraftRoundtripKeys.add(key);
+}
+
+export function clearComposerDraftRoundtrip(key: string | null): void {
+  if (key) composerDraftRoundtripKeys.delete(key);
+}
+
+/** Text to put straight back into the box, only when this key was left by an in-app roundtrip and the stored draft is text-only. */
+export function peekComposerDraftRoundtripText(key: string | null): string {
+  if (!key || !composerDraftRoundtripKeys.has(key)) return '';
+  const entry = readComposerDraftEntry(key);
+  if (!entry || entry.attachments.length > 0 || entry.dropped.length > 0) return '';
+  return entry.text.trim() ? entry.text : '';
+}
+
 export type ComposerDraftSendOutcome = 'success' | 'failure' | 'timeout';
 
 interface ComposerDraftStorage {

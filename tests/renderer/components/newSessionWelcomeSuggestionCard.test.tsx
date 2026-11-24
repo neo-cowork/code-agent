@@ -120,6 +120,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.restoreAllMocks();
   useSessionStore.setState({
     sessions: [],
