@@ -152,7 +152,7 @@ describe.each([
       `osascript -e 'foo' 失败，耗时 2 分钟`,
     );
     for (const result of [unrelated, unrelatedWithoutLog]) {
-      expect(result.notification).toBe('npm test 失败，耗时 2 分钟');
+      expect(result.notification).toBe(locale === 'zh' ? '后台命令 失败，耗时 2 分钟' : 'npm test 失败，耗时 2 分钟');
     }
     for (const result of [syntax, unrelated, unrelatedWithoutLog]) {
       expect(result.notificationPayload).toMatchObject({ source: 'shell', status: 'failed', exitCode: 1 });
