@@ -102,6 +102,16 @@ describe('QueuedInputTray', () => {
     expect(row.textContent).not.toContain('<appshot');
   });
 
+  it('编辑中的标记在收起排队条后仍在（批注弹窗据此拒发）', async () => {
+    items = [input('one')];
+    render(<QueuedInputTray sessionId="session-1" revision={0} editingId="one" onEdit={vi.fn()} />);
+    const tray = await screen.findByTestId('queued-input-tray');
+    expect(tray.getAttribute('data-editing')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: /排队中/ }));
+    expect(screen.queryByTestId('queued-input-row-one')).toBeNull();
+    expect(screen.getByTestId('queued-input-tray').getAttribute('data-editing')).toBe('true');
+  });
+
   it('不暴露拖拽排序，动作默认淡出且 hover/focus 时可见并保持可聚焦', async () => {
     items = [input('one'), input('two', { position: 1 })];
     const { container } = render(
