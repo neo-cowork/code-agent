@@ -403,11 +403,13 @@ describe('executeCronAgentAction connector-lost skip', () => {
 });
 
 describe('CronService.triggerJob connector-lost skip', () => {
-  it('连续六次跳过仍是 completed，不记失败，任务保持开启；重新连上后下一次会建会话', async () => {
+  it('连续六次断连跳过不消耗运行次数上限，重连后实际运行才用掉最后一次额度', async () => {
     probeImpl = async () => {
       lostFeishu();
     };
     const job = definition('job-streak', 'feishu-expert');
+    job.maxRuns = 2;
+    job.runCount = 1;
     const service = serviceFor(job);
     service.executions.set(job.id, [{
       id: 'old-fail',
@@ -434,6 +436,7 @@ describe('CronService.triggerJob connector-lost skip', () => {
     }
     expect(countTrailingCronFailures(service.getJobExecutions(job.id, 20))).toBe(0);
     expect(service.getJob(job.id)?.enabled).toBe(true);
+    expect(service.getJob(job.id)?.runCount).toBe(1);
     expect(agentState.createSession).not.toHaveBeenCalled();
     expect(agentState.sendMessage).not.toHaveBeenCalled();
 
@@ -447,6 +450,36 @@ describe('CronService.triggerJob connector-lost skip', () => {
     expect(resumed?.result).not.toEqual(expect.objectContaining({ skipped: true }));
     expect(agentState.createSession).toHaveBeenCalledTimes(1);
     expect(agentState.sendMessage).toHaveBeenCalledTimes(1);
+    expect(service.getJob(job.id)).toMatchObject({
+      enabled: false,
+      runCount: 2,
+      metadata: { disabledReason: 'max_runs_reached' },
+    });
+  });
+
+  it('首次实际运行失败、重试遇到断连时仍计一次运行', async () => {
+    probeImpl = async () => {
+      replaceCliConnectorConnectionStatusCache([{ id: 'feishu', connected: true }]);
+    };
+    agentState.sendMessage.mockImplementationOnce(async () => {
+      probeImpl = async () => lostFeishu();
+      throw new Error('temporary network error');
+    });
+    const job = definition('job-retry', 'feishu-expert');
+    job.maxRuns = 2;
+    job.maxRetries = 1;
+    job.retryDelay = 1;
+    const service = serviceFor(job);
+
+    const execution = await service.triggerJob(job.id);
+
+    expect(execution).toMatchObject({
+      status: 'completed',
+      retryAttempt: 1,
+      result: { skipped: true, status: 'skipped', skipReason: 'connector_lost:feishu' },
+    });
+    expect(agentState.sendMessage).toHaveBeenCalledTimes(1);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1 });
   });
 
   it('一次性任务未登录时照常跑完并停用，不留下还会继续的跳过', async () => {
