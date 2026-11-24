@@ -56,6 +56,7 @@ import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
+import { isApprovedRmVerifyProbe } from './shell/approvedRmVerifyProbe';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -92,6 +93,7 @@ import { computeActionFingerprint, getDenialRegistry } from '../security/denialR
 import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
+import { appendUserEditedArgsNote } from './userEditedArgsNote';
 import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
@@ -1846,6 +1848,13 @@ export class ToolExecutor {
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
       }
 
+      // 2a. 用户刚批准删除的那几个文件，删完后的存在性检查（test/[/ls/stat 字面路径）不再出第二张卡。
+      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification
+        && isApprovedRmVerifyProbe(cmd, bashWorkingDirectory, effectiveSessionId)) {
+        isSafeCommand = true;
+        recordDecision(executionToolName, params, 'auto-approve', 'approved-rm-verify-probe', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      }
+
       // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
       // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
       if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification) {
@@ -1920,6 +1929,7 @@ export class ToolExecutor {
     // /session-allowlist/裸 boolean 等自报来源）不盖章。交付物收尾闸据此豁免「用户已批准写入的
     // 文件」的占位符/Markdown 残留补轮——批准即拍板，不重写、不重弹同一张审批卡。
     let userApproved = false;
+    let userEditedKeys: string[] = [];
     if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -2470,6 +2480,7 @@ export class ToolExecutor {
         const edited = applyEditedArgs(executionToolName, params, ask.updatedArgs);
         if (edited.ok) {
           params = edited.params;
+          userEditedKeys = edited.changedKeys;
           traceBuilder.addStep('plan_approval', 'user_edited_args', 'allow', `用户在审批卡上改了：${edited.changedKeys.join(', ') || '（无实际改动）'}`);
         } else {
           ask.approved = false;
@@ -2841,7 +2852,7 @@ export class ToolExecutor {
 
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
-      return { ...result, metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
+      return { ...appendUserEditedArgsNote(result, params, userEditedKeys), metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
       if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;

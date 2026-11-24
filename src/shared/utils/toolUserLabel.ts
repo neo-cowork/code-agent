@@ -25,6 +25,7 @@ const TOOL_USER_LABELS: Record<string, string> = {
   grep: '搜索内容',
   webfetch: '网页抓取',
   websearch: '联网搜索',
+  httprequest: '网络请求',
   memorysearch: '记忆检索',
   libraryadd: '放入资料库',
   browseraction: '浏览器操作',
@@ -36,6 +37,7 @@ const TOOL_USER_LABELS_EN: Record<string, string> = {
   docedit: 'Edit document', excelgenerate: 'Export spreadsheet', docxgenerate: 'Create document',
   read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
   webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search', libraryadd: 'Add to Library',
+  httprequest: 'Network request',
   browseraction: 'Browser action', computeruse: 'Computer action',
 };
 
@@ -56,7 +58,8 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
   if (catalog) return catalog;
   if (isMcpToolName(name)) return en ? 'External tool' : '外部工具';
   const key = name.toLowerCase().replace(/[-_\s]/g, '');
-  return (en ? TOOL_USER_LABELS_EN[key] : TOOL_USER_LABELS[key]) ?? (en ? 'Action' : UNKNOWN_LABEL);
+  const labels = en ? TOOL_USER_LABELS_EN : TOOL_USER_LABELS;
+  return Object.hasOwn(labels, key) ? labels[key] : (en ? 'Action' : UNKNOWN_LABEL);
 }
 
 /** Approval copy for host banners; only localized actions, never commands or tool ids. */

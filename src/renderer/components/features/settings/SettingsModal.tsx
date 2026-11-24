@@ -49,6 +49,8 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useExternalImportStore } from '../../../stores/externalImportStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
+import { ErrorBoundary } from '../../ErrorBoundary';
+import { SettingsLoadFallback } from './SettingsLoadFallback';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -500,7 +502,7 @@ export const SettingsModal: React.FC = () => {
       variant="overlay"
       className="overflow-hidden animate-fadeIn"
     >
-      <div className="flex h-full min-h-0">
+      <div className="flex min-h-0 flex-1">
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/95">
           {/* 整窗覆盖后侧栏/顶栏都被盖住，本行顶起拖拽区（控件逐个 no-drag，
               同 TitleBar 套路），不然设置打开期间窗口拖不动 */}
@@ -619,40 +621,45 @@ export const SettingsModal: React.FC = () => {
               </div>
             </div>
 
-            <React.Suspense fallback={<SettingsTabSkeleton />}>
-              {activeTab === 'general' && <GeneralSettings />}
-              {activeTab === 'doctor' && <DoctorSettings />}
-              {activeTab === 'conversation' && <ConversationSettings />}
-              {activeTab === 'search' && <SearchSettings />}
-              {activeTab === 'voiceLive' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceLiveSettings />}
-              {activeTab === 'voiceInput' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceInputSettings />}
-              {activeTab === 'voiceModel' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceModelSettings />}
-              {activeTab === 'keybindings' && <KeybindingsSettings />}
-              {activeTab === 'workspace' && <WorkspaceSettings />}
-              {activeTab === 'appshots' && <AppshotsSettings />}
-              {activeTab === 'model' && (
-                <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
-              )}
-              {activeTab === 'visualModels' && <VisualModelsSettings />}
-              {activeTab === 'agentEngine' && <AgentEngineSettings />}
-              {activeTab === 'appearance' && <AppearanceSettings />}
-              {activeTab === 'soul' && <SoulSettings />}
-              {activeTab === 'cache' && <DataSettings />}
-              {activeTab === 'channels' && <ChannelsSettings />}
-              {activeTab === 'hooks' && <HooksSettings />}
-              {activeTab === 'memory' && <MemoryTab />}
-              {activeTab === 'external-import' && <ExternalImportSettings />}
-              {activeTab === 'openchronicle' && <ScreenMemorySettings />}
-              {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
-              {showUpdateTab && activeTab === 'update' && (
-                <UpdateSettings
-                  updateInfo={optionalUpdateInfo}
-                  onUpdateInfoChange={setOptionalUpdateInfo}
-                  onShowUpdateModal={() => setShowUpdateModal(true)}
-                />
-              )}
-              {activeTab === 'about' && <AboutSettings />}
-            </React.Suspense>
+            <ErrorBoundary
+              key={activeTab}
+              fallback={<SettingsLoadFallback />}
+            >
+              <React.Suspense fallback={<SettingsTabSkeleton />}>
+                {activeTab === 'general' && <GeneralSettings />}
+                {activeTab === 'doctor' && <DoctorSettings />}
+                {activeTab === 'conversation' && <ConversationSettings />}
+                {activeTab === 'search' && <SearchSettings />}
+                {activeTab === 'voiceLive' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceLiveSettings />}
+                {activeTab === 'voiceInput' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceInputSettings />}
+                {activeTab === 'voiceModel' && isSettingsTabCapabilityAvailable(activeTab, installedCapabilities) && <VoiceModelSettings />}
+                {activeTab === 'keybindings' && <KeybindingsSettings />}
+                {activeTab === 'workspace' && <WorkspaceSettings />}
+                {activeTab === 'appshots' && <AppshotsSettings />}
+                {activeTab === 'model' && (
+                  <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
+                )}
+                {activeTab === 'visualModels' && <VisualModelsSettings />}
+                {activeTab === 'agentEngine' && <AgentEngineSettings />}
+                {activeTab === 'appearance' && <AppearanceSettings />}
+                {activeTab === 'soul' && <SoulSettings />}
+                {activeTab === 'cache' && <DataSettings />}
+                {activeTab === 'channels' && <ChannelsSettings />}
+                {activeTab === 'hooks' && <HooksSettings />}
+                {activeTab === 'memory' && <MemoryTab />}
+                {activeTab === 'external-import' && <ExternalImportSettings />}
+                {activeTab === 'openchronicle' && <ScreenMemorySettings />}
+                {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
+                {showUpdateTab && activeTab === 'update' && (
+                  <UpdateSettings
+                    updateInfo={optionalUpdateInfo}
+                    onUpdateInfoChange={setOptionalUpdateInfo}
+                    onShowUpdateModal={() => setShowUpdateModal(true)}
+                  />
+                )}
+                {activeTab === 'about' && <AboutSettings />}
+              </React.Suspense>
+            </ErrorBoundary>
             <SettingsSectionSlotHost />
           </div>
         </main>

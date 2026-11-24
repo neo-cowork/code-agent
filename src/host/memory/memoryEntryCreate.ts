@@ -12,6 +12,7 @@ import {
   writeEntryToLightMemory,
   type MemoryEntryDatabase,
 } from './memoryEntryRuntime';
+import { normalizeForCompare } from '../lightMemory/manualMemoryGuard';
 
 /** 设置面板「添加记忆」允许的类型；directive/session/pattern 一律拒绝 */
 const MANUAL_CREATE_KINDS: ReadonlySet<string> = new Set(['user', 'feedback', 'project', 'reference']);
@@ -21,10 +22,6 @@ const MEMORY_CREATE_ERROR = {
   EMPTY: 'MEMORY_CREATE_EMPTY',
   KIND_FORBIDDEN: 'MEMORY_CREATE_KIND_FORBIDDEN',
 } as const;
-
-function normalizeForCompare(value: string): string {
-  return value.replace(/\s+/g, ' ').trim().toLowerCase();
-}
 
 export async function createManualMemoryEntry(
   db: MemoryEntryDatabase,

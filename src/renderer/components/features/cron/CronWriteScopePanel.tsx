@@ -23,6 +23,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import cronClient from '../../../services/cronClient';
 import { Button } from '../../primitives/Button';
+import { cronFolderDisplayName } from './CronWorkingFolderRow';
 
 function applyJobToStore(job: CronJobDefinition): void {
   useCronStore.setState((state) => ({
@@ -84,8 +85,12 @@ export const CronWriteScopePanel: React.FC<{ job: CronJobDefinition }> = ({ job 
       <span className="shrink-0 text-xs text-zinc-500">{cc.writeScope.label}</span>
       {grantedRoot ? (
         <>
-          <span className="min-w-0 flex-1 truncate text-sm text-zinc-200" data-testid="cron-write-scope-granted">
-            {cc.writeScope.granted.replace('{folder}', grantedRoot)}
+          <span
+            className="min-w-0 flex-1 truncate text-sm text-zinc-200"
+            data-testid="cron-write-scope-granted"
+            title={grantedRoot}
+          >
+            {cc.writeScope.granted.replace('{folder}', cronFolderDisplayName(grantedRoot))}
           </span>
           <Button variant="ghost" size="sm" onClick={handleRevoke} loading={isBusy} data-testid="cron-write-scope-revoke">
             {cc.writeScope.revoke}
@@ -104,7 +109,7 @@ export const CronWriteScopePanel: React.FC<{ job: CronJobDefinition }> = ({ job 
             data-testid="cron-write-scope-allow"
             title={candidate}
           >
-            {cc.writeScope.allow.replace('{folder}', candidate ?? '')}
+            {cc.writeScope.allow.replace('{folder}', cronFolderDisplayName(candidate ?? ''))}
           </Button>
         </>
       ) : (
