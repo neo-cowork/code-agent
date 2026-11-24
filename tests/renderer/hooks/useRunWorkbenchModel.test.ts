@@ -305,6 +305,86 @@ describe('buildLedgerTaskRecords', () => {
   });
 });
 
+describe('buildLedgerTaskRecords — non-shell step titles localized', () => {
+  const ALL_STATUSES = [
+    'queued',
+    'running',
+    'waiting_input',
+    'stalled',
+    'completed',
+    'failed',
+    'cancelled',
+    'paused',
+    'expired',
+    'orphaned',
+  ] as const satisfies readonly Task['status'][];
+
+  function ledgerTasksFor(statuses: readonly Task['status'][], idPrefix: string): Task[] {
+    return [
+      ...statuses.map((status) => makeLedgerTask({
+        id: `${idPrefix}:${status}`,
+        sessionId: 'session-1',
+        status,
+      })),
+      makeLedgerTask({
+        id: `${idPrefix}:stalled-labelled`,
+        sessionId: 'session-1',
+        status: 'stalled',
+        progress: { label: 'model warm-up' },
+      }),
+    ];
+  }
+
+  it('english step titles contain no CJK for every task status', () => {
+    const tasks = ledgerTasksFor(ALL_STATUSES, 'agent:en');
+    // buildLedgerTaskRecords slices the ledger at 8 rows; cover all statuses in two batches.
+    const records = [
+      ...buildLedgerTaskRecords(tasks.slice(0, 8), 'session-1', 'en'),
+      ...buildLedgerTaskRecords(tasks.slice(8), 'session-1', 'en'),
+    ];
+    expect(records).toHaveLength(tasks.length);
+    const titles = records.map((record) => record.steps[0]?.title ?? '');
+    for (const title of titles) {
+      expect(title).not.toMatch(/[一-鿿]/);
+    }
+    expect(titles).toEqual([
+      'Queued',
+      'Running',
+      'Waiting for input',
+      'Slow to start',
+      'Completed',
+      'Execution failed',
+      'Cancelled',
+      'Paused',
+      'Expired',
+      'Runtime process lost',
+      'Slow to start: model warm-up',
+    ]);
+  });
+
+  it('chinese step titles stay byte-identical for every task status', () => {
+    const tasks = ledgerTasksFor(ALL_STATUSES, 'agent:zh');
+    const records = [
+      ...buildLedgerTaskRecords(tasks.slice(0, 8), 'session-1', 'zh'),
+      ...buildLedgerTaskRecords(tasks.slice(8), 'session-1', 'zh'),
+    ];
+    expect(records).toHaveLength(tasks.length);
+    expect(records.map((record) => record.steps[0]?.title)).toEqual([
+      '排队中',
+      '执行中',
+      '等待输入',
+      '启动变慢',
+      '已完成',
+      '执行失败',
+      '已取消',
+      '已暂停',
+      '已过期',
+      '运行进程已丢失',
+      '启动变慢：model warm-up',
+    ]);
+  });
+});
+
 describe('buildWorkflowTaskRecord', () => {
   it('projects workflow snapshot into the TaskPanel task model', () => {
     const snapshot: ScriptRunSnapshot = {

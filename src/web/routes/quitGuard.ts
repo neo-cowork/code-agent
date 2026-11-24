@@ -54,24 +54,17 @@ export function createQuitGuardRouter(deps: QuitGuardRouterDeps): Router {
     }
   });
 
-  // 壳声明的退出意图（ADR-083 append 2026-10-18）。background = 后台继续
-  // （armed schedules 从此构成留守原因 + 摘掉 win32 的 EOF 停机指令）；
-  // stop = 停止并退出（下一次 stdin EOF 全平台先排空再优雅停机）。
+  // 壳声明「停止并退出」意图（ADR-083）：HTTP 面只接 mode=stop——stop 把
+  // 下一次 stdin EOF 变成全平台停机指令。「后台继续」是壳不退出，壳不发
+  // 任何 HTTP 声明；background 只剩进程内 setDaemonQuitIntent 入口。
   router.post('/quit-intent', (req: Request, res: Response) => {
     const { mode } = (req.body ?? {}) as { mode?: unknown };
-    if (mode !== 'background' && mode !== 'stop') {
+    if (mode !== 'stop') {
       res.status(400).json({ error: 'invalid-quit-intent' });
       return;
     }
     setDaemonQuitIntent(mode);
     res.json({ ok: true, mode });
-  });
-
-  // Windows 后台继续（旧路由）：保留为 quit-intent background 的别名——Rust 壳
-  // 仍在调用（N-RESIDENT-QUIT-THREE-BUTTONS 之前不撤）。
-  router.post('/quit-guard/detach', (_req: Request, res: Response) => {
-    setDaemonQuitIntent('background');
-    res.json({ ok: true });
   });
 
   return router;

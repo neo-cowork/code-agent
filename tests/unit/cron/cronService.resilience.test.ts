@@ -232,7 +232,8 @@ describe('①③ 同因失败去重后告警：单次告警 + 冷却窗', () => 
     // 最终停用通知不受冷却约束，且带出路
     expect(disableAlerts).toHaveLength(1);
     expect(disableAlerts[0]).toContain('自动化中心');
-    expect(disableAlerts[0]).toContain('provider 502: upstream broken');
+    expect(disableAlerts[0]).toContain('最后错误：运行失败。');
+    expect(disableAlerts[0]).not.toContain('provider 502: upstream broken');
     await service.shutdown();
   });
 
