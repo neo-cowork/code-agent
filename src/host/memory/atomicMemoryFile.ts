@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 
 export interface AtomicMemoryWriteOptions {
   validate?: (content: string) => void;
+  createOnly?: boolean;
 }
 
 /**
@@ -35,9 +36,20 @@ export async function atomicWriteMemoryText(
 
     const readback = await fs.readFile(temporaryPath, 'utf-8');
     options.validate?.(readback);
-    await fs.rename(temporaryPath, filePath);
+    if (options.createOnly) {
+      // A hard link publishes the complete file atomically and fails if the name is taken.
+      await fs.link(temporaryPath, filePath);
+      await fs.unlink(temporaryPath);
+    } else {
+      await fs.rename(temporaryPath, filePath);
+    }
   } catch (error) {
     await handle?.close().catch(() => undefined);
+    const failure = error as NodeJS.ErrnoException;
+    if (options.createOnly && failure.code === 'EEXIST' && failure.syscall === 'link') {
+      await fs.unlink(temporaryPath);
+      throw error;
+    }
     const quarantinePath = `${filePath}.corrupt-${Date.now()}`;
     await fs.rename(temporaryPath, quarantinePath).catch(() => undefined);
     throw error;

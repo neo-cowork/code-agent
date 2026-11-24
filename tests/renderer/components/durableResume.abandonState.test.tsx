@@ -12,7 +12,9 @@ import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const ipcInvoke = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('../../../src/renderer/services/ipcService', () => {
-  const ipcService = { invoke: ipcInvoke, invokeDomain: vi.fn(async () => undefined), on: () => () => undefined };
+  // 代理行成员数据会顺带读一次 swarm 账本（与取消无关），不计入 agent:cancel 的调用断言
+  const memberInvoke = (channel: string, ...args: unknown[]) => (channel === 'swarm:list-trace-runs' ? Promise.resolve([]) : (ipcInvoke as (...a: unknown[]) => unknown)(channel, ...args));
+  const ipcService = { invoke: memberInvoke, invokeDomain: vi.fn(async () => undefined), on: () => () => undefined };
   return { default: ipcService, ipcService, invoke: ipcInvoke };
 });
 const toastError = vi.hoisted(() => vi.fn());

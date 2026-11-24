@@ -253,7 +253,7 @@ export function buildLoopDecisionViews(projection: TraceProjection): LoopDecisio
       action: result === undefined || node.toolCall._streaming ? '工具执行中' : '工具完成',
       reason: usableToolDescription(node.toolCall) || '工具调用',
       expectedNextAction: result === undefined ? '等待工具结果' : '汇总工具输出',
-      ...describeBlocked(node.toolCall.success === false ? node.toolCall.result : undefined),
+      ...describeBlocked(node.toolCall.success === false ? node.toolCall.userMessage ?? node.toolCall.result : undefined),
     });
   }
 
@@ -292,7 +292,7 @@ export function buildToolCapabilityViews(projection: TraceProjection): ToolCapab
       source: getToolCapabilitySource(node.toolCall.name),
       callable: !resultFailed,
       permissionLevel: 'unknown',
-      ...describeBlocked(resultFailed ? node.toolCall.result : undefined),
+      ...describeBlocked(resultFailed ? node.toolCall.userMessage ?? node.toolCall.result : undefined),
       activatedForTurn: true,
     });
   }
