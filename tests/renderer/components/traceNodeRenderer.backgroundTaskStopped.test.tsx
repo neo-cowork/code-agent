@@ -8,6 +8,7 @@ import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import { languages, type Language } from '../../../src/renderer/i18n';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { mergeSnapshotWithLiveTail } from '../../../src/renderer/stores/sessionSnapshotMerge';
 import { projectBackgroundReceipts } from '../../../src/renderer/utils/backgroundReceiptProjection';
 import type { Message } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
@@ -210,5 +211,40 @@ describe('background handoff ended note', () => {
     expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
     const unrelated = { ...acknowledgement, metadata: { correlation: { traceId: 'other-run', turnId: 'other-turn' } } };
     expect(render([messages[0], dispatch, unrelated, marker], [])).not.toContain(testId);
+  });
+
+  it('shows a failed handoff note under the live acknowledgement after merging the snapshot', () => {
+    const text = 'I am sending this to the background.';
+    const dispatch: Message = {
+      ...reply, content: text, metadata: {
+        backgroundTaskPreannounce: { text, toolCallId: 'call-t1' },
+        correlation: { turnId: 'dispatch-turn', traceId: 'foreground-run' },
+      },
+    };
+    const acknowledgement: Message = {
+      ...reply, id: 'acknowledgement', toolCalls: [],
+      metadata: { correlation: { turnId: 'reply-turn', traceId: 'foreground-run' } },
+    };
+    const live: Message[] = [messages[0], ...[dispatch, acknowledgement].map((message, index) => ({
+      ...message, id: index === 0 ? 'dispatch-turn' : 'reply-turn',
+      metadata: { correlation: { turnId: index === 0 ? 'dispatch-turn' : 'reply-turn' } },
+    }))];
+    const failed: Task = {
+      ...task('failed'), failure: { message: 'Input file missing', reason: 'session_command_task_failed' },
+    };
+    const snapshot = [messages[0], dispatch, acknowledgement];
+    const merged = mergeSnapshotWithLiveTail(snapshot, live);
+    const html = render(merged.messages, [failed], 'zh');
+    expect(html.split(testId)).toHaveLength(2);
+    expect(html).toContain('后台任务没有完成，结果不会再送达。');
+    expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
+
+    const unrelated = {
+      ...acknowledgement,
+      metadata: { correlation: { turnId: 'reply-turn', traceId: 'other-run' } },
+    };
+    expect(render(mergeSnapshotWithLiveTail([messages[0], dispatch, unrelated], live).messages, [failed], 'zh'))
+      .not.toContain(testId);
   });
 });
