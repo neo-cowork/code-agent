@@ -42,8 +42,8 @@ const ledgerDetail: SwarmRunDetail = {
 };
 
 const CASES = [
-  { name: 'zh', t: zh, d: ['看看下载文件夹里有什么', '新建 PDF 文件夹', '把 PDF 移进去'], prefix: '未执行' },
-  { name: 'en', t: en, d: ['List what is in Downloads', 'Create a PDF folder', 'Move the PDFs in'], prefix: 'Not run' },
+  { name: 'zh', t: zh, d: ['看看下载文件夹里有什么', '新建 PDF 文件夹', '把 PDF 移进去'], skipped: '有一条命令没有执行' },
+  { name: 'en', t: en, d: ['List what is in Downloads', 'Create a PDF folder', 'Move the PDFs in'], skipped: 'A command did not run' },
 ] as const;
 
 function taskWith(descriptions: readonly string[], latestDenied: boolean): Task {
@@ -62,7 +62,7 @@ function taskWith(descriptions: readonly string[], latestDenied: boolean): Task 
   } as Task;
 }
 
-describe.each(CASES)('成员页委派 Bash 未执行 ($name)', ({ t, d, prefix }) => {
+describe.each(CASES)('成员页委派 Bash 未执行 ($name)', ({ t, d, skipped }) => {
   beforeEach(() => {
     lang.t = t;
     invokeMock.mockReset();
@@ -78,27 +78,27 @@ describe.each(CASES)('成员页委派 Bash 未执行 ($name)', ({ t, d, prefix }
   });
   afterEach(() => cleanup());
 
-  it('recent actions: only the denied step reads Not run; no raw command', async () => {
+  it('recent actions: only the skipped step uses the neutral sentence; no raw command', async () => {
     useBackgroundTaskStore.setState({ tasks: [taskWith(d, false)] });
     render(<MemberConversationView sessionId="session-1" />);
     await waitFor(() => expect(screen.getByTestId('member-bash-steps')).toBeTruthy());
     const rows = screen.getAllByTestId('member-bash-step').map((node) => node.textContent);
-    expect(rows).toEqual([d[0], `${prefix} · ${d[1]}`, d[2]]);
+    expect(rows).toEqual([d[0], skipped, d[2]]);
     expect(screen.getByTestId('member-current-action').textContent).toBe(d[2]);
     expect(document.body.textContent).not.toContain('~/Downloads');
   });
 
-  it('current-action bar: denied latest step reads Not run too', async () => {
+  it('current-action bar: skipped latest step uses the neutral sentence', async () => {
     useBackgroundTaskStore.setState({ tasks: [taskWith(d, true)] });
     render(<MemberConversationView sessionId="session-1" />);
     await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
-    expect(screen.getByTestId('member-current-action').textContent).toBe(`${prefix} · ${d[2]}`);
+    expect(screen.getByTestId('member-current-action').textContent).toBe(skipped);
     expect(screen.getAllByTestId('member-bash-step').map((node) => node.textContent))
-      .toEqual([d[0], `${prefix} · ${d[1]}`, `${prefix} · ${d[2]}`]);
+      .toEqual([d[0], skipped, skipped]);
     expect(document.body.textContent).not.toContain('~/Downloads');
   });
 
-  it('swarm member recent actions read the same notRun', async () => {
+  it('swarm member recent actions use the same neutral sentence', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });
     swarmState.agents = [{
       id: 'researcher', name: '调研员', role: 'researcher', status: 'running', iterations: 0,
@@ -115,6 +115,6 @@ describe.each(CASES)('成员页委派 Bash 未执行 ($name)', ({ t, d, prefix }
     render(<MemberConversationView sessionId="session-1" />);
     await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
     expect(screen.getAllByTestId('member-recent-action').map((node) => node.textContent))
-      .toEqual([`${prefix} · ${d[1]}`, d[0]]);
+      .toEqual([skipped, d[0]]);
   });
 });
