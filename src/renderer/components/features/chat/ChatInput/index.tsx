@@ -948,13 +948,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       return;
     }
     setShowSlashPopover(false);
-    if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
+    if (isLeadingAgentMentionInput(newValue, swarmAgents, agentEntries)) {
       atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
     atMention.search(newValue, caret);
-  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents, agentEntries]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());

@@ -5,6 +5,7 @@ import type { InputAreaRef } from './InputArea';
 import {
   applyAgentMentionSuggestion,
   getLeadingAgentMentionAutocomplete,
+  removeTrailingAgentMentionQuery,
 } from './agentMentionRouting';
 import {
   getAgentCommandOptions,
@@ -62,8 +63,8 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
   // @neo 已从 composer 入口移除（2026-07-29 拍板）：不再加载 topic 目录做续接候选，
   // mention 面板只列 swarm agents（工作卡/续接改从 Neo 协同页发起）。
   const agentMentionAutocomplete = useMemo(
-    () => getLeadingAgentMentionAutocomplete(value, swarmAgents),
-    [swarmAgents, value],
+    () => getLeadingAgentMentionAutocomplete(value, swarmAgents, undefined, undefined, agentEntries),
+    [swarmAgents, agentEntries, value],
   );
 
   const isAgentMentionAutocompleteOpen = Boolean(
@@ -91,14 +92,29 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
     setSelectedAgentCommandIndex(0);
   }, [agentSlashCommandQuery, agentCommandOptions.length]);
 
-  const handleAgentMentionSelect = useCallback((agentId: string) => {
+  const handleAgentMentionSelect = useCallback((rowId: string) => {
+    const row = agentMentionAutocomplete?.matches.find((item) => item.id === rowId);
+    if (row?.kind === 'expert' && row.expertId) {
+      // 专家行：与 /agent 面板同口径——chip 立即生效，@query 文本清掉，不写 swarm token / targetAgentIds
+      setActiveAgentId(row.expertId);
+      setPendingAgentSelection({
+        id: row.expertId,
+        name: row.expertName ?? row.name,
+        token: row.expertToken ?? row.id,
+        via: 'agent_command',
+      });
+      setValue((prev) => removeTrailingAgentMentionQuery(prev));
+      setDismissedAgentAutocompleteValue(null);
+      requestAnimationFrame(() => inputAreaRef.current?.focus());
+      return;
+    }
     // @neo 工作卡/续接候选已从面板移除（2026-07-29），这里只处理普通 agent mention
-    const agent = swarmAgents.find((item) => item.id === agentId);
+    const agent = swarmAgents.find((item) => item.id === rowId);
     if (!agent) return;
     setValue((prev) => applyAgentMentionSuggestion(prev, agent));
     setDismissedAgentAutocompleteValue(null);
     inputAreaRef.current?.focus();
-  }, [inputAreaRef, setValue, swarmAgents]);
+  }, [agentMentionAutocomplete, inputAreaRef, setActiveAgentId, setPendingAgentSelection, setValue, swarmAgents]);
 
   const openAgentCommand = useCallback(() => {
     setValue('/agent ');

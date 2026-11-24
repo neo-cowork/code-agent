@@ -226,3 +226,76 @@ describe('useChatInputAgentCommand', () => {
     expect(state.value).toBe('@设计师 ');
   });
 });
+
+describe('useChatInputAgentCommand · @专家名', () => {
+  const weekly: AgentListEntry = {
+    id: 'weekly-reporter',
+    name: '周报整理员',
+    description: '把零散笔记整理成周报',
+    source: 'user',
+    modelTier: 'balanced',
+    readonly: false,
+    tools: [],
+    profession: '行政助理',
+  };
+
+  function setupExpert(value: string) {
+    const state = {
+      value,
+      setValue: vi.fn((next: string | ((previous: string) => string)) => {
+        state.value = typeof next === 'function' ? next(state.value) : next;
+      }),
+      setPendingAgentSelection: vi.fn(),
+      setActiveAgentId: vi.fn(),
+    };
+    const hook = renderHook(() => useChatInputAgentCommand({
+      value: state.value,
+      swarmAgents: [],
+      agentEntries: [weekly, ...agents],
+      inputAreaRef: { current: null },
+      focusComposer: vi.fn(),
+      setValue: state.setValue,
+      setShowSlashPopover: vi.fn(),
+      setSlashFilter: vi.fn(),
+      setPendingAgentSelection: state.setPendingAgentSelection,
+      setActiveAgentId: state.setActiveAgentId,
+    }));
+    return { state, hook };
+  }
+
+  it('汉字全名与前缀都列出该专家，且只列一次', () => {
+    for (const text of ['@周报整理员', '@周报']) {
+      const { hook } = setupExpert(text);
+      const rows = hook.result.current.agentMentionAutocomplete?.matches ?? [];
+      expect(rows.filter((r) => r.expertId === 'weekly-reporter')).toHaveLength(1);
+      expect(hook.result.current.isAgentMentionAutocompleteOpen).toBe(true);
+    }
+  });
+
+  it('Enter 选中：chip 生效、@query 清掉，与 /agent 路径得到同一专家 id', () => {
+    const { state, hook } = setupExpert('@周报');
+    const event = keyEvent({ key: 'Enter', keyCode: 13 });
+    act(() => {
+      hook.result.current.handleAutocompleteKeyDown(event);
+    });
+    expect(state.setActiveAgentId).toHaveBeenCalledWith('weekly-reporter');
+    expect(state.setPendingAgentSelection).toHaveBeenCalledWith({
+      id: 'weekly-reporter',
+      name: '周报整理员',
+      token: '周报整理员',
+      via: 'agent_command',
+    });
+    expect(state.value).toBe('');
+
+    const viaMenu = setupExpert('/agent 周报');
+    act(() => {
+      viaMenu.hook.result.current.handleAgentCommandOptionSelect(0);
+    });
+    expect(viaMenu.state.setActiveAgentId.mock.calls[0]?.[0]).toBe(state.setActiveAgentId.mock.calls[0]?.[0]);
+  });
+
+  it('什么都不匹配时面板不开（交给引用搜索）', () => {
+    const { hook } = setupExpert('@zzzzqq');
+    expect(hook.result.current.isAgentMentionAutocompleteOpen).toBe(false);
+  });
+});
