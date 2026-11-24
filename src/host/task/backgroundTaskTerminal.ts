@@ -48,7 +48,7 @@ export async function settleBackgroundOnTaskComplete(
   const backgroundManager = getBackgroundTaskManager();
   if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
     if (hasApprovedRmSettlementTargets(sessionId, runId)) return;
-    await settleOrHoldBackgroundRun(sessionId, runId, { status: 'completed' }, { summary: data.summary, duration: data.duration });
+    await settleOrHoldBackgroundRun(backgroundManager, sessionId, runId, { status: 'completed' }, { summary: data.summary, duration: data.duration });
     return;
   }
   if (isSubTask && (hasApprovedRmSettlementTargets(sessionId, eventKey) || backgroundParentOwnsChildNotice(sessionId, eventKey))) return;
@@ -111,7 +111,7 @@ export async function closeBackgroundRunAtTerminal(
   const leftoverPaths = takeApprovedRmLeftovers(sessionId, runId, 'desktop',
     isBackground && eventType === 'agent_complete' && !runError);
   if (!isBackground) return;
-  await settleOrHoldBackgroundRun(sessionId, runId,
+  await settleOrHoldBackgroundRun(backgroundManager, sessionId, runId,
     eventType === 'agent_cancelled'
       ? { status: 'interrupted' }
       : runError
@@ -169,5 +169,5 @@ export async function settlePrimaryRunSessionStatus(
 export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string, runId: string): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
-  await settleOrHoldBackgroundRun(sessionId, runId, { status: 'error', errorMessage });
+  await settleOrHoldBackgroundRun(backgroundManager, sessionId, runId, { status: 'error', errorMessage });
 }

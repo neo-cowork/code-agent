@@ -1769,7 +1769,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         isBackground && finalStatus === 'completed');
       if (isBackground) {
         const errorData = runController.lastTerminalErrorData;
-        await settleOrHoldBackgroundRun(sessionId, runContext.runId, {
+        await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext.runId, {
           status: finalStatus,
           leftoverPaths,
           errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
@@ -1848,8 +1848,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      if (getBackgroundTaskManager().isTaskRunning(sessionId)) {
-        await settleOrHoldBackgroundRun(sessionId, runContext?.runId, { status: 'error', errorMessage: message });
+      const backgroundManager = getBackgroundTaskManager();
+      if (backgroundManager.isTaskRunning(sessionId)) {
+        await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext?.runId, { status: 'error', errorMessage: message });
       }
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。

@@ -1,17 +1,18 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createLogger } from '../services/infra/logger';
 import { resolveBackgroundRunSettlement, settleBackgroundRun, type BackgroundRunSettlementInput } from './backgroundRunSettlement';
-import { getBackgroundTaskManager } from './backgroundTaskManager';
+import type { getBackgroundTaskManager } from './backgroundTaskManager';
 
 const logger = createLogger('BackgroundSettlementHold');
+type SettlementManager = Pick<ReturnType<typeof getBackgroundTaskManager>, 'isTaskRunning' | 'markCompleted' | 'markFailed'>;
 type Completion = { summary?: string; duration?: number };
-type Outcome = { input: BackgroundRunSettlementInput; completion?: Completion };
+type Outcome = { manager: SettlementManager; input: BackgroundRunSettlementInput; completion?: Completion };
 type Child = { id: string; sessionId: string; parentRunId?: string };
 
 const executingPrimaryRun = new AsyncLocalStorage<{ sessionId: string; runId: string; active: boolean }>();
 const latestRunBySession = new Map<string, string>();
 const holdsBySession = new Map<string, Map<string, Outcome>>();
-const completionsByRun = new Map<string, Completion>();
+const completionsByRun = new Map<string, { manager: SettlementManager; completion: Completion }>();
 const childrenBySession = new Map<string, Map<string, Child>>();
 
 function inFlightChildren(sessionId: string, runId?: string): number {
@@ -61,8 +62,7 @@ export function backgroundChildAdmitted(child: Child): void {
   childrenBySession.set(child.sessionId, children);
 }
 
-function applyOutcome(sessionId: string, { input, completion }: Outcome): Promise<void> {
-  const manager = getBackgroundTaskManager();
+function applyOutcome(sessionId: string, { manager, input, completion }: Outcome): Promise<void> {
   const settlement = resolveBackgroundRunSettlement(input);
   const target = completion && input.status === 'completed' ? {
     markFailed: manager.markFailed.bind(manager),
@@ -71,8 +71,9 @@ function applyOutcome(sessionId: string, { input, completion }: Outcome): Promis
   return settleBackgroundRun(target, sessionId, settlement);
 }
 
-/** All background terminal producers use the same run and child fence. */
+/** Terminal producers supply their row manager so primary registration stays independent of host services. */
 export async function settleOrHoldBackgroundRun(
+  manager: SettlementManager,
   sessionId: string,
   runId: string | undefined,
   input: BackgroundRunSettlementInput,
@@ -86,10 +87,11 @@ export async function settleOrHoldBackgroundRun(
   // The text completion precedes agent_complete on desktop. Preserve its summary
   // for a successful terminal outcome when children prevent the early close.
   if (runId && completion && count > 0) {
-    if (!completionsByRun.has(runId)) completionsByRun.set(runId, completion);
+    if (!completionsByRun.has(runId)) completionsByRun.set(runId, { manager, completion });
     return;
   }
-  const outcome = { input, completion: completion ?? (runId ? completionsByRun.get(runId) : undefined) };
+  const staged = runId ? completionsByRun.get(runId) : undefined;
+  const outcome = { manager, input, completion: completion ?? staged?.completion };
   if (runId) completionsByRun.delete(runId);
   if (runId && count > 0) {
     const pending = holds ?? new Map<string, Outcome>();
@@ -104,9 +106,9 @@ export async function settleOrHoldBackgroundRun(
 export function backgroundParentOwnsChildNotice(sessionId: string, childId: string): boolean {
   const child = childrenBySession.get(sessionId)?.get(childId);
   const runId = latestRunBySession.get(sessionId);
-  return Boolean(child && runId && (!child.parentRunId || child.parentRunId === runId)
-    && (holdsBySession.get(sessionId)?.has(runId) || completionsByRun.has(runId))
-    && getBackgroundTaskManager().isTaskRunning(sessionId));
+  if (!child || !runId || (child.parentRunId && child.parentRunId !== runId)) return false;
+  const manager = holdsBySession.get(sessionId)?.get(runId)?.manager ?? completionsByRun.get(runId)?.manager;
+  return manager?.isTaskRunning(sessionId) ?? false;
 }
 
 /** Returns whether the running background row owns this child's success notice. */
@@ -119,8 +121,8 @@ export function backgroundChildSettled({ id, sessionId, parentRunId }: Child): b
   if (!runId || runId !== latest) return false;
   const holds = holdsBySession.get(sessionId);
   const outcome = holds?.get(runId);
-  if (!outcome && !completionsByRun.has(runId)) return false;
-  const background = getBackgroundTaskManager().isTaskRunning(sessionId);
+  const manager = outcome?.manager ?? completionsByRun.get(runId)?.manager;
+  const background = manager?.isTaskRunning(sessionId) ?? false;
   if (outcome && inFlightChildren(sessionId, runId) === 0) {
     holdsBySession.delete(sessionId);
     if (background) {

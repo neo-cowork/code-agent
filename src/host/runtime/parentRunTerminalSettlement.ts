@@ -36,9 +36,10 @@ export async function settleParentRunTerminal(envelope: RunEnvelope, getHandle: 
     // TaskManager rejection path (markFailed with the real error); cancelling it here would show "stopped".
     if (!envelope.parentRunId && envelope.status === 'cancelled') {
       const { getBackgroundTaskManager } = await import('../session/backgroundTaskManager');
-      if (getBackgroundTaskManager().isTaskRunning(envelope.sessionId)) {
+      const backgroundManager = getBackgroundTaskManager();
+      if (backgroundManager.isTaskRunning(envelope.sessionId)) {
         const { settleOrHoldBackgroundRun } = await import('../session/backgroundSettlementHold');
-        await settleOrHoldBackgroundRun(envelope.sessionId, envelope.runId, { status: 'interrupted' });
+        await settleOrHoldBackgroundRun(backgroundManager, envelope.sessionId, envelope.runId, { status: 'interrupted' });
       }
     }
   } catch (error) {
