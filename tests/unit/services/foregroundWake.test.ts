@@ -169,7 +169,7 @@ describe('foreground task-result wake', () => {
       mode: 'normal',
       inputHistoryVisibility: 'meta',
       runRegistration: 'auxiliary',
-      maxIterations: 4,
+      maxIterations: 8,
     });
     expect(options.historyVisibility).toBeUndefined();
     // N-FIX-BG-WAKE-TURN-KEEPS-EDIT-WRITE：无用户消息的唤醒轮是正向白名单——前台基面自带的
@@ -188,6 +188,19 @@ describe('foreground task-result wake', () => {
     expect(options.turnSystemContext?.join('\n')).not.toContain('Edit 或 Write');
     expect(options.turnSystemContext?.join('\n')).toContain('Read/Grep/ListDirectory');
     expect(manager.setSessionContext).toHaveBeenCalledWith('session-a', session.messages);
+  });
+
+  it('logs bg-return with eight steps when the wake dispatcher hands back a result', async () => {
+    const stderr = vi.spyOn(console, 'error');
+    try {
+      await createForegroundWake(dependencies())(task(), 'completed');
+
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
+        'INFO [ForegroundBrainBudget] Foreground brain budget rule=bg-return cap=8 maxIterations=8',
+      ));
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   // 正常前台轮的工具面必须原样：点名 docx/xlsx 的 prompt 仍拿到 Edit/Write/生成工具；

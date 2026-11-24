@@ -152,7 +152,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 : status.label,
           statusToneClassName: status.toneClassName,
           showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type, t),
+          typeLabel: session.origin?.metadata?.trigger === 'first_wake' ? null : getSessionTypeLabel(session.type, t),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
           lastActiveTitle: formatDateTime(latestActivityAt, language),
           workingDirectory: session.workingDirectory,

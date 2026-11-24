@@ -1,3 +1,4 @@
+import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 // ============================================================================
 
 import { HostReasonCode } from '@shared/contract';
@@ -47,7 +48,7 @@ const hostReasonZh = {
   [HostReasonCode.OsSandboxUnavailable]: { summary: '操作系统沙箱不可用，已拒绝执行' },
   [HostReasonCode.UploadExpired]: { summary: '这个上传的文件已过期，读取不了', detail: '请重新上传该文件。' },
   [HostReasonCode.ToolArgsInvalid]: { summary: '{toolName}的调用缺少必要信息，没有执行' },
-  [HostReasonCode.ForeignDataDir]: { summary: '这是 Neo 另一份独立数据目录，当前不能直接读取', detail: '需要的话，直接告诉 Neo 你想找什么。' },
+  [HostReasonCode.ForeignDataDir]: { summary: FOREIGN_SLOT_DENIAL_ZH, detail: '需要的话，直接告诉 Neo 你想找什么。' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
