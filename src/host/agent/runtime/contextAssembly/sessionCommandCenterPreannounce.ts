@@ -50,7 +50,12 @@ export function applyCommandCenterPreannounce(
   userMessage = '',
 ): ModelResponse {
   if (!preannounce || response.type !== 'tool_use') return response;
-  response.backgroundTaskPreannounce = { text: preannounce, title: preannounceTitle(userMessage) };
+  const delegates = response.toolCalls?.filter((call) => call.name === 'delegate_task');
+  response.backgroundTaskPreannounce = {
+    text: preannounce,
+    title: preannounceTitle(userMessage),
+    ...(delegates?.length === 1 ? { toolCallId: delegates[0].id } : {}),
+  };
   const modelContent = response.content?.trim();
   response.content = modelContent ? `${preannounce}\n${modelContent}` : preannounce;
   response.contentParts = [
