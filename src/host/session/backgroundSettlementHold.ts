@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createLogger } from '../services/infra/logger';
 import { resolveBackgroundRunSettlement, settleBackgroundRun, type BackgroundRunSettlementInput } from './backgroundRunSettlement';
 import { getBackgroundTaskManager } from './backgroundTaskManager';
@@ -7,6 +8,7 @@ type Completion = { summary?: string; duration?: number };
 type Outcome = { input: BackgroundRunSettlementInput; completion?: Completion };
 type Child = { id: string; sessionId: string; parentRunId?: string };
 
+const executingPrimaryRun = new AsyncLocalStorage<{ sessionId: string; runId: string; active: boolean }>();
 const latestRunBySession = new Map<string, string>();
 const holdsBySession = new Map<string, Map<string, Outcome>>();
 const completionsByRun = new Map<string, Completion>();
@@ -32,6 +34,25 @@ export function backgroundPrimaryRunStarted(sessionId: string, runId: string): v
     });
   }
   holdsBySession.delete(sessionId);
+}
+
+/** TaskManager preflight can fail before a native handle exists. */
+export function withBackgroundPrimaryRun<T>(sessionId: string, runId: string, execute: () => Promise<T>): Promise<T> {
+  backgroundPrimaryRunStarted(sessionId, runId);
+  const run = { sessionId, runId, active: true };
+  return executingPrimaryRun.run(run, async () => {
+    try {
+      return await execute();
+    } finally {
+      // Detached callbacks can inherit this scope after the parent promise ends.
+      run.active = false;
+    }
+  });
+}
+
+export function executingBackgroundPrimaryRunId(sessionId?: string): string | undefined {
+  const run = executingPrimaryRun.getStore();
+  return run?.active && run.sessionId === sessionId ? run.runId : undefined;
 }
 
 export function backgroundChildAdmitted(child: Child): void {

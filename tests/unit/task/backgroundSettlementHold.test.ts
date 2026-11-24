@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import express from 'express';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { ModelRouter } from '../../../src/host/model/modelRouter';
@@ -92,7 +92,7 @@ describe('background settlement through the parent and delegated run entries', (
   let sessionId: string;
   let workspace: string;
   let parentRunId: string;
-  let backgroundNotices: ReturnType<typeof vi.spyOn<typeof notificationService, 'notifyTaskComplete'>>;
+  let backgroundNotices: MockInstance<typeof notificationService.notifyTaskComplete>;
   let resumeModel: (response: ModelResponse) => void;
   const pendingModels: Array<(response: ModelResponse) => void> = [];
 
@@ -109,8 +109,16 @@ describe('background settlement through the parent and delegated run entries', (
     sessionId = randomUUID();
     const sessions = getSessionManager();
     vi.spyOn(sessions, 'getSession').mockResolvedValue({
-      id: sessionId, title: 'Scratch file check', workingDirectory: workspace, messages: [],
-    } as NonNullable<Awaited<ReturnType<typeof sessions.getSession>>>);
+      id: sessionId,
+      title: 'Scratch file check',
+      workingDirectory: workspace,
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+      todos: [],
+      messageCount: 0,
+    });
     vi.spyOn(sessions, 'addMessageToSession').mockResolvedValue(undefined);
     vi.spyOn(sessions, 'updateMessage').mockResolvedValue(undefined);
     vi.spyOn(sessions, 'updateSession').mockResolvedValue(undefined);
@@ -280,6 +288,35 @@ describe('background settlement through the parent and delegated run entries', (
     await closeParent();
     await expectCompletedOnce();
     expect(h.info).not.toHaveBeenCalled();
+  });
+
+  it('gives a TaskManager parent and its registered loop the same run identity', async () => {
+    registry.unregister(parentRunId);
+    const parent = Promise.withResolvers<ModelResponse>();
+    const inference = vi.spyOn(ModelRouter.prototype, 'inference').mockReturnValueOnce(parent.promise);
+    const launched = manager.startTask(sessionId, 'Check the disposable scratch file.', undefined, {
+      mode: 'normal', disableAutoAgent: true,
+    });
+    try {
+      await vi.waitFor(() => expect(inference).toHaveBeenCalled(), { timeout: 5000 });
+      const nativeRoot = registry.getBySessionId(sessionId);
+      expect(nativeRoot).toBeDefined();
+      const child = await spawn(nativeRoot?.context.runId);
+      await background.moveToBackground(sessionId);
+      parent.resolve(done);
+      await launched;
+      await manager.whenAgentEventsSettled(sessionId);
+      expectRunning();
+      expect(h.info).toHaveBeenCalledWith('BACKGROUND_SETTLEMENT_HELD', {
+        sessionId, runId: nativeRoot?.context.runId, inFlightChildCount: 1,
+      });
+      child(done);
+      await expectCompletedOnce();
+      await waitForChild();
+    } finally {
+      parent.resolve(done);
+      await launched;
+    }
   });
 
   it('holds the real web run route until its real delegated child ends', async () => {

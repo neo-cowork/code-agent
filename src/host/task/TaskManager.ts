@@ -35,7 +35,7 @@ import { getModelSessionState } from '../session/modelSessionState';
 import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
-import { backgroundPrimaryRunStarted } from '../session/backgroundSettlementHold';
+import { executingBackgroundPrimaryRunId, withBackgroundPrimaryRun } from '../session/backgroundSettlementHold';
 import { generateMessageId } from '../../shared/utils/id';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
@@ -149,7 +149,6 @@ export class TaskManager extends EventEmitter {
    */
   private agentEventObservers = new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>();
   private runRegistry: RunRegistry | undefined;
-  private readonly executingPrimaryRuns = new Map<string, string>();
 
   // 当前活跃会话 ID（用于 getAgentOrchestrator 兼容层）
   private currentSessionId: string | null = null;
@@ -274,13 +273,11 @@ export class TaskManager extends EventEmitter {
     const laterUserMessage = inferenceMessages.slice(sourceIndex + 1).some((message) => message.role === 'user'); if (laterUserMessage) throw new Error(`Durable run ${runId} resume history cannot contain a later user message after ${clientMessageId}`);
     const currentStatus = this.sessionStates.get(sessionId)?.status ?? ''; if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus)) throw new Error(`Session ${sessionId} is already ${currentStatus}`);
     await this.semaphore.acquire(); this.updateSessionState(sessionId, { status: 'running', startTime: Date.now() });
-    this.executingPrimaryRuns.set(sessionId, runId);
-    backgroundPrimaryRunStarted(sessionId, runId);
     this.emitEvent('task_started', sessionId, { runId, resumed: true });
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
-      await wrapper.orchestrator.resumeExistingDurableRun(
+      await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,
         {
@@ -292,7 +289,7 @@ export class TaskManager extends EventEmitter {
         },
         messageMetadata ?? source.metadata,
         clientMessageId ?? source.id,
-      );
+      ));
       if (this.cancellingSessions.has(sessionId)) {
         const currentHandle = this.runRegistry?.get(runId); if (currentHandle && this.runRegistry?.hasDurableOwner(runId)) await this.runRegistry.parkDurable(runId, { reason: 'user_stop' }, currentHandle);
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -314,7 +311,6 @@ export class TaskManager extends EventEmitter {
         ...(failure ? { failure } : {}),
       });
     } finally {
-      this.executingPrimaryRuns.delete(sessionId);
       this.semaphore.release();
       this.processQueue();
       if (this.sessionStates.get(sessionId)?.status === 'error') {
@@ -1032,8 +1028,6 @@ export class TaskManager extends EventEmitter {
     // Preflight can reject before the orchestrator registers its handle. Give that
     // rejection and the later native loop the same primary identity.
     const runId = options?.runId?.trim() || `run-${generateMessageId()}`;
-    this.executingPrimaryRuns.set(sessionId, runId);
-    backgroundPrimaryRunStarted(sessionId, runId);
     logger.info(`Executing task for session ${sessionId}`);
 
     const requestedModelSpec = options?.modelSpec;
@@ -1057,7 +1051,8 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
 
     try {
-      await wrapper.orchestrator.sendMessage(message, attachments, { ...options, mode: options?.mode ?? 'normal', runId }, messageMetadata, clientMessageId);
+      await withBackgroundPrimaryRun(sessionId, runId, () =>
+        wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata, clientMessageId));
 
       if (this.cancellingSessions.has(sessionId)) {
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -1088,7 +1083,6 @@ export class TaskManager extends EventEmitter {
         ...(failure ? { failure } : {}),
       });
     } finally {
-      this.executingPrimaryRuns.delete(sessionId);
       this.activeModelSpecs.delete(sessionId);
       // 释放信号量
       this.semaphore.release();
@@ -1308,7 +1302,7 @@ export class TaskManager extends EventEmitter {
       backgroundPermissionOwners: this.backgroundPermissionOwners,
       backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
       messageDeltaAccumulator: this.messageDeltaAccumulator,
-      primaryRunId: this.executingPrimaryRuns.get(sessionId) ?? this.runRegistry?.getBySessionId(sessionId)?.context.runId,
+      primaryRunId: executingBackgroundPrimaryRunId(sessionId) ?? this.runRegistry?.getBySessionId(sessionId)?.context.runId,
       isPrimaryRunActive: () => this.getSessionState(sessionId).status === 'running' || this.hasActivePrimaryRun(sessionId),
     }, sessionId, event, snapshot, eventKey);
   }
