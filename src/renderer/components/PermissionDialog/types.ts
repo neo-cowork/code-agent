@@ -55,6 +55,7 @@ export interface PermissionRequestDetails {
   purpose?: string;
   userRequest?: { text: string; truncated: boolean };
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];

@@ -1,3 +1,4 @@
+import { takeApprovedRmLeftovers } from '../session/approvedRmSettlementTargets';
 import type { RunCancelReason } from '../runtime/runContext';
 import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
@@ -1076,6 +1077,9 @@ export class AgentOrchestrator {
     } finally {
       // N-PERM-POLICYVERSION：run 终点丢权限快照（begin 在角色档写入之后、try 体内，
       // 与这里严格配对；begin 未执行的异常路径 endRunPolicy 是 no-op）。
+      if (!runCompletedNormally && sessionId && options?.runRegistration !== 'auxiliary') {
+        takeApprovedRmLeftovers(sessionId, nativeRunId, 'desktop', false);
+      }
       endRunPolicy(nativeRunId);
       // 只钳这一轮：下一轮换成别的专家（或回到主会话）时回到会话自己的档。
       if (rolePresetSessionId) {

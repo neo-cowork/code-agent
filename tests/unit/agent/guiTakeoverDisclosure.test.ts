@@ -180,3 +180,98 @@ describe('GUI 接管披露 · 每 run 每应用一次', () => {
     toolSpy.mockRestore();
   });
 });
+
+describe('GUI 接管披露 · unresolved 留痕，metadata / 整桌面读取保持安静', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('launch_app 没有 name/bundle_id：一条带 resolver reason 的 WARN，不挂披露，也不打抛错那条', async () => {
+    const toolSpy = vi.spyOn(logCollector, 'tool');
+    const calls = [
+      call('u1', 'mcp__cua-driver__launch_app', {}),
+      call('m1', 'mcp__cua-driver__list_apps', {}),
+      call('s1', 'mcp__cua-driver__screenshot', { window_id: 77 }),
+      call('d1', 'mcp__cua-driver__get_desktop_state', {}),
+      call('o1', 'computer_use', { action: 'observe' }),
+    ];
+    await attachGuiTakeoverDisclosures(makeCtx(), calls);
+    expect(calls.map((item) => item.guiTakeoverDisclosure ?? null)).toEqual([null, null, null, null, null]);
+    const warns = toolSpy.mock.calls.filter((entry) => entry[0] === 'WARN');
+    expect(warns).toEqual([[
+      'WARN',
+      'GUI takeover disclosure unresolved (tool runs without disclosure)',
+      expect.objectContaining({
+        toolCallId: 'u1',
+        toolName: 'mcp__cua-driver__launch_app',
+        reason: expect.stringContaining('neither bundle_id nor name'),
+      }),
+    ]]);
+    expect(toolSpy.mock.calls.some((entry) => String(entry[1]).includes('resolution failed'))).toBe(false);
+    toolSpy.mockRestore();
+  });
+
+  it('pid 反查失败：WARN 带上 resolver reason，调用本身不被披露层拦住', async () => {
+    const toolSpy = vi.spyOn(logCollector, 'tool');
+    const calls = [call('u2', 'mcp__cua-driver__get_window_state', { pid: 999 })];
+    await expect(attachGuiTakeoverDisclosures(makeCtx(), calls)).resolves.toBeUndefined();
+    expect(calls[0]?.guiTakeoverDisclosure).toBeUndefined();
+    const warns = toolSpy.mock.calls.filter((entry) => entry[0] === 'WARN');
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.[2]).toEqual(expect.objectContaining({
+      toolCallId: 'u2',
+      toolName: 'mcp__cua-driver__get_window_state',
+      reason: expect.stringContaining('pid 999'),
+    }));
+    toolSpy.mockRestore();
+  });
+});
+
+describe('GUI 接管披露 · 命中已有键时不把另一应用名并进集合', () => {
+  it('已披露 Calculator(bundle) 后，带同 bundle 的 Notes 调用被跳过但不吞掉 Notes：随后只带名字的 Notes 仍披露', async () => {
+    const ctx = makeCtx();
+    const got = await disclosuresFor(ctx, [
+      call('k1', 'computer_use', { action: 'open_application', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+      call('k2', 'computer_use', { action: 'click', targetApp: 'Notes', bundleId: 'com.apple.calculator' }),
+      call('k3', 'computer_use', { action: 'click', targetApp: 'Notes' }),
+    ]);
+    expect(got[0]).toEqual({ code: 'gui_takeover', app: 'Calculator' });
+    expect(got[1]).toBeNull();
+    expect(got[2]).toEqual({ code: 'gui_takeover', app: 'Notes' });
+  });
+
+  it('先按名字披露、再带 bundle 的同名调用：并到同一次预告，之后 bundle-only 不再披露', async () => {
+    const ctx = makeCtx();
+    const got = await disclosuresFor(ctx, [
+      call('n1', 'computer_use', { action: 'click', targetApp: 'Calculator' }),
+      call('n2', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+      call('n3', 'computer_use', { action: 'click', targetApp: 'calculator ', bundleId: 'com.apple.calculator' }),
+    ]);
+    expect(got).toEqual([{ code: 'gui_takeover', app: 'Calculator' }, null, null]);
+  });
+});
+
+describe('GUI 接管披露 · 跳过时不写键（I2）', () => {
+  it('Notes 仅按名字披露后，{Notes, 计算器 bundle} 不披露也不写 bundle 键；之后按 bundle 的 Calculator 仍披露', async () => {
+    const ctx = makeCtx();
+    const got = await disclosuresFor(ctx, [
+      call('i1', 'computer_use', { action: 'click', targetApp: 'Notes' }),
+      call('i2', 'computer_use', { action: 'click', targetApp: 'Notes', bundleId: 'com.apple.calculator' }),
+      call('i3', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+    ]);
+    expect(got).toEqual([
+      { code: 'gui_takeover', app: 'Notes' },
+      null,
+      { code: 'gui_takeover', app: 'Calculator' },
+    ]);
+  });
+
+  it('真实三步：Calculator 按名字 → {Calculator, bundle} → 同 bundle 再来一次，合计只披露一次', async () => {
+    const got = await disclosuresFor(makeCtx(), [
+      call('r1', 'computer_use', { action: 'open_application', targetApp: 'Calculator' }),
+      call('r2', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+      call('r3', 'computer_use', { action: 'click', targetApp: 'Calculator', bundleId: 'com.apple.calculator' }),
+    ]);
+    expect(got).toEqual([{ code: 'gui_takeover', app: 'Calculator' }, null, null]);
+  });
+});

@@ -123,6 +123,22 @@ describe('RoleWakeLedger', () => {
     expect(values).toContain('$0.1100');
   });
 
+  it('connector_lost 行显示飞书，不露连接器 id', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w-lost', {
+        result: { status: 'skipped', skipReason: 'connector_lost:feishu', skipped: true },
+      }),
+    ]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent))
+        .toContain('未运行：飞书已退出登录，重新连接后会继续');
+    });
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('feishu');
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('connector_lost');
+  });
+
   it('每日小计出现在角色页（与自动化中心同组件同口径）', async () => {
     listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
     getExecutions.mockResolvedValue([

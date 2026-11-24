@@ -587,7 +587,7 @@ export class SessionAutomationService {
         id: row.id,
         kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
-        sessionTitle: resolveApprovalSessionTitle(payload.sessionId ?? row.coordinatorId, row.id),
+        ...resolveApprovalSessionPresentation(payload.sessionId ?? row.coordinatorId, row.id, payload),
         taskTitle: approvalTaskTitle(payload.sessionId ?? row.coordinatorId, payload),
         ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
         tool: payload.tool ?? '',
@@ -602,7 +602,6 @@ export class SessionAutomationService {
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
         ...(payload.forceConfirm === true ? { forceConfirm: true } : {}),
-        ...pickApprovalOrigin(payload),
         ...(row.status !== 'orphaned' && payload.writeGrantFolder ? { writeGrantFolder: payload.writeGrantFolder } : {}),
         sensitiveStep: payload.sensitiveStep,
       };
@@ -904,16 +903,20 @@ function parseVoidedFeedback(feedback: string | null): VoidedFeedback | null {
 const describeVoided = (voided: VoidedFeedback): string =>
   describeParkedApprovalClosure(voided.reason, voided.workingDirectoryUnavailable ? 'working_directory_unavailable' : undefined);
 
-function resolveApprovalSessionTitle(sessionId: string | null, requestId: string): string | undefined {
+function resolveApprovalSessionPresentation(sessionId: string | null, requestId: string, payload: Partial<ToolApprovalPayload>) {
   let sessionTitle: string | undefined;
+  let isFirstWake = false;
   try {
+    const session = sessionId ? getDatabase().getSession(sessionId) : undefined;
+    // Older first-meeting approvals were stored with the generic automation flag.
+    isFirstWake = session?.origin?.metadata?.trigger === 'first_wake';
     // N-FIX-PARKED-APPROVAL-VOIDED-CARD-INDISTINGUISHABLE-FU1：用超集前缀剥离，[Schedule]/[Cron]/[Heartbeat] 一并去掉。
-    const title = sessionId ? stripSystemTitlePrefix(getDatabase().getSession(sessionId)?.title ?? '') : undefined;
+    const title = stripSystemTitlePrefix(session?.title ?? '');
     if (title && !/^(?:session_|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i.test(title)) sessionTitle = title;
   } catch {
     logger.warn('Approval session title unavailable', { requestId });
   }
-  return sessionTitle;
+  return { sessionTitle, ...pickApprovalOrigin(isFirstWake ? { startedByFirstWake: true } : payload) };
 }
 
 /** 重启后被自动作废的 tool_approval 行 → 收件箱只读留痕；超出保留期或原因码认不出的行返回 null。 */
@@ -937,10 +940,9 @@ function toVoidedInboxItem(
     id: row.id,
     kind: 'tool_approval',
     sessionId,
-    sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
+    ...resolveApprovalSessionPresentation(sessionId, row.id, payload),
     taskTitle: approvalTaskTitle(sessionId, payload),
     argsPreview: toUserFacingArgsPreview(payload.argsPreview),
-    ...pickApprovalOrigin(payload),
     tool: payload.tool ?? '',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,

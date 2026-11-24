@@ -34,7 +34,7 @@ import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTermin
 import { parseStatedEventDecisions } from './cronEventDecisions';
 import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
-import { precheckLostCliConnectors, recordCronConnectorLost, scanLostMcpConnectors } from './cronConnectorLost';
+import { recordCronConnectorLost, refreshLostCoreCliConnectors, scanLostMcpConnectors } from './cronConnectorLost';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
 
@@ -113,8 +113,36 @@ export async function executeCronAgentAction(
   // 与事件载荷（外部来的）不算；HEARTBEAT.md 装载的任务出自工作区文件（agent 可写），不声明。
   const initiatingUserText = ctx?.heartbeatTask ? undefined : action.prompt;
 
-  // 连接器登录丢失预检：无人值守没人看聊天卡，往待过目收件箱记一条（同连接器同日至多一条）
-  await recordCronConnectorLost(definition, precheckLostCliConnectors(action.roleId), () => Date.now());
+  // 核心 CLI 连接器（飞书 / 腾讯会议）：先刷新登录状态。确认未登录则不建会话、不调模型。
+  // 探测超时或失败则照常跑，避免一份过期的「未登录」缓存把任务永久跳过。
+  const connectorPrecheck = await refreshLostCoreCliConnectors(action.roleId);
+  if (connectorPrecheck.kind === 'fail-open') {
+    logger.warn('CLI connector status probe did not refresh; cron run continues', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      probeOutcome: connectorPrecheck.probe,
+      ...(connectorPrecheck.message ? { probeError: connectorPrecheck.message } : {}),
+      waitMs: connectorPrecheck.waitMs,
+    });
+  } else if (connectorPrecheck.kind === 'lost' && definition.scheduleType !== 'at') {
+    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
+    const skipReason = `connector_lost:${connectorPrecheck.ids.join(',')}`;
+    logger.warn('Cron run skipped because a core CLI connector is signed out', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      connectorIds: connectorPrecheck.ids,
+      skipReason,
+    });
+    return { skipped: true, status: 'skipped', skipReason };
+  } else if (connectorPrecheck.kind === 'lost') {
+    // 一次性任务跑完就会停用。跳过它会留下「重新连接后会继续」，但任务已经没了。
+    logger.warn('One-time cron run continues despite a signed-out core CLI connector', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      connectorIds: connectorPrecheck.ids,
+    });
+    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
+  }
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
