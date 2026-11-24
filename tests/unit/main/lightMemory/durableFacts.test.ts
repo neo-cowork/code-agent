@@ -334,6 +334,22 @@ describe('默认助手长期事实写回', () => {
     expect(memoryModelMocks.memoryTask).toHaveBeenCalledWith(expect.any(String), SESSION_JUDGE.MAX_TOKENS);
   });
 
+  it('每条用户消息带自己的日期：昨天说的「明天提测」不按判官运行当天换算', async () => {
+    memoryModelMocks.memoryTask.mockResolvedValue(llmResult({ durableFacts: [] }));
+    const yesterday = new Date(2026, 10, 22, 10, 0, 0).getTime();
+    const today = new Date(2026, 10, 23, 18, 0, 0).getTime();
+
+    await judgeConversation({
+      userMessages: ['会员页改版明天提测。', '好的，谢谢。'],
+      userMessageTimestamps: [yesterday, today],
+    });
+
+    const prompt = memoryModelMocks.memoryTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('用户消息1（2026-11-22（');
+    expect(prompt).toContain('用户消息2（2026-11-23（');
+    expect(prompt).toContain('会话日期：2026-11-23（');
+  });
+
   it('模型返回五条事实时只保留并写入前三条', async () => {
     memoryModelMocks.memoryTask.mockResolvedValue(llmResult({
       durableFacts: Array.from({ length: 5 }, (_, index) => makeFact(index + 1, {
