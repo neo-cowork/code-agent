@@ -100,10 +100,11 @@ const DAILY_FREQUENCY = /每天|每日|每早(?:上)?|每晚(?:上)?|每夜|\b(?
 const NON_DAILY_FREQUENCY = /每周|每星期|每礼拜|周末|双休日|\b(?:weekly|every\s+week|weekends?)\b/i;
 const DAY_PERIOD = /^\s*(早上|早晨|上午|下午|傍晚|午后|中午|晚上|夜里)/;
 const CLOCK_AT = /^\s*(?:at\b|在|于)\s*/i;
-const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1,2})(?:\s*[:：]\s*(\d{2})|\s*(点)(?:钟)?(?:\s*(半|\d{1,2}|[二三四五]?十[一二三四五六七八九]?|[零〇][一二三四五六七八九])(?:\s*分)?)?)?(?:\s*([ap])\.?m\b\.?)?(?!\s*[零〇一二两三四五六七八九十\d:：点])/i;
-const CLOCK_REVISION = /(?:改成|改到|调到|换成|提前到|推迟到|延后到|\b(?:change|switch|move|reschedule)(?:\s+it)?\s+to)\s*/i;
+const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1,2})(?:\s*[:：]\s*(\d{2})|\s*(点|时(?![候间段])|o['’]clock\b)(?:钟)?(?:\s*(半|\d{1,2}|[二三四五]?十[一二三四五六七八九]?|[零〇][一二三四五六七八九])(?:\s*分)?)?)?(?:\s*([ap])\.?m\b\.?)?(?!\s*[零〇一二两三四五六七八九十\d:：点])/i;
+const CLOCK_REVISION = /(?:改成|改到|改为|调到|换成|提前到|推迟到|延后到|\b(?:change|switch|move|reschedule)(?:\s+it)?\s+to)\s*/i;
 const SCHEDULE_CANCEL = /(?:取消|停止|关闭|不要|不用|无需|别再?)\s*(?:定时|按时|唤醒|醒来)|\b(?:cancel|stop|disable)\s+(?:the\s+)?(?:schedule|wake[- ]?up)\b/i;
 const NEGATED_DAILY = /(?:不要|不用|无需|别再?|取消|停止|不再|\b(?:do not|don't|no longer|cancel|stop)\b)[^，。！？；,.!?;\n]{0,12}$/i;
+const DURATION_UNIT = /^\s*(?:分钟|个?小时|刻钟?|钟头|(?:mins?|minutes?|hours?|hrs?)\b)/i;
 const BARE_CLOCK_SUFFIX = /^(?:[\p{L}\p{N}]|\s+(?:封|件|条|项|个|次|份|人|页|张|篇|分|秒|小时|钟|天|周|月|年)|\s+(?:mins?|minutes?|hours?|hrs?|seconds?|secs?|days?)\b)/iu;
 
 
@@ -114,7 +115,7 @@ const BARE_CLOCK_SUFFIX = /^(?:[\p{L}\p{N}]|\s+(?:封|件|条|项|个|次|份|�
  */
 export function readExplicitDailySchedule(text: string): string | null | undefined {
   if (readWeekday(text).freq || NON_DAILY_FREQUENCY.test(text) || SCHEDULE_CANCEL.test(text)) return null;
-  // A later revision (改成/change to) supersedes everything said before it.
+  // Only the segment after the LAST revision phrase decides; never fall back to earlier clocks.
   let revision: RegExpMatchArray | undefined;
   for (const match of text.matchAll(new RegExp(CLOCK_REVISION.source, 'gi'))) revision = match;
   const revisedFrom = revision ? (revision.index ?? 0) + revision[0].length : 0;
@@ -123,23 +124,14 @@ export function readExplicitDailySchedule(text: string): string | null | undefin
   for (const marker of markers) {
     if (NEGATED_DAILY.test(text.slice(0, marker.index ?? 0))) return null;
   }
-  const scan = (from: number): string | null | undefined => {
-    let found: string | null | undefined;
-    for (const marker of markers) {
-      const index = marker.index ?? 0;
-      if (index < from) continue;
-      // A marker in the expert name or task text may precede the actual schedule.
-      found ??= clockAfterDailyPhrase(marker[0], text.slice(index + marker[0].length));
-    }
-    return found;
-  };
-  const revised = revision ? scan(revisedFrom) : undefined;
-  if (revised) return revised;
-
-  // A clock-only revision supersedes the earlier request without establishing
-  // that Neo should run it every day.
-  if (revision && clockAfterDailyPhrase('', text.slice(revisedFrom))) return null;
-  return scan(0);
+  let found: string | null | undefined;
+  for (const marker of markers) {
+    const index = marker.index ?? 0;
+    if (index < revisedFrom) continue;
+    // A marker in the expert name or task text may precede the actual schedule.
+    found ??= clockAfterDailyPhrase(marker[0], text.slice(index + marker[0].length));
+  }
+  return revision ? (found ?? null) : found;
 }
 
 function clockAfterDailyPhrase(marker: string, tail: string): string | null {
@@ -151,6 +143,9 @@ function clockAfterDailyPhrase(marker: string, tail: string): string | null {
   if (!clock) return null;
 
   const [, hourText, colonMinutes, chime, chineseMinutes, meridiem] = clock;
+  // Fail closed: decimals and durations ("2.5 小时", "10 分钟", "9 点 10 分钟") are never clocks.
+  const rest = clockText.slice(clock[0].length);
+  if (/^[.．]\d/.test(rest) || DURATION_UNIT.test(rest) || (/分$/.test(clock[0]) && /^钟/.test(rest))) return null;
   const dayPart = period?.[1] ?? marker;
   const evening = /晚|夜|evening|night/i.test(dayPart);
   const afternoon = /下午|傍晚|午后/.test(dayPart);
