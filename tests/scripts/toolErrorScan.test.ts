@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+import { applyTestSessionSchema } from '../utils/applyTestSessionSchema';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const scanner = path.join(repoRoot, 'scripts', 'corpus', 'tool-error-scan.py');
@@ -31,13 +35,13 @@ describe('tool-error-scan.py', () => {
       error: 'This location belongs to another Neo. Use MemoryRead to inspect its memories instead.',
       userMessage: '不能读取另一个对话的独立记忆目录。',
     }]);
-    const seeded = spawnSync('python3', [
-      '-c',
-      "import sqlite3,sys; con=sqlite3.connect(sys.argv[1]); con.execute('CREATE TABLE messages (role TEXT, content TEXT)'); con.execute('INSERT INTO messages VALUES (?, ?)', ('tool', sys.argv[2])); con.commit(); con.close()",
-      db,
-      result,
-    ], { encoding: 'utf8' });
-    expect(seeded.status, seeded.stderr).toBe(0);
+    const fixture = new Database(db);
+    applyTestSessionSchema(fixture);
+    fixture.prepare("INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at) VALUES (?, 'fixture', 'test', 'test', 0, 0)")
+      .run('session-fixture');
+    fixture.prepare('INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)')
+      .run('message-fixture', 'session-fixture', 'tool', result, 0);
+    fixture.close();
 
     const scanned = spawnSync('python3', [scanner, '--patterns', patterns, '--db', db, '--out', out], { encoding: 'utf8' });
     expect(scanned.status, scanned.stderr).toBe(0);
