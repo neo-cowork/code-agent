@@ -74,21 +74,21 @@ const settledFailureHistory = [
 ];
 
 const cases = [
-  { name: 'highlights 720 local runs and explains usage-based billing without history', draft: draft(twoMinutes), history: [], value: 'About 720 runs/day · cost cannot be estimated up front and is billed by actual usage', highlight: true },
-  { name: 'highlights 720 local runs from a custom cron expression', draft: draft(twoMinuteCron), history: [], value: 'About 720 runs/day · cost cannot be estimated up front and is billed by actual usage', highlight: true },
+  { name: 'highlights 720 local runs and explains usage-based billing without history', draft: draft(twoMinutes), history: [], value: 'About 720 runs/day · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
+  { name: 'highlights 720 local runs from a custom cron expression', draft: draft(twoMinuteCron), history: [], value: 'About 720 runs/day · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
   { name: 'uses the median positive local session cost', draft: draft(twoMinutes), history: paidHistory, value: 'About 720 runs/day · about $144.0000/day', highlight: true },
-  { name: 'keeps cost unknown with only partial runs', draft: draft(twoMinutes), history: partialHistory, value: 'About 720 runs/day · cost cannot be estimated up front and is billed by actual usage', highlight: true },
+  { name: 'keeps cost unknown with only partial runs', draft: draft(twoMinutes), history: partialHistory, value: 'About 720 runs/day · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
   { name: 'excludes partial runs from the cost median', draft: draft(twoMinutes), history: [...partialHistory, ...paidHistory], value: 'About 720 runs/day · about $144.0000/day', highlight: true },
   { name: 'counts failed and cancelled runs that persisted a cost over completed flat-fee history', draft: draft(twoMinutes), history: [...settledFailureHistory, ...flatFeeHistory], value: 'About 720 runs/day · about $432.0000/day', highlight: true },
   { name: 'uses failed run cost when there is no completed run', draft: draft(twoMinutes), history: [settledFailureHistory[0]], value: 'About 720 runs/day · about $360.0000/day', highlight: true },
   { name: 'keeps completed flat-fee history with partial costs', draft: draft(twoMinutes), history: [...partialHistory, ...flatFeeHistory], value: 'About 720 runs/day · not billed in USD', highlight: true },
   { name: 'shows a flat-fee history without a dollar figure', draft: draft(twoMinutes), history: flatFeeHistory, value: 'About 720 runs/day · not billed in USD', highlight: true },
-  { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost cannot be estimated up front and is billed by actual usage' },
-  { name: 'shows less than one run per day for weekly cron', draft: draft({ type: 'cron', expression: '0 9 * * 1', timezone: 'UTC' }), history: [], value: 'Less than one run/day · cost cannot be estimated up front and is billed by actual usage' },
-  { name: 'shows less than one run per day for monthly cron', draft: draft({ type: 'cron', expression: '0 9 1 * *', timezone: 'UTC' }), history: [], value: 'Less than one run/day, based on the shortest gap between runs · cost cannot be estimated up front and is billed by actual usage' },
+  { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost cannot be estimated up front. Any charges are based on actual usage' },
+  { name: 'shows less than one run per day for weekly cron', draft: draft({ type: 'cron', expression: '0 9 * * 1', timezone: 'UTC' }), history: [], value: 'Less than one run/day · cost cannot be estimated up front. Any charges are based on actual usage' },
+  { name: 'shows less than one run per day for monthly cron', draft: draft({ type: 'cron', expression: '0 9 1 * *', timezone: 'UTC' }), history: [], value: 'Less than one run/day, based on the shortest gap between runs · cost cannot be estimated up front. Any charges are based on actual usage' },
   { name: 'keeps a nonzero daily cost for every three days', draft: draft({ type: 'every', interval: 3, unit: 'days' }), history: [execution('paid', { cost: 0.3 })], value: 'Less than one run/day · about $0.1000/day' },
-  { name: 'leaves hourly jobs unhighlighted', draft: draft(hourly), history: [], value: 'About 24 runs/day · cost cannot be estimated up front and is billed by actual usage' },
-  { name: 'explains the shortest interval of an irregular schedule', draft: draft(irregular), history: [], value: 'At most about 288 runs/day, based on the shortest gap between runs · cost cannot be estimated up front and is billed by actual usage', highlight: true },
+  { name: 'leaves hourly jobs unhighlighted', draft: draft(hourly), history: [], value: 'About 24 runs/day · cost cannot be estimated up front. Any charges are based on actual usage' },
+  { name: 'explains the shortest interval of an irregular schedule', draft: draft(irregular), history: [], value: 'At most about 288 runs/day, based on the shortest gap between runs · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
   { name: 'omits money and highlight for cloud jobs', draft: draft(twoMinutes, { runsOn: 'cloud' }), history: paidHistory, value: 'About 720 runs/day' },
   { name: 'omits money for shell actions', draft: draft(hourly, { action: shell }), history: paidHistory, value: 'About 24 runs/day' },
   { name: 'omits the row for a one-time job', draft: draft(at), history: paidHistory },
@@ -160,7 +160,7 @@ it('updates the estimate when the chat time edit is applied without refetching h
   const editor = view.container.querySelector<HTMLElement>('[data-schedule-when-editor]')!;
   fireEvent.change(within(editor).getByRole('combobox'), { target: { value: 'hourly' } });
   fireEvent.click(editor.querySelector('[data-schedule-when-apply]')!);
-  expect(await view.findByText('About 24 runs/day · cost cannot be estimated up front and is billed by actual usage')).toBeTruthy();
+  expect(await view.findByText('About 24 runs/day · cost cannot be estimated up front. Any charges are based on actual usage')).toBeTruthy();
   expect(row?.classList.contains('bg-amber-500/10')).toBe(false);
   expect(getRecentExecutions).toHaveBeenCalledTimes(1);
 });
