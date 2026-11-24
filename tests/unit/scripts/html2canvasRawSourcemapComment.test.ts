@@ -32,7 +32,7 @@ describe('html2canvas ?raw bundle', () => {
           rollupOptions: { input: entry },
         },
       });
-      const outputs = Array.isArray(result) ? result : [result];
+      const outputs = Array.isArray(result) ? result : 'output' in result ? [result] : [];
       const chunkText = outputs
         .flatMap((output) => output.output)
         .map((item) => (item.type === 'chunk' ? item.code : ''))
