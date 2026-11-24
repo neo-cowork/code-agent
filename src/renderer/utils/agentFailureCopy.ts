@@ -4,7 +4,7 @@ import type { Task } from '@shared/contract/backgroundTask';
 import { AgentFailureCode, inferAgentFailureCode, isAgentFailureCode } from '@shared/contract/agentFailure';
 import { languages, type Translations } from '../i18n';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
-import { containsCjk } from './containsCjk';
+import { containsCjk } from '@shared/containsCjk';
 
 /** The translation table requires a copy entry for every AgentFailureCode. */
 export function agentFailureCopy(code: AgentFailureCode | undefined, t: Translations, hostReason?: string): string | null {
