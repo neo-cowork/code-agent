@@ -21,6 +21,7 @@ vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', async (im
 }));
 
 import Database from 'better-sqlite3';
+import { getConfigService } from '../../../src/host/services/core/configService';
 import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../../src/host/task/backgroundTaskStore';
 import type { BackgroundTaskLedgerChangedData } from '../../../src/shared/contract/agent';
@@ -45,6 +46,39 @@ describe('backgroundTaskSnapshotAdapters', () => {
 
   afterEach(() => {
     shutdownEventBus();
+  });
+
+  it.each([
+    ['zh', 'Copy missing-report.txt into archive in background', '后台命令'],
+    ['zh', '把缺失的报告移入归档', '把缺失的报告移入归档'],
+    ['en', '把缺失的报告移入归档', 'Background command'],
+  ] as const)('persists the %s shell terminal message for %s', (language, displayName, expectedTitle) => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    const getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language },
+    });
+    const db = new Database(':memory:');
+    try {
+      const ledger = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      syncShellTaskSnapshotToLedger({
+        taskId: 'missing-report', status: 'failed', command: 'cp missing-report.txt archive/',
+        displayName, cwd: '/repo', sessionId: 'session-1', startTime: 1_000, endTime: 1_250,
+        duration: 250, exitCode: 1, outputFile: '/tmp/missing-report.log',
+      }, ledger);
+
+      const row = db.prepare('SELECT notification_json FROM background_task_notifications').get() as {
+        notification_json: string;
+      };
+      expect(JSON.parse(row.notification_json)).toMatchObject({
+        message: `${expectedTitle} 失败，耗时 不到 1 秒`,
+        payload: { source: 'shell', label: displayName },
+      });
+    } finally {
+      getSettings.mockRestore();
+      db.close();
+    }
   });
 
   it('does not publish invalidations during pull-driven snapshot reconciliation', () => {

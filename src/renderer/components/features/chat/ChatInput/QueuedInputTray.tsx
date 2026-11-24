@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
 import type { QueuedInput } from '@shared/contract/queuedInput';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 
@@ -66,6 +67,8 @@ export function QueuedInputTray({
     <section
       className="mb-2 overflow-hidden rounded-xl border border-border-default bg-surface-subtle"
       data-testid="queued-input-tray"
+      // 挂在收起也不卸载的根上：批注弹窗靠它判断输入框是否正在编辑排队消息。
+      data-editing={editingId ? 'true' : undefined}
     >
       <button /* ds-allow:button: 队列条标题整行都是收起热区，Button primitive 的居中按钮形态不适配 */
         type="button"
@@ -103,7 +106,7 @@ export function QueuedInputTray({
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate text-xs text-text-primary">
-                  {item.envelope.content}
+                  {stripAppshotBlocks(item.envelope.content)}
                 </span>
                 <div
                   className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
