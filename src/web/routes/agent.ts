@@ -76,7 +76,7 @@ import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessi
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
-import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
+import { settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -1769,12 +1769,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         isBackground && finalStatus === 'completed');
       if (isBackground) {
         const errorData = runController.lastTerminalErrorData;
-        await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement({
+        await settleOrHoldBackgroundRun(sessionId, runContext.runId, {
           status: finalStatus,
           leftoverPaths,
           errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
           errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
-        }));
+        });
       }
 
       await durableRunLifecycle.markSuccess({ finalStatus });
@@ -1848,10 +1848,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      await getBackgroundTaskManager().markFailed(
-        sessionId,
-        resolveBackgroundRunSettlement({ status: 'error', errorMessage: message }).message,
-      );
+      if (getBackgroundTaskManager().isTaskRunning(sessionId)) {
+        await settleOrHoldBackgroundRun(sessionId, runContext?.runId, { status: 'error', errorMessage: message });
+      }
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
       const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);

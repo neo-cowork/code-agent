@@ -16,7 +16,7 @@ import type { AgentEvent } from '../../shared/contract';
 import type { SessionStatus } from '../../shared/contract/session';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
-import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/backgroundRunSettlement';
+import { backgroundParentOwnsChildNotice, settleOrHoldBackgroundRun } from '../session/backgroundSettlementHold';
 import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../session/approvedRmSettlementTargets';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
@@ -48,10 +48,10 @@ export async function settleBackgroundOnTaskComplete(
   const backgroundManager = getBackgroundTaskManager();
   if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
     if (hasApprovedRmSettlementTargets(sessionId, runId)) return;
-    await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
+    await settleOrHoldBackgroundRun(sessionId, runId, { status: 'completed' }, { summary: data.summary, duration: data.duration });
     return;
   }
-  if (isSubTask && hasApprovedRmSettlementTargets(sessionId, eventKey)) return;
+  if (isSubTask && (hasApprovedRmSettlementTargets(sessionId, eventKey) || backgroundParentOwnsChildNotice(sessionId, eventKey))) return;
   if (isSubTask && isPrimaryRunActive?.()) {
     logger.info('sub-task completion banner skipped: primary run active', { sessionId, eventKey });
     return;
@@ -111,13 +111,13 @@ export async function closeBackgroundRunAtTerminal(
   const leftoverPaths = takeApprovedRmLeftovers(sessionId, runId, 'desktop',
     isBackground && eventType === 'agent_complete' && !runError);
   if (!isBackground) return;
-  await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(
+  await settleOrHoldBackgroundRun(sessionId, runId,
     eventType === 'agent_cancelled'
       ? { status: 'interrupted' }
       : runError
         ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
         : { status: 'completed', leftoverPaths },
-  ));
+  );
 }
 
 /**
@@ -166,11 +166,8 @@ export async function settlePrimaryRunSessionStatus(
  * 与事件流收线互为幂等；用户取消在调用方（两个 run 入口的 catch）更早的取消分支
  * 返回，不会走到这里。
  */
-export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): Promise<void> {
+export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string, runId?: string): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
-  await backgroundManager.markFailed(
-    sessionId,
-    resolveBackgroundRunSettlement({ status: 'error', errorMessage }).message,
-  );
+  await settleOrHoldBackgroundRun(sessionId, runId, { status: 'error', errorMessage });
 }
