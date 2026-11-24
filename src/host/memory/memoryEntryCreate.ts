@@ -5,6 +5,7 @@ import type {
   MemoryEntryCreateResult,
   MemoryEntryKind,
 } from '../../shared/contract/memory';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import {
   buildActiveMemoryEntryFromInbox,
   createMemoryMirrorRecord,
@@ -15,7 +16,7 @@ import {
 import { normalizeForCompare } from '../lightMemory/manualMemoryGuard';
 
 /** 设置面板「添加记忆」允许的类型；directive/session/pattern 一律拒绝 */
-const MANUAL_CREATE_KINDS: ReadonlySet<string> = new Set(['user', 'feedback', 'project', 'reference']);
+const MANUAL_CREATE_KINDS: ReadonlySet<string> = new Set(['user', 'feedback', 'project', 'people', 'reference']);
 
 /** 面向渲染层的错误码（渲染层映射成大白话） */
 const MEMORY_CREATE_ERROR = {
@@ -28,7 +29,7 @@ export async function createManualMemoryEntry(
   request: MemoryEntryCreateRequest | undefined,
   journal: MemoryChangeJournalContext,
 ): Promise<MemoryEntryCreateResult> {
-  const content = (request?.content ?? '').trim();
+  const content = guardSensitiveText(request?.content ?? '', { surface: 'memory', mode: 'local-persist' }).trim();
   if (!content) throw new Error(MEMORY_CREATE_ERROR.EMPTY);
   const kind = request?.kind;
   if (!kind || !MANUAL_CREATE_KINDS.has(kind)) throw new Error(MEMORY_CREATE_ERROR.KIND_FORBIDDEN);
