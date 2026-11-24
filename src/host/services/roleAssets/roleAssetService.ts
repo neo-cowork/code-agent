@@ -7,7 +7,7 @@
 //   角色和记忆是户口，实例是上班。
 //
 // 职责：
-// - 角色绑定检测：roles/<roleId>/ 或用户 agents/<roleId>.md 存在 → 持久角色（核心 agent 除外）
+// - 角色绑定检测：roles/<roleId>/ 或有效的用户 agents/<roleId>.md → 持久角色（核心 agent 文件除外）
 // - 三层记忆读写：角色记忆 / 项目记忆（全局记忆由现有 Light Memory 负责，不动）
 // - 注入块构建：实例化时把角色记忆索引 + 项目记忆索引 + 最近履历拼进 system prompt
 // - 履历写入：产物清单（不记任务记产物，设计 §4.3）
@@ -84,17 +84,17 @@ export interface RoleHistoryEntry {
 
 /** 判断角色是否在持久化角色集合中，不创建资产目录。 */
 export async function isPersistentRole(roleId: string): Promise<boolean> {
-  return isSafeRoleId(roleId) && !isCoreAgent(roleId) && (await findPersistentRoles(roleId)).length > 0;
+  return isSafeRoleId(roleId) && (await findPersistentRoles(roleId)).length > 0;
 }
 
-/** 列出 roles/ 子目录和用户 agents/*.md 的安全角色 ID，排除核心 agent。 */
+/** 列出 roles/ 子目录和有效的用户 agents/*.md；核心 agent 文件不单独纳入。 */
 export async function listPersistentRoles(): Promise<string[]> {
   return findPersistentRoles();
 }
 
 async function findPersistentRoles(onlyRoleId?: string): Promise<string[]> {
   const matches = (id: string) =>
-    (onlyRoleId === undefined || id === onlyRoleId) && isSafeRoleId(id) && !isCoreAgent(id);
+    (onlyRoleId === undefined || id === onlyRoleId) && isSafeRoleId(id);
 
   const rolesRoot = getRolesRootDir();
   const roleEntries = await fs.readdir(rolesRoot, { withFileTypes: true }).catch(() => []);
@@ -110,7 +110,7 @@ async function findPersistentRoles(onlyRoleId?: string): Promise<string[]> {
   for (const entry of agentEntries) {
     if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
     const id = entry.name.slice(0, -'.md'.length);
-    if (!matches(id) || roleIds.has(id)) continue;
+    if (!matches(id) || isCoreAgent(id) || roleIds.has(id)) continue;
     if (await isPersistentAgentFile(agentsDir, entry.name, id)) roleIds.add(id);
   }
   return [...roleIds].sort();
@@ -123,7 +123,7 @@ async function isPersistentAgentFile(agentsDir: string, filename: string, roleId
   try {
     const content = await fs.readFile(path.join(agentsDir, filename), 'utf-8');
     const agent = parseAgentMd(content, filename);
-    return !agent || (isSafeRoleId(agent.id) && !isCoreAgent(agent.id));
+    return agent !== null && isSafeRoleId(agent.id) && !isCoreAgent(agent.id);
   } catch {
     return false;
   }

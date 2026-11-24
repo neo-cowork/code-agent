@@ -171,6 +171,22 @@ describe('roleAssetService', () => {
       expect(await isPersistentRole('alias')).toBe(false);
     });
 
+    it('keeps a pre-existing core agent asset directory persistent', async () => {
+      await ensureRoleAssetDirs('coder');
+
+      expect(await listPersistentRoles()).toEqual(['coder']);
+      expect(await isPersistentRole('coder')).toBe(true);
+    });
+
+    it('excludes an unparseable user Markdown file', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'invalid.md'), '---\nname: invalid\nMissing closing delimiter.');
+
+      expect(await listPersistentRoles()).toEqual([]);
+      expect(await isPersistentRole('invalid')).toBe(false);
+    });
+
     it('merges role directories and agent files in stable order without duplicates', async () => {
       const agentsDir = path.join(mockConfigDir.dir, 'agents');
       await fs.mkdir(agentsDir);
