@@ -206,7 +206,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
 
   useEffect(() => subscribeComposerDraftChanges(refreshDrafts), []);
 
-  const { sidebarSessions, remoteSidebarSessions, projectIdsWithHiddenSessions } = useMemo(() => {
+  const { sidebarSessions, remoteSidebarSessions, hiddenSessionCountsByProjectId } = useMemo(() => {
     const shouldShow = (session: SessionWithMeta) => {
       const taskState = sessionStates[session.id];
       return !isBlankNewSession(session, language)
@@ -214,18 +214,21 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         || (taskState !== undefined && taskState.status !== 'idle')
         || readComposerDraft(composerDraftStorageKey(session.id, false)) !== null;
     };
-    const projectIdsWithHiddenSessions = new Set<string>();
+    const hiddenSessionCountsByProjectId = new Map<string, number>();
     const sidebarSessions = sessions.filter((session) => {
       if (shouldShow(session)) return true;
       const projectId = session.projectId?.trim();
-      if (projectId) projectIdsWithHiddenSessions.add(projectId);
+      if (projectId) {
+        const count = hiddenSessionCountsByProjectId.get(projectId) ?? 0;
+        hiddenSessionCountsByProjectId.set(projectId, count + 1);
+      }
       return false;
     });
     // A host hit for a loaded row must use the local row's visibility and status.
     const loadedIds = new Set(sessions.map((session) => session.id));
     return {
       sidebarSessions,
-      projectIdsWithHiddenSessions,
+      hiddenSessionCountsByProjectId,
       remoteSidebarSessions: remoteSearchSessions.filter((session) => !loadedIds.has(session.id) && shouldShow(session)),
     };
   }, [draftRevision, language, remoteSearchSessions, sessionRuntimes, sessions, sessionStates]);
@@ -560,9 +563,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       sessionGroupedWorkspaces,
       collaborationSpaces,
       searchQuery.trim() !== '' || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter,
-      projectIdsWithHiddenSessions,
+      hiddenSessionCountsByProjectId,
     ),
-    [collaborationSpaces, hasActiveTrajectoryFilter, projectIdsWithHiddenSessions, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
+    [collaborationSpaces, hasActiveTrajectoryFilter, hiddenSessionCountsByProjectId, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
   );
   // 归档过滤之前取 id：详情回来把空间标成 archived 后组会从展示列表消失，
   // 若这里跟着消失，effect 会清掉 meta，组又出现，来回闪。
