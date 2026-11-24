@@ -134,6 +134,25 @@ describe('fast gate fail-closed contracts', () => {
     expect(selected.testsTypecheck).toBe(true);
     expect(selectTests(policy, ['package.json']).packages).toEqual(policy.packages);
   });
+  it('native Tauri command surfaces select the command-ACL reconciliation test, unrelated paths do not', () => {
+    const aclTest = 'tests/scripts/tauriCommandAcl.test.ts';
+    const triggers = [
+      'src-tauri/src/main.rs',
+      'src-tauri/permissions/app-commands.toml',
+      'src-tauri/src/native_notification.rs',
+      'src/renderer/services/nativeCommandFacade.ts',
+    ];
+    for (const file of triggers) {
+      const selected = selectTests(policy, [file]);
+      expect(selected.matchedRules, file).toContain('tauri-native-command-acl');
+      expect(selected.files, file).toContain(aclTest);
+    }
+    for (const file of ['README.md', 'src/renderer/App.tsx']) {
+      const selected = selectTests(policy, [file]);
+      expect(selected.matchedRules, file).not.toContain('tauri-native-command-acl');
+      expect(selected.files, file).not.toContain(aclTest);
+    }
+  });
   it('matches deleted/renamed paths but only executes surviving test files', () => {
     const oldFile = 'tests/unit/oldBehavior.test.ts';
     const newFile = 'tests/unit/newBehavior.test.ts';
