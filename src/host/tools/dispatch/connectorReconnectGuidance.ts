@@ -58,7 +58,7 @@ function notConnectedExit(connectorId: string): ConnectorExit {
 export function withConnectorReconnectGuidance<T>(toolName: string, result: ToolResult<T>): ToolResult<T> {
   const connectorId = findConnectorIdForToolName(toolName);
   if (!connectorId) return result;
-  const status = result.meta?.status as { connected?: boolean; unavailable?: boolean; readiness?: string } | undefined;
+  const status = result.meta?.status as { connected?: boolean; unavailable?: boolean; readiness?: string; detailCode?: string } | undefined;
   const remindersRead = toolName === 'reminders';
   const reason = !result.ok && result.code === 'NOT_INITIALIZED' ? 'not-enabled-or-registered'
     : remindersRead && !result.ok && result.code === 'not_authorized' && result.meta?.accessProbeDenied === true ? 'access-probe-denied'
@@ -71,8 +71,12 @@ export function withConnectorReconnectGuidance<T>(toolName: string, result: Tool
   const exit = reason === 'status-unchecked' || reason === 'access-probe-denied' ? remindersAccessExit(reason)
     : notConnected ? notConnectedExit(connectorId) : RECONNECT_EXIT;
   if (result.ok) {
-    if (typeof result.output !== 'string' || hasEntry(result.output)) return result;
-    return { ...result, output: exit.error as T };
+    // 输出只留事实；给模型的指引放 meta.modelGuidance（经 serializeToolResultsForModel 仍进模型 JSON）。
+    const existing = result.meta?.modelGuidance;
+    if (typeof result.output !== 'string' || (typeof existing === 'string' && hasEntry(existing))) return result;
+    // 系统限制（用户无从自助）的指引明确禁止指向连接器页，不能被通用重连句覆盖。
+    if (typeof existing === 'string' && status?.detailCode === 'calendar_restricted') return result;
+    return { ...result, meta: { ...result.meta, modelGuidance: exit.error } };
   }
   return hasEntry(result.error) ? result : { ...result, ...exit };
 }

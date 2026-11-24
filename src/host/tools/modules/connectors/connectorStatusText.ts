@@ -104,7 +104,14 @@ export function formatConnectorUnavailableMessage(
   return `${copy.title} is not connected on this computer, so ${UNAVAILABLE_ACTION_PHRASE[action](copy)}. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}.${readGuard} Do not quote this line.`;
 }
 
-export function formatConnectorStatusOutput(
+export interface ConnectorStatusText {
+  /** Facts only — safe to show in the tool card and artifact preview. */
+  output: string;
+  /** Model-directed instruction; travels in meta.modelGuidance, never in output. */
+  guidance: string;
+}
+
+export function formatConnectorStatus(
   connectorId: StatusConnectorId,
   status: {
     connected: boolean;
@@ -113,24 +120,36 @@ export function formatConnectorStatusOutput(
     capabilities: string[];
     unavailable?: boolean;
   },
-): string {
+): ConnectorStatusText {
   const copy = CONNECTOR_COPY[connectorId];
   if (status.unavailable) {
-    return `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
+    return {
+      output: `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read.`,
+      guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`,
+    };
   }
 
   const trimmedDetail = describeStatusDetail(status);
   const detailSentence = trimmedDetail ? ` ${ensureSentenceEnd(trimmedDetail)}` : '';
 
   if (!status.connected) {
-    const notConnected = `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence}`;
+    const output = `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence}`;
     if (status.detailCode === 'calendar_restricted') {
-      return `${notConnected} Tell the user in plain words, in their own language, that ${copy.userTarget} is blocked by a system restriction and there is nothing they can change themselves. Do not send them to the Connectors page or System Settings. Do not quote this line.`;
+      return {
+        output,
+        guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is blocked by a system restriction and there is nothing they can change themselves. Do not send them to the Connectors page or System Settings. Do not quote this line.`,
+      };
     }
     if (status.detailCode && SYSTEM_SETTINGS_FIX_CODES.has(status.detailCode)) {
-      return `${notConnected} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described above; once changed, it can be re-checked on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
+      return {
+        output,
+        guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described above; once changed, it can be re-checked on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`,
+      };
     }
-    return `${notConnected} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
+    return {
+      output,
+      guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`,
+    };
   }
 
   const actionCapabilities = status.capabilities.filter((cap) => Boolean(cap) && cap !== 'get_status');
@@ -144,5 +163,8 @@ export function formatConnectorStatusOutput(
     ? ` It supports ${formatReadableList(readableCapabilities)}.`
     : '';
 
-  return `${copy.title} is connected.${detailSentence}${capabilitiesSentence} Relay this status in plain words in the user's own language, without quoting this line.`;
+  return {
+    output: `${copy.title} is connected.${detailSentence}${capabilitiesSentence}`,
+    guidance: "Relay this status in plain words in the user's own language, without quoting the status line.",
+  };
 }

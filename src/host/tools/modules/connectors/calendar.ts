@@ -15,7 +15,7 @@ import { getConnectorRegistry } from '../../../connectors';
 import { isCalendarFailure } from '../../../connectors/native/calendar';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
-import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import { formatConnectorStatus, formatConnectorUnavailableMessage } from './connectorStatusText';
 import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
@@ -43,11 +43,13 @@ function buildCalendarMeta(
   action: string,
   output: string,
   metadata: Record<string, unknown>,
+  modelGuidance?: string,
 ): Record<string, unknown> {
   return {
     action,
     connector: 'calendar',
     ...metadata,
+    ...(modelGuidance ? { modelGuidance } : {}),
     artifact: createVirtualArtifact({
       sourceTool: schema.name,
       kind: 'text',
@@ -107,11 +109,11 @@ async function executeCalendar(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = formatConnectorStatusOutput('calendar', status);
+      const { output, guidance } = formatConnectorStatus('calendar', status);
       return {
         ok: true,
         output,
-        meta: buildCalendarMeta(ctx, action, output, { status }),
+        meta: buildCalendarMeta(ctx, action, output, { status }, guidance),
       };
     }
     return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'read'), code: 'NOT_INITIALIZED' };
@@ -123,11 +125,11 @@ async function executeCalendar(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
-      const output = formatConnectorStatusOutput('calendar', status);
+      const { output, guidance } = formatConnectorStatus('calendar', status);
       return {
         ok: true,
         output,
-        meta: buildCalendarMeta(ctx, action, output, { status }),
+        meta: buildCalendarMeta(ctx, action, output, { status }, guidance),
       };
     }
 
