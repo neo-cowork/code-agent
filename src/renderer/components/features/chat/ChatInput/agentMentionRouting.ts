@@ -16,7 +16,7 @@ export interface ParsedAgentMentionRouting {
 }
 
 /** 面板行：swarm agent（无 kind）或已保存专家（kind 'expert'，id 带前缀避免与 swarm id 撞）。 */
-export interface AgentMentionRow extends MentionRoutingAgent {
+interface AgentMentionRow extends MentionRoutingAgent {
   kind?: 'expert';
   /** 专家真实 id（kind 'expert' 时有值） */
   expertId?: string;
