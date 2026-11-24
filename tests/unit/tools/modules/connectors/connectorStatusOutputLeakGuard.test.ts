@@ -12,6 +12,7 @@ import { calendarModule } from '../../../../../src/host/tools/modules/connectors
 import { mailModule } from '../../../../../src/host/tools/modules/connectors/mail';
 import { remindersModule } from '../../../../../src/host/tools/modules/connectors/reminders';
 import { withConnectorReconnectGuidance } from '../../../../../src/host/tools/dispatch/connectorReconnectGuidance';
+import { projectLedgerMessage } from '../../../../../src/host/agent/runtime/contextAssembly/ledgerMessageProjection';
 import { serializeToolResultsForModel } from '../../../../../src/host/tools/toolResultMessageContent';
 
 // Text written for the model must never appear in the user-visible tool card `output`.
@@ -65,19 +66,33 @@ describe('connector get_status output carries facts only', () => {
         expect(JSON.stringify(artifact ?? {})).not.toMatch(INSTRUCTION_TEXT);
       });
 
-      it(`${tool} / ${state.name}: model JSON still carries modelGuidance, not in output`, async () => {
+      it(`${tool} / ${state.name}: model JSON still carries the guidance, stored output does not`, async () => {
         const result = await finalResult(tool, module, state);
-        expect(typeof result.meta?.modelGuidance).toBe('string');
+        const guidance = result.meta?.modelGuidance;
+        expect(typeof guidance).toBe('string');
         const modelJson = serializeToolResultsForModel([
           { toolCallId: 't1', success: true, output: result.output as string, metadata: result.meta } as never,
         ]);
-        expect(modelJson).toContain('modelGuidance');
-        const [entry] = JSON.parse(modelJson) as Array<{ output: string; metadata: { modelGuidance: string } }>;
-        expect(entry.output).not.toMatch(INSTRUCTION_TEXT);
-        expect(entry.metadata.modelGuidance).toMatch(/plain words|plain everyday|user-facing answer/i);
+        const [entry] = JSON.parse(modelJson) as Array<{ output: string; metadata: Record<string, unknown> }>;
+        if (result.meta?.modelGuidanceReplacesOutput !== true) expect(entry.output).toContain(result.output as string);
+        expect(entry.output).toContain(guidance as string);
+        expect(entry.metadata).not.toHaveProperty('modelGuidance');
+        expect(entry.metadata).not.toHaveProperty('modelGuidanceReplacesOutput');
+        expect(result.output).not.toContain(guidance as string);
       });
     }
   }
+
+  it('the model-message projection (what providers send) carries the guidance while stored output stays clean', async () => {
+    const result = await finalResult('reminders', remindersModule, STATES[1]);
+    const guidance = result.meta?.modelGuidance as string;
+    const [projected] = projectLedgerMessage({
+      id: 'm1', role: 'tool', content: '', timestamp: 0,
+      toolResults: [{ toolCallId: 't1', success: true, output: result.output as string, metadata: result.meta }],
+    } as never);
+    expect(projected.content).toContain(guidance);
+    expect(result.output).not.toContain(guidance);
+  });
 
   it('calendar_restricted guidance still tells the model not to send the user to the Connectors page', async () => {
     const result = await finalResult('calendar', calendarModule, STATES[3]);

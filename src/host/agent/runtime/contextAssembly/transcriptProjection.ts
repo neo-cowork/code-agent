@@ -12,6 +12,7 @@ import {
   isArtifactRepairMode,
   resolveArtifactRepairPath,
 } from './artifactRepairProjection';
+import { modelVisibleToolOutput } from '../../../tools/toolResultMessageContent';
 
 export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages: Message[]): ContextTranscriptEntry[] {
   const artifactRepairMode = isArtifactRepairMode(ctx);
@@ -75,8 +76,8 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
             id: `${message.id}::tool-result::${result.toolCallId || index}`,
             role: 'tool',
             content: artifactRepairMode
-              ? formatArtifactRepairToolResultContent(ctx, result, result.output || result.error || '')
-              : (result.output || result.error || ''),
+              ? formatArtifactRepairToolResultContent(ctx, result, modelVisibleToolOutput(result))
+              : modelVisibleToolOutput(result),
             toolCallId: result.toolCallId,
             ...(toolNamesByCallId.has(result.toolCallId)
               ? { toolName: toolNamesByCallId.get(result.toolCallId) }
