@@ -43,14 +43,14 @@ async function getAuthToken(page: Page): Promise<string> {
 }
 
 async function ensureActiveSession(page: Page): Promise<string> {
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   if (!(await activeSession.isVisible())) {
     const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
   }
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing').toBeTruthy();
   return sessionId!;
 }

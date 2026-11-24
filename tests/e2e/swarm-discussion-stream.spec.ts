@@ -37,7 +37,7 @@ async function emitSwarmEvent(
 }
 
 async function ensureActiveSession(page: Page): Promise<string> {
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   if (!(await activeSession.isVisible())) {
     const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
@@ -45,7 +45,7 @@ async function ensureActiveSession(page: Page): Promise<string> {
   }
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
 
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing after creating a clean E2E session').toBeTruthy();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 
