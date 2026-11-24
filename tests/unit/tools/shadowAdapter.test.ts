@@ -10,7 +10,7 @@
 // P0-6 step 3 已移除 runShadowCompare / buildAlwaysAllowCanUseTool（shadow 机制退役）
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -480,6 +480,26 @@ describe('protocolAdapter — buildProtocolContext', () => {
 });
 
 describe('protocolAdapter — buildCanUseToolFromLegacy', () => {
+  it.each([undefined, { input: 'pwd' }, { input: 'ls', pressEnter: false }])(
+    'keeps unmatched terminal writes on the explicit approval path (%j)',
+    async (approvedArgs) => {
+      const requestPermission = vi.fn<LegacyToolContext['requestPermission']>().mockResolvedValue(false);
+      const ctx = {
+        ...makeLegacyCtx('/tmp'),
+        requestPermission,
+        approvedToolCall: approvedArgs ? { toolName: 'terminal_write', args: approvedArgs } : undefined,
+      };
+      const canUseTool = buildCanUseToolFromLegacy(ctx, 'terminal_write');
+
+      await expect(canUseTool('terminal_write', { input: 'ls' })).resolves.toMatchObject({ allow: false });
+      expect(requestPermission).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        type: 'command',
+        tool: 'terminal_write',
+        details: expect.objectContaining({ command: 'ls', grantEligible: false }),
+      }));
+    },
+  );
+
   it('legacy requestPermission 返回 true → allow: true', async () => {
     const ctx = {
       workingDirectory: '/tmp',
