@@ -137,6 +137,75 @@ describe('roleAssetService', () => {
       const roles = await listPersistentRoles();
       expect(roles.sort()).toEqual(['数据分析师', '研究员'].sort());
     });
+
+    it.each(['researcher', '研究员'])('lists and detects agents-only expert %s without creating assets', async (id) => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, `${id}.md`), `---\nname: ${id}\n---\nCite sources.\n`);
+
+      expect(await listPersistentRoles()).toEqual([id]);
+      expect(await isPersistentRole(id)).toBe(true);
+      await expect(fs.stat(path.join(mockConfigDir.dir, 'roles'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('rejects unsafe agent filenames and frontmatter ids', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'safe.md'), '---\nname: ../etc\n---\nCite sources.\n');
+      if (process.platform !== 'win32') {
+        await fs.writeFile(path.join(agentsDir, 'bad\\name.md'), '---\nname: researcher\n---\nCite sources.\n');
+      }
+      expect(await listPersistentRoles()).toEqual([]);
+      for (const id of ['safe', '../etc', 'bad/name', 'bad\\name', 'bad\0name']) {
+        expect(await isPersistentRole(id)).toBe(false);
+      }
+    });
+
+    it('excludes core agent overrides', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'coder.md'), '---\nname: coder\n---\nCustom coder.\n');
+      await fs.writeFile(path.join(agentsDir, 'alias.md'), '---\nname: explore\n---\nCustom explorer.\n');
+      expect(await listPersistentRoles()).toEqual([]);
+      expect(await isPersistentRole('coder')).toBe(false);
+      expect(await isPersistentRole('alias')).toBe(false);
+    });
+
+    it('keeps a pre-existing core agent asset directory persistent', async () => {
+      await ensureRoleAssetDirs('coder');
+
+      expect(await listPersistentRoles()).toEqual(['coder']);
+      expect(await isPersistentRole('coder')).toBe(true);
+    });
+
+    it('excludes an unparseable user Markdown file', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'invalid.md'), '---\nname: invalid\nMissing closing delimiter.');
+
+      expect(await listPersistentRoles()).toEqual([]);
+      expect(await isPersistentRole('invalid')).toBe(false);
+    });
+
+    it('excludes a user Markdown file whose registered id differs from its filename', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'schedule-steward.md'), '---\nname: 日程管家\n---\nCheck the calendar.\n');
+
+      expect(await listPersistentRoles()).toEqual([]);
+      expect(await isPersistentRole('schedule-steward')).toBe(false);
+      expect(await isPersistentRole('日程管家')).toBe(false);
+    });
+
+    it('merges role directories and agent files in stable order without duplicates', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir);
+      await fs.writeFile(path.join(agentsDir, 'alpha.md'), '---\nname: alpha\n---\nCite sources.\n');
+      await fs.writeFile(path.join(agentsDir, 'zulu.md'), '---\nname: zulu\n---\nCite sources.\n');
+      await ensureRoleAssetDirs('zulu');
+      await ensureRoleAssetDirs('middle');
+      expect(await listPersistentRoles()).toEqual(['alpha', 'middle', 'zulu']);
+    });
   });
 
   describe('ensureRoleAssetDirs', () => {
@@ -616,9 +685,9 @@ describe('roleAssetService', () => {
   describe('subagent system prompt role memory gate', () => {
     it('omits generic agent role memory and injects it for a self-made role directory', async () => {
       const input = {
-        agentName: 'coder',
+        agentName: 'custom-coder',
         systemPrompt: 'base system prompt',
-        roleId: 'coder',
+        roleId: 'custom-coder',
         cwd: '/tmp/workspace',
       };
       const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
@@ -626,10 +695,10 @@ describe('roleAssetService', () => {
       const genericPrompt = await buildEffectiveSubagentSystemPrompt(input, logger);
       expect(genericPrompt).not.toContain('<role_assets');
 
-      await fs.mkdir(path.join(mockConfigDir.dir, 'roles', 'coder'), { recursive: true });
+      await fs.mkdir(path.join(mockConfigDir.dir, 'roles', 'custom-coder'), { recursive: true });
 
       const persistentPrompt = await buildEffectiveSubagentSystemPrompt(input, logger);
-      expect(persistentPrompt).toContain('<role_assets role="coder">');
+      expect(persistentPrompt).toContain('<role_assets role="custom-coder">');
     });
   });
 
