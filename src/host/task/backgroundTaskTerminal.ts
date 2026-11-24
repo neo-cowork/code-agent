@@ -17,6 +17,7 @@ import type { SessionStatus } from '../../shared/contract/session';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/backgroundRunSettlement';
+import { deferBackgroundSettlementWhileChildrenInFlight, inFlightDelegatedChildCount } from '../session/backgroundChildHold';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager, notificationService } from '../services';
@@ -45,12 +46,26 @@ export async function settleBackgroundOnTaskComplete(
   const isSubTask = eventKey !== sessionId;
   const backgroundManager = getBackgroundTaskManager();
   if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
+    if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
     await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
     return;
   }
   if (isSubTask && isPrimaryRunActive?.()) {
     logger.info('sub-task completion banner skipped: primary run active', { sessionId, eventKey });
     return;
+  }
+  // 子任务自己的 task_complete 会再走前台横幅。父行还在等委派子任务时，横幅会变成
+  // 第二条 task_complete；父行收口（markCompleted）才是那一条完成通知。
+  if (isSubTask && backgroundManager.isInBackground(sessionId)) {
+    const inFlightChildren = await inFlightDelegatedChildCount(sessionId);
+    if (inFlightChildren > 0) {
+      logger.info('sub-task completion banner skipped: delegated children still in flight', {
+        sessionId,
+        eventKey,
+        inFlightChildren,
+      });
+      return;
+    }
   }
   // A running role wake publishes its own summary; do not spend its notice budget here.
   if (isRoleWakeRunActive(sessionId)) return;
@@ -105,6 +120,7 @@ export async function closeBackgroundRunAtTerminal(
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) {
     return;
   }
+  if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
   await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(
     eventType === 'agent_cancelled'
       ? { status: 'interrupted' }
@@ -163,6 +179,7 @@ export async function settlePrimaryRunSessionStatus(
 export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
+  if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
   await backgroundManager.markFailed(
     sessionId,
     resolveBackgroundRunSettlement({ status: 'error', errorMessage }).message,

@@ -73,8 +73,7 @@ import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '
 import { generateMessageId } from '../../shared/utils/id';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
-import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
-import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
+import { settleWebTurnBackgroundRun } from '../../host/session/backgroundChildHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -1742,14 +1741,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // task_complete / agent 终态分支）：每个终态都要收——只认 completed 时，max-step
       // 撞顶（error 事件带 MAX_ITERATIONS code）/失败/取消轮会把面板和侧栏 spinner
       // 挂在 running 永不收线（2026-10-11 验收实测 12/22 分钟不落，reload 后依旧）。
-      if (getBackgroundTaskManager().isInBackground(sessionId)) {
-        const errorData = runController.lastTerminalErrorData;
-        await settleBackgroundRun(getBackgroundTaskManager(), sessionId, resolveBackgroundRunSettlement({
-          status: finalStatus,
-          errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
-          errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
-        }));
-      }
+      const errorData = runController.lastTerminalErrorData;
+      await settleWebTurnBackgroundRun(sessionId, {
+        status: finalStatus,
+        errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
+        errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
+      });
 
       await durableRunLifecycle.markSuccess({ finalStatus });
 
@@ -1822,10 +1819,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      await getBackgroundTaskManager().markFailed(
-        sessionId,
-        resolveBackgroundRunSettlement({ status: 'error', errorMessage: message }).message,
-      );
+      await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: message });
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
       const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);

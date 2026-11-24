@@ -22,6 +22,7 @@ import {
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { BackgroundShellHold } from './backgroundShellHold';
+import { releaseDelegatedChildSettlement } from './deferredBackgroundRow';
 import {
   clearSessionCommandTaskMarker,
   markSessionCommandTaskRunning,
@@ -913,16 +914,15 @@ export class SessionCommandCenter {
         clearSessionCommandTaskMarker(task.id);
       }
     }
-    if (terminalResultDelivered && (task.stopped?.kind === 'step_cap' || task.stopped?.kind === 'no_conclusion')) {
-      logger.info('foreground_wake_skipped_stop_note_delivered', { taskId: task.id, kind: task.stopped.kind });
-    } else {
-      void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
-        logger.warn('Failed to wake text foreground brain after task settlement', {
-          taskId: task.id,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }
+    await releaseDelegatedChildSettlement({
+      task, status, terminalResultDelivered,
+      inFlightChildren: () => this.active(task.sessionId).length,
+      primaryRunActive: () => typeof this.manager.hasActivePrimaryRun === 'function'
+        && this.manager.hasActivePrimaryRun(task.sessionId),
+      onPrimaryIdle: typeof this.manager.onRunIdle === 'function'
+        ? (listener: () => void) => this.manager.onRunIdle(listener) : undefined,
+      wake: () => this.wakeForegroundBrain(task, status),
+    });
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
@@ -1011,7 +1011,7 @@ export function getSessionCommandCenter(): SessionCommandCenter {
   return singleton;
 }
 
-export function resetSessionCommandCenterForTest(): void {
-  singleton?.dispose();
-  singleton = null;
+export function resetSessionCommandCenterForTest(replacement?: SessionCommandCenter): void {
+  if (singleton && singleton !== replacement) singleton.dispose();
+  singleton = replacement ?? null;
 }
