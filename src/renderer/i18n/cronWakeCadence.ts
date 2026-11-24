@@ -8,6 +8,7 @@ interface CronWakeCadenceCopy {
   decisionTitle: string;
   skipGeneric: string;
   skippedBadge: string;
+  connectorLost: string;
 }
 
 export const cronWakeCadenceZh: { cronWakeCadence: CronWakeCadenceCopy } = {
@@ -16,6 +17,7 @@ export const cronWakeCadenceZh: { cronWakeCadence: CronWakeCadenceCopy } = {
     decisionTitle: '本次醒来的决定',
     skipGeneric: '未运行：本次醒来被跳过',
     skippedBadge: '未运行',
+    connectorLost: '未运行：{names}已退出登录，重新连接后会继续',
   },
 };
 
@@ -25,5 +27,6 @@ export const cronWakeCadenceEn: { cronWakeCadence: CronWakeCadenceCopy } = {
     decisionTitle: 'What it decided this time',
     skipGeneric: 'Not run: this wake was skipped',
     skippedBadge: 'Not run',
+    connectorLost: 'Not run: {names} signed out — it will resume after you reconnect',
   },
 };
