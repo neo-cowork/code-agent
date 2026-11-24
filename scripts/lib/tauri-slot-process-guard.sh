@@ -53,7 +53,12 @@ _tauri_guard_executable_paths() {
     /*) printf '%s\n' "$comm" ;;
   esac
 
-  # macOS 的 ps comm 通常已经是完整路径；lsof txt 是硬兜底，也供测试和其他 Unix 使用。
+  if [ -r "/proc/$pid/exe" ]; then
+    readlink "/proc/$pid/exe" 2>/dev/null || true
+    return 0
+  fi
+
+  # macOS 的 ps comm 通常已经是完整路径；lsof txt 是无 /proc 时的硬兜底。
   lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n\(\/.*\)$/\1/p' || true
 }
 
@@ -81,8 +86,14 @@ find_tauri_slot_instances() {
 
   excluded="$(_tauri_guard_excluded_pids)"
 
-  # pgrep 只按短进程名精确筛候选；路径判定来自 ps/lsof 的真实进程信息，不看 argv。
-  for pid in $(pgrep -x "$process_name" 2>/dev/null || true); do
+  # pgrep 只按短进程名精确筛候选；路径判定来自真实进程信息，不看 argv。
+  # Linux 的 comm 只有 15 字节，长进程名要同时按截断名取候选，再由 /proc 路径精确判定。
+  for pid in $(
+    pgrep -x "$process_name" 2>/dev/null || true
+    if [ -d /proc ] && [ "${#process_name}" -gt 15 ]; then
+      pgrep -x "${process_name:0:15}" 2>/dev/null || true
+    fi
+  ); do
     case "$pid" in
       ''|*[!0-9]*) continue ;;
     esac
