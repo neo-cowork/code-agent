@@ -25,6 +25,7 @@
     {
       "id": "host-connector-copy",
       "paths": [
+        "src/cli/tui-app/events.ts",
         "src/host/agent/confirmationGate.ts",
         "src/host/agent/runtime/messageProcessor.ts",
         "src/host/agent/runtime/streamHandler.ts",
@@ -54,7 +55,8 @@
       ],
       "files": [
         "tests/unit/agent/hostConnectorCopy.test.ts",
-        "tests/unit/agent/messageProcessor.textClose.test.ts"
+        "tests/unit/agent/messageProcessor.textClose.test.ts",
+        "tests/unit/cli/tui-app/events.test.ts"
       ]
     },
     {

@@ -64,7 +64,7 @@ function buildRemindersCreateSuccessResult(
   reminder: CreatedReminder,
   args: Record<string, unknown>,
   ctx: ToolContext,
-  reconciledNote?: string,
+  reconciled = false,
 ): ToolResult<string> {
   const locale = getHostUiLocale();
   const { separator, reminders: copy } = getHostConnectorCopy(locale);
@@ -92,8 +92,9 @@ function buildRemindersCreateSuccessResult(
   } else {
     remindAtText = reminder.remindAtMs === null ? copy.notSet : copy.unknownTime;
   }
-  const baseOutput = `${copy.created}${separator.trimEnd()}\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}\n${copy.time}${separator}${remindAtText}`;
-  const output = reconciledNote ? `${baseOutput}\n${reconciledNote}` : baseOutput;
+  const receiptTitle = reconciled ? copy.alreadyExists : copy.created;
+  const baseOutput = `${receiptTitle}${separator.trimEnd()}\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}\n${copy.time}${separator}${remindAtText}`;
+  const output = reconciled ? `${baseOutput}\n${copy.reconciledNote}` : baseOutput;
 
   return {
     ok: true,
@@ -118,6 +119,7 @@ function buildRemindersCreateSuccessResult(
             `[${reminder.list}] ${reminder.title}`,
             remindAtText ? `${copy.time}${separator}${remindAtText}` : null,
             notes ? `${copy.notes}${separator}${notes}` : null,
+            reconciled && locale === 'en' ? copy.reconciledNote : null,
           ].filter(Boolean).join('\n'),
           summary: remindAtText ? `${reminder.list} · ${remindAtText}` : reminder.list,
         },
@@ -132,10 +134,10 @@ function buildRemindersCreateSuccessResult(
         kind: 'text',
         role: 'receipt',
         sessionId: ctx.sessionId,
-        name: `${copy.created}${separator}${reminder.title}`,
+        name: `${receiptTitle}${separator}${reminder.title}`,
         mimeType: 'text/markdown',
         contentLength: output.length,
-        preview: (locale === 'en' ? baseOutput : output).slice(0, 500),
+        preview: output.slice(0, 500),
         metadata: {
           connector: 'reminders',
           action: 'create_reminder',
@@ -276,12 +278,7 @@ async function executeRemindersCreate(
 
     const matched = items.find((item) => matchesExpectedReminder(item, args));
     if (matched) {
-      return buildRemindersCreateSuccessResult(
-        matched,
-        args,
-        ctx,
-        'Note: the create command reported an error, but the reminder already exists in Reminders and was not created again.',
-      );
+      return buildRemindersCreateSuccessResult(matched, args, ctx, true);
     }
 
     if (items.length >= RECONCILE_LIMIT) {

@@ -35,6 +35,8 @@ type HostConnectorCopy = {
   };
   reminders: {
     created: string;
+    alreadyExists: string;
+    reconciledNote: string;
     updated: string;
     deleted: string;
     createFailed: string;
@@ -101,6 +103,8 @@ const copy: Record<Locale, HostConnectorCopy> = {
     },
     reminders: {
       created: '已创建提醒',
+      alreadyExists: '已创建提醒',
+      reconciledNote: 'Note: the create command reported an error, but the reminder already exists in Reminders and was not created again.',
       updated: '已更新提醒',
       deleted: '已删除提醒',
       createFailed: '创建提醒失败',
@@ -195,6 +199,8 @@ const copy: Record<Locale, HostConnectorCopy> = {
     },
     reminders: {
       created: 'Reminder created',
+      alreadyExists: 'Reminder already exists',
+      reconciledNote: 'The reminder is already in Reminders. A second copy was not created.',
       updated: 'Reminder updated',
       deleted: 'Reminder deleted',
       createFailed: 'Could not create reminder',

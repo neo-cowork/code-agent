@@ -232,6 +232,33 @@ describe('mail, reminders and Calendar read receipts', () => {
     expect(await handler.execute(input, ctx, allow)).toMatchObject({ ok: true, output: chinese });
   });
 
+  it('reports an existing reminder when a timed-out create is reconciled', async () => {
+    const handler = await remindersCreateModule.createHandler();
+    const run = () => {
+      execute.mockRejectedValueOnce(Object.assign(new Error('Write timed out'), { code: 'ETIMEDOUT' }));
+      execute.mockResolvedValueOnce({ data: [reminder] });
+      return handler.execute(reminderArgs, ctx, async () => ({ allow: true }));
+    };
+    const result = await run();
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    const shown = cleanToolResultDisplayText('reminders_create', result.output, en.rendererHumanPipe.toolDetails);
+    const artifact = result.meta?.artifact as ToolArtifact | undefined;
+    const note = 'A second copy was not created.';
+    expectEnglishDisplay(shown);
+    expect(shown).toContain('Reminder already exists');
+    expect(shown).toContain(note);
+    expect(artifact?.name).toBe('Reminder already exists: Project Review');
+    expect(artifact?.preview).toContain(note);
+    expect(JSON.stringify(result.meta?.previewItem)).toContain(note);
+    vi.mocked(getHostUiLocale).mockReturnValue('zh');
+    expect(await run()).toMatchObject({
+      ok: true,
+      output: '已创建提醒：\n- [Work] Project Review\n提醒时间：未设置\n'
+        + 'Note: the create command reported an error, but the reminder already exists in Reminders and was not created again.',
+    });
+  });
+
   it('localizes disconnected Calendar status through the dispatch guidance', async () => {
     execute.mockResolvedValue({ data: { connected: false, detailCode: 'calendar_desktop_only', capabilities: [] } });
     const handler = await calendarModule.createHandler();
