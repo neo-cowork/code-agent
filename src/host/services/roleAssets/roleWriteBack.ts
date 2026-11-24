@@ -20,6 +20,7 @@ import { withTimeout } from '../infra/timeoutController';
 import { createLogger } from '../infra/logger';
 import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
 import { ensureMemoryDir, getMemoryIndexPath } from '../../lightMemory/indexLoader';
+import { reconcileManualMemoryWrite } from '../../lightMemory/manualMemoryGuard';
 import {
   appendRoleHistory,
   guardText,
@@ -116,8 +117,7 @@ async function doWriteBack(input: WriteBackInput): Promise<WriteBackResult> {
   let written = 0;
   for (const candidate of accepted) {
     try {
-      await writeCandidate(candidate, input);
-      written++;
+      if (await writeCandidate(candidate, input)) written++;
     } catch (err) {
       logger.warn('Failed to write memory candidate', { filename: candidate.filename, error: String(err) });
     }
@@ -329,7 +329,7 @@ export function applyWriteGate(
 // 3. 按层落盘
 // ----------------------------------------------------------------------------
 
-async function writeCandidate(candidate: WriteBackCandidate, input: WriteBackInput): Promise<void> {
+async function writeCandidate(candidate: WriteBackCandidate, input: WriteBackInput): Promise<boolean> {
   const entry: RoleMemoryEntry = {
     filename: candidate.filename,
     name: candidate.name,
@@ -340,29 +340,38 @@ async function writeCandidate(candidate: WriteBackCandidate, input: WriteBackInp
   if (candidate.layer === 'project') {
     if (input.workspacePath) {
       await writeScopedMemory({ scope: 'project', workspacePath: input.workspacePath }, entry);
-      return;
+      return true;
     }
     // 没有 workspace 时降级到角色层（路由规则：不确定降级到更窄的层不可行时取相邻层）
     await writeScopedMemory({ scope: 'role', roleId: input.roleId }, entry);
-    return;
+    return true;
   }
 
   if (candidate.layer === 'role') {
     await writeScopedMemory({ scope: 'role', roleId: input.roleId }, entry);
-    return;
+    return true;
   }
 
   // global 层：写入现有 Light Memory（~/.code-agent/memory/ + INDEX.md）
-  await writeGlobalMemory(entry);
+  return writeGlobalMemory(entry);
 }
 
 /** 全局层写入：复用 Light Memory 的文件格式和 INDEX.md 维护逻辑 */
-async function writeGlobalMemory(entry: RoleMemoryEntry): Promise<void> {
+async function writeGlobalMemory(entry: RoleMemoryEntry): Promise<boolean> {
   const memDir = await ensureMemoryDir();
   const filename = path.basename(entry.filename);
   const safeName = guardText(entry.name, 1_000);
   const safeDescription = guardText(entry.description, 2_000);
   const safeContent = guardText(entry.content, 50_000);
+  const outcome = await reconcileManualMemoryWrite({
+    filename,
+    name: safeName,
+    description: safeDescription,
+    content: safeContent,
+    type: 'reference',
+    source: 'role-writeback',
+  });
+  if (outcome !== 'proceed') return false;
   const fileContent = `---
 name: ${safeName}
 description: ${safeDescription}
@@ -386,6 +395,7 @@ ${safeContent}
   lines = lines.filter((line) => !entryPattern.test(line));
   lines.push(`- [${filename}](${filename}) — ${safeDescription}`);
   await fs.writeFile(indexPath, lines.join('\n'), 'utf-8');
+  return true;
 }
 
 // ----------------------------------------------------------------------------
