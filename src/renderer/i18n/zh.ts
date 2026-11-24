@@ -6,7 +6,7 @@ import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh 
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
-import { attachmentPreviewZh } from './attachmentPreview';
+import { attachmentPreviewZh } from './attachmentPreview'; import { chatImageAnnotateZh } from './chatImageAnnotate';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder'; import { cronWakeCadenceZh } from './cronWakeCadence';
@@ -947,7 +947,7 @@ export const zh = {
   ...teamZh,
   ...rolePackZh, ...knowledgeMemoryZh,
   ...chatTranscriptZh,
-  ...attachmentPreviewZh,
+  ...attachmentPreviewZh, ...chatImageAnnotateZh,
   ...chatInputZh,
   ...backgroundPanelZh,
   ...voiceZh,
