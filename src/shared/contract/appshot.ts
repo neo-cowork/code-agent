@@ -122,8 +122,8 @@ export function buildAppshotXml(capture: AppshotCapture, origin: AppshotOrigin =
   const name = escapeXmlAttr(capture.appName);
   const captured = escapeXmlAttr(new Date(capture.capturedAtMs).toISOString());
   if (capture.asPlainImage) {
-    const intro = '用户在一张图片上框出了需要关注的区域（图中已画上编号框），框的位置和评论如下，作为本条消息的上下文：';
-    return `<appshot app="${app}" name="${name}" captured="${captured}">\n${intro}\n\n${text}\n</appshot>`;
+    // 图片批注：axText 自己就是「我框出了 N 处…」的区域清单（i18n 文案），不套窗口截图的说法。
+    return `<appshot app="${app}" name="${name}" captured="${captured}">\n${text}\n</appshot>`;
   }
   const context = describeAppshotOrigin(origin, header);
   if (!text) {
