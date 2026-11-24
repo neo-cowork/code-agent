@@ -277,7 +277,7 @@ type: {{user|feedback|project|reference}}
 {{content}}
 \`\`\`
 
-The index updates automatically after that file is saved. Do not write or edit INDEX.md yourself.
+INDEX.md updates automatically; do not write or edit it.
 
 ## How to Read
 
