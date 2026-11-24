@@ -18,6 +18,7 @@ interface ApprovedRmToolApprovalInput {
   params: Record<string, unknown>;
   permissionRequest: PermissionRequestData;
   sessionId?: string;
+  runId?: string;
   context: Pick<ToolContext, 'requiresOsWriteFence'>;
   abortSignal?: AbortSignal;
   workingDirectory: string;
@@ -54,5 +55,6 @@ export function approvedSingleFileRmGrantForToolApproval(
     workingDirectory: input.workingDirectory,
     policyEnforcer: input.policyEnforcer,
     sessionId: input.sessionId,
+    runId: input.runId,
   });
 }
