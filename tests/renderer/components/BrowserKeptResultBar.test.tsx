@@ -41,12 +41,12 @@ afterEach(() => {
 });
 
 describe('BrowserKeptResultBar', () => {
-  it('describes the lease duration and timer reset in both languages', () => {
+  it('describes the background window and lease duration in both languages', () => {
     const minutes = MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS / 60_000;
     expect(workbenchTabsZh.workbenchTabs.agentWindow.keptResult.keptHint)
-      .toContain(`连续 ${minutes} 分钟没有任何操作，窗口会自动关闭。每次操作都会重新计时。`);
+      .toBe(`窗口还在后台开着，点「在 Neo 中打开」接着用；${minutes} 分钟没操作会自动关闭。`);
     expect(workbenchTabsEn.workbenchTabs.agentWindow.keptResult.keptHint)
-      .toContain(`The window closes automatically after ${minutes} minutes without any activity. Any action restarts the timer.`);
+      .toBe(`The window is still open in the background. Click “Open in Neo” to keep using it; it closes automatically after ${minutes} minutes without activity.`);
   });
 
   it('renders nothing for state none', async () => {
@@ -70,7 +70,7 @@ describe('BrowserKeptResultBar', () => {
     const adopt = await screen.findByTestId('browser-kept-result-adopt');
     expect(screen.getByText('结果页已保留')).toBeDefined();
     expect(screen.getByText('Result')).toBeDefined();
-    expect(screen.getByText(/连续 30 分钟没有任何操作/)).toBeDefined();
+    expect(screen.getByText(workbenchTabsZh.workbenchTabs.agentWindow.keptResult.keptHint)).toBeDefined();
     fireEvent.click(adopt);
 
     await waitFor(() => expect(adoptKeptResultPage).toHaveBeenCalledWith({
@@ -114,7 +114,10 @@ describe('BrowserKeptResultBar', () => {
     }));
   });
 
-  it('flips from kept to closed when the poll observes the idle reclaim', async () => {
+  it.each([
+    ['snapshot', '重新打开会显示当时保存的页面，只能看。'],
+    ['url', '重新打开只恢复网址，不恢复表单里已填的内容。'],
+  ])('shows the %s hint when the next poll changes kept to closed', async (reopenMode, hint) => {
     getKeptResultPage.mockResolvedValueOnce({
       state: 'kept',
       url: 'https://example.test/result',
@@ -123,13 +126,15 @@ describe('BrowserKeptResultBar', () => {
       state: 'closed',
       url: 'https://example.test/result',
       title: 'Result',
+      reopenMode,
     });
     render(<BrowserKeptResultBar conversationId="conversation-a" workspace="/tmp/w" />);
 
     expect(await screen.findByText('结果页已保留')).toBeDefined();
-    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(30_000);
 
     expect(await screen.findByText('结果页已关闭')).toBeDefined();
+    expect(screen.getByText(hint, { exact: false })).toBeDefined();
     expect(screen.queryByTestId('browser-kept-result-adopt')).toBeNull();
   });
 
