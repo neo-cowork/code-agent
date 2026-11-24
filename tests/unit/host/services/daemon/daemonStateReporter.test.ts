@@ -1,19 +1,15 @@
 // ============================================================================
 // daemonStateReporter 单测（ADR-083 append 2026-10-18）：
 //   - start 即写初值；内容未变跳过写盘（去重）；
-//   - 快照变化 / 意图变化（quit-intent 路由入口）→ 重写；
+//   - 快照变化 / 意图变化（setDaemonQuitIntent 入口）→ 重写；
 //   - cron 任务变化（CronService.onJobsChanged）→ 重写 + 联动去留 recheck。
 // cron 订阅经 vi.mock 替身（真 CronService 的 DB 面在 tests/unit/cron/ 另测）。
 // ============================================================================
 
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import express from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createQuitGuardRouter } from '../../../../../src/web/routes/quitGuard';
 // 注：不回收临时目录——reporter 的意图监听器是进程级单例，回收后残留写入只添
 // warn 噪声；每次测试各用新目录互不串读。
 
@@ -68,7 +64,7 @@ describe('createDaemonResidencyReporter', () => {
     expect(readDaemonStateFile(dataDir)?.reasons).toEqual(['running-runs']);
   });
 
-  it('意图变化（quit-intent 路由入口）→ 监听器重写状态文件（armed+background 生效）', () => {
+  it('意图变化（setDaemonQuitIntent 入口）→ 监听器重写状态文件（armed+background 生效）', () => {
     const snapshot: DaemonIdleSnapshot = { runningRuns: false, pairedCompanion: false, awaitingApproval: false, armedSchedules: 1 };
     createDaemonResidencyReporter({ dataDir, getSnapshot: () => snapshot, recheck: () => false });
     expect(readDaemonStateFile(dataDir)?.reasons).toEqual([]);
@@ -96,7 +92,7 @@ describe('createDaemonResidencyReporter', () => {
     expect(fs.existsSync(path.join(dataDir, 'daemon-state.json'))).toBe(false);
   });
 
-  it('POST /api/quit-intent background then stop leaves daemon-state.json intent', async () => {
+  it('意图 background → stop（进程内 setter 入口）在状态文件里依次落地', () => {
     const snapshot: DaemonIdleSnapshot = {
       runningRuns: false,
       pairedCompanion: false,
@@ -104,30 +100,12 @@ describe('createDaemonResidencyReporter', () => {
       armedSchedules: 1,
     };
     createDaemonResidencyReporter({ dataDir, getSnapshot: () => snapshot, recheck: () => false });
-    const app = express();
-    app.use(express.json());
-    app.use('/api', createQuitGuardRouter({
-      getSnapshot: async () => ({ activeRuns: 0, armedSchedules: 1 }),
-    }));
-    const server = http.createServer(app);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const { port } = server.address() as AddressInfo;
-    const post = (mode: 'background' | 'stop') => fetch(`http://127.0.0.1:${port}/api/quit-intent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode }),
-    });
-    try {
-      // 先落到 stop，避免进程里意图已经是 background 时第一次 POST 被幂等吞掉。
-      expect((await post('stop')).status).toBe(200);
-      expect((await post('background')).status).toBe(200);
-      expect(readDaemonStateFile(dataDir)?.intent).toBe('background');
-      expect((await post('stop')).status).toBe(200);
-      expect(readDaemonStateFile(dataDir)?.intent).toBe('stop');
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
-    }
+    // HTTP 面只接 stop；background 只经进程内 setter 进入。先落到 stop，
+    // 避免进程里意图已经是 background 时第一次置位被幂等吞掉。
+    setDaemonQuitIntent('stop');
+    setDaemonQuitIntent('background');
+    expect(readDaemonStateFile(dataDir)?.intent).toBe('background');
+    setDaemonQuitIntent('stop');
+    expect(readDaemonStateFile(dataDir)?.intent).toBe('stop');
   });
 });
