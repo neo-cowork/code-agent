@@ -48,7 +48,7 @@ import { getProjectKey } from '../../../services/roleAssets/roleAssetPaths';
 import { resolveJournalContext } from '../../../memory/memoryJournalActor';
 import { journalScopedMemoryChange } from '../../../memory/scopedMemoryJournal';
 
-const VALID_TYPES = ['directive', 'user', 'feedback', 'project', 'reference', 'skill'] as const;
+const VALID_TYPES = ['directive', 'user', 'feedback', 'project', 'people', 'reference', 'skill'] as const;
 type MemoryType = (typeof VALID_TYPES)[number];
 
 // Schema lives in memoryWrite.schema.ts (P0-7 single source of truth)
