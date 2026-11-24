@@ -47,8 +47,11 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   const [kept, setKept] = useState<KeptResultPage>({ state: 'none', url: null, title: null, reason: null });
   const [busy, setBusy] = useState<'adopt' | 'reopen' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [snapshotOpen, setSnapshotOpen] = useState(false);
-  const [snapshotHtml, setSnapshotHtml] = useState<string | null>(null);
+  const keptSnapshot = useSurfaceExecutionStore((state) => (
+    conversationId ? state.keptResultSnapshotByConversation[conversationId] : undefined
+  ));
+  const snapshotOpen = keptSnapshot?.snapshotOpen ?? false;
+  const snapshotHtml = keptSnapshot?.snapshotHtml ?? null;
   const mountedRef = useRef(true);
   const turnActiveRef = useRef(turnActive);
   turnActiveRef.current = turnActive;
@@ -117,34 +120,51 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   const reopenMode = kept.state === 'none' ? undefined : kept.reopenMode;
 
+  const closeSnapshot = useCallback(() => {
+    if (!conversationId) return;
+    const current = useSurfaceExecutionStore.getState().keptResultSnapshotByConversation[conversationId];
+    useSurfaceExecutionStore.getState().noteKeptResultSnapshot(conversationId, {
+      url: current?.url ?? '',
+      snapshotHtml: current?.snapshotHtml ?? '',
+      snapshotOpen: false,
+    });
+  }, [conversationId]);
+
   const onReopen = useCallback(async () => {
     if (!kept.url || !conversationId || turnActiveRef.current) return;
     if (kept.state === 'closed' && reopenMode === 'snapshot') {
       setBusy('reopen');
       setError(null);
+      let openedSnapshot = false;
       try {
         const detailed = await getKeptResultPage(conversationId, { includeSnapshot: true });
         if (detailed.state !== 'none') {
           const html = detailed.snapshotHtml?.trim() ?? '';
-          if (html && mountedRef.current) {
-            setSnapshotHtml(detailed.snapshotHtml ?? html);
-            setSnapshotOpen(true);
-            return;
+          if (html) {
+            useSurfaceExecutionStore.getState().noteKeptResultSnapshot(conversationId, {
+              url: kept.url,
+              snapshotHtml: detailed.snapshotHtml ?? html,
+              snapshotOpen: true,
+            });
+            openedSnapshot = true;
           }
         }
       } catch {
-        // Empty or failed fetch falls through to the URL path.
+        // Empty or failed fetch falls through to the URL path while this bar is still mounted.
       } finally {
         if (mountedRef.current) setBusy(null);
       }
+      // The Browser tab may have unmounted while the snapshot was in flight.
+      // Opening the POST URL from here shows an empty form, so leave the saved page in the store.
+      if (openedSnapshot || !mountedRef.current) return;
     }
     await reopenByUrl();
   }, [kept.url, kept.state, reopenMode, conversationId, reopenByUrl]);
 
   const onTryOriginal = useCallback(async () => {
-    setSnapshotOpen(false);
+    closeSnapshot();
     await reopenByUrl();
-  }, [reopenByUrl]);
+  }, [closeSnapshot, reopenByUrl]);
 
   // N-FIX-FIX-BROWSER-SECRETREF-HARDEN：takeover 停靠不经过本条（聊天里的「继续」卡
   // 负责），避免同一扇窗出现两个不同口径的入口。
@@ -154,6 +174,12 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   const closedHint = kept.state === 'closed' && reopenMode === 'snapshot'
     ? copy.keptClosedSnapshotHint
     : copy.keptClosedHint;
+  const showSavedSnapshot = snapshotOpen
+    && kept.state === 'closed'
+    && reopenMode === 'snapshot'
+    && kept.url != null
+    && keptSnapshot?.url === kept.url
+    && Boolean(snapshotHtml?.trim());
 
   return (
     <>
@@ -200,8 +226,8 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
       )}
     </div>
     <Modal
-      isOpen={snapshotOpen}
-      onClose={() => setSnapshotOpen(false)}
+      isOpen={showSavedSnapshot}
+      onClose={closeSnapshot}
       title={copy.snapshotTitle}
       size="full"
       portal

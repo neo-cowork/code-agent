@@ -874,7 +874,7 @@ export class OrchestratorPermissionIsland {
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            ...buildApprovalNotification(fullRequest.tool, noticeContext),
+            ...buildApprovalNotification(fullRequest.tool, noticeContext, fullRequest.sessionId),
             tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。

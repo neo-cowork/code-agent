@@ -1,4 +1,5 @@
 import type { Message } from '../../../shared/contract';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import { estimateTokens } from '../tokenOptimizer';
 
 export interface CheckpointTailOptions {
@@ -24,7 +25,7 @@ function estimateMessageTokens(message: Message): number {
     total += estimateTokens(JSON.stringify(message.toolCalls));
   }
   if (message.toolResults?.length) {
-    total += estimateTokens(JSON.stringify(message.toolResults));
+    total += estimateTokens(serializeToolResultsForModel(message.toolResults));
   }
   if (message.reasoning) {
     total += estimateTokens(message.reasoning);

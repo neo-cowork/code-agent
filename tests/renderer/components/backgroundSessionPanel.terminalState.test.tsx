@@ -12,10 +12,11 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import type { BackgroundSessionInfo } from '../../../src/shared/contract/sessionState';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 
 function backgroundTask(overrides: Partial<BackgroundSessionInfo>): BackgroundSessionInfo {
   return {
@@ -81,6 +82,33 @@ describe('状态行映射（经渲染）', () => {
 
     renderPanelWith(backgroundTask({ status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED }));
     expect(itemLine()).toBe('已取消');
+  });
+
+  it.each([
+    ['zh', '任务未完成', '已完成', '删除没有成功，文件还在'],
+    ['en', 'Task incomplete', 'Completed', 'The files are still there because the deletion did not succeed'],
+  ] as const)('shows the %s incomplete panel row and keeps the completed row', (language, incomplete, completed, reason) => {
+    useAppStore.setState({ language });
+    try {
+      renderPanelWith(backgroundTask({
+        title: '已完成删除 / Deleted all files',
+        status: 'failed',
+        completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
+        leftoverPaths: ['/temporary/exports/export.csv'],
+      }));
+      const row = screen.getByTestId('background-session-item');
+      expect(row.textContent).toContain('export.csv');
+      expect(row.textContent).not.toMatch(/已完成|Deleted all files/);
+      expect(itemLine()).toContain(incomplete);
+      expect(itemLine()).toContain(reason);
+      expect(itemLine().replace(incomplete, '')).not.toMatch(/完成|completed|DELETE_INCOMPLETE|\/temporary/i);
+      cleanup();
+      renderPanelWith(backgroundTask({ status: 'completed' }));
+      expect(itemLine()).toBe(completed);
+    } finally {
+      cleanup();
+      useAppStore.setState({ language: 'zh' });
+    }
   });
 
   it('其余消息原样展示（engine 终态消息直通）', () => {

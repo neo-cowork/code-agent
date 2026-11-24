@@ -100,6 +100,7 @@ export function ToolHeader({
     ? (toolCall.targetContext?.kind === 'app' ? toolCall.targetContext.label : undefined)
     : undefined;
   const labelArgs = computerLabelArgs(rawArgs, leasedApp);
+  const terminal = resolveToolCallTerminalState({ toolCall });
   const displayName = preflight?.action ?? (assembled
     ? assembled.action
     : humanizeToolStep(
@@ -115,7 +116,13 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
-        { notRun: resolveToolCallTerminalState({ toolCall }).notRun, handedOff: resolveToolCallTerminalState({ toolCall }).handedOff, helperOutcomes: readHelperOutcomes(toolCall.result?.metadata), delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
+        {
+          notRun: terminal.notRun,
+          skipped: toolCall.result?.userMessage !== undefined && terminal.skipped,
+          handedOff: terminal.handedOff,
+          helperOutcomes: readHelperOutcomes(toolCall.result?.metadata),
+          delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined,
+        },
       ));
   const statusLabel = assembled
     ? assembled.terminal
