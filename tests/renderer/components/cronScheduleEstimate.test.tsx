@@ -64,7 +64,10 @@ const flatFeeHistory = [execution('flat-fee', { flatFee: true })];
 const partialHistory = [
   execution('running', { status: 'running', cost: 0.01 }),
   execution('interrupted', { status: 'interrupted', cost: 0.02 }),
-  execution('failed', { status: 'failed', cost: 0.03 }),
+];
+const settledFailureHistory = [
+  execution('failed', { status: 'failed', cost: 0.5 }),
+  execution('cancelled', { status: 'cancelled', cost: 0.7 }),
 ];
 
 const cases = [
@@ -72,6 +75,8 @@ const cases = [
   { name: 'uses the median positive local session cost', draft: draft(twoMinutes), history: paidHistory, value: 'About 720 runs/day · about $144.0000/day', highlight: true },
   { name: 'keeps cost unknown with only partial runs', draft: draft(twoMinutes), history: partialHistory, value: 'About 720 runs/day · cost visible after the first run', highlight: true },
   { name: 'excludes partial runs from the cost median', draft: draft(twoMinutes), history: [...partialHistory, ...paidHistory], value: 'About 720 runs/day · about $144.0000/day', highlight: true },
+  { name: 'counts failed and cancelled runs that persisted a cost over completed flat-fee history', draft: draft(twoMinutes), history: [...settledFailureHistory, ...flatFeeHistory], value: 'About 720 runs/day · about $432.0000/day', highlight: true },
+  { name: 'uses failed run cost when there is no completed run', draft: draft(twoMinutes), history: [settledFailureHistory[0]], value: 'About 720 runs/day · about $360.0000/day', highlight: true },
   { name: 'keeps completed flat-fee history with partial costs', draft: draft(twoMinutes), history: [...partialHistory, ...flatFeeHistory], value: 'About 720 runs/day · not billed in USD', highlight: true },
   { name: 'shows a flat-fee history without a dollar figure', draft: draft(twoMinutes), history: flatFeeHistory, value: 'About 720 runs/day · not billed in USD', highlight: true },
   { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost visible after the first run' },

@@ -4,13 +4,16 @@ import { cronScheduleIntervalRangeSeconds, everyScheduleIntervalSeconds } from '
 const HOURS_PER_DAY = 24;
 const SECONDS_PER_DAY = HOURS_PER_DAY * 60 * 60;
 
+// Failed/cancelled runs still persist the meter's final cost, so they count as samples.
+const SETTLED_STATUSES: ReadonlySet<CronJobExecution['status']> = new Set(['completed', 'failed', 'cancelled']);
+
 type ScheduleRunCost =
   | { kind: 'none' | 'unknown' | 'flat-fee' }
   | { kind: 'usd'; perRunUsd: number; perDayUsd: number };
 
 function estimateCost(executions: readonly CronJobExecution[], runsPerDay: number): ScheduleRunCost {
   const completedLocalModelRuns = executions.filter(
-    (run) => run.status === 'completed' && run.runsOn !== 'cloud' && run.sessionId,
+    (run) => SETTLED_STATUSES.has(run.status) && run.runsOn !== 'cloud' && run.sessionId,
   );
   const costs = completedLocalModelRuns
     .flatMap(({ cost }) => cost !== undefined && Number.isFinite(cost) && cost > 0 ? [cost] : [])
