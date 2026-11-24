@@ -19,6 +19,7 @@ import {
   stripWakeMarkup,
   topicExcludeHits,
 } from './wakeRationale';
+import { recordWakeDecision, WAKE_LEDGER_PROMPT } from './roleWakeLedger';
 import { withRoleWakeAutomation } from './roleWakeAutomation';
 import { assertUnattendedBudgetAvailable } from './unattendedBudgetGate';
 import { getKnownToolNames } from '../../tools/knownToolNames';
@@ -136,6 +137,7 @@ export function buildWakePrompt(
     '5. 若决策是 report 或 suggest，末尾还必须带：',
     '   <rationale>为什么现在值得打扰用户，最多两句。必须来自你实际检查到的履历或产物，不许事后编。</rationale>',
     '   <evidence>依据：会话 / 文件 / 记忆条目的引用；没有就留空</evidence>',
+    ...WAKE_LEDGER_PROMPT,
     '',
     `预算约束：你最多有 ${ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束，重要的事先做。`,
   ];
@@ -273,6 +275,28 @@ export async function wakeRole(
     return { roleId, trigger, status: 'skipped', skipReason: 'quiet_hours' };
   }
 
+  const { getSessionManager } = await import('../infra/sessionManager');
+  const { getConfigService } = await import('../core/configService');
+  const { resolveSessionDefaultModelConfig } = await import('../core/sessionDefaults');
+
+  const sessionManager = getSessionManager();
+  const configService = getConfigService();
+  const settings = configService.getSettings();
+  const currentSessionId = sessionManager.getCurrentSessionId();
+  const currentSession = currentSessionId ? await sessionManager.getSession(currentSessionId) : null;
+  // workspace 解析链（与 webServer/desktop bootstrap 同序）：显式传入 > 当前会话 >
+  // CODE_AGENT_WORKING_DIR > 用户工作区偏好。不能落到 process.cwd()——那是应用安装目录，角色会跑去巡检应用自己的代码（E2E 实测踩坑）。
+  const workspacePath = options?.workspacePath
+    ?? currentSession?.workingDirectory
+    ?? process.env.CODE_AGENT_WORKING_DIR?.trim()
+    ?? settings.workspace?.pinnedDirectory
+    ?? settings.workspace?.recentDirectories?.[0]
+    ?? settings.workspace?.defaultDirectory;
+
+  const now = new Date();
+  const recordDecision = (input: Parameters<typeof recordWakeDecision>[4]) =>
+    recordWakeDecision(roleId, trigger, workspacePath, now.getTime(), input);
+
   // ---- 步骤 2：空产物守卫（成本闸）+ 外部增量巡检 ----
   // cadence 醒来的输入是"自己经手过的产物"；履历里没有任何产物条目（排除醒来记录本身）
   // 就没有东西可巡检，确定性静默，不烧模型 token。event 触发不受此限（run 总结的输入是 runSummary）。
@@ -296,36 +320,18 @@ export async function wakeRole(
         artifactRef: '-',
         summary: '巡检无需行动（履历中没有产物）',
       });
-      return { roleId, trigger, status: 'completed', decision: 'silence', summary: '履历中没有产物，无需巡检' };
+      const decision = await recordDecision({ decision: 'silence', silenceReason: 'no_products' });
+      return { roleId, trigger, status: 'completed', decision, summary: '履历中没有产物，无需巡检' };
     }
   }
 
-  // ---- 步骤 3：实例化（带记忆；非持久化角色在这里抛错）----
-  const { getSessionManager } = await import('../infra/sessionManager');
-  const { getConfigService } = await import('../core/configService');
-  const { resolveSessionDefaultModelConfig } = await import('../core/sessionDefaults');
-
-  const sessionManager = getSessionManager();
-  const configService = getConfigService();
-  const settings = configService.getSettings();
-  const currentSessionId = sessionManager.getCurrentSessionId();
-  const currentSession = currentSessionId ? await sessionManager.getSession(currentSessionId) : null;
-  // workspace 解析链（与 webServer/desktop bootstrap 同序）：显式传入 > 当前会话 >
-  // CODE_AGENT_WORKING_DIR > 用户工作区偏好。不能落到 process.cwd()——那是应用安装目录，角色会跑去巡检应用自己的代码（E2E 实测踩坑）。
-  const workspacePath = options?.workspacePath
-    ?? currentSession?.workingDirectory
-    ?? process.env.CODE_AGENT_WORKING_DIR?.trim()
-    ?? settings.workspace?.pinnedDirectory
-    ?? settings.workspace?.recentDirectories?.[0]
-    ?? settings.workspace?.defaultDirectory;
-
+  // ---- 步骤 3：实例化（带记忆）----
   const instantiation = await instantiateRole(roleId, trigger, {
     task: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}（${trigger}）`,
     workspacePath,
   });
 
   // ---- 步骤 4：创建醒来会话（origin 标记 role-cadence，防 event 递归触发）----
-  const now = new Date();
   const titleStamp = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const session = await sessionManager.createSession({
     title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX} ${titleStamp}`,
@@ -414,7 +420,7 @@ export async function wakeRole(
     let decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
     const parsedRationale = parseWakeRationale(finalOutput);
     // exclude 是硬约束：命中则压成 silence。rationale 解析失败不影响原决策。
-    const excludeSource = [finalOutput, parsedRationale.rationale ?? ''].join('\n');
+    const excludeSource = [finalOutput.replace(ROLE_PROACTIVITY.BASIS_TAG_PATTERN, ''), parsedRationale.rationale ?? ''].join('\n');
     const excluded = topicExcludeHits(excludeSource, config.topicsExclude);
     if (excluded) {
       logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
@@ -455,6 +461,13 @@ export async function wakeRole(
         summary = `[goal:${advanceGoalStatus}] ${proposal.goal}`.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
       }
     }
+
+    const committedDecision = await recordDecision({
+      decision, finalOutput, rationale: parsedRationale.rationale, summary,
+      ...(excluded ? { silenceReason: 'excluded_topic' } : {}),
+    });
+    if (committedDecision !== decision) summary = '';
+    decision = committedDecision;
 
     // ---- 步骤 7：沉默处理（归档会话，不打扰用户）----
     if (decision === 'silence') {

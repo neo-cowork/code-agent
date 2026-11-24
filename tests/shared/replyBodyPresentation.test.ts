@@ -9,6 +9,16 @@ describe.each(['zh', 'en'] as const)('system reply projection (%s)', (language) 
     expect(reply.rationale).toBe('Review the summary.');
     expect(reply.technicalDetails).toContain('<decision>report</decision>');
   });
+  it('keeps wake basis IDs out of the reply and its technical details', () => {
+    const raw = 'Report ready.<decision>report</decision><basis>mail:401</basis>';
+    const reply = presentReplyBody(raw, language, { protocol: 'wake' });
+    expect(reply.text).toBe('Report ready.');
+    expect(reply.rationale).toBeUndefined();
+    expect(reply.technicalDetails).toBe('<decision>report</decision>');
+    const streaming = presentReplyBody('Report ready.<basis>mail:401', language, { protocol: 'wake', isStreaming: true });
+    expect(streaming.text).toBe('Report ready.');
+    expect(streaming.technicalDetails).toBeUndefined();
+  });
   it('does not flash partially streamed control tags', () => {
     for (const suffix of ['<dec', '<decision>', '<decision>report', '```wake_proposals\n{']) {
       const separator = suffix.startsWith('```') ? '\n' : '';
