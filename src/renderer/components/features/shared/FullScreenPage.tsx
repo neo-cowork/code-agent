@@ -26,6 +26,9 @@
 import React, { createContext, useContext } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
+import { ServerConnectionBanner } from '../../ServerConnectionBanner';
+import { useServerConnectionStore } from '../../../stores/serverConnectionStore';
+import { isTauriMode } from '../../../utils/platform';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { COLLAPSED_TRAFFIC_LIGHT_INSET } from './trafficLightInset';
@@ -90,18 +93,26 @@ export const FullScreenPage: React.FC<FullScreenPageProps> = ({
   testId,
   variant = 'overlay',
   ...divProps
-}) => (
-  <FullScreenPageVariantContext.Provider value={variant}>
-    <div
-      {...divProps}
-      data-testid={testId}
-      data-page-variant={variant}
-      className={`${variant === 'overlay' ? `fixed inset-0 z-50 ${OVERLAY_TRAFFIC_LIGHT_INSET}` : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
-    >
-      {children}
-    </div>
-  </FullScreenPageVariantContext.Provider>
-);
+}) => {
+  const isOverlay = variant === 'overlay';
+  const hasBanner = useServerConnectionStore((state) => isOverlay && state.status !== 'ok');
+  // A Tauri banner already reserves the traffic-light space at the top of the window.
+  const overlayInset = hasBanner && isTauriMode() ? '' : OVERLAY_TRAFFIC_LIGHT_INSET;
+
+  return (
+    <FullScreenPageVariantContext.Provider value={variant}>
+      <div
+        {...divProps}
+        data-testid={testId}
+        data-page-variant={variant}
+        className={`${isOverlay ? `fixed inset-0 z-50 ${overlayInset}` : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
+      >
+        {isOverlay && <ServerConnectionBanner />}
+        {children}
+      </div>
+    </FullScreenPageVariantContext.Provider>
+  );
+};
 
 export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   icon,

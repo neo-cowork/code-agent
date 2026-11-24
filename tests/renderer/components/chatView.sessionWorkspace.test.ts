@@ -100,9 +100,10 @@ vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => (
 vi.mock('../../../src/renderer/services/ipcService', () => {
   const ipc = {
     invoke: ipcInvokeMock,
+    // getTree：输入框上方的代理行读的是代理树快照，与本组设置/模型断言无关，给空快照
     invokeDomain: (_domain: string, action: string, payload?: unknown) => action === 'getEffectiveModel'
       ? effectiveModelInvokeMock(payload)
-      : settingsInvokeMock(),
+      : action === 'getTree' ? Promise.resolve(null) : settingsInvokeMock(),
     on: vi.fn(() => () => {}),
   };
   return { default: ipc, ipcService: ipc };
