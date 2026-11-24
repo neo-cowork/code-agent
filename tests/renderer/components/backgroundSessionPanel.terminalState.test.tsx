@@ -97,8 +97,8 @@ describe('状态行映射（经渲染）', () => {
         completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
         leftoverPaths: ['/temporary/exports/export.csv'],
       }));
-      expect(screen.getByRole('button', { name: retry, exact: true })).toBeTruthy();
-      expect(screen.getByRole('button', { name: alternate, exact: true })).toBeTruthy();
+      expect(screen.getByRole('button', { name: retry })).toBeTruthy();
+      expect(screen.getByRole('button', { name: alternate })).toBeTruthy();
       expect(screen.getByTestId('background-session-clear')).toBeTruthy();
       const row = screen.getByTestId('background-session-item');
       expect(row.textContent).toContain('export.csv');
@@ -311,8 +311,8 @@ describe('incomplete background row actions', () => {
     });
     renderPanelWith(failedDelete());
 
-    fireEvent.click(screen.getByRole('button', { name: '换个方式', exact: true }));
-    fireEvent.click(screen.getByRole('button', { name: '重试', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '换个方式' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
     await waitFor(() => expect(sendPrompt).toHaveBeenCalledTimes(1));
     expect(open).toHaveBeenCalledExactlyOnceWith('s1');
     expect(sendPrompt).toHaveBeenCalledWith('上次删除受阻，这些文件还在：spring.csv。请试试别的办法。', {
@@ -336,15 +336,15 @@ describe('incomplete background row actions', () => {
       });
     });
     renderPanelWith(task);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试', exact: true })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
     expect(sendPrompt).not.toHaveBeenCalled();
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '换个方式', exact: true }).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '换个方式' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('disables both panel actions while the owning session is active', () => {
     useSessionStore.setState({ currentSessionId: 'other-session', runningSessionIds: new Set(['s1']) });
     renderPanelWith(failedDelete());
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '重试', exact: true }).disabled).toBe(true);
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '换个方式', exact: true }).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '重试' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '换个方式' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
