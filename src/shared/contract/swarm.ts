@@ -66,6 +66,11 @@ export function getSwarmTreeScopeKey(
   return [scope.sessionId, scope.treeId].map(encodeScopePart).join(SCOPED_SWARM_SEPARATOR);
 }
 
+/** Logical run id for the visibility trace of a standalone spawn. */
+export function createSingleSpawnRunId(agentId: string): string {
+  return `single_${agentId}`;
+}
+
 /** Opaque persistence identity for trace/ledger repositories with a single id key. */
 export function createSwarmTraceStorageId(scope: SwarmRunScope): string {
   return [

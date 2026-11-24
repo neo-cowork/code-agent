@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const logs = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
@@ -11,6 +11,7 @@ import { getPolicyEngine, resetPolicyEngine } from '../../../../src/host/permiss
 import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../src/host/security/policyEnforcer';
 import { resolveCanonicalRunPath } from '../../../../src/host/runtime/runContext';
 import { approvedSingleFileRmGrantForToolApproval } from '../../../../src/host/tools/shell/approvedRmGrant';
+import { isApprovedRmVerifyProbe } from '../../../../src/host/tools/shell/approvedRmVerifyProbe';
 
 type Input = Parameters<typeof approvedSingleFileRmGrantForToolApproval>[0];
 
@@ -50,6 +51,16 @@ describe('approved rm production approval boundary', () => {
     input.params.command += '; echo "rm_exit=$?"';
     expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
     expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_GRANT_MINTED'));
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['rm -v cache-0.tmp', 1],
+    ['rm --verbose -- cache-0.tmp', 1],
+    ['rm -f -v cache-0.tmp cache-1.tmp', 2],
+  ])('treats verbose output flags like -f: %s', (command, count) => {
+    input.params.command = command;
+    expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(count === 1 ? files[0] : files.slice(0, count));
     expect(logs.warn).not.toHaveBeenCalled();
   });
 
@@ -172,6 +183,9 @@ describe('approved rm production approval boundary', () => {
     ['rm *.tmp', 'literal_operand'],
     ['rm cache-[01].tmp', 'literal_operand'],
     ['rm -rf cache-0.tmp', 'option'],
+    ['rm -i cache-0.tmp', 'option'],
+    ['rm -rv cache-0.tmp', 'option'],
+    ['rm -fv cache-0.tmp', 'option'],
     ['rm cache-0.tmp > output', 'command_shape'],
     ['rm cache-0.tmp; rm cache-1.tmp', 'command_shape'],
     ['rm cache-0.tmp &', 'command_shape'],
@@ -224,4 +238,128 @@ describe('approved rm production approval boundary', () => {
       refused(condition === 'unattended_background' ? 'unattended' : condition);
     },
   );
+  describe('literal-path for loop around rm', () => {
+    const loop = (body: string, items = `${'${F0}'} ${'${F1}'}`) => {
+      input.params.command = `for f in ${items.replace('${F0}', `'${files[0]}'`).replace('${F1}', `"${files[1]}"`)}; do\n${body}\ndone`;
+    };
+
+    it.each([
+      'if rm -- "$f"; then echo "removed $f"; else echo "FAILED exit=$?"; fi',
+      'echo "--- rm: $f"; rm -f -v -- "$f"; printf "rm_exit=%s" "$?"',
+      'rm "$f"',
+    ])('mints exactly the two literal files for body %#', (body) => {
+      loop(body);
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+      expect(logs.warn).not.toHaveBeenCalled();
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_GRANT_MINTED'));
+    });
+
+    it.each([
+      ['rm -r "$f"', 'option'],
+      ['rm -rf "$f"', 'option'],
+      ['rm "$f" "${f}.bak"', 'literal_operand'],
+      ['rm "${f}.bak"', 'literal_operand'],
+      ['rm $f', 'expansion'],
+      ['rm "$g"', 'literal_operand'],
+      ['rm "$f"; touch "$f"', 'command_shape'],
+      ['rm "$f"; cat "$f"', 'command_shape'],
+      ['rm "$f" > out.txt', 'command_shape'],
+    ])('refuses body %s with reason and a log line', (body, reason) => {
+      loop(body);
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).toHaveBeenCalledTimes(1);
+      expect(logs.warn).toHaveBeenCalledWith(expect.stringContaining(reason));
+      expect(files.every(file => existsSync(file))).toBe(true);
+    });
+
+    it.each([
+      ['/tmp/*.tmp'], ['relative.tmp'], ['"/tmp/a b.tmp"'], ['~/x.tmp'], ['$HOME/x.tmp'],
+    ])('refuses non-literal loop item %s', (item) => {
+      loop('rm "$f"', item);
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).toHaveBeenCalledTimes(1);
+      expect(logs.warn).toHaveBeenCalledWith(expect.stringMatching(/loop_item|expansion/));
+    });
+
+    it('refuses a loop whose body has no rm, without claiming an rm refusal', () => {
+      loop('echo "$f"');
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('post-delete existence check of exactly the approved files', () => {
+    const SESSION = 'approved-rm-public-entry';
+    const approveDelete = (command = `rm -v -- '${files[0]}' '${files[1]}'`) => {
+      input.params.command = command;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+    };
+
+    it.each([
+      (f: string[]) => `test ! -e "${f[0]}" && echo gone`,
+      (f: string[]) => `[ -e "${f[0]}" ] && echo STILL || echo GONE; ls -l ${f[1]} 2>&1; echo "exit=$?"`,
+      (f: string[]) => `stat "${f[0]}"; test -f ${f[1]}`,
+      (f: string[]) => `for p in ${f[0]} "${f[1]}"; do\n  if [ -e "$p" ]; then echo "STILL: $p"; ls -l "$p"; else echo "GONE: $p"; fi\ndone`,
+      (f: string[]) => `for p in ${f[0]} "${f[1]}"; do if [ -e "$p" ]; then echo "STILL PRESENT: $p"; else echo "GONE: $p"; fi; done`,
+    ])('answers %# without a card after the approved delete', (build) => {
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(true);
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_VERIFY_EXEMPTION'));
+    });
+
+    it.each([
+      (f: string[]) => `ls -l ${f[2]}`,
+      (f: string[]) => `test -e "${f[0]}" && cat "${f[0]}"`,
+      (f: string[]) => `ls ${f[0]} > ${f[1]}`,
+      (f: string[]) => `ls ${f[0]} $(printf x)`,
+      (f: string[]) => `for p in ${f[0]}; do rm "$p"; done`,
+      (f: string[]) => `for p in ${f[0]} ${f[2]}; do test -e "$p"; done`,
+      (f: string[]) => `for p in ${f[0]}; do test -e "$q"; done`,
+      (f: string[]) => `for p in ${f[0]}; do ls "$p" "$other"; done`,
+      (f: string[]) => `while true; do test -e ${f[0]}; done`,
+      (f: string[]) => `for p in ${f[0]}; do test -e "$p"; done < /etc/passwd`,
+      (_f: string[]) => `ls ${join(cwd, '*.tmp')}`,
+      (_f: string[]) => 'echo done',
+    ])('keeps asking for %#: unrelated path, other program, redirect, expansion, loop, glob', (build) => {
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(false);
+    });
+
+    it('does not answer for another session, before any approval, or after the window', () => {
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION)).toBe(false);
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, 'another-session')).toBe(false);
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION, Date.now() + 6 * 60 * 1000)).toBe(false);
+    });
+
+    it('does not loop over an approved path that word-splits (space) onto another path', () => {
+      const spaced = join(cwd, 'cache dir.tmp');
+      writeFileSync(spaced, 'x');
+      input.params.command = `rm -- '${spaced}'`;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(spaced);
+      expect(isApprovedRmVerifyProbe(`for p in "${spaced}"; do ls -la $p; done`, cwd, SESSION)).toBe(false);
+      expect(isApprovedRmVerifyProbe(`ls -la "${spaced}"`, cwd, SESSION)).toBe(true);
+    });
+
+    it('does not treat ~ or .. spellings as the approved file (bash reads a different path)', () => {
+      const homeFile = join(homedir(), `approved-rm-tilde-${process.pid}.tmp`);
+      writeFileSync(homeFile, 'x');
+      try {
+        input.params.command = `rm -- '${homeFile}'`;
+        expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(homeFile);
+        const name = homeFile.slice(homedir().length + 1);
+        expect(isApprovedRmVerifyProbe(`test -e ${homeFile}`, cwd, SESSION)).toBe(true);
+        expect(isApprovedRmVerifyProbe(`if [ -e "~/${name}" ]; then echo STILL; else echo GONE; fi`, cwd, SESSION)).toBe(false);
+        expect(isApprovedRmVerifyProbe(`for p in "~/${name}"; do ls -l "$p"; done`, cwd, SESSION)).toBe(false);
+        expect(isApprovedRmVerifyProbe(`ls ~/${name}`, cwd, SESSION)).toBe(false);
+        expect(isApprovedRmVerifyProbe(`[ -e /tmp/../${homeFile.slice(1)} ]`, cwd, SESSION)).toBe(false);
+      } finally { rmSync(homeFile, { force: true }); }
+    });
+
+    it('does not remember files when the approval is refused', () => {
+      input.params.command = `rm -rf ${files[0]}`;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION)).toBe(false);
+    });
+  });
 });
