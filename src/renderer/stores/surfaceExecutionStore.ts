@@ -92,10 +92,23 @@ interface OpenedKeptResultView {
   state: 'kept' | 'closed';
 }
 
+/**
+ * 一次「重新打开」取回的只读页。挂在会话上，浏览器页签卸掉后仍然在。
+ * url 用来对上当前结果页：换了一页就不能再弹出上一次的 HTML。
+ */
+interface KeptResultSnapshotView {
+  url: string;
+  snapshotHtml: string;
+  snapshotOpen: boolean;
+}
+
 interface SurfaceExecutionStoreState {
   /** UI handoff only: a retained host window is still kept after the user opens it. */
   openedKeptResultsByConversation: Record<string, OpenedKeptResultView>;
   noteKeptResultOpened: (conversationId: string, opened: OpenedKeptResultView) => void;
+  /** 已关闭结果页的只读重开。浏览器页签在请求途中卸掉后，回来仍显示这一页。 */
+  keptResultSnapshotByConversation: Record<string, KeptResultSnapshotView>;
+  noteKeptResultSnapshot: (conversationId: string, view: KeptResultSnapshotView) => void;
   nativeByConversation: Record<string, RendererSurfaceConversationProjectionV1>;
   compatibilityByConversation: Record<string, RendererSurfaceConversationProjectionV1>;
   sessionsByScope: Record<string, RendererSurfaceSessionProjectionV1>;
@@ -248,6 +261,13 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
   noteKeptResultOpened: (conversationId, opened) => set((state) => ({
     openedKeptResultsByConversation: { ...state.openedKeptResultsByConversation, [conversationId]: opened },
   })),
+  keptResultSnapshotByConversation: {},
+  noteKeptResultSnapshot: (conversationId, view) => set((state) => ({
+    keptResultSnapshotByConversation: {
+      ...state.keptResultSnapshotByConversation,
+      [conversationId]: view,
+    },
+  })),
   nativeByConversation: {},
   compatibilityByConversation: {},
   sessionsByScope: {},
@@ -387,8 +407,11 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
     delete compatibilityByConversation[conversationId];
     const openedKeptResultsByConversation = { ...state.openedKeptResultsByConversation };
     delete openedKeptResultsByConversation[conversationId];
+    const keptResultSnapshotByConversation = { ...state.keptResultSnapshotByConversation };
+    delete keptResultSnapshotByConversation[conversationId];
     return {
       openedKeptResultsByConversation,
+      keptResultSnapshotByConversation,
       nativeByConversation,
       compatibilityByConversation,
       sessionsByScope: withoutConversation(state.sessionsByScope, conversationId),
@@ -400,6 +423,7 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
 
   reset: () => set({
     openedKeptResultsByConversation: {},
+    keptResultSnapshotByConversation: {},
     nativeByConversation: {},
     compatibilityByConversation: {},
     sessionsByScope: {},

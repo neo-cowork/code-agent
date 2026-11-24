@@ -6,6 +6,7 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
+import { recordApprovedRmSettlementTargets } from '../../session/approvedRmSettlementTargets';
 import { rememberApprovedRmTargets } from './approvedRmVerifyProbe';
 import { createLogger } from '../../services/infra/logger';
 
@@ -370,10 +371,11 @@ function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string
 /** Mint literal write paths for all files covered by one user-approved rm. */
 export function approvedSingleFileRmGrant(
   command: string,
-  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
+  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'> & { runId?: string },
 ): string | string[] | undefined {
   const parsed = extractApprovedRmTargets(command, input.workingDirectory);
   if (!parsed.containsRm) return undefined;
+  recordApprovedRmSettlementTargets(input.sessionId, input.runId, parsed.targets ?? []);
   const conditions = [
     !input.sandboxDecision.sandboxed && 'sandboxed',
     !input.foreground && !input.background && 'foreground', input.pty && 'pty',
@@ -406,7 +408,7 @@ export function approvedSingleFileRmGrant(
     approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
     return undefined;
   }
-  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify(diagnostic)}`);
+  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify({ ...diagnostic, sessionId: input.sessionId, runId: input.runId })}`);
   rememberApprovedRmTargets(input.sessionId, [...(parsed.targets ?? []), ...grants]);
   return grants.length === 1 && parsed.operandCount === 1 ? grants[0] : grants;
 }

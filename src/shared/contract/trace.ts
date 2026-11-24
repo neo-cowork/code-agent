@@ -22,6 +22,7 @@ export interface TraceNode {
     name: string;
     args: Record<string, unknown>;
     result?: string;
+    userMessage?: string;
     success?: boolean;
     duration?: number;
     outputPath?: string;
