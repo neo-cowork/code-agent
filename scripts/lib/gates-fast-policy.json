@@ -26,20 +26,32 @@
       "id": "host-connector-copy",
       "paths": [
         "src/host/agent/confirmationGate.ts",
+        "src/host/agent/runtime/messageProcessor.ts",
+        "src/host/agent/runtime/streamHandler.ts",
         "src/host/agent/runtime/toolExecutionEngine.ts",
         "src/host/agent/toolExecution/parallelStrategy.ts",
         "src/host/config/hostUiLocale.ts",
         "src/host/connectors/native/calendar.ts",
+        "src/host/connectors/native/mail.ts",
+        "src/host/connectors/native/reminders.ts",
         "src/host/tools/artifacts/artifactMeta.ts",
         "src/host/tools/modules/connectors/appleScriptWriteFailure.ts",
         "src/host/tools/modules/connectors/calendar*Event.ts",
+        "src/host/tools/modules/connectors/calendar.ts",
+        "src/host/tools/modules/connectors/connectorTime.ts",
+        "src/host/tools/modules/connectors/mailDraft.ts",
+        "src/host/tools/modules/connectors/mailSend.ts",
+        "src/host/tools/modules/connectors/reminders*.ts",
         "src/renderer/utils/toolResultDisplayText.ts",
         "src/shared/i18n/hostConnectorCopy.ts",
+        "src/shared/i18n/hostTurnProgress.ts",
         "src/shared/utils/calendarReceiptText.ts",
+        "src/shared/utils/connectorReceiptText.ts",
         "src/shared/utils/toolProgressLabel.ts"
       ],
       "files": [
-        "tests/unit/agent/hostConnectorCopy.test.ts"
+        "tests/unit/agent/hostConnectorCopy.test.ts",
+        "tests/unit/agent/messageProcessor.textClose.test.ts"
       ]
     },
     {

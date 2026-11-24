@@ -2,6 +2,8 @@
 // Native Mail Connector - macOS Mail via AppleScript
 // ============================================================================
 
+import { getHostConnectorCopy } from '../../../shared/i18n/hostConnectorCopy';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import { appleScriptFailureLogDetail, probeFailureDetailCode } from './appleScriptFailure';
@@ -738,16 +740,18 @@ export const mailConnector: Connector = {
       }
       case 'draft_message': {
         const draft = await draftMessage(payload);
+        const { separator, mail: copy } = getHostConnectorCopy(getHostUiLocale());
         return {
           data: draft,
-          summary: `已创建邮件草稿：${draft.subject}`,
+          summary: `${copy.drafted}${separator}${draft.subject}`,
         };
       }
       case 'send_message': {
         const message = await sendMessage(payload);
+        const { separator, mail: copy } = getHostConnectorCopy(getHostUiLocale());
         return {
           data: message,
-          summary: `已发送邮件：${message.subject}`,
+          summary: `${copy.sent}${separator}${message.subject}`,
         };
       }
       default:

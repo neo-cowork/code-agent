@@ -5,7 +5,7 @@ import {
   describeAppleScriptFailure,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
-import { isAppleEventsDenied } from '../../../connectors/native/appleScriptFailure';
+import { type AppleScriptFailureCode, isAppleEventsDenied } from '../../../connectors/native/appleScriptFailure';
 import { getCalendarFailureCopy, isCalendarFailure } from '../../../connectors/native/calendar';
 
 const NO_BASH_GUIDANCE =
@@ -30,6 +30,18 @@ export function describeAppleScriptWriteFailure(
   }
 
   return includeDetail ? `${failurePrefix}: ${error instanceof Error ? error.message : String(error)}` : failurePrefix;
+}
+
+export function appleScriptFailureForDisplay(
+  error: unknown,
+  label: string,
+  copy: ReturnType<typeof getHostConnectorCopy>['appleScriptFailure'],
+  code?: AppleScriptFailureCode,
+): string {
+  const reason = code ?? (isAppleScriptFailure(error)
+    ? describeAppleScriptFailure(label, error, { timeoutContext: 'write' }).code
+    : 'read_failed');
+  return copy[reason];
 }
 
 /** Calendar writes go through EventKit (no Apple-events script); the failure keeps its machine code for the permission card. */

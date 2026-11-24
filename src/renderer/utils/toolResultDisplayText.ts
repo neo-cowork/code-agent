@@ -1,3 +1,4 @@
+import { stripCalendarListUids, stripReminderRowIds } from '../../shared/utils/connectorReceiptText';
 import { stripCalendarReceiptUid } from '../../shared/utils/calendarReceiptText';
 
 interface ToolResultDisplayCopy {
@@ -10,6 +11,7 @@ const READ_TOOL_NAMES = new Set(['read', 'readfile', 'readdocument']);
 const GLOB_TOOL_NAMES = new Set(['glob']);
 const DIRECTORY_TOOL_NAMES = new Set(['listdirectory']);
 const GREP_TOOL_NAMES = new Set(['grep']);
+const REMINDER_TOOL_NAMES = new Set(['reminders', 'remindersupdate', 'remindersdelete']);
 const CALENDAR_WRITE_TOOL_NAMES = new Set(['calendarcreateevent', 'calendarupdateevent', 'calendardeleteevent']);
 
 const READ_DIGEST_LINE = /^Read version digest: [a-f0-9]+\r?\n/i;
@@ -46,6 +48,9 @@ export function cleanToolResultDisplayText(
 ): string {
   const normalizedName = normalizedToolName(toolName);
   let cleaned = text;
+
+  if (normalizedName === 'calendar') return stripCalendarListUids(text);
+  if (REMINDER_TOOL_NAMES.has(normalizedName)) return stripReminderRowIds(text);
 
   if (CALENDAR_WRITE_TOOL_NAMES.has(normalizedName)) {
     return stripCalendarReceiptUid(text);

@@ -2,6 +2,9 @@
 // Reminders (P0-6.3 Batch 5 — connectors: native ToolModule rewrite)
 // ============================================================================
 
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { stripReminderRowIds } from '../../../../shared/utils/connectorReceiptText';
 import type {
   ToolHandler,
   ToolModule,
@@ -33,14 +36,18 @@ interface ReminderItem {
   remindAtMs?: number | null;
 }
 
-function formatReminder(reminder: ReminderItem, now: number = Date.now()): string {
+function formatReminder(
+  reminder: ReminderItem,
+  now: number,
+  { separator, reminders: copy }: ReturnType<typeof getHostConnectorCopy>,
+): string {
   const hasTime = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs);
   const remindAt = hasTime
-    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs as number)}`
-    : '无提醒时间';
+    ? `${copy.time}${separator}${formatConnectorTime(reminder.remindAtMs as number)}`
+    : copy.noTime;
   // 到点状态由宿主按时刻比较给出，模型只转述，不自行推断。
   const dueState = hasTime && !reminder.completed
-    ? ((reminder.remindAtMs as number) > now ? '（未到点）' : '（已过点）')
+    ? ((reminder.remindAtMs as number) > now ? copy.dueLater : copy.overdue)
     : '';
   return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}${dueState}`;
 }
@@ -50,6 +57,7 @@ function buildRemindersMeta(
   action: string,
   output: string,
   metadata: Record<string, unknown>,
+  name: string,
 ): Record<string, unknown> {
   return {
     action,
@@ -59,10 +67,10 @@ function buildRemindersMeta(
       sourceTool: schema.name,
       kind: 'text',
       sessionId: ctx.sessionId,
-      name: `reminders-${action}`,
+      name,
       mimeType: 'text/markdown',
       contentLength: output.length,
-      preview: output.slice(0, 500),
+      preview: stripReminderRowIds(output).slice(0, 500),
       metadata: {
         connector: 'reminders',
         action,
@@ -97,6 +105,9 @@ async function executeReminders(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
+  const locale = getHostUiLocale();
+  const catalog = getHostConnectorCopy(locale);
+  const { separator, reminders: copy } = catalog;
   const connector = getConnectorRegistry().get('reminders');
   if (!connector) {
     if (action === 'get_status') {
@@ -110,7 +121,7 @@ async function executeReminders(
       return {
         ok: true,
         output,
-        meta: buildRemindersMeta(ctx, action, output, { status }),
+        meta: buildRemindersMeta(ctx, action, output, { status }, copy.read.status),
       };
     }
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'read'), code: 'NOT_INITIALIZED' };
@@ -152,19 +163,19 @@ async function executeReminders(
       return {
         ok: true,
         output,
-        meta: buildRemindersMeta(ctx, action, output, { status }),
+        meta: buildRemindersMeta(ctx, action, output, { status }, copy.read.status),
       };
     }
 
     if (action === 'list_lists') {
       const lists = result.data as string[];
       const output = lists.length > 0
-        ? `可用提醒列表 (${lists.length})：\n- ${lists.join('\n- ')}`
-        : '没有找到可访问的提醒列表。';
+        ? `${copy.read.collections} (${lists.length})${separator.trimEnd()}\n- ${lists.join('\n- ')}`
+        : copy.read.emptyCollections;
       return {
         ok: true,
         output,
-        meta: buildRemindersMeta(ctx, action, output, { count: lists.length, lists }),
+        meta: buildRemindersMeta(ctx, action, output, { count: lists.length, lists }, copy.read.collections),
       };
     }
 
@@ -172,12 +183,12 @@ async function executeReminders(
     const reminders = result.data as ReminderItem[];
     const now = Date.now();
     const output = reminders.length > 0
-      ? `${formatConnectorNow(now)}\n提醒事项 (${reminders.length})：\n${reminders.map((r) => formatReminder(r, now)).join('\n')}`
-      : '没有找到匹配的提醒。';
+      ? `${formatConnectorNow(now, undefined, locale)}\n${copy.read.items} (${reminders.length})${separator.trimEnd()}\n${reminders.map((r) => formatReminder(r, now, catalog)).join('\n')}`
+      : copy.read.emptyItems;
     return {
       ok: true,
       output,
-      meta: buildRemindersMeta(ctx, action, output, { count: reminders.length, reminders }),
+      meta: buildRemindersMeta(ctx, action, output, { count: reminders.length, reminders }, copy.read.items),
     };
   } catch (error) {
     const osascriptFailure = isAppleScriptFailure(error);
@@ -196,6 +207,7 @@ async function executeReminders(
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
       code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
+      ...(locale === 'en' && failure.code !== 'not_authorized' ? { userMessage: catalog.appleScriptFailure[failure.code] } : {}),
     };
     if (result.code === 'not_authorized') {
       result.meta = { accessProbeDenied: true };
