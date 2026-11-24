@@ -443,7 +443,7 @@ export interface ToolProgress {
 
 export type ToolResult<Output = unknown> =
   | { ok: true; output: Output; meta?: Record<string, unknown> }
-  | { ok: false; error: string; code?: string; meta?: Record<string, unknown> };
+  | { ok: false; error: string; userMessage?: string; code?: string; meta?: Record<string, unknown> };
 
 // ----------------------------------------------------------------------------
 // Registry 接口（main/tools/registry.ts 实现）

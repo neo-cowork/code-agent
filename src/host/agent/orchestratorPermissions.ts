@@ -898,7 +898,7 @@ export class OrchestratorPermissionIsland {
             sessionId: fullRequest.sessionId,
             ...(fullRequest.handback
               ? { title: NL_RULE_K2_TEXT.notify.title, body: NL_RULE_K2_TEXT.notify.body(fullRequest.tool) }
-              : buildApprovalNotification(fullRequest.tool, noticeContext)),
+              : buildApprovalNotification(fullRequest.tool, noticeContext, fullRequest.sessionId)),
             tool: fullRequest.tool,
             dedupeKey: fullRequest.id,
           });

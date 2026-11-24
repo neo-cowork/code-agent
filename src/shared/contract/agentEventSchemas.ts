@@ -72,6 +72,7 @@ const toolResultSchema = typed<ToolResult>(z.object({
   success: z.boolean(),
   output: z.string().optional(),
   error: z.string().optional(),
+  userMessage: z.string().optional(),
   outputPath: z.string().optional(),
   duration: z.number().optional(),
   metadata: unknownRecordSchema.optional(),

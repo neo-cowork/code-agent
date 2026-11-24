@@ -11,6 +11,7 @@
 // ============================================================================
 
 import type { Message, ToolResult } from '../../shared/contract';
+import { serializeToolResultsForModel } from '../tools/toolResultMessageContent';
 import type { ToolExecutionResult } from '../tools/types';
 
 export interface LedgerToolExecutionPorts {
@@ -56,7 +57,7 @@ export function buildRecoveredToolMessage(input: {
   return {
     id: `${input.assistantMessage.id}:${input.kind}-tool-result:${input.toolCallId}`,
     role: 'tool',
-    content: JSON.stringify([input.result]),
+    content: serializeToolResultsForModel([input.result]),
     timestamp: input.now,
     toolResults: [input.result],
     ...(input.assistantMessage.isMeta ? { isMeta: true } : {}),
@@ -99,6 +100,7 @@ export async function dispatchLedgerToolApproval(
     success: result.success,
     ...(result.output !== undefined ? { output: result.output } : {}),
     ...(result.error !== undefined ? { error: result.error } : {}),
+    ...(result.userMessage !== undefined ? { userMessage: result.userMessage } : {}),
     duration: 0,
     ...(result.metadata ? { metadata: result.metadata } : {}),
   };

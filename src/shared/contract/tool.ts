@@ -263,6 +263,8 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
+  /** Display text for a failure whose error contains model guidance. */
+  userMessage?: string;
   outputPath?: string; // Explicit path for file-producing tools (preferred over regex extraction)
   duration?: number;
   metadata?: Record<string, unknown>; // 工具返回的元数据（如 imagePath, imageBase64 等）

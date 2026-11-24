@@ -268,6 +268,8 @@ export interface ToolExecutionResult {
   success: boolean;
   output?: string;
   error?: string;
+  /** Display text for a failure whose error contains model guidance. */
+  userMessage?: string;
   outputPath?: string; // Explicit path for file-producing tools (consumed by frontend artifact detection)
   result?: unknown; // For caching purposes
   fromCache?: boolean; // Indicates if result was from cache
