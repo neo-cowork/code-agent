@@ -154,6 +154,14 @@ export type RoleWakeDecision = 'advance' | 'report' | 'suggest' | 'silence';
 /** 醒来触发方式 */
 export type RoleWakeTrigger = 'cadence' | 'event';
 
+export interface RoleWakeFunnel {
+  wakes: number;
+  reports: number;
+  suppressed: number;
+  fallbackSent: number;
+  duplicates: Array<{ at: number; firstReportedAt: number }>;
+}
+
 /** 首次醒来的一条可一键委托建议：title 一句话；prompt = 用户点这条时发给角色的话 */
 export interface RoleFirstWakeSuggestion {
   title: string;

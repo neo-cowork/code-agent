@@ -1,7 +1,10 @@
+import { BACKGROUND_COMMAND_TITLE } from '@shared/backgroundTaskTitle';
+
 // Display names only: stored role ids and model-visible schemas stay unchanged.
 export const agentRoleLabelsZh = {
   agentRoleLabels: {
     assistant: '助手',
+    backgroundCommand: BACKGROUND_COMMAND_TITLE.zh,
     roles: {
       background: '助手',
       coder: '编程员',
@@ -22,6 +25,7 @@ export const agentRoleLabelsZh = {
 export const agentRoleLabelsEn: typeof agentRoleLabelsZh = {
   agentRoleLabels: {
     assistant: 'Assistant',
+    backgroundCommand: BACKGROUND_COMMAND_TITLE.en,
     roles: {
       background: 'Background assistant',
       coder: 'Coder',
