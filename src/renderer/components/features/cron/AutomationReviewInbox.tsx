@@ -340,7 +340,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
           {cc.inboxAllClear}
         </div>
       ) : (
-        <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3">
+        <div className={`rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3 ${drafts.length === 0 ? 'max-h-[32vh] overflow-y-auto' : ''}`}>
           {(parked.length > 0 || drafts.length > 0) && (
             <div className="mb-3" data-testid="parked-approval-group">
               {(drafts.length > 0 || parked.some((item) => item.status !== 'voided')) && (
@@ -349,8 +349,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   {interpolatePlural(cc.parkedTitle, pendingActionCount)}
                 </div>
               )}
+              {drafts.length > 0 && (
+                <div className={`mb-2 grid items-start gap-2 ${drafts.length > 1 ? 'xl:grid-cols-2' : ''}`}>
+                  {drafts.map((draft) => <OutboundDraftCard key={draft.id} draft={draft} onChange={load} />)}
+                </div>
+              )}
               <div className="space-y-1.5">
-                {drafts.map((draft) => <OutboundDraftCard key={draft.id} draft={draft} onChange={load} />)}
                 {groupParkedWrites(parked).filter((item) => item.status !== 'voided').map((item) => {
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
