@@ -36,6 +36,7 @@ import {
 import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { classifyFileWrite } from './fileWriteClassification';
+import { classifyToolPath } from './utils/toolPathKind';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -96,7 +97,7 @@ import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { appendUserEditedArgsNote } from './userEditedArgsNote';
 import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
-import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
+import { maskMailSendOutboundParams, omitMailBodyFromDiagnostics, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { isUnattendedRoleOwnMemoryWrite, ROLE_OWN_MEMORY_UNATTENDED_REASON } from './roleOwnMemoryAllow';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
@@ -642,7 +643,7 @@ export class ToolExecutor {
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
-      params: JSON.stringify(params).substring(0, 200),
+      params: JSON.stringify(omitMailBodyFromDiagnostics(normalizedRequestedToolName, params)).substring(0, 200),
     });
 
     const resolver = getToolResolver();
@@ -922,6 +923,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: slotAccess.reason,
+        ...(slotAccess.userMessage !== undefined ? { userMessage: slotAccess.userMessage } : {}),
         metadata: {
           code: FOREIGN_SLOT_DATA_DIR_CODE,
           failureCode: AgentFailureCode.PermissionDenied,
@@ -1488,7 +1490,7 @@ export class ToolExecutor {
         section: denied.section,
         reason: denied.reason,
       });
-      policyEnforcer?.logToolCall(executionToolName, params, 'blocked', denied.reason);
+      policyEnforcer?.logToolCall(executionToolName, omitMailBodyFromDiagnostics(executionToolName, params), 'blocked', denied.reason);
       options.hookManager?.triggerPermissionDenied(
         executionToolName, denied.reason || 'path policy', 'policy',
         effectiveSessionId || 'unknown',
@@ -1527,7 +1529,7 @@ export class ToolExecutor {
           section: policyCheck.section,
           reason: policyCheck.reason,
         });
-        policyEnforcer.logToolCall(executionToolName, params, 'blocked', policyCheck.reason);
+        policyEnforcer.logToolCall(executionToolName, omitMailBodyFromDiagnostics(executionToolName, params), 'blocked', policyCheck.reason);
 
         if (this.auditEnabled) {
           getAuditLogger().logSecurityIncident({
@@ -1562,7 +1564,7 @@ export class ToolExecutor {
           error: `Blocked by policy: ${policyCheck.reason}`,
         };
       }
-      policyEnforcer.logToolCall(executionToolName, params, 'allowed');
+      policyEnforcer.logToolCall(executionToolName, omitMailBodyFromDiagnostics(executionToolName, params), 'allowed');
     }
 
     // Policy tools.always_confirm: 强制走用户审批，无视预授权/安全白名单/classifier 放行
@@ -2229,6 +2231,12 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // 上传 / 临时路径的位置词只由 host 按真实根判定；details 含整份模型参数，先清掉同名键防伪造。
+      delete permissionRequest.details.pathDisplay;
+      const displayTarget = [permissionRequest.details.path, permissionRequest.details.filePath, params.file_path]
+        .find((v): v is string => typeof v === 'string' && v.length > 0);
+      const pathDisplay = displayTarget ? classifyToolPath(displayTarget) : undefined;
+      if (pathDisplay) permissionRequest.details.pathDisplay = pathDisplay;
       // 日历写回：批准卡的补充信息（默认日历名 / 要改或删那条的标题时间）只在这唯一一次审批里补，不改 params
       // Only the host enrichment may label display-only calendar snapshot fields.
       delete permissionRequest.details.calendarApprovalSnapshotFields;
@@ -2529,7 +2537,7 @@ export class ToolExecutor {
       }
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
-        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
+        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, runId: effectiveRunId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2593,7 +2601,7 @@ export class ToolExecutor {
             eventType: 'permission_check',
             sessionId: effectiveSessionId || 'unknown',
             toolName: executionToolName,
-            input: sanitizeToolParams(params),
+            input: sanitizeToolParams(omitMailBodyFromDiagnostics(executionToolName, params)),
             duration: 0,
             success: false,
             error: denialError,
@@ -2836,7 +2844,7 @@ export class ToolExecutor {
         auditLogger.logToolUsage({
           sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
-          input: sanitizeToolParams(params),
+          input: sanitizeToolParams(omitMailBodyFromDiagnostics(executionToolName, params)),
           output: result.result ? truncateToolOutput(String(result.result)) : undefined,
           duration,
           success: result.success,
@@ -2865,7 +2873,7 @@ export class ToolExecutor {
         auditLogger.logToolUsage({
           sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
-          input: sanitizeToolParams(params),
+          input: sanitizeToolParams(omitMailBodyFromDiagnostics(executionToolName, params)),
           duration,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',

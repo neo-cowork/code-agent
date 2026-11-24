@@ -86,6 +86,8 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
+              connectorLost: t.cronWakeCadence.connectorLost,
+              nameLanguage: language,
               generic: t.cronWakeCadence.skipGeneric,
             });
             return (

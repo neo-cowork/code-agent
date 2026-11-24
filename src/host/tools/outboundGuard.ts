@@ -9,10 +9,21 @@
 // 本地会话记录里的工具调用参数即为掩码后文本。
 // ============================================================================
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { guardOutboundText } from '../security/sensitiveDataGuard';
 
 const MAIL_SEND_TOOL_NAME = 'mail_send';
 const MASKED_PARAM_KEYS = ['subject', 'content'] as const;
+const draftDispatch = new AsyncLocalStorage<true>();
+
+/** A draft dispatch can contain saved mail text in connector exceptions. */
+export function withPrivateMailDraftDiagnostics<T>(dispatch: () => T): T {
+  return draftDispatch.run(true, dispatch);
+}
+
+export function shouldLogMailFailureDetail(): boolean {
+  return draftDispatch.getStore() !== true;
+}
 
 /** 掩码命中时追加进审批 reason 的注明行（任务书逐字口径）。 */
 export const OUTBOUND_MASK_REASON_LINE = 'sensitive information removed';
@@ -41,4 +52,11 @@ export function maskMailSendOutboundParams(
     }
   }
   return redacted ? { params: next, redacted } : { params, redacted: false };
+}
+
+/** The source message and draft retain the body. Execution diagnostics only need its metadata. */
+export function omitMailBodyFromDiagnostics(toolName: string, params: Record<string, unknown>): Record<string, unknown> {
+  if (toolName !== MAIL_SEND_TOOL_NAME || !Object.hasOwn(params, 'content')) return params;
+  const { content: _body, ...metadata } = params;
+  return metadata;
 }

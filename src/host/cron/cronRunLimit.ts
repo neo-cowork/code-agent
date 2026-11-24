@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
+import { readWakeSkipFromResult } from '../../shared/cronRunLedger';
 import { getSessionAutomationService } from '../services/sessionAutomation';
 import { getCronAutomationType } from './cronAutomationBridge';
 import { notifyCronJobDisabled } from './cronFailurePolicy';
@@ -26,14 +27,19 @@ interface CronRunLimitOutcome {
  * 个 execution 对象上原地累加 retryAttempt（retryExecution，PR#2208 ai-review R3：
  * 旧口径要求 retryAttempt === 0，导致任何进过重试链的趟永远不计数，maxRuns 形同虚设）；
  * cancelled（排队等容量被中断）/ interrupted 不计；手动 triggerJob 照常计；
+ * 首次尝试因连接器未登录而直接跳过不计，重试前已有实际尝试的仍计一次。
  * 一次性（at）任务本就只跑一趟、云端运行不在本地计数，两者跳过。
  */
 function applyRunToLimit(
   definition: Pick<CronJobDefinition, 'scheduleType' | 'runsOn' | 'maxRuns' | 'runCount'>,
-  execution: Pick<CronJobExecution, 'status'>,
+  execution: Pick<CronJobExecution, 'status' | 'result' | 'retryAttempt'>,
 ): CronRunLimitOutcome {
   const runCount = definition.runCount ?? 0;
   if (definition.scheduleType === 'at' || definition.runsOn === 'cloud') {
+    return { runCount, limitReached: false };
+  }
+  if (execution.status === 'completed' && execution.retryAttempt === 0
+    && readWakeSkipFromResult(execution.result)?.info?.kind === 'connector_lost') {
     return { runCount, limitReached: false };
   }
   const counted = execution.status === 'completed' || execution.status === 'failed';

@@ -8,5 +8,6 @@ export function wakeSkipSentence(
 ): string | null {
   const view = readWakeSkipFromResult(execution.result);
   if (!view) return null;
-  return view.info ? wakeSkipReasonText(view.info, texts) : texts.generic;
+  if (!view.info) return texts.generic;
+  return wakeSkipReasonText(view.info, texts) ?? texts.generic;
 }

@@ -1,5 +1,7 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
 import { describeHelperFailureReasons, readHelperOutcomes } from './helperOutcomeCopy';
+import { CONNECTOR_RECONNECT_ZH } from '@shared/i18n/connectorReconnect';
+import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, HostReasonCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -550,7 +552,19 @@ export function resolveParkedApprovalClosureCopy(
   return localized === null ? null : `${t.toolStepHumanize.notRunPrefix} · ${localized}`;
 }
 
+const connectorMessageKeys = new Map<string, keyof typeof CONNECTOR_RECONNECT_ZH>();
+for (const key of Object.keys(CONNECTOR_RECONNECT_ZH) as Array<keyof typeof CONNECTOR_RECONNECT_ZH>) {
+  connectorMessageKeys.set(CONNECTOR_RECONNECT_ZH[key], key);
+}
+
+export function localizeToolUserMessage(message: string, t: Translations): string {
+  if (message === FOREIGN_SLOT_DENIAL_ZH) return t.agentError.hostReasons[HostReasonCode.ForeignDataDir].summary;
+  const key = connectorMessageKeys.get(message);
+  return key === undefined ? message : t.toolErrors.connectorReconnect[key];
+}
+
 export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {
+  if (toolCall.result?.userMessage !== undefined) return localizeToolUserMessage(toolCall.result.userMessage, t);
   const closure = resolveParkedApprovalClosureCopy(toolCall, t);
   if (closure) return closure;
   const result = toolCall.result;
@@ -620,7 +634,7 @@ export function resolveCollapsedFailureSummary(
   toolCall: Pick<ToolCall, 'name' | 'result'>,
   t: Translations,
 ): string | null {
-  if (toolCall.result?.success !== false) return null;
+  if (toolCall.result?.success !== false || toolCall.result.userMessage !== undefined) return null;
   const reason = humanizeToolFailureReason(toolCall, t);
   const error = toolCall.result.error
     || (typeof toolCall.result.output === 'string' ? toolCall.result.output : undefined);
@@ -684,8 +698,8 @@ export function buildToolErrorActions(
   if (!failed) {
     return { show: false, errorText: '', canRetry: false };
   }
-  const errorText = result.error
-    || (typeof result.output === 'string' ? result.output : '');
+  const errorText = result.userMessage ?? (result.error
+    || (typeof result.output === 'string' ? result.output : ''));
   return {
     show: true,
     errorText,

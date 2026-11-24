@@ -79,8 +79,9 @@ export interface CronJobDefinition {
   maxRuns?: number | null;
   /**
    * Counted runs so far (one per settled run with terminal status completed/failed,
-   * including runs that went through the retry chain; cancelled and capacity-wait
-   * runs do not count). Read-only for callers; reset to 0 on re-enable.
+   * including runs that went through the retry chain; cancelled runs, capacity-wait
+   * runs, and connector sign-out skips before the first attempt do not count).
+   * Read-only for callers; reset to 0 on re-enable.
    */
   runCount?: number;
   /** Whether the job is enabled */
