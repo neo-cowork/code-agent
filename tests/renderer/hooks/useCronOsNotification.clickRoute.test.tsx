@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const h = vi.hoisted(() => ({
@@ -8,7 +9,7 @@ const h = vi.hoisted(() => ({
   click: null as null | ((e: { payload: { id: string; sessionId?: string } }) => void),
   unlisten: vi.fn(),
   action: null as null | (() => void),
-  parked: [] as Array<{ sessionId: string; status: string }>,
+  parked: [] as Array<{ sessionId: string; status: string; startedByFirstWake?: boolean }>,
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -90,7 +91,8 @@ describe('notification-clicked 路由', () => {
 
   it.each([
     ['用户自己发起的会话 → 回该会话（卡在聊天里原位）', { id: 'sess-b' }, 'session'],
-    ['定时运行会话 → 运行记录页', { id: 'sess-b', origin: { kind: 'cron' } }, 'runs'],
+    ['定时运行会话 → 运行记录页', { id: 'sess-b', origin: { kind: 'cron', id: 'job-1', name: 'Daily brief' } }, 'runs'],
+    ['专家首次见面 → 回该会话', { id: 'sess-b', origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } } }, 'session'],
   ])('needs-input 有 pending 停车行：%s', async (_n, session, dest) => {
     h.parked = [{ sessionId: 'sess-b', status: 'pending' }];
     const prev = useSessionStore.getState().sessions;
@@ -175,6 +177,16 @@ describe('notification-clicked 路由', () => {
     expect(useAppStore.getState().cronCenterRunsRequested).toBe(true);
     h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
     await flush();
+  });
+
+  it('cold first-meeting click uses the parked origin before sessions are loaded', async () => {
+    h.parked = [{ sessionId: 'cold-session', status: 'pending', startedByFirstWake: true }];
+    const openRuns = vi.spyOn(useAppStore.getState(), 'openCronCenterRuns');
+    await mount();
+    h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
+    await flush();
+    expect(open).toHaveBeenCalledExactlyOnceWith('cold-session');
+    expect(openRuns).not.toHaveBeenCalled();
   });
 
   it.each(['none', 'orphaned', 'other-session'])('cold notification-clicked unknown id without matching pending approval (%s) → session', async (kind) => {
