@@ -92,6 +92,26 @@ describe('QueuedInputTray', () => {
     expect(await screen.findByText('排队中 · 1')).toBeTruthy();
   });
 
+  it('排队消息带的隐藏 <appshot> 块不外露，只显示用户可见文字', async () => {
+    items = [input('shot', {
+      envelope: { content: '<appshot app="" name="图片批注" captured="2026-11-24T03:42:49.687Z">\n区域 1（左侧）：单位不对\n</appshot>\n\n我在图片上框出了 1 处' },
+    })];
+    render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={vi.fn()} />);
+    const row = await screen.findByTestId('queued-input-row-shot');
+    expect(row.textContent).toContain('我在图片上框出了 1 处');
+    expect(row.textContent).not.toContain('<appshot');
+  });
+
+  it('编辑中的标记在收起排队条后仍在（批注弹窗据此拒发）', async () => {
+    items = [input('one')];
+    render(<QueuedInputTray sessionId="session-1" revision={0} editingId="one" onEdit={vi.fn()} />);
+    const tray = await screen.findByTestId('queued-input-tray');
+    expect(tray.getAttribute('data-editing')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: /排队中/ }));
+    expect(screen.queryByTestId('queued-input-row-one')).toBeNull();
+    expect(screen.getByTestId('queued-input-tray').getAttribute('data-editing')).toBe('true');
+  });
+
   it('不暴露拖拽排序，动作默认淡出且 hover/focus 时可见并保持可聚焦', async () => {
     items = [input('one'), input('two', { position: 1 })];
     const { container } = render(
