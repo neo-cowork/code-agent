@@ -40,10 +40,10 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  * 纯英文是 0.44 倍），工具 schema 几乎全英文会被高估约一倍，桶间比例直接失真。
  *
  * ## 基线变更记录
- * - 4807 → 4843（2026-11-23，N-FIX-APPROVED-RM-ONE-ASK-TWO-CARDS，+40，main 实测 4803）：规则分流。
+ * - 4807 → 4847（2026-11-23，N-FIX-APPROVED-RM-ONE-ASK-TWO-CARDS，+44，main 实测 4803）：规则分流。
  *   「一句话点名多个待删文件 → 合成一条 rm（≤8 路径，-v 可）只批一次；事后只 ls/test -e 这几条路径」
  *   写进 Bash description：委派出去的子 agent 只读 Bash schema、不读 identity，且这是模型选 rm
- *   命令形态那一刻要读到的工具用法规则。实测不写时模型拆成两轮各一条 rm = 两张审批卡。Bash 669 → 709。
+ *   命令形态那一刻要读到的工具用法规则。实测不写时模型拆成两轮各一条 rm = 两张审批卡。Bash 669 → 713（含「事后只查刚删的路径、别碰被告知保留的文件」一句，实测子 agent 的校验循环顺带 ls 了没批的文件而多弹一张卡）。
  * - 4708 → 4807（2026-09-30，N-WRITE-XFORM-GUARD，+99）：规则分流 + 新能力入参。Write 新增
  *   `overwrite: boolean`（用户明确要求大幅替换时绕过「同路径变换产物」拒写）与两条 description
  *   规则：翻译/转换/摘要产出写到源文件旁的新文件；被拒时换新路径重写，仅在明确要求替换时才
@@ -75,7 +75,7 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  *   这 194 不是措辞膨胀，是**从「一分钱不花但也一点用没有」换成「花 194 但真的送到」**；
  *   同批 toolUsagePolicy 的委派判据搬进了 Task（非 CORE，按需下发，不计本门）。
  */
-const CORE_SCHEMA_TOKEN_BASELINE = 4843;
+const CORE_SCHEMA_TOKEN_BASELINE = 4847;
 
 const MODULES_DIR = join(__dirname, '../../../src/host/tools/modules');
 const FIXED_SCHEMA_CLOCK = new Date(2026, 7, 14, 12);

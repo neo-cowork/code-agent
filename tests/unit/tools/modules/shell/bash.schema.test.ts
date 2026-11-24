@@ -4,6 +4,6 @@ import { bashSchema } from '../../../../../src/host/tools/modules/shell/bash.sch
 describe('Bash schema description', () => {
   it('steers several named deletions into one rm and a path-exact check', () => {
     expect(bashSchema.description).toContain('put every path into ONE `rm` command');
-    expect(bashSchema.description).toContain('never list the directory or grep');
+    expect(bashSchema.description).toContain('never kept files');
   });
 });

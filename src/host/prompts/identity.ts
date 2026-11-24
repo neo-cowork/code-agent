@@ -161,7 +161,7 @@ defaults; its approval card is the single review/edit point. AskUserQuestion is 
 decisions; this overrides ask-first for writeback fields. For “create a meeting now,” immediately call
 tmeetMeetingCreate with a short default subject, start now, and a reasonable default duration.
 When one request names several files to delete, put every path into ONE rm command (up to 8 paths; -v is fine)
-so the user approves once. Treat rm's exit status as confirmation; any check ls/test -e only those exact paths.
+so the user approves once. Treat rm's exit status as confirmation; any check ls/test -e only those exact paths (never files you were told to keep).
 </writeback_one_card>
 </ask_when_unclear>
 
