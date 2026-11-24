@@ -6,6 +6,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import { SESSION_STOP_REQUESTED_EVENT } from '../../../src/host/task/taskManagerTypes';
 import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 
 const sessionManagerState = vi.hoisted(() => ({
@@ -311,6 +312,41 @@ describe('background parent settlement waits for delegated children', () => {
     await expectParentNotice(sessionId, { succeeded: false });
   });
 
+  it('leaves the row for the parent error closer when the child finishes before terminal persistence', async () => {
+    const sessionId = 'session-late-parent-error';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+    // A progress event can precede the run's terminal decision.
+    await settleBackgroundOnTaskComplete(sessionId, sessionId, { summary: 'parent text done' });
+    await finishChild(sessionId, task.id);
+
+    expect(row(sessionId)?.status).toBe('running');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
+    await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map([
+      [sessionId, { message: 'parent terminal persistence failed' }],
+    ]));
+    expect(row(sessionId)).toMatchObject({ status: 'failed', completionMessage: 'parent terminal persistence failed' });
+    await expectParentNotice(sessionId, { succeeded: false });
+    await vi.waitFor(() => expect(wake).toHaveBeenCalledTimes(1));
+  });
+
+  it('settles as stopped when the last child returns success after the user requests Stop', async () => {
+    const sessionId = 'session-stop-during-child';
+    await background(sessionId);
+    const task = await spawn(sessionId, 1, 'cleanup');
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
+
+    manager.emit(SESSION_STOP_REQUESTED_EVENT, { sessionId });
+    expect(row(sessionId)?.status).toBe('running');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    await finishChild(sessionId, task.id);
+    await expectParentNotice(sessionId, { summary: '任务已停止' });
+    expect(row(sessionId)).toMatchObject({ status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED });
+    await closeBackgroundRunAtTerminal(sessionId, 'agent_cancelled', new Map());
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+
   it('a queued delegated child counts as in flight and the last child settles the row once', async () => {
     const sessionId = 'session-queued';
     await background(sessionId);
@@ -318,7 +354,7 @@ describe('background parent settlement waits for delegated children', () => {
     const second = await spawn(sessionId, 2, 'cleanup');
     expect(center.active(sessionId).map((task) => task.status)).toEqual(['running', 'queued']);
 
-    await settleBackgroundOnTaskComplete(sessionId, sessionId, { summary: '还没删完' });
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
     expect(logs.info).toHaveBeenCalledWith(...deferral(sessionId, 2));
     expect(row(sessionId)?.status).toBe('running');
 
@@ -339,6 +375,7 @@ describe('background parent settlement waits for delegated children', () => {
     const sessionId = 'session-step-cap';
     await background(sessionId);
     const task = await spawn(sessionId, 1, 'cleanup');
+    await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map());
     manager.emitAgent(sessionId, {
       type: 'error',
       data: { code: RUN_ERROR_CODE_MAX_ITERATIONS, message: 'cap reached' },
@@ -365,6 +402,7 @@ describe('background parent settlement waits for delegated children', () => {
     const sessionId = 'session-no-conclusion';
     await background(sessionId);
     const task = await spawn(sessionId, 1, 'cleanup');
+    await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map());
     manager.emitTask({ type: 'task_completed', sessionId, data: { taskId: task.id, conclusion: '' } });
 
     await vi.waitFor(() => expect(center.list(sessionId)[0]?.stopped?.kind).toBe('no_conclusion'));
@@ -377,6 +415,7 @@ describe('background parent settlement waits for delegated children', () => {
     const sessionId = 'session-cancelled';
     await background(sessionId);
     const task = await spawn(sessionId, 1, 'cleanup');
+    await closeBackgroundRunAtTerminal(sessionId, 'agent_complete', new Map());
     manager.emitTask({ type: 'task_cancelled', sessionId, data: { taskId: task.id, detail: '任务已取消。' } });
 
     await expectParentNotice(sessionId);
@@ -408,7 +447,7 @@ describe('background parent settlement waits for delegated children', () => {
     await background(sessionId);
     primary.active = true;
     const task = await spawn(sessionId, 1, 'cleanup');
-    await settleBackgroundOnTaskComplete(sessionId, sessionId, { summary: '先别收' });
+    await settleWebTurnBackgroundRun(sessionId, { status: 'completed' });
     await finishChild(sessionId, task.id);
 
     expect(row(sessionId)?.status).toBe('running');

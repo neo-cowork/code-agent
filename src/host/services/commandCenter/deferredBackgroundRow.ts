@@ -7,6 +7,10 @@ import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../sessi
 
 const logger = createLogger('DeferredBackgroundRow');
 
+export function rememberDelegatedSessionStop(sessionId: string): void {
+  getBackgroundTaskManager().rememberDeferredRun(sessionId, { status: 'interrupted' });
+}
+
 type TerminalTaskStatus = 'completed' | 'failed' | 'cancelled';
 
 interface SettledChild {
@@ -24,35 +28,41 @@ export async function releaseDelegatedChildSettlement(input: {
   onPrimaryIdle?: (listener: () => void) => () => void;
   wake: () => Promise<void>;
 }): Promise<void> {
+  const background = getBackgroundTaskManager();
   const stoppedKind = input.task.stopped?.kind;
   if (input.terminalResultDelivered && (stoppedKind === 'step_cap' || stoppedKind === 'no_conclusion')) {
     logger.info('foreground_wake_skipped_stop_note_delivered', { taskId: input.task.id, kind: stoppedKind });
   } else {
-    void Promise.resolve(input.wake()).catch((error: unknown) => {
-      logger.warn('Failed to wake text foreground brain after task settlement', {
-        taskId: input.task.id,
-        message: error instanceof Error ? error.message : String(error),
+    const wake = () => {
+      void Promise.resolve().then(input.wake).catch((error: unknown) => {
+        logger.warn('Failed to wake text foreground brain after task settlement', {
+          taskId: input.task.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+    };
+    if (!background.deferWakeUntilParentSettles(input.task.sessionId, wake)) wake();
   }
 
   if (input.inFlightChildren() > 0) return;
-  const manager = getBackgroundTaskManager();
-  if (!manager.isInBackground(input.task.sessionId) || !manager.isTaskRunning(input.task.sessionId)) return;
+  // Only a parent terminal closer or an explicit Stop can hand this row to the child.
+  // Registry idle alone can precede the parent's error or cancellation persistence.
+  const deferred = background.getDeferredRun(input.task.sessionId);
+  if (!deferred) return;
 
   const settle = async (): Promise<void> => {
     if (input.inFlightChildren() > 0 || input.primaryRunActive()) return;
     const live = getBackgroundTaskManager();
-    if (!live.isInBackground(input.task.sessionId) || !live.isTaskRunning(input.task.sessionId)) return;
-    const parentFailure = live.getDeferredRunFailure(input.task.sessionId);
+    if (live.getDeferredRun(input.task.sessionId) !== deferred) return;
+    const parentOutcome = deferred.input.status === 'completed' ? undefined : deferred.input;
     logger.info('Settling deferred background run from delegated child', {
       sessionId: input.task.sessionId,
       taskId: input.task.id,
       status: input.status,
-      ...(parentFailure ? { parentStatus: parentFailure.status } : {}),
+      ...(parentOutcome ? { parentStatus: parentOutcome.status } : {}),
     });
     try {
-      await settleBackgroundRun(live, input.task.sessionId, resolveBackgroundRunSettlement(parentFailure ?? {
+      await settleBackgroundRun(live, input.task.sessionId, resolveBackgroundRunSettlement(parentOutcome ?? {
         status: input.status === 'cancelled' ? 'interrupted' : input.status === 'failed' ? 'error' : 'completed',
       }));
     } catch (error) {

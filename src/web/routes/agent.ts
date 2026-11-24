@@ -1813,13 +1813,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }, logger);
       }
       await runController.updateSessionStatus('error');
+      // 先记失败再释放 run ownership，避免子任务的空闲兜底抢先把后台行标成功。
+      await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: message });
       await durableRunLifecycle.markFailure({
         disconnected: false,
         message,
       });
-      // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
-      // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      await settleWebTurnBackgroundRun(sessionId, { status: 'error', errorMessage: message });
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
       const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);

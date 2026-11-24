@@ -28,12 +28,18 @@ export async function deferBackgroundSettlementWhileChildrenInFlight(
   const { getSessionCommandCenter } = await loadCommandCenter();
   const inFlightChildren = getSessionCommandCenter().active(sessionId).length;
   if (inFlightChildren === 0) return false;
-  if (input?.status === 'error') getBackgroundTaskManager().rememberDeferredRunFailure(sessionId, input);
+  if (input) getBackgroundTaskManager().rememberDeferredRun(sessionId, input);
   logger.info('Deferring background run settlement until delegated children finish', {
     sessionId,
     inFlightChildren,
   });
   return true;
+}
+
+export function deferredParentOutcome(sessionId: string, input: BackgroundRunSettlementInput): BackgroundRunSettlementInput {
+  const parent = getBackgroundTaskManager().getDeferredRun(sessionId)?.input;
+  if (parent?.status === 'interrupted' || (parent?.status === 'error' && input.status === 'completed')) return parent;
+  return input;
 }
 
 /**
@@ -48,8 +54,7 @@ export async function settleWebTurnBackgroundRun(
   const manager = getBackgroundTaskManager();
   if (manager.isInBackground(sessionId) && manager.isTaskRunning(sessionId)) {
     if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
-    const settlement = input.status === 'completed' ? manager.getDeferredRunFailure(sessionId) ?? input : input;
-    await settleBackgroundRun(manager, sessionId, resolveBackgroundRunSettlement(settlement));
+    await settleBackgroundRun(manager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
     return;
   }
   if (input.status === 'error') {

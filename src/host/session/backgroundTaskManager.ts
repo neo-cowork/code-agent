@@ -24,8 +24,9 @@ const logger = createLogger('BackgroundTaskManager');
  */
 class BackgroundTaskManager extends EventEmitter {
   private backgroundSessions: Map<string, BackgroundSessionInfo> = new Map();
-  // Tie the failure to this background entry so a later background move starts fresh.
-  private readonly deferredRunFailures = new WeakMap<BackgroundSessionInfo, BackgroundRunSettlementInput>();
+  // Each row keeps its own terminal decision while it waits for delegated children.
+  private readonly deferredRuns = new WeakMap<BackgroundSessionInfo, { input: BackgroundRunSettlementInput }>();
+  private readonly pendingWakes = new WeakMap<BackgroundSessionInfo, Array<() => void>>();
   private mainWindow: AppWindow | null = null;
 
   /**
@@ -254,14 +255,29 @@ class BackgroundTaskManager extends EventEmitter {
     return this.backgroundSessions.get(sessionId)?.status === 'running';
   }
 
-  rememberDeferredRunFailure(sessionId: string, failure: BackgroundRunSettlementInput): void {
+  rememberDeferredRun(sessionId: string, input: BackgroundRunSettlementInput): void {
     const task = this.backgroundSessions.get(sessionId);
-    if (task?.status === 'running') this.deferredRunFailures.set(task, failure);
+    if (task?.status !== 'running') return;
+    const deferred = this.deferredRuns.get(task);
+    if (!deferred) {
+      this.deferredRuns.set(task, { input });
+    } else if (deferred.input.status !== 'interrupted' && input.status !== 'completed') {
+      deferred.input = input;
+    }
   }
 
-  getDeferredRunFailure(sessionId: string): BackgroundRunSettlementInput | undefined {
+  getDeferredRun(sessionId: string): Readonly<{ input: BackgroundRunSettlementInput }> | undefined {
     const task = this.backgroundSessions.get(sessionId);
-    return task?.status === 'running' ? this.deferredRunFailures.get(task) : undefined;
+    return task?.status === 'running' ? this.deferredRuns.get(task) : undefined;
+  }
+
+  deferWakeUntilParentSettles(sessionId: string, wake: () => void): boolean {
+    const task = this.backgroundSessions.get(sessionId);
+    if (task?.status !== 'running' || this.deferredRuns.has(task)) return false;
+    const pending = this.pendingWakes.get(task);
+    if (pending) pending.push(wake);
+    else this.pendingWakes.set(task, [wake]);
+    return true;
   }
 
   /**
@@ -282,6 +298,11 @@ class BackgroundTaskManager extends EventEmitter {
    * 发送更新事件到渲染进程
    */
   private emitUpdate(event: BackgroundTaskUpdateEvent): void {
+    if (event.type === 'removed' || event.task.status !== 'running') {
+      const pending = this.pendingWakes.get(event.task);
+      this.pendingWakes.delete(event.task);
+      pending?.forEach(wake => queueMicrotask(wake));
+    }
     this.emit('update', event);
 
     // web 路径（浏览器/无槽验证）：与 notificationService.deliver 同款 renderer bus → SSE。

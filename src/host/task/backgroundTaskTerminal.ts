@@ -17,7 +17,7 @@ import type { SessionStatus } from '../../shared/contract/session';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { resolveBackgroundRunSettlement, settleBackgroundRun, type BackgroundRunSettlementInput } from '../session/backgroundRunSettlement';
-import { deferBackgroundSettlementWhileChildrenInFlight, inFlightDelegatedChildCount } from '../session/backgroundChildHold';
+import { deferredParentOutcome, deferBackgroundSettlementWhileChildrenInFlight, inFlightDelegatedChildCount } from '../session/backgroundChildHold';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager, notificationService } from '../services';
@@ -47,9 +47,9 @@ export async function settleBackgroundOnTaskComplete(
   const backgroundManager = getBackgroundTaskManager();
   if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
     if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId)) return;
-    const deferredFailure = backgroundManager.getDeferredRunFailure(sessionId);
-    if (deferredFailure) {
-      await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredFailure));
+    const outcome = deferredParentOutcome(sessionId, { status: 'completed' });
+    if (outcome.status !== 'completed') {
+      await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(outcome));
       return;
     }
     await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
@@ -131,8 +131,7 @@ export async function closeBackgroundRunAtTerminal(
       ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
       : { status: 'completed' };
   if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
-  const settlement = input.status === 'completed' ? backgroundManager.getDeferredRunFailure(sessionId) ?? input : input;
-  await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(settlement));
+  await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
 }
 
 /**
@@ -186,8 +185,5 @@ export async function settleBackgroundRunOnRejection(sessionId: string, errorMes
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
   const input: BackgroundRunSettlementInput = { status: 'error', errorMessage };
   if (await deferBackgroundSettlementWhileChildrenInFlight(sessionId, input)) return;
-  await backgroundManager.markFailed(
-    sessionId,
-    resolveBackgroundRunSettlement(input).message,
-  );
+  await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(deferredParentOutcome(sessionId, input)));
 }

@@ -25,7 +25,7 @@ const dbState = vi.hoisted(() => ({
 const backgroundManagerState = vi.hoisted(() => ({
   isInBackground: vi.fn(),
   isTaskRunning: vi.fn(),
-  getDeferredRunFailure: () => undefined,
+  getDeferredRun: () => undefined,
   markCompleted: vi.fn(),
   markFailed: vi.fn(),
 }));

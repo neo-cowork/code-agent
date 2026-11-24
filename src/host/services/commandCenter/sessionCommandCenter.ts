@@ -22,7 +22,7 @@ import {
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { BackgroundShellHold } from './backgroundShellHold';
-import { releaseDelegatedChildSettlement } from './deferredBackgroundRow';
+import { releaseDelegatedChildSettlement, rememberDelegatedSessionStop } from './deferredBackgroundRow';
 import {
   clearSessionCommandTaskMarker,
   markSessionCommandTaskRunning,
@@ -190,8 +190,8 @@ export class SessionCommandCenter {
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
     void this.handleTaskEvent(event);
   };
-  /** 用户 Stop：排队中的任务尚无 run 可 abort，在这里直接终态化，且不得被前序任务的收线再放行启动。 */
   private readonly onSessionStopRequested = (event: { sessionId: string }): void => {
+    if (this.active(event.sessionId).length > 0) rememberDelegatedSessionStop(event.sessionId);
     for (const task of this.tasksBySession.get(event.sessionId)?.values() ?? []) {
       if (task.status === 'queued') void this.settle(task, 'cancelled', '任务在开始前被取消。');
     }
