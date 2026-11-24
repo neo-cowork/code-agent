@@ -113,7 +113,7 @@ async function executeCalendarUpdateEvent(
     );
     const title = (typeof args.title === 'string' && args.title.trim()) || (undoMetadata.undoable && undoMetadata.before.title);
     const failureName = title ? `${copy.updateFailed}${separator}${title}` : copy.updateFailed;
-    const userMessage = describeCalendarFailureForUser(copy, error);
+    const userMessage = describeCalendarFailureForUser(copy, separator, error);
     return {
       ok: false,
       error: failure,

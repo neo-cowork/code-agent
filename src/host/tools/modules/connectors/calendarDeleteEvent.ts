@@ -102,7 +102,7 @@ async function executeCalendarDeleteEvent(
     );
     const title = undoMetadata.undoable && undoMetadata.before.title;
     const failureName = title ? `${copy.deleteFailed}${separator}${title}` : copy.deleteFailed;
-    const userMessage = describeCalendarFailureForUser(copy, error);
+    const userMessage = describeCalendarFailureForUser(copy, separator, error);
     return {
       ok: false,
       error: failure,

@@ -140,7 +140,7 @@ async function executeCalendarCreateEvent(
     );
     const title = args.title;
     const failureName = title ? `${copy.createFailed}${separator}${title}` : copy.createFailed;
-    const userMessage = describeCalendarFailureForUser(copy, error);
+    const userMessage = describeCalendarFailureForUser(copy, separator, error);
     return {
       ok: false,
       error: failure,

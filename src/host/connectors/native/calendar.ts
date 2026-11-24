@@ -6,6 +6,7 @@
 // 原生层每次读写前自己重查「完全访问」，这里不传、也不信任何授权状态。
 // ============================================================================
 
+import type { CalendarFailureCopyKey } from '../../../shared/i18n/hostConnectorCopy';
 import type { NativeConnectorDetailCode } from '../../../shared/ipc';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import type { CalendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
@@ -43,12 +44,35 @@ const FAILURE_MESSAGES: Record<CalendarFailureCode, string> = {
   read_failed: 'Calendar could not be read or changed right now; please try again later. （日历暂时读写失败，请稍后再试。）',
 };
 
-/** Failures carry a machine code (classify / parking read it) and a model-facing sentence without native detail. */
-export class CalendarFailure extends Error {
-  constructor(readonly code: CalendarFailureCode, message = FAILURE_MESSAGES[code]) {
+class CalendarDisplayFailure extends Error {
+  constructor(
+    readonly copyKey: CalendarFailureCopyKey,
+    message: string,
+    readonly availableCalendars: readonly string[] = [],
+  ) {
     super(message);
+  }
+}
+
+/** Failures carry a machine code (classify / parking read it) and a model-facing sentence without native detail. */
+export class CalendarFailure extends CalendarDisplayFailure {
+  constructor(
+    readonly code: CalendarFailureCode,
+    message = FAILURE_MESSAGES[code],
+    copyKey: CalendarFailureCopyKey = code,
+  ) {
+    super(copyKey, message);
     this.name = 'CalendarFailure';
   }
+}
+
+export function getCalendarFailureCopy(error: unknown): {
+  key: CalendarFailureCopyKey;
+  availableCalendars: readonly string[];
+} {
+  return error instanceof CalendarDisplayFailure
+    ? { key: error.copyKey, availableCalendars: error.availableCalendars }
+    : { key: 'read_failed', availableCalendars: [] };
 }
 
 export function isCalendarFailure(error: unknown): error is CalendarFailure {
@@ -63,11 +87,11 @@ function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
     case 'calendar_not_authorized': return new CalendarFailure('not_authorized');
     case 'event_not_found': case 'calendar_not_found': return new CalendarFailure('not_found');
     case 'event_end_not_after_start':
-      return new CalendarFailure('read_failed', 'The new end time must be later than the start time. Nothing was changed. （新的结束时间必须晚于开始时间，日程没有被修改。）');
+      return new CalendarFailure('read_failed', 'The new end time must be later than the start time. Nothing was changed. （新的结束时间必须晚于开始时间，日程没有被修改。）', 'end_must_follow_start');
     case 'no_writable_calendar':
-      return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.');
+      return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.', 'no_writable_calendar');
     // 写操作超时 / 桥断开：改没改成不知道，不能劝模型重试
-    default: return write ? new CalendarFailure('read_failed', WRITE_UNCONFIRMED) : new CalendarFailure('read_failed');
+    default: return write ? new CalendarFailure('read_failed', WRITE_UNCONFIRMED, 'write_unconfirmed') : new CalendarFailure('read_failed');
   }
 }
 
@@ -150,9 +174,11 @@ function resolveCalendar(requestedName: string, available: NativeCalendar[]): Na
   if (exact) return exact;
   const loose = available.filter((c) => c.title.toLowerCase() === requestedName.toLowerCase());
   if (loose.length === 1) return loose[0];
-  const names = available.length > 0 ? available.map((c) => c.title).join(', ') : '(none)';
-  throw new Error(
-    `No calendar named "${requestedName}". Available calendars: ${names}. Omit calendar to use the first writable calendar.`,
+  const names = available.map((calendar) => calendar.title);
+  throw new CalendarDisplayFailure(
+    names.length ? 'calendar_name_not_found' : 'no_writable_calendar',
+    `No calendar named "${requestedName}". Available calendars: ${names.length ? names.join(', ') : '(none)'}. Omit calendar to use the first writable calendar.`,
+    names,
   );
 }
 
@@ -225,9 +251,9 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   const location = str(payload.location);
   // notes：聊天建日程的可选备注，以及撤销删除时用快照重建都会带；非空才下发给 EventKit
   const notes = str(payload.notes);
-  if (!title) throw new Error('title is required for create_event');
-  if (startMs === undefined) throw new Error('start_ms is required for create_event');
-  if (endMs === undefined || endMs < startMs) throw new Error('end_ms must be greater than or equal to start_ms');
+  if (!title) throw new CalendarDisplayFailure('missing_title', 'title is required for create_event');
+  if (startMs === undefined) throw new CalendarDisplayFailure('missing_start', 'start_ms is required for create_event');
+  if (endMs === undefined || endMs < startMs) throw new CalendarDisplayFailure('end_before_start', 'end_ms must be greater than or equal to start_ms');
   const calendarId = requestedCalendar
     ? resolveCalendar(requestedCalendar, (await listCalendarInfos()).filter((c) => c.writable)).id
     : undefined; // 原生层用系统的默认日历
@@ -245,11 +271,11 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
   const endMs = finite(payload.end_ms);
   const location = typeof payload.location === 'string' ? payload.location.trim() : undefined;
   if (!title && startMs === undefined && endMs === undefined && location === undefined) {
-    throw new Error('at least one field must be provided for update_event');
+    throw new CalendarDisplayFailure('missing_update', 'at least one field must be provided for update_event');
   }
-  if (endMs !== undefined && startMs === undefined) throw new Error('start_ms is required when end_ms is provided');
+  if (endMs !== undefined && startMs === undefined) throw new CalendarDisplayFailure('missing_start_for_end', 'start_ms is required when end_ms is provided');
   if (startMs !== undefined && endMs !== undefined && endMs < startMs) {
-    throw new Error('end_ms must be greater than or equal to start_ms');
+    throw new CalendarDisplayFailure('end_before_start', 'end_ms must be greater than or equal to start_ms');
   }
   const { eventId, occurrenceMs } = parseCalendarUid(uid);
   return eventOf(await call('/v1/write/calendar-event', {
@@ -268,7 +294,9 @@ async function deleteEvent(payload: Record<string, unknown>): Promise<{ uid: str
   const res = await call<{ deleted?: boolean; title?: string }>('/v1/write/calendar-event', {
     op: 'delete', eventId, ...(occurrenceMs !== undefined ? { occurrenceMs } : {}),
   });
-  if (res?.deleted !== true) throw new CalendarFailure('read_failed');
+  if (res?.deleted !== true) {
+    throw new CalendarFailure('read_failed', undefined, 'write_unconfirmed');
+  }
   return { uid, calendar, title: typeof res.title === 'string' ? res.title : '', deleted: true };
 }
 

@@ -69,7 +69,7 @@ describe('tool result display text', () => {
   });
 
   it('hides calendar write identifiers at the expanded ToolDetails render site', () => {
-    const output = 'Calendar event created:\r\n- [Work] Project Review\r\n- uid: opaque-id\r\n- Start: 10:00';
+    const output = 'Calendar event created:\r\n- [Work] Project Review\r\n- uid: opaque-id\r\n- Start: 10:00\r\n- End: 10:30\r\n- Notes: Keep this note\r\n- uid: written by the user';
     const html = renderToStaticMarkup(
       <ToolDetails
         toolCall={{
@@ -84,6 +84,8 @@ describe('tool result display text', () => {
     expect(html).toContain('[Work] Project Review');
     expect(html).toContain('Start: 10:00');
     expect(html).not.toContain('opaque-id');
+    expect(cleanToolResultDisplayText('calendar_create_event', output, enCopy))
+      .toContain('- uid: written by the user');
     expect(cleanToolResultDisplayText('Read', output, enCopy)).toBe(output);
     expect(output).toContain('- uid: opaque-id');
   });

@@ -6,7 +6,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { isAppleEventsDenied } from '../../../connectors/native/appleScriptFailure';
-import { isCalendarFailure } from '../../../connectors/native/calendar';
+import { getCalendarFailureCopy, isCalendarFailure } from '../../../connectors/native/calendar';
 
 const NO_BASH_GUIDANCE =
   'Do not work around this by running osascript or AppleScript through Bash or any script; tell the user what failed.';
@@ -43,9 +43,14 @@ export function describeCalendarWriteFailure(failurePrefix: string, error: unkno
 
 export function describeCalendarFailureForUser(
   copy: ReturnType<typeof getHostConnectorCopy>['calendar'],
+  separator: string,
   error: unknown,
 ): string {
-  return copy.failureDetails[isCalendarFailure(error) ? error.code : 'read_failed'];
+  const failure = getCalendarFailureCopy(error);
+  const detail = copy.failureDetails[failure.key];
+  return failure.availableCalendars.length
+    ? `${detail} ${copy.availableCalendars}${separator}${failure.availableCalendars.join(', ')}`
+    : detail;
 }
 
 export function calendarFailureCode(error: unknown): { code?: string } {
