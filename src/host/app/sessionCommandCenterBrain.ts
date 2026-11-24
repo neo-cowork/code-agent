@@ -211,10 +211,13 @@ export function resolveForegroundBrainTurnBudget(
   lastAssistantStoppedByStepLimit: boolean,
   requestedMaxIterations?: unknown,
   log: Pick<typeof logger, 'info'> = logger,
+  budgetRule?: 'bg-return',
 ): number {
-  const cap = resolveForegroundBrainMaxIterations({ prompt, lastAssistantStoppedByStepLimit });
-  const rule = lastAssistantStoppedByStepLimit ? 'continuation'
-    : cap > SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS ? 'deliverable' : 'default';
+  const cap = budgetRule === 'bg-return'
+    ? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS
+    : resolveForegroundBrainMaxIterations({ prompt, lastAssistantStoppedByStepLimit });
+  const rule = budgetRule ?? (lastAssistantStoppedByStepLimit ? 'continuation'
+    : cap > SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS ? 'deliverable' : 'default');
   const maxIterations = Math.min(typeof requestedMaxIterations === 'number' ? requestedMaxIterations : cap, cap);
   log.info(`Foreground brain budget rule=${rule} cap=${cap} maxIterations=${maxIterations}`);
   return maxIterations;
@@ -226,6 +229,7 @@ export function withSessionCommandCenterBrain(
   imageTurn?: ForegroundImageTurn,
   lastAssistantStoppedByStepLimit = false,
   priorMessages?: NativeConnectorIntentInput['priorMessages'],
+  budgetRule?: 'bg-return',
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -235,7 +239,9 @@ export function withSessionCommandCenterBrain(
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
-    maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
+    maxIterations: resolveForegroundBrainTurnBudget(
+      text, lastAssistantStoppedByStepLimit, options?.maxIterations, undefined, budgetRule,
+    ),
     allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn, priorMessages),
     foregroundToolFace: true,
     turnSystemContext,

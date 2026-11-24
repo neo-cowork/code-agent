@@ -7,7 +7,7 @@ import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSo
 import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
-import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { OUTBOUND_APPROVAL_DEGRADE, PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
@@ -18,7 +18,7 @@ import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOn
 import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
-import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
@@ -141,6 +141,7 @@ export class OrchestratorPermissionIsland {
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
+    expiringToDraft?: boolean;
   }> = new Map();
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
@@ -308,20 +309,23 @@ export class OrchestratorPermissionIsland {
     response: PermissionResponse,
     feedbackOverride?: string,
     machineDenial?: PermissionDenialSource,
+    draft?: InsertPendingApprovalInput,
   ): ParkedResolution {
     const pending = this.pendingPermissions.get(id);
     if (!pending) return 'lost';
+    if (pending.expiringToDraft && isApproveResponse(response)) return 'storage_unavailable';
     const repo = this.getPendingApprovalRepo();
     if (repo) {
       const status = isApproveResponse(response) ? 'approved' : 'rejected';
       let changes: number;
       try {
-        changes = repo.resolve({
+        const settlement = {
           id,
           status,
           feedback: feedbackOverride ?? null,
           resolvedAt: Date.now(),
-        });
+        } as const;
+        changes = draft ? repo.replaceTimedOutApprovalWithDraft(settlement, draft) : repo.resolve(settlement);
       } catch (err) {
         logger.warn(`Parked approval repo.resolve failed for ${id}, keeping it decidable`, err);
         // 瞬时写失败不动内存 Promise，也不许上层据此改台账终态——用户再点一次要能成。
@@ -760,21 +764,7 @@ export class OrchestratorPermissionIsland {
           : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
         if (degradeDeadline) {
-          logger.warn(`Unattended parked approval ${fullRequest.id} unanswered, degrading to deny`);
-          const degraded = this.resolveParkedApproval(
-            fullRequest.id,
-            'deny',
-            buildUnattendedDegradeFeedback(fullRequest.tool, timeoutMs),
-            'timeout',
-          );
-          if (degraded && fullRequest.sessionId) {
-            noteUnattendedApprovalDenial(fullRequest.sessionId, {
-              tool: fullRequest.tool,
-              argsPreview: fullRequest.argsPreview,
-              requestedAt: fullRequest.timestamp,
-              code: UNATTENDED_APPROVAL_TIMEOUT,
-            });
-          }
+          this.degradeParkedApproval(fullRequest, repo, timeoutMs);
           return;
         }
         logger.warn(
@@ -884,7 +874,7 @@ export class OrchestratorPermissionIsland {
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            ...buildApprovalNotification(fullRequest.tool, noticeContext),
+            ...buildApprovalNotification(fullRequest.tool, noticeContext, fullRequest.sessionId),
             tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
@@ -903,5 +893,49 @@ export class OrchestratorPermissionIsland {
 
       this.onEvent({ type: 'permission_request', data: fullRequest });
     }).finally(releaseHold);
+  }
+
+  private degradeParkedApproval(request: PermissionRequest, repo: PendingApprovalRepository, timeoutMs: number): void {
+    type Draft = Awaited<ReturnType<typeof import('./outboundDraft').prepareOutboundDraft>>;
+    const finish = (draft?: Draft) => {
+      let outcome = this.tryResolveParkedApproval(
+        request.id, 'deny', buildUnattendedDegradeFeedback(request.tool, timeoutMs, draft && (draft.payload.scheduledTaskName ?? '')), 'timeout', draft,
+      );
+      if (draft && outcome === 'storage_unavailable') {
+        logger.warn('Unattended mail draft could not be saved', { requestId: request.id });
+        draft = undefined;
+        outcome = this.tryResolveParkedApproval(
+          request.id, 'deny', buildUnattendedDegradeFeedback(request.tool, timeoutMs), 'timeout',
+        );
+      }
+      if (outcome !== 'resolved') return;
+      if (draft) logger.info('Unattended mail draft created', { requestId: request.id, draftId: draft.id });
+      else logger.warn(`Unattended parked approval ${request.id} unanswered, degrading to deny`);
+      if (request.sessionId) noteUnattendedApprovalDenial(request.sessionId, {
+        tool: request.tool,
+        argsPreview: request.argsPreview,
+        requestedAt: request.timestamp,
+        code: draft ? OUTBOUND_APPROVAL_DEGRADE.saved.code : UNATTENDED_APPROVAL_TIMEOUT,
+      });
+    };
+    const modes = getPermissionModeManager();
+    if (request.tool === 'mail_send' && modes.isUnattendedSession(request.sessionId)
+      && modes.isUnattendedApprovalDegrade(request.sessionId)) {
+      const pending = this.pendingPermissions.get(request.id);
+      if (!pending) return;
+      pending.expiringToDraft = true;
+      void import('./outboundDraft')
+        .then(({ prepareOutboundDraft }) => prepareOutboundDraft(repo, request.id, request.tool))
+        .catch(() => {
+          logger.warn('Unattended mail draft could not be prepared', { requestId: request.id, reason: 'draft_module_unavailable' });
+          return undefined;
+        })
+        .then((draft) => {
+          pending.expiringToDraft = false;
+          finish(draft);
+        });
+    } else {
+      finish();
+    }
   }
 }

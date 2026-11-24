@@ -104,6 +104,46 @@ export class PendingApprovalRepository {
     return info.changes;
   }
 
+  /** The timer wins the original approval and creates its draft in the same SQLite transaction. */
+  replaceTimedOutApprovalWithDraft(input: ResolvePendingApprovalInput, draft: InsertPendingApprovalInput): number {
+    return this.db.transaction(() => {
+      const changes = this.resolve(input);
+      if (changes > 0) this.insert(draft);
+      return changes;
+    })();
+  }
+
+  /** Compare the payload too, so a send can only claim the exact version it read. */
+  transitionOutboundDraft(
+    expected: PendingApprovalRecord,
+    status: PendingApprovalStatus,
+    feedback: string,
+    payloadJson: string,
+    now: number,
+  ): boolean {
+    return this.db.prepare(`
+      UPDATE pending_approvals SET status = ?, feedback = ?, payload_json = ?, resolved_at = ?
+      WHERE kind = 'outbound_draft' AND id = ? AND status = ? AND payload_json = ? AND feedback IS ?
+    `).run(status, feedback, payloadJson, status === 'pending' ? null : now,
+      expected.id, expected.status, expected.payloadJson, expected.feedback).changes === 1;
+  }
+
+  expireOutboundDrafts(cutoff: number, now: number): void {
+    this.db.prepare(`
+      UPDATE pending_approvals SET status = 'rejected', feedback = 'OUTBOUND_DRAFT_EXPIRED',
+        payload_json = 'null', resolved_at = ?
+      WHERE kind = 'outbound_draft' AND status = 'pending' AND submitted_at <= ?
+    `).run(now, cutoff);
+  }
+
+  /** Verification happens before the irreversible send claim and can be reviewed again. */
+  recoverOutboundDraftVerification(): void {
+    this.db.prepare(`
+      UPDATE pending_approvals SET status = 'pending', feedback = NULL, resolved_at = NULL
+      WHERE kind = 'outbound_draft' AND status = 'approved' AND feedback GLOB 'OUTBOUND_DRAFT_VERIFYING:*'
+    `).run();
+  }
+
   private markPendingRowsAsOrphaned(whereClause: string, params: unknown[], now: number): PendingApprovalRecord[] {
     const before = this.db
       .prepare(`SELECT * FROM pending_approvals WHERE ${whereClause}`)

@@ -117,6 +117,8 @@ export const INTERACTION_TIMEOUTS = {
   PARKED_APPROVAL: 86_400_000,
   /** cron/heartbeat 及断线续跑的停车审批无人应答降级期限（30 分钟）；channel/voice 仍走 24h 兜底。 */
   UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
+  /** Pending mail drafts remain available for seven days from creation. */
+  OUTBOUND_DRAFT_RETENTION: 7 * 24 * 60 * 60 * 1000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**
@@ -735,4 +737,10 @@ export const OS_NOTIFICATION_TIMEOUTS = {
 /** 首轮任务目录命名：最多等待小模型 3 秒，再用规则名继续。 */
 export const SESSION_WORK_DIRECTORY_TIMEOUTS = {
   TITLE_WAIT_MS: 3_000,
+} as const;
+
+/** Image loading and reply budgets for isolated HTML artifact screenshots. */
+export const ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS = {
+  IMAGE: 15_000,
+  RESPONSE: 30_000,
 } as const;

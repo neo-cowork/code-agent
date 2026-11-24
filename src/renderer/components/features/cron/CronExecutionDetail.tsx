@@ -140,6 +140,8 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     silentLevel: cc.wakeSkipSilentLevel,
     dailyBudget: cc.wakeSkipDailyBudget,
     quietHours: cc.wakeSkipQuietHours,
+    connectorLost: t.cronWakeCadence.connectorLost,
+    nameLanguage: language,
     generic: t.cronWakeCadence.skipGeneric,
   });
   const wakeDecision = wakeDecisionOf(execution);
