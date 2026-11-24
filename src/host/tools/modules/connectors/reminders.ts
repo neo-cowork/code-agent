@@ -201,13 +201,14 @@ async function executeReminders(
       code: osascriptFailure ? failure.code : 'connector_error',
       detail: appleScriptFailureLogDetail(error),
     });
+    const displayMessage = failure.code === 'timeout' ? failure.message : catalog.appleScriptFailure[failure.code];
     const result: ToolResult<string> = {
       ok: false,
       error: osascriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
       code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
-      ...(locale === 'en' && failure.code !== 'not_authorized' ? { userMessage: catalog.appleScriptFailure[failure.code] } : {}),
+      ...(locale === 'en' && failure.code !== 'not_authorized' ? { userMessage: displayMessage } : {}),
     };
     if (result.code === 'not_authorized') {
       result.meta = { accessProbeDenied: true };
