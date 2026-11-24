@@ -25,7 +25,9 @@ async function openFreshWelcome(page: Page): Promise<void> {
   await expect(page.getByTestId('chat-welcome-title')).toBeVisible({ timeout: 10_000 });
 }
 
-const sessionCount = (page: Page) => page.locator('[data-session-id]').count();
+// 「不建会话」的判据：当前会话 id 不变。侧栏行数不能用：空白会话一旦有草稿，
+// 侧栏会按设计显示这一行（草稿例外），行数会 +1 但并没有新建会话。
+const sessionCount = (page: Page) => page.locator('[data-current-session-id]').first().getAttribute('data-current-session-id');
 const composerText = (page: Page) => page.getByTestId('chat-composer-textarea').innerText();
 
 for (const card of CARDS) {
