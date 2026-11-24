@@ -396,7 +396,8 @@ export async function listConnectedSourceNames(roleToolNames?: readonly string[]
       return lower === id || lower.startsWith(`${id}_`);
     })))
     : undefined;
-  await probeUncheckedNativeConnectors(callableNative);
+  // Inherited tools do not authorize a readiness probe. Keep already-connected sources visible.
+  await probeUncheckedNativeConnectors(callableNative ?? new Set());
   try {
     const { getCapabilityCenterService } = await import('../capabilities/capabilityCenterService');
     const inventory = await getCapabilityCenterService().listCapabilities();
