@@ -966,6 +966,7 @@ export class SubagentExecutor {
                   success: result.success,
                   output: result.output,
                   error: result.error,
+                  ...(result.userMessage !== undefined ? { userMessage: result.userMessage } : {}),
                   duration: toolDuration,
                   outputPath: result.outputPath,
                   metadata: result.metadata,

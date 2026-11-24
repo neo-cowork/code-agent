@@ -533,6 +533,7 @@ export function createApplicationNativeRecoveryPorts(
           success: result.success,
           ...(result.output !== undefined ? { output: result.output } : {}),
           ...(result.error !== undefined ? { error: result.error } : {}),
+          ...(result.userMessage !== undefined ? { userMessage: result.userMessage } : {}),
           duration: 0,
           ...(result.metadata ? { metadata: result.metadata } : {}),
         };
