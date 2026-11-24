@@ -124,7 +124,12 @@ describe('host connector copy', () => {
     if (tool !== calendarCreateEventModule) execute.mockResolvedValueOnce({ data: event });
     execute.mockRejectedValueOnce(new CalendarFailure('unavailable'));
     const failure = await handler.execute(args, ctx, async () => ({ allow: true }));
-    expect(failure).toMatchObject({ ok: false, code: 'unavailable' });
+    expect(failure).toMatchObject({
+      ok: false,
+      code: 'unavailable',
+      error: expect.stringContaining('（日历只能在 macOS'),
+      userMessage: 'Calendar is available in the Neo desktop app on macOS.',
+    });
     const failureArtifact = failure.meta?.artifact as ToolArtifact | undefined;
     expect(failureArtifact).toMatchObject({ name: `${failureName}: Project Review` });
     expectEnglishDisplay(failureArtifact?.name);

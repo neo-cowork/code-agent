@@ -22,7 +22,7 @@ type HostConnectorCopy = {
     location: string;
     notes: string;
     withTime: (title: string, time: string) => string;
-    failureDetails: Record<string, string>;
+    failureDetails: Record<'not_authorized' | 'not_found' | 'unavailable' | 'read_failed', string>;
   };
 };
 
@@ -53,7 +53,12 @@ const copy: Record<Locale, HostConnectorCopy> = {
       location: '地点',
       notes: '备注',
       withTime: (title, time) => `${title}（${time}）`,
-      failureDetails: {},
+      failureDetails: {
+        not_authorized: 'Neo 需要访问日历的权限。',
+        not_found: '找不到对应的日程或日历。',
+        unavailable: '请在 macOS 的 Neo 桌面应用中使用日历。',
+        read_failed: '请先查看日历，确认修改是否保存，再决定要不要重试。',
+      },
     },
   },
   en: {
@@ -87,7 +92,6 @@ const copy: Record<Locale, HostConnectorCopy> = {
         not_found: 'The event or calendar could not be found.',
         unavailable: 'Calendar is available in the Neo desktop app on macOS.',
         read_failed: 'Check Calendar to see whether the change was saved before retrying.',
-        connector_error: 'Check Calendar to see whether the change was saved before retrying.',
       },
     },
   },

@@ -16,7 +16,7 @@ import { getHostUiLocale } from '../../../config/hostUiLocale';
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { calendarFailureCode, calendarFailureReceiptPreview, describeCalendarWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarFailureForUser, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarUpdateEventSchema as schema } from './calendarUpdateEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 import { formatConnectorTime } from './connectorTime';
@@ -113,9 +113,11 @@ async function executeCalendarUpdateEvent(
     );
     const title = (typeof args.title === 'string' && args.title.trim()) || (undoMetadata.undoable && undoMetadata.before.title);
     const failureName = title ? `${copy.updateFailed}${separator}${title}` : copy.updateFailed;
+    const userMessage = describeCalendarFailureForUser(copy, error);
     return {
       ok: false,
       error: failure,
+      userMessage,
       ...calendarFailureCode(error),
       meta: {
         action: 'update_event',
@@ -129,7 +131,7 @@ async function executeCalendarUpdateEvent(
           sessionId: ctx.sessionId,
           action: 'update_event',
           name: failureName,
-          preview: calendarFailureReceiptPreview(copy, separator, failureName, error),
+          preview: `${failureName}${separator}${userMessage}`,
           error: failure,
           metadata: { connector: 'calendar', calendar: args.calendar, uid: args.event_uid, title: args.title },
         }),

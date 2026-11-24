@@ -16,7 +16,7 @@ import { getHostUiLocale } from '../../../config/hostUiLocale';
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { calendarFailureCode, calendarFailureReceiptPreview, describeCalendarWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarFailureForUser, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
 import { formatConnectorTime } from './connectorTime';
 import { normalizeCalendarEventTime } from '../../calendarEventTime';
@@ -140,9 +140,11 @@ async function executeCalendarCreateEvent(
     );
     const title = args.title;
     const failureName = title ? `${copy.createFailed}${separator}${title}` : copy.createFailed;
+    const userMessage = describeCalendarFailureForUser(copy, error);
     return {
       ok: false,
       error: failure,
+      userMessage,
       ...calendarFailureCode(error),
       meta: {
         action: 'create_event',
@@ -156,7 +158,7 @@ async function executeCalendarCreateEvent(
           sessionId: ctx.sessionId,
           action: 'create_event',
           name: failureName,
-          preview: calendarFailureReceiptPreview(copy, separator, failureName, error),
+          preview: `${failureName}${separator}${userMessage}`,
           error: failure,
           metadata: { connector: 'calendar', calendar: args.calendar, title: args.title },
         }),

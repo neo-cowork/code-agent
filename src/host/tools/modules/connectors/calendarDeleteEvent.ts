@@ -16,7 +16,7 @@ import { getHostUiLocale } from '../../../config/hostUiLocale';
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { calendarFailureCode, calendarFailureReceiptPreview, describeCalendarWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarFailureForUser, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 
@@ -102,9 +102,11 @@ async function executeCalendarDeleteEvent(
     );
     const title = undoMetadata.undoable && undoMetadata.before.title;
     const failureName = title ? `${copy.deleteFailed}${separator}${title}` : copy.deleteFailed;
+    const userMessage = describeCalendarFailureForUser(copy, error);
     return {
       ok: false,
       error: failure,
+      userMessage,
       ...calendarFailureCode(error),
       meta: {
         action: 'delete_event',
@@ -117,7 +119,7 @@ async function executeCalendarDeleteEvent(
           sessionId: ctx.sessionId,
           action: 'delete_event',
           name: failureName,
-          preview: calendarFailureReceiptPreview(copy, separator, failureName, error),
+          preview: `${failureName}${separator}${userMessage}`,
           error: failure,
           metadata: { connector: 'calendar', calendar: args.calendar, uid: args.event_uid },
         }),

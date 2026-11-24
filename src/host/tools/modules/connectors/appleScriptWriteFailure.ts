@@ -41,14 +41,11 @@ export function describeCalendarWriteFailure(failurePrefix: string, error: unkno
   return `${failurePrefix}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-export function calendarFailureReceiptPreview(
+export function describeCalendarFailureForUser(
   copy: ReturnType<typeof getHostConnectorCopy>['calendar'],
-  separator: string,
-  name: string,
   error: unknown,
-): string | undefined {
-  const detail = copy.failureDetails[isCalendarFailure(error) ? error.code : 'connector_error'];
-  return detail ? `${name}${separator}${detail}` : undefined;
+): string {
+  return copy.failureDetails[isCalendarFailure(error) ? error.code : 'read_failed'];
 }
 
 export function calendarFailureCode(error: unknown): { code?: string } {
