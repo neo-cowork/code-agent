@@ -23,8 +23,10 @@ function excelAttachment(path?: string): MessageAttachment {
 }
 
 // 定点反馈栏只在单元格可点选时才有意义，而单元格可点选的开关是 filePath。
-// 这里用「点选定点反馈」这个 title 文案当探针，判断 filePath 有没有传到 SpreadsheetBlock。
-const LOCALITY_PROBE = '点选定点反馈';
+// 探针取 title 的「A1 引用 · 单元格值」前缀：feedback title 模板（zh「{ref} · {value}…」/
+// en「{ref} · {value}…」）两种语言共享这段，且 filePath 缺省时 title 只有单元格值，
+// 与具体语言文案解耦。数据行首格坐标是 A2（sheetCellRef 口径：表头占第 1 行）。
+const LOCALITY_PROBE = 'A2 · 一月';
 
 describe('AttachmentDisplay → SpreadsheetBlock filePath 贯通', () => {
   it('本地绝对路径的 Excel 附件启用单元格定点反馈', () => {

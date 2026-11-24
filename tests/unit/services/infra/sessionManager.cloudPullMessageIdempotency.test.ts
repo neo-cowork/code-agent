@@ -258,7 +258,7 @@ describe('SessionManager.getSession 云端回填幂等（T6 messages.id UNIQUE�
     await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
 
     expect(nativeSender).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      title: 'Meeting summary', body: 'Waiting for your OK: Write file', sessionId: 'notification-title',
+      title: 'Meeting summary', body: 'Needs your approval: Write file', sessionId: 'notification-title',
     }));
     expect(rows(), 'native title lookup must not restore a removed cloud message').toEqual(beforeRows);
     expect(changes(), 'native title lookup must not write to SQLite').toEqual(beforeChanges);

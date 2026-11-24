@@ -84,7 +84,7 @@ export function createSubagentEventScope(input: {
     },
     emitToolCallEnd(
       toolCallId: string,
-      result: { success: boolean; output?: string; error?: string },
+      result: { success: boolean; userMessage?: string; output?: string; error?: string },
       duration: number,
     ): void {
       input.events.emit('tool_call_end', {
@@ -92,6 +92,7 @@ export function createSubagentEventScope(input: {
         success: result.success,
         output: result.output,
         error: result.error,
+        ...(result.userMessage !== undefined ? { userMessage: result.userMessage } : {}),
         duration,
         ...identity,
       });

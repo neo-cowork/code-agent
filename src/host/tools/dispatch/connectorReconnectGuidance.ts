@@ -1,41 +1,57 @@
 import type { ToolResult } from '../../protocol/tools';
 import { findConnectorIdForToolName } from '../../../shared/contract/workbenchTools';
+import { CONNECTOR_RECONNECT_ZH } from '../../../shared/i18n/connectorReconnect';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ConnectorAvailability');
 // 真实入口：连接器页在「能力中心」里的「连接器」tab（renderer capabilityHub.ts title/tabConnectors）。
-const ENTRY_ZH = '能力中心 > 连接器';
 const ENTRY_EN = 'Capability Hub > Connectors';
 // 幂等标记：已带入口的结果不再改写（Settings > Connectors 是 mcpErrors 旧句，同样视为已带出口）。
 const ENTRY_MARKERS = [ENTRY_EN, 'Settings > Connectors'];
 const hasEntry = (text: string): boolean => ENTRY_MARKERS.some((m) => text.includes(m));
 
-const RECONNECT_EXIT = 'The complete user-facing answer is exactly this single everyday sentence: '
-  + `“这次还没读到所需数据，请在${ENTRY_ZH}重新连接后再试。” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
-  + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to reconnect before trying again; connector authorization cannot be replaced with shell commands or background execution.';
+interface ConnectorExit {
+  error: string;
+  userMessage: string;
+}
 
-function remindersAccessExit(reason: 'status-unchecked' | 'access-probe-denied'): string {
-  const access = reason === 'status-unchecked' ? '还没检查提醒事项的访问权限' : '还没有授权 Neo 访问提醒事项';
-  return 'The complete user-facing answer is exactly this single everyday sentence: '
-    + `“${access}，请在${ENTRY_ZH}点‘检查’并按提示授权。” Translate only that sentence for another user language (navigation: ${ENTRY_EN}, action: Check and authorize when prompted). `
-    + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to authorize access before trying again; connector authorization cannot be replaced with shell commands or background execution.';
+const RECONNECT_MESSAGE = CONNECTOR_RECONNECT_ZH.reconnect;
+const RECONNECT_EXIT: ConnectorExit = {
+  userMessage: RECONNECT_MESSAGE,
+  error: 'The complete user-facing answer is exactly this single everyday sentence: '
+    + `“${RECONNECT_MESSAGE}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
+    + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to reconnect before trying again; connector authorization cannot be replaced with shell commands or background execution.',
+};
+
+function remindersAccessExit(reason: 'status-unchecked' | 'access-probe-denied'): ConnectorExit {
+  const userMessage = reason === 'status-unchecked' ? CONNECTOR_RECONNECT_ZH.remindersUnchecked : CONNECTOR_RECONNECT_ZH.remindersDenied;
+  return {
+    userMessage,
+    error: 'The complete user-facing answer is exactly this single everyday sentence: '
+      + `“${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}, action: Check and authorize when prompted). `
+      + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to authorize access before trying again; connector authorization cannot be replaced with shell commands or background execution.',
+  };
 }
 
 // 连接器根本没开/没注册时，通用「没读到数据」句不告诉用户日历是关着的，模型也容易转而
 // 用别处数据答「今天没有日程」。这种情形换成点名连接器的版本，并禁止拿别处数据或声称「没有」。
-const NOT_CONNECTED_NAMES: Record<string, { name: string; data: string; empty: string }> = {
-  calendar: { name: '日历', data: '日程', empty: 'events' },
-  mail: { name: '邮件', data: '邮件', empty: 'emails' },
-  reminders: { name: '提醒事项', data: '提醒事项', empty: 'reminders' },
-};
+const NOT_CONNECTED_EXITS = new Map<string, { userMessage: string; empty: string }>([
+  ['calendar', { userMessage: CONNECTOR_RECONNECT_ZH.calendar, empty: 'events' }],
+  ['mail', { userMessage: CONNECTOR_RECONNECT_ZH.mail, empty: 'emails' }],
+  ['reminders', { userMessage: CONNECTOR_RECONNECT_ZH.reminders, empty: 'reminders' }],
+]);
 
-function notConnectedExit(connectorId: string): string {
-  const copy = NOT_CONNECTED_NAMES[connectorId];
+function notConnectedExit(connectorId: string): ConnectorExit {
+  const copy = NOT_CONNECTED_EXITS.get(connectorId);
   if (!copy) return RECONNECT_EXIT;
-  return 'The complete user-facing answer is exactly this single everyday sentence: '
-    + `“${copy.name}还没有连接，所以这次看不到你的${copy.data}，请在${ENTRY_ZH}打开后再试。” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
-    + `Do not answer this question from other sources (for example meeting records or files), and never state that there are no ${copy.empty}. `
-    + 'Wait for the user to connect it before trying again; connector authorization cannot be replaced with shell commands or background execution.';
+  const { userMessage, empty } = copy;
+  return {
+    userMessage,
+    error: 'The complete user-facing answer is exactly this single everyday sentence: '
+      + `“${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
+      + `Do not answer this question from other sources (for example meeting records or files), and never state that there are no ${empty}. `
+      + 'Wait for the user to connect it before trying again; connector authorization cannot be replaced with shell commands or background execution.',
+  };
 }
 
 /** Both protocol dispatch paths preserve the failure and add its missing exit. */
@@ -56,7 +72,7 @@ export function withConnectorReconnectGuidance<T>(toolName: string, result: Tool
     : notConnected ? notConnectedExit(connectorId) : RECONNECT_EXIT;
   if (result.ok) {
     if (typeof result.output !== 'string' || hasEntry(result.output)) return result;
-    return { ...result, output: exit as T };
+    return { ...result, output: exit.error as T };
   }
-  return hasEntry(result.error) ? result : { ...result, error: exit };
+  return hasEntry(result.error) ? result : { ...result, ...exit };
 }
