@@ -150,6 +150,10 @@ export const expertZh = {
     },
     roleDetail: {
       roleWakeLabel: '角色唤醒',
+      roleWakeWeeklyTitle: '过去 7 天',
+      roleWakeWeeklyCounts: '{wakes} 次唤醒 · {reports} 次报告 · {suppressed} 次未重复推送',
+      roleWakeWeeklyUnavailable: '暂时无法读取唤醒统计',
+      roleWakeDuplicate: '{at} 未重复推送，已于 {firstReportedAt} 报告',
       historyDecision: { advance: '已推进', report: '已汇报', suggest: '有建议' },
       historyWake: { cadence: '定时巡检', event: '任务完成后巡检', fallback: '例行巡检记录' },
       roleWakeTooltip: '角色醒来时自己记下的（{time}）',
@@ -486,6 +490,10 @@ export const expertEn: typeof expertZh = {
     },
     roleDetail: {
       roleWakeLabel: 'Role wake',
+      roleWakeWeeklyTitle: 'Last 7 days',
+      roleWakeWeeklyCounts: 'Wakes: {wakes} · Reports: {reports} · Duplicates withheld: {suppressed}',
+      roleWakeWeeklyUnavailable: 'Wake counts are temporarily unavailable',
+      roleWakeDuplicate: 'Duplicate withheld on {at}. Already reported on {firstReportedAt}.',
       historyDecision: { advance: 'Advanced', report: 'Reported', suggest: 'Suggestion' },
       historyWake: { cadence: 'Scheduled check-in', event: 'Check-in after task', fallback: 'Check-in recorded' },
       roleWakeTooltip: 'Written by the role itself when it woke up ({time})',

@@ -71,9 +71,11 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { generateMessageId } from '../../shared/utils/id';
+import { stripAppshotBlocks } from '../../shared/contract/appshot';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
+import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
@@ -1439,7 +1441,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
-      const titleSource = visiblePrompt.trim() || requestAttachments[0]?.name || visiblePrompt;
+      // 截图/图片批注带的隐藏 <appshot> 块不是标题材料：先剥掉再取，剥空（纯截图）才退到附件名。
+      const titleSource = stripAppshotBlocks(visiblePrompt).trim() || requestAttachments[0]?.name || visiblePrompt;
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
@@ -1760,10 +1763,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // task_complete / agent 终态分支）：每个终态都要收——只认 completed 时，max-step
       // 撞顶（error 事件带 MAX_ITERATIONS code）/失败/取消轮会把面板和侧栏 spinner
       // 挂在 running 永不收线（2026-10-11 验收实测 12/22 分钟不落，reload 后依旧）。
-      if (getBackgroundTaskManager().isInBackground(sessionId)) {
+      const backgroundManager = getBackgroundTaskManager();
+      const isBackground = backgroundManager.isTaskRunning(sessionId);
+      const leftoverPaths = takeApprovedRmLeftovers(sessionId, runContext.runId, 'web',
+        isBackground && finalStatus === 'completed');
+      if (isBackground) {
         const errorData = runController.lastTerminalErrorData;
-        await settleBackgroundRun(getBackgroundTaskManager(), sessionId, resolveBackgroundRunSettlement({
+        await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement({
           status: finalStatus,
+          leftoverPaths,
           errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
           errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
         }));
@@ -1875,6 +1883,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
+      if (runContext) takeApprovedRmLeftovers(sessionId, runContext.runId, 'web', false);
       // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线只清本 run 自己的（无 runId/agentId
       // 身份）挂起审批；后台任务/子代理 lane 的审批消费方还活着，机器拒绝会让「批准后后台任务
       // 继续」变成不可能，卡也会跟着变成点了就 unknown_request 的死卡。还留着后台审批的岛

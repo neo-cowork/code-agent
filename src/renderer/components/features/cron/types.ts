@@ -1,3 +1,4 @@
+import { CRON_WORKING_DIRECTORY_METADATA_KEY, cronWorkingDirectoryFromMetadata } from '@shared/cronWriteScope';
 import { normalizePersonalSkillIds } from '@shared/cronPersonalSkills';
 import type {
   AgentAction,
@@ -300,6 +301,24 @@ function normalizeWorkingDirectory(metadata: Record<string, unknown> | undefined
   return trimmed ? { ...rest, workingDirectory: trimmed } : rest;
 }
 
+/** 本机文件夹路径在云端没有意义：云端任务不落 workingDirectory。 */
+function metadataForRunsOn(
+  metadata: Record<string, unknown> | undefined,
+  runsOn: CronJobDraft['runsOn'],
+): Record<string, unknown> | undefined {
+  if (!metadata || runsOn === 'local' || !(CRON_WORKING_DIRECTORY_METADATA_KEY in metadata)) return metadata;
+  const { [CRON_WORKING_DIRECTORY_METADATA_KEY]: _folder, ...rest } = metadata;
+  return rest;
+}
+
+/** 复制任务时只带走工作文件夹，其余 metadata 不继承。 */
+export function copiedWorkingDirectoryMetadata(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const folder = cronWorkingDirectoryFromMetadata(metadata);
+  return folder ? { [CRON_WORKING_DIRECTORY_METADATA_KEY]: folder } : undefined;
+}
+
 /** 事件调度共用的两项限额：空值不落键（host 归一落缺省）；mail/webhook 的原绑定值被表单值覆盖。 */
 function eventLimitsFromDraft(draft: CronJobDraft): { prefilter?: string; maxRunsPerHour?: number } {
   const prefilter = draft.eventPrefilter.trim();
@@ -313,6 +332,8 @@ function eventLimitsFromDraft(draft: CronJobDraft): { prefilter?: string; maxRun
 export function buildCronJobInput(
   draft: CronJobDraft,
   validation = cronEditorChromeZh.editorChrome.validation,
+  /** 编辑已有任务：位置只读，不能擅自删掉它已存的文件夹。 */
+  isEditing = false,
 ): Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'> {
   if (!draft.name.trim()) {
     throw new Error(validation.nameRequired);
@@ -339,7 +360,7 @@ export function buildCronJobInput(
       .map((tag) => tag.trim())
       .filter(Boolean),
     // 原样回写编辑前的 metadata（编辑器无 metadata 表单）；新建任务没有底稿 → 空。
-    metadata: normalizeWorkingDirectory(draft.metadata) ?? {},
+    metadata: metadataForRunsOn(normalizeWorkingDirectory(draft.metadata), isEditing ? 'local' : draft.runsOn) ?? {},
   };
   if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
     throw new Error(validation.budgetInvalid);

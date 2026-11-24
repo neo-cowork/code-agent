@@ -6,12 +6,13 @@ import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh 
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
-import { attachmentPreviewZh } from './attachmentPreview';
+import { attachmentPreviewZh } from './attachmentPreview'; import { chatImageAnnotateZh } from './chatImageAnnotate';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder'; import { cronWakeCadenceZh } from './cronWakeCadence';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
+import { cronScheduleEstimateZh } from './cronScheduleEstimate';
 import { deliveryExperienceZh } from './deliveryExperience';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
@@ -944,15 +945,14 @@ export const zh = {
   ...expertZh,
 
   ...teamZh,
-  ...rolePackZh,
-  ...knowledgeMemoryZh,
+  ...rolePackZh, ...knowledgeMemoryZh,
   ...chatTranscriptZh,
-  ...attachmentPreviewZh,
+  ...attachmentPreviewZh, ...chatImageAnnotateZh,
   ...chatInputZh,
   ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
-  ...cronCenterZh, ...cronWorkingFolderZh, ...cronWakeCadenceZh,
+  ...cronScheduleEstimateZh, ...cronCenterZh, ...cronWorkingFolderZh, ...cronWakeCadenceZh,
   ...previewWorkspaceZh,
   ...deliveryExperienceZh,
   ...modalPrimitivesZh,

@@ -1,3 +1,7 @@
+import { OUTBOUND_APPROVAL_DEGRADE } from '../../shared/constants/pendingApproval';
+import { detectMessageLanguage } from '../../shared/sessionTitlePrompt';
+import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+
 /** 无人值守审批超时写进执行记录的原因码。交互会话不使用这条。 */
 export const UNATTENDED_APPROVAL_TIMEOUT = 'UNATTENDED_APPROVAL_TIMEOUT';
 
@@ -41,7 +45,12 @@ export function takeUnattendedApprovalDenials(sessionId: string): UnattendedAppr
 }
 
 /** 给模型看的降级拒绝说明：不重试、继续其他来源、最终报告点名。 */
-export function buildUnattendedDegradeFeedback(tool: string, waitedMs: number): string {
+export function buildUnattendedDegradeFeedback(tool: string, waitedMs: number, savedDraftTask?: string): string {
+  if (savedDraftTask !== undefined) {
+    const language = detectMessageLanguage(savedDraftTask) ?? 'zh';
+    return `${OUTBOUND_APPROVAL_DEGRADE.saved.code}: ${OUTBOUND_APPROVAL_DEGRADE.saved.feedback[language]}`;
+  }
+  if (isExternalSideEffectTool(tool)) return `${UNATTENDED_APPROVAL_TIMEOUT}: ${OUTBOUND_APPROVAL_DEGRADE.denied.feedback}`;
   return `${UNATTENDED_APPROVAL_TIMEOUT}: 工具 ${tool} 的审批等了 ${Math.round(waitedMs / 60_000)} 分钟仍无人批准（当前无人在场），已自动拒绝。`
     + '不要重试这一步；继续处理其他来源，并在最终报告里写明「未读取：<来源>（需要你批准）」。';
 }
