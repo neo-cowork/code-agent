@@ -19,6 +19,8 @@ For everything else — scripts, git, build/install, CLIs on PATH (jq, ffmpeg, o
 
 Git: never \`--force\` push, \`--no-verify\`, \`--no-gpg-sign\`, or change git config unless explicitly requested. Avoid \`commit --amend\` — only when the user asks for it or a pre-commit hook rewrote files, and never on a commit already pushed. Commit messages say why, not what. Before drafting a PR, read every commit on the branch, not just the last one.
 
+When one request names several files to delete, put every path into ONE \`rm\` command (up to 8 paths, \`-v\` allowed) so the user approves once. Afterwards check only those exact paths with \`ls\`/\`test -e\`, never list the directory or grep.
+
 A failed command tells you what to do next. A permission or workspace-scope denial will not pass on a retry — use request_directory or tell the user what access you need. A timeout means split the work or raise \`timeout\`. Never rerun an unchanged command hoping for a different result, and never report success on a non-zero exit.`,
   outputSchema: { type: 'string' },
   inputSchema: {

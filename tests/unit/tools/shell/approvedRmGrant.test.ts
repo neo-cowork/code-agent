@@ -325,6 +325,14 @@ describe('approved rm production approval boundary', () => {
       expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(false);
     });
 
+    it('a path not on the approved card still asks: later rm is not granted by the earlier approval, and its probe is not exempt', () => {
+      approveDelete();
+      input.params.command = `rm -- '${files[2]}'`;
+      input.approvalSource = 'dev-auto-approve';
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(isApprovedRmVerifyProbe(`test -e ${files[2]}`, cwd, SESSION)).toBe(false);
+    });
+
     it('does not answer for another session, before any approval, or after the window', () => {
       expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION)).toBe(false);
       approveDelete();
