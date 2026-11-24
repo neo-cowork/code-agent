@@ -3,8 +3,8 @@
 //
 // 删除不是 rm：把角色名下的两份资产移进回收站，30 天内可整份还原。
 //   agents/<roleId>.md      → roles-trash/<trashId>/agent.md
-//   roles/<roleId>/         → roles-trash/<trashId>/<roleId>/
-//   （meta.json 记 roleId + deletedAt，写在两份资产都落位之后——没有 meta 的目录
+//   roles/<roleId>/（若已存在）→ roles-trash/<trashId>/<roleId>/
+//   （meta.json 记录删除信息，写在已有资产都落位之后——没有 meta 的目录
 //    视为半途中断的残骸，purge 直接清掉，不参与还原。）
 //
 // 不可删（owner 拍板，终局）：BUILTIN_ROLE_IDS（含退役预设）、装了角色包的角色、
@@ -18,12 +18,14 @@ import { getUserConfigDir, getAgentsMdDir } from '../../config/configPaths';
 import { ROLE_ASSETS } from '../../../shared/constants';
 import { BUILTIN_ROLE_IDS } from './builtinRoles';
 import { getRoleDir, isSafeRoleId } from './roleAssetPaths';
+import { isPersistentRole } from './roleAssetService';
 import { getInstalledRolePackState } from './rolePackInstallService';
 import { createLogger } from '../infra/logger';
 import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import type { TrashedRoleEntry } from '../../../shared/contract/roleAssets';
 
 const logger = createLogger('RoleTrash');
+const pendingTrashIds = new Set<string>();
 
 // ----------------------------------------------------------------------------
 // 类型与错误码（稳定 code，renderer 侧翻译；host 不写中文错误文案）
@@ -42,6 +44,8 @@ interface RoleTrashMeta {
   roleId: string;
   /** 删除时刻（ISO 字符串）；retention 按它计算 */
   deletedAt: string;
+  /** 仅有定义文件的条目；旧条目仍需完整还原角色资产目录。 */
+  definitionOnly?: true;
 }
 
 type RoleDeleteGuard =
@@ -78,7 +82,7 @@ function getRoleDefinitionPath(roleId: string): string {
  * - 内置/退役预设（BUILTIN_ROLE_IDS）
  * - 装了角色包（role-packs.json 有记录；还原出厂语义归角色包管，删除入口不抢）
  * - 孤儿（roles/<id>/ 在、agents/<id>.md 不在——没有定义可移动）
- * - 角色目录根本不存在（无东西可删）
+ * - 没有资产目录，也没有可识别的持久角色定义
  */
 async function isDeletableUserRole(roleId: string): Promise<RoleDeleteGuard> {
   if (!isSafeRoleId(roleId)) {
@@ -90,7 +94,7 @@ async function isDeletableUserRole(roleId: string): Promise<RoleDeleteGuard> {
   if (await getInstalledRolePackState(roleId)) {
     return { deletable: false, code: 'ROLE_DELETE_PACK_INSTALLED', message: 'Roles with an installed role pack cannot be deleted; uninstall the pack first' };
   }
-  if (!(await exists(getRoleDir(roleId)))) {
+  if (!(await exists(getRoleDir(roleId))) && !(await isPersistentRole(roleId))) {
     return { deletable: false, code: 'ROLE_DELETE_NOT_FOUND', message: `Role directory not found: roles/${roleId}/` };
   }
   if (!(await exists(getRoleDefinitionPath(roleId)))) {
@@ -123,11 +127,34 @@ export async function trashUserRole(roleId: string, now: Date = new Date()): Pro
 
   const trashId = newTrashId(now);
   const trashDir = path.join(getRolesTrashRootDir(), trashId);
-  await fs.mkdir(trashDir, { recursive: true });
-  await fs.rename(getRoleDefinitionPath(roleId), path.join(trashDir, ROLE_ASSETS.TRASH_AGENT_FILENAME));
-  await fs.rename(getRoleDir(roleId), path.join(trashDir, roleId));
+  const definitionPath = getRoleDefinitionPath(roleId);
+  const assetsPath = getRoleDir(roleId);
+  const trashedDefinition = path.join(trashDir, ROLE_ASSETS.TRASH_AGENT_FILENAME);
+  const trashedAssets = path.join(trashDir, roleId);
   const meta: RoleTrashMeta = { roleId, deletedAt: now.toISOString() };
-  await fs.writeFile(path.join(trashDir, ROLE_ASSETS.TRASH_META_FILENAME), JSON.stringify(meta, null, 2), 'utf-8');
+  pendingTrashIds.add(trashId);
+  let movedDefinition = false;
+  let movedAssets = false;
+  try {
+    await fs.mkdir(trashDir, { recursive: true });
+    await fs.rename(definitionPath, trashedDefinition);
+    movedDefinition = true;
+    try {
+      await fs.rename(assetsPath, trashedAssets);
+      movedAssets = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      meta.definitionOnly = true;
+    }
+    await fs.writeFile(path.join(trashDir, ROLE_ASSETS.TRASH_META_FILENAME), JSON.stringify(meta, null, 2), 'utf-8');
+  } catch (error) {
+    if (movedAssets) await fs.rename(trashedAssets, assetsPath);
+    if (movedDefinition) await fs.rename(trashedDefinition, definitionPath);
+    await fs.rm(trashDir, { recursive: true, force: true });
+    throw error;
+  } finally {
+    pendingTrashIds.delete(trashId);
+  }
 
   logger.info('Role moved to trash', { roleId, trashId, deletedAt: meta.deletedAt });
   return { success: true, trashId };
@@ -159,10 +186,20 @@ export async function restoreTrashedRole(trashId: string, now: Date = new Date()
     };
   }
 
-  await fs.mkdir(path.dirname(getRoleDefinitionPath(meta.roleId)), { recursive: true });
-  await fs.rename(path.join(trashDir, ROLE_ASSETS.TRASH_AGENT_FILENAME), getRoleDefinitionPath(meta.roleId));
-  await fs.mkdir(path.dirname(getRoleDir(meta.roleId)), { recursive: true });
-  await fs.rename(path.join(trashDir, meta.roleId), getRoleDir(meta.roleId));
+  const definitionPath = getRoleDefinitionPath(meta.roleId);
+  const trashedDefinition = path.join(trashDir, ROLE_ASSETS.TRASH_AGENT_FILENAME);
+  await fs.mkdir(path.dirname(definitionPath), { recursive: true });
+  await fs.rename(trashedDefinition, definitionPath);
+  if (meta.definitionOnly !== true) {
+    const assetsPath = getRoleDir(meta.roleId);
+    try {
+      await fs.mkdir(path.dirname(assetsPath), { recursive: true });
+      await fs.rename(path.join(trashDir, meta.roleId), assetsPath);
+    } catch (error) {
+      await fs.rename(definitionPath, trashedDefinition);
+      throw error;
+    }
+  }
   await fs.rm(trashDir, { recursive: true, force: true });
 
   logger.info('Role restored from trash', { roleId: meta.roleId, trashId });
@@ -240,6 +277,7 @@ async function purgeExpiredTrash(now: number = Date.now()): Promise<{ purged: st
   const retentionMs = ROLE_ASSETS.TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   const purged: string[] = [];
   for (const entry of entries) {
+    if (pendingTrashIds.has(entry.name)) continue;
     const entryDir = path.join(root, entry.name);
     let deletedAt = Number.NaN;
     try {
