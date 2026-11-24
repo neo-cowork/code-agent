@@ -35,7 +35,7 @@ function AppComposerSlot() {
 
 describe('ChatInput drafts across a Space round trip', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     localStorage.clear();
     useAppStore.getState().closeSecondaryPages();
     useAppStore.setState({ language: 'zh' });
@@ -88,6 +88,8 @@ describe('ChatInput drafts across a Space round trip', () => {
       act(() => useSessionStore.setState({ currentSessionId: null, messages: [] }));
       expect(screen.queryByTestId('chat-composer-textarea')).toBeNull();
     }
+    // Let React schedule the async session restore on real timers after the unmount.
+    vi.useRealTimers();
     await act(async () => useSessionStore.getState().switchSession(session.id));
 
     expect(screen.queryByTestId('space-page-slot')).toBeNull();
