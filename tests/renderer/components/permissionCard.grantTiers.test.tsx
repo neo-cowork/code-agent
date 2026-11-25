@@ -66,8 +66,8 @@ describe('PermissionCard grant tiers', () => {
   });
 
   it.each([
-    ['zh', '24 小时内只对这条完全相同的命令免确认', '对象：'],
-    ['en', 'Only this exact command skips approval for the next 24 hours', 'Target: '],
+    ['zh', '24 小时内，只在输入完全相同时免确认', '对象：'],
+    ['en', 'Only this exact input skips approval for the next 24 hours', 'Target: '],
   ] as const)('shows the exact terminal command scope on the %s card and grant row', async (language, scope, targetLabel) => {
     const command = "echo '$& : 你好 🌿'";
     state.language = language;
