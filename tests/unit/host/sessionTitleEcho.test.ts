@@ -92,6 +92,11 @@ describe('rule summary', () => {
     expect(await ruleSummary('请帮我分析这个 sales.csv，按地区汇总金额')).toBe('分析这个 sales.csv');
     expect(await ruleSummary('帮我汇总销售表')).toBe('汇总销售表');
   });
+  it('④ strips a leading bare 把 from the session rule title but keeps 把握', async () => {
+    expect(await ruleSummary('把上次的报告再补充一下数据来源')).toBe('上次的报告再补充一下数据来源');
+    expect(deriveRuleSummaryTitle('帮我把这些销售数据做成表')).toBe('这些销售数据做成表');
+    expect(deriveRuleSummaryTitle('把握本周重点')).toBe('把握本周重点');
+  });
   it('strips en boilerplate, never ends with ellipsis, max 20 chars', async () => {
     const out = await ruleSummary('Can you help me draft the weekly report about the release, thanks');
     expect(out).toBe('draft the weekly');
