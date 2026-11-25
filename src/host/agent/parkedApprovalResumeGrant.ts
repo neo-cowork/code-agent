@@ -37,22 +37,24 @@ export function applyGrantAfterRestartClaim(input: {
   const targetApp = payload.targetApp
     ?? extractComputerTargetApp(payload.tool, ledgerArgs)
     ?? (cuaToolNeedsAppGrant(payload.tool) ? { name: '(unresolved)' } : null);
-  const request = {
+  const details = {
+    action: typeof ledgerArgs.action === 'string' ? ledgerArgs.action : undefined,
+    standingGrantTarget: payload.standingGrantTarget ?? undefined,
+    commandGrantTarget: commandGrantTarget(payload.tool, ledgerArgs),
+    session_id: ledgerArgs.session_id,
+    pressEnter: ledgerArgs.pressEnter,
+    sensitiveStep: payload.sensitiveStep,
+    browserSessionGrant: payload.browserSessionGrant,
+    targetApp: targetApp ?? undefined,
+  };
+  const request: PermissionRequest = {
     id: requestId,
     sessionId,
     tool: payload.tool,
-    type: payload.type,
+    type: payload.type as PermissionRequest['type'],
+    timestamp: payload.requestedAt,
     forceConfirm: payload.forceConfirm,
-    details: {
-      action: typeof ledgerArgs.action === 'string' ? ledgerArgs.action : undefined,
-      standingGrantTarget: payload.standingGrantTarget ?? undefined,
-      commandGrantTarget: commandGrantTarget(payload.tool, ledgerArgs),
-      session_id: ledgerArgs.session_id,
-      pressEnter: ledgerArgs.pressEnter,
-      sensitiveStep: payload.sensitiveStep,
-      browserSessionGrant: payload.browserSessionGrant,
-      targetApp: targetApp ?? undefined,
-    },
-  } as PermissionRequest;
+    details,
+  };
   recordHumanGrant(response, request, undefined, now);
 }
