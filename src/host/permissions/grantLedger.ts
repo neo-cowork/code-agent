@@ -23,6 +23,7 @@ import {
   revokeToolRunGrant,
   revokeToolSessionGrant,
 } from './toolGrantStore';
+import { commandGrantDisplayTarget } from './commandGrantTarget';
 import { connectorReadGrantName } from './connectorToolAccess';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
@@ -122,7 +123,9 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
       kind: grant.tier === 'session' ? 'tool-target' : 'tool-timed',
       label: connectorName ?? grant.tool,
       ...(connectorName ? { connectorAccess: 'read' as const } : {}),
-      ...(grant.target ? { detail: grant.target } : {}),
+      ...(grant.target ? {
+        detail: grant.tier === '24h' ? commandGrantDisplayTarget(grant.tool, grant.target) : grant.target,
+      } : {}),
       source: grant.tier === 'session' ? 'conversation' : grant.tier,
       grantedAt: grant.grantedAt,
       expiresAt: grant.expiresAt,
