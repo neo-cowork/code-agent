@@ -177,6 +177,59 @@ describe('failed send outbox keeps attachments across a page refresh', () => {
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 
+  it.each(['zh', 'en'] as const)('editAndResendMessage restores only intact attachments with the original clientMessageId and toasts when an image lost its bytes (%s)', async (language) => {
+    const pdf: MessageAttachment = { id: 'p1', type: 'file', category: 'pdf', name: 'report.pdf', size: 10, mimeType: 'application/pdf', pageCount: 3 };
+    const { recordFailedSend } = await import('../../../src/renderer/stores/failedSendOutbox');
+    const { user, error } = turn('check this screenshot and summarize it', [image('a1', '01-landing.png'), pdf]);
+    recordFailedSend(SESSION, user, error);
+
+    const restored = await reloadAndMerge();
+    const { useAppStore } = await import('../../../src/renderer/stores/appStore');
+    const { useMessageActionStore } = await import('../../../src/renderer/stores/messageActionStore');
+    const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+    useAppStore.setState({ language });
+    useToastStore.setState({ toasts: [] });
+    const send = vi.fn();
+    const restoreComposer = vi.fn();
+    useMessageActionStore.getState().register(send, () => restored, restoreComposer);
+
+    useMessageActionStore.getState().editAndResendMessage('u1');
+
+    expect(send).not.toHaveBeenCalled();
+    expect(restoreComposer).toHaveBeenCalledExactlyOnceWith({
+      content: 'check this screenshot and summarize it',
+      attachments: [expect.objectContaining({ id: 'p1', name: 'report.pdf' })],
+      clientMessageId: 'u1',
+    });
+    expect(useToastStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ type: 'error', message: languages[language].turnCard.failedImageDataLost }),
+    );
+  });
+
+  it('editAndResendMessage restores every attachment and stays quiet when nothing lost its bytes', async () => {
+    const mid = { ...image('a1', 'mid.png'), data: `data:image/png;base64,${'A'.repeat(900_000)}`, thumbnail: undefined };
+    const pdf: MessageAttachment = { id: 'p1', type: 'file', category: 'pdf', name: 'report.pdf', size: 10, mimeType: 'application/pdf', pageCount: 3 };
+    const { recordFailedSend } = await import('../../../src/renderer/stores/failedSendOutbox');
+    const { user, error } = turn('mid image and pdf', [mid, pdf]);
+    recordFailedSend(SESSION, user, error);
+
+    const restored = await reloadAndMerge();
+    const { useMessageActionStore } = await import('../../../src/renderer/stores/messageActionStore');
+    const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+    useToastStore.setState({ toasts: [] });
+    const restoreComposer = vi.fn();
+    useMessageActionStore.getState().register(vi.fn(), () => restored, restoreComposer);
+
+    useMessageActionStore.getState().editAndResendMessage('u1');
+
+    expect(restoreComposer).toHaveBeenCalledExactlyOnceWith({
+      content: 'mid image and pdf',
+      attachments: [expect.objectContaining({ id: 'a1', data: mid.data }), expect.objectContaining({ id: 'p1' })],
+      clientMessageId: 'u1',
+    });
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
   it('still resends mid-size image (data kept), big image with surviving path, and pdf/csv attachments', async () => {
     const midData = `data:image/png;base64,${'B'.repeat(900 * 1024)}`;
     const midImg: MessageAttachment = { id: 'm1', type: 'image', category: 'image', name: 'mid.png', size: 700_000, mimeType: 'image/png', data: midData };

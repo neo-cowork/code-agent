@@ -208,11 +208,14 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     const target = _getMessages().find((message) => message.id === messageId);
     if (target?.role !== 'user' || target.metadata?.sendFailed !== true || !target.id) return;
     if (!target.content?.trim() && !target.attachments?.length) return;
+    const intact = target.attachments?.filter((attachment) => !isImageAttachmentMissingData(attachment));
+    const droppedHollow = (intact?.length ?? 0) < (target.attachments?.length ?? 0);
     _restoreComposer({
       content: target.content ?? '',
-      ...(target.attachments?.length ? { attachments: target.attachments } : {}),
+      ...(intact?.length ? { attachments: intact } : {}),
       clientMessageId: target.id,
     });
+    if (droppedHollow) toast.error(languages[useAppStore.getState().language].turnCard.failedImageDataLost);
   },
 
   regenerateLast: () => {
