@@ -157,8 +157,7 @@ function buildSessionListQuery(filter: SessionFilter, offset: number, limit: num
 
 /**
  * 防御性前端过滤：host 已在 SQL 层保证归档语义，正常路径下这里一行都不会删；
- * 保留它只是为 host 行为漂移兜底（与改动前的前端过滤语义一致），因此
- * sessions.length 始终等于已从 DB 取出的原始条数，可直接当 offset 用。
+ * 保留它只是为 host 行为漂移兜底（与改动前的前端过滤语义一致）。
  */
 function applyClientFilter(sessions: SessionListMeta[], filter: SessionFilter): SessionListMeta[] {
   if (filter !== 'active' && filter !== 'archived') return sessions;
@@ -244,7 +243,7 @@ export async function executeLoadOlderSessions(deps: SessionListPaginationDeps):
   set({ isLoadingOlderSessions: true });
   const localVersionAtStart = getSessionsLocalVersion();
   try {
-    // sessions.length 恒等于已从 DB 取出的原始条数（见 applyClientFilter），直接当 offset。
+    // 待撤销的行可能让本地窗口偏短。下一页会与已有行重叠，追加时按 id 去重。
     const offset = windowSessionCount(state.sessions);
     const page = await invokeSession<Session[]>('list', buildSessionListQuery(filter, offset, SESSION_LIST_PAGE_SIZE));
 

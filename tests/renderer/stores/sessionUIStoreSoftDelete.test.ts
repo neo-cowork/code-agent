@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { executeLoadSessions } from '../../../src/renderer/stores/sessionListPagination';
-import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { useSessionStore, type CreateSessionOptions, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useSessionUIStore } from '../../../src/renderer/stores/sessionUIStore';
 
 vi.mock('../../../src/renderer/stores/sessionStore', async () => {
@@ -11,16 +11,23 @@ vi.mock('../../../src/renderer/stores/sessionStore', async () => {
       sessions: SessionWithMeta[];
       currentSessionId: string | null;
       switchSession: (id: string) => Promise<void>;
-      createSession: (title: string, options: { projectId: string; workingDirectory: string }) => Promise<void>;
+      createSession: (title?: string, options?: CreateSessionOptions) => Promise<SessionWithMeta | null>;
     }>((set) => ({
       sessions: [],
       currentSessionId: null,
       switchSession: vi.fn(async (id: string) => { set({ currentSessionId: id }); }),
-      createSession: vi.fn(async (title: string, options: { projectId: string; workingDirectory: string }) => {
+      createSession: vi.fn(async (title?: string, options?: CreateSessionOptions) => {
+        const draft = {
+          ...session('draft', 0),
+          projectId: options?.projectId,
+          workingDirectory: options?.workingDirectory ?? undefined,
+          title: title ?? '',
+        };
         set((state) => ({
-          sessions: [{ ...session('draft', 0), ...options, title }, ...state.sessions],
-          currentSessionId: 'draft',
+          sessions: [draft, ...state.sessions],
+          currentSessionId: draft.id,
         }));
+        return draft;
       }),
     })),
   };
@@ -135,5 +142,33 @@ describe('sessionUIStore.softDelete project landing', () => {
 
     expect(useSessionStore.getState().sessions.map((row) => row.id)).toEqual(['draft', otherProject.id]);
     expectLanding('draft');
+  });
+
+  it('restores the original batch when replacement creation fails after the timer expires', async () => {
+    const app = useAppStore.getState();
+    const getAppState = vi.spyOn(useAppStore, 'getState').mockReturnValue(app);
+    let failReplacement!: (value: null) => void;
+    const failure = new Promise<null>((resolve) => { failReplacement = resolve; });
+    const invoke = vi.fn();
+    vi.stubGlobal('window', { domainAPI: { invoke } });
+    useSessionStore.setState({ sessions: [otherProject, previous, current], currentSessionId: current.id });
+    vi.mocked(useSessionStore.getState().createSession).mockReturnValueOnce(failure);
+
+    useSessionUIStore.getState().softDelete([previous.id, current.id]);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(useSessionStore.getState().sessions).toEqual([otherProject]);
+    expect(invoke).not.toHaveBeenCalled();
+
+    failReplacement(null);
+    await useSessionUIStore.getState().pendingDelete?.replacement;
+    expect(useSessionStore.getState().sessions).toEqual([otherProject, previous, current]);
+    expect(useSessionStore.getState().switchSession).not.toHaveBeenCalled();
+    expect(app.syncActiveAgentForSession).toHaveBeenLastCalledWith(current.id, { metadata: current.metadata });
+    expect(app.syncWorkbenchForSession).toHaveBeenLastCalledWith(current.id);
+    expect(useSessionUIStore.getState().pendingDelete).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+    expectLanding(current.id);
+    getAppState.mockRestore();
   });
 });

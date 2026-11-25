@@ -55,6 +55,7 @@ export type TrajectoryReviewFilter = 'all' | 'pending' | 'reviewed';
 export interface PendingDelete {
   ids: string[];
   timer: ReturnType<typeof setTimeout> | null;
+  replacement?: Promise<boolean>;
 }
 
 export interface PendingSessionSearchJump {
@@ -216,6 +217,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       const prevIds = [...pendingDelete.ids];
       set({ pendingDelete: null });
       (async () => {
+        if (pendingDelete.replacement && !await pendingDelete.replacement) return;
         for (const id of prevIds) {
           try {
             await deleteSession(id);
@@ -234,7 +236,8 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     }, 5000);
 
     useSessionStore.setState({ sessions: remainingSessions });
-    set({ pendingDelete: { ids, timer } });
+    let pending: PendingDelete = { ids, timer };
+    set({ pendingDelete: pending });
 
     const { currentSessionId } = useSessionStore.getState();
     if (currentSessionId && idsSet.has(currentSessionId)) {
@@ -247,10 +250,40 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
         appStore.syncActiveAgentForSession(null);
         appStore.syncWorkbenchForSession(null);
         if (deletedCurrent && getSidebarGroupKeyForSession(deletedCurrent) !== UNCATEGORIZED_WORKSPACE_KEY) {
-          void sessionStore.createSession(languages[appStore.language].sidebar.newSessionTitle, {
-            workingDirectory: deletedCurrent.workingDirectory ?? null,
-            projectId: deletedCurrent.projectId,
-          });
+          const replacement = (async () => {
+            try {
+              const session = await sessionStore.createSession(languages[appStore.language].sidebar.newSessionTitle, {
+                workingDirectory: deletedCurrent.workingDirectory ?? null,
+                projectId: deletedCurrent.projectId,
+              });
+              if (session) return true;
+            } catch (error) {
+              logger.error('Failed to create a replacement after deleting the open session', error);
+            }
+
+            // Keep the original conversation if it still has no replacement.
+            // The create action already surfaces the error.
+            if (get().pendingDelete === pending) {
+              clearTimeout(timer);
+              set({ pendingDelete: null });
+            }
+            const otherPendingIds = new Set(get().pendingDelete?.ids);
+            const live = useSessionStore.getState();
+            const visibleIds = new Set(live.sessions.map((session) => session.id));
+            const restored = sessions.filter(({ id }) =>
+              idsSet.has(id) && !otherPendingIds.has(id) && !visibleIds.has(id));
+            useSessionStore.setState({
+              sessions: [...live.sessions, ...restored].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+            });
+            if (live.currentSessionId === currentSessionId) {
+              const currentApp = useAppStore.getState();
+              currentApp.syncActiveAgentForSession(currentSessionId, { metadata: deletedCurrent.metadata });
+              currentApp.syncWorkbenchForSession(currentSessionId);
+            }
+            return false;
+          })();
+          pending = { ...pending, replacement };
+          set({ pendingDelete: pending });
         } else {
           useSessionStore.setState({ currentSessionId: null, messages: [] });
         }
@@ -276,6 +309,9 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     if (!pendingDelete) return;
 
     if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
+    if (pendingDelete.replacement) {
+      if (!await pendingDelete.replacement || get().pendingDelete !== pendingDelete) return;
+    }
 
     // Snapshot and clear atomically to prevent race with concurrent softDelete
     const idsToDelete = [...pendingDelete.ids];
