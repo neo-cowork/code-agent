@@ -72,7 +72,10 @@ describe('resolveProviderBaseUrl', () => {
       expect(resolveProviderBaseUrl(cfg('zhipu', model, { baseUrl: 'https://explicit.test/v4' })))
         .toBe('https://explicit.test/v4');
     }
-    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5'))).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    // coding-flag 模型（glm-5 / glm-4.7）同样跟随设置里填的地址
+    for (const model of ['glm-5', 'glm-4.7']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe('http://127.0.0.1:9988/v4');
+    }
   });
 
   it('简单 OpenAI 兼容 provider 用 config.baseUrl || ENDPOINTS[provider]', () => {
@@ -157,12 +160,26 @@ describe('resolveProviderBaseUrl', () => {
     expect(resolveProviderBaseUrl(cfg('zhipu', quick))).toBe(MODEL_API_ENDPOINTS.zhipu);
   });
 
-  it('zhipu free 仍允许 config.baseUrl 覆盖；coding 端点固定不被 config.baseUrl 覆盖', () => {
+  it('zhipu coding-flag 模型（glm-5/glm-4.7）改为跟随用户填的 baseUrl（旧断言「coding 端点固定」会把官方 coding 地址改走第三方中转导致 401，已替换）；留空仍走默认 coding 端点', () => {
     expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4-flash', { baseUrl: 'https://z.test/v4' })))
       .toBe('https://z.test/v4');
-    // coding 分支镜像 zhipuProvider：直接返回 codingBaseUrl，忽略 config.baseUrl
-    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5', { baseUrl: 'https://z.test/v4' })))
-      .toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    // config.baseUrl 优先，末尾斜杠被裁掉
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5', { baseUrl: 'https://z.test/v4/' })))
+      .toBe('https://z.test/v4');
+    // 无 config.baseUrl 时取设置里的值
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4' },
+    } } });
+    for (const model of ['glm-5', 'glm-4.7']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+    }
+    // 两处都留空 → 默认 coding 端点；非 coding 的 glm-4.6v / free 的 glm-4-flash 不变
+    mockGetSettings.mockReturnValue({});
+    for (const model of ['glm-5', 'glm-4.7']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    }
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4.6v'))).toBe(MODEL_API_ENDPOINTS.zhipu);
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4-flash'))).toBe(MODEL_API_ENDPOINTS.zhipuOfficial);
   });
 
   it('moonshot kimi-k2.5 用专用端点（可被 KIMI_K25_API_URL 覆盖），其余用 moonshot 端点', () => {
