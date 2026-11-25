@@ -11,6 +11,7 @@ import { channelSchema } from './core';
 
 const CronDomainRequestSchema = z.object({
   action: z.enum([
+    'ackScheduleDraft',
     'createJob',
     'deleteJob',
     'grantLoginPassThrough',
@@ -22,6 +23,7 @@ const CronDomainRequestSchema = z.object({
     'getEventStats',
     'getExecutions',
     'getRecentExecutions',
+    'getScheduleDraftRequest',
     'getStats',
     'getGroupListenCheck',
     'startGroupListenCheck',
@@ -46,3 +48,22 @@ export const CronSchemas = {
   /** action 字面量集合：shellCapabilities 派生用（shared 层零 host 依赖） */
   ACTIONS: CronDomainRequestSchema.shape.action.options,
 } as const;
+
+export const ScheduleDraftRefSchema = z.object({
+  sessionId: z.string().min(1),
+  requestId: z.string().min(1),
+});
+
+export const ScheduleDraftAckSchema = z.discriminatedUnion('status', [
+  ScheduleDraftRefSchema.extend({ status: z.literal('prepared'), draft: z.record(z.string(), z.unknown()) }),
+  ScheduleDraftRefSchema.extend({ status: z.literal('shown') }),
+  ScheduleDraftRefSchema.extend({ status: z.literal('generation_failed') }),
+  ScheduleDraftRefSchema.extend({ status: z.literal('discarded') }),
+]);
+
+export type ScheduleDraftRef = z.infer<typeof ScheduleDraftRefSchema>;
+export type ScheduleDraftAck = z.infer<typeof ScheduleDraftAckSchema>;
+export type ScheduleDraftRequest = ScheduleDraftRef & { description: string } & (
+  | { state: 'requested' }
+  | { state: 'prepared' | 'shown'; draft: Record<string, unknown> }
+);
