@@ -6,11 +6,12 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RoleWakeLedgerRecentRow } from '@shared/contract/roleAssets';
 const { listJobs, getExecutions, getRoleWakeFunnel, getRoleWakeLedgerRecent } = vi.hoisted(() => ({
   listJobs: vi.fn(),
   getExecutions: vi.fn(),
   getRoleWakeFunnel: vi.fn(async () => ({ wakes: 0, reports: 0, suppressed: 0, fallbackSent: 0, duplicates: [] as Array<{ at: number; firstReportedAt: number }> })),
-  getRoleWakeLedgerRecent: vi.fn(async () => []),
+  getRoleWakeLedgerRecent: vi.fn(async (): Promise<RoleWakeLedgerRecentRow[]> => []),
 }));
 vi.mock('../../../src/renderer/services/rolesClient', () => ({ getRoleWakeFunnel, getRoleWakeLedgerRecent }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -20,7 +21,6 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: { listJobs, getExecutions },
 }));
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
-import type { RoleWakeLedgerRecentRow } from '@shared/contract/roleAssets';
 import { RoleWakeLedger } from '../../../src/renderer/components/features/expert/RoleWakeLedger';
 import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
