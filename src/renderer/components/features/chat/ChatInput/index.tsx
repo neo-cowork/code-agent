@@ -61,6 +61,7 @@ import { AtMentionPopover } from './AtMentionPopover';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { isAgentEventForCurrentSession } from '../../../../hooks/agent/agentEventSession';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
@@ -795,8 +796,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // Listen for context-aware suggestions from agent (pushed after each turn)
   useEffect(() => {
-    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
-      if (event.type === 'suggestions_update' && Array.isArray(event.data)) {
+    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown; sessionId?: string }) => {
+      // 芯片属于事件里的那个会话。agent:event 是全局广播（收线后补播、镜像轮、别的窗口的轮都
+      // 走它），停在别的会话上的输入框不能收：点了就把与当前会话无关的指令发了出去。
+      if (
+        event.type === 'suggestions_update'
+        && Array.isArray(event.data)
+        && isAgentEventForCurrentSession(event, sessionless ? null : useSessionStore.getState().currentSessionId)
+      ) {
         setSuggestions(event.data as Array<{ id: string; text: string; source: string }>);
       }
       // Combo Skill suggestion from backend
@@ -805,7 +812,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     });
     return () => { unsubscribe?.(); };
-  }, []);
+  }, [sessionless]);
+
+  // 切换会话：上一个会话的芯片不留在新会话的输入框里
+  useEffect(() => {
+    setSuggestions([]);
+  }, [currentSessionId]);
 
   // IACT protocol: listen for inline interaction events from message bubbles
   // （!run 的执行不走这里：RunCommandCard 自己就地执行 + 渲染结果。但它的「发给 Neo」
