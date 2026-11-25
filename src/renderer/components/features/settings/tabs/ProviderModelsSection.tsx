@@ -68,6 +68,8 @@ function ModelRow({
   const maxOutput = model.maxTokens ?? MODEL_MAX_OUTPUT_TOKENS[normId];
   // 在 JSX 外算好本地化标签：渲染表达式里出现 model.id 会撞 internal-text-leak 门。
   const displayLabel = localizeModelLabel(model.id, model.label, language);
+  // 能力徽章文字只从 i18n 表取：表里没登记的 feature id 一个 chip 都不渲染，绝不把原始 id 怼给用户。
+  const capabilityLabels: Record<string, string | undefined> = modelText.switcherPanel.capabilities;
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3">
       {/* 左：①名称 + 默认 + 内置 / ②类型标签 */}
@@ -93,15 +95,19 @@ function ModelRow({
         </div>
         {features.length > 0 && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {features.map((feature) => (
-              <span
-                key={feature}
-                className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300"
-              >
-                {CAPABILITY_ICONS[feature]}
-                {feature}
-              </span>
-            ))}
+            {features.map((feature) => {
+              const label = capabilityLabels[feature];
+              if (!label) return null;
+              return (
+                <span
+                  key={feature}
+                  className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300"
+                >
+                  {CAPABILITY_ICONS[feature]}
+                  {label}
+                </span>
+              );
+            })}
           </div>
         )}
         {thinkingCapabilities && (
@@ -120,7 +126,7 @@ function ModelRow({
           <div className="text-xs text-zinc-300">{formatTokens(contextWindow)}</div>
         </div>
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wide text-zinc-500">Max Output</div>
+          <div className="text-[10px] uppercase tracking-wide text-zinc-500">{modelText.maxOutputLabel}</div>
           <div className="text-xs text-zinc-300">{formatTokens(maxOutput)}</div>
         </div>
         <div className="flex justify-end">
