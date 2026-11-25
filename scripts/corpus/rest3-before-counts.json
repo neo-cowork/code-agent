@@ -1,0 +1,20 @@
+{
+  "categories": {
+    "injected_prompt": {
+      "raw_error_hits": 0,
+      "rows_scanned": 4,
+      "visible_hits": 0
+    },
+    "internal_tool_name": {
+      "raw_error_hits": 1,
+      "rows_scanned": 4,
+      "visible_hits": 1
+    },
+    "raw_json": {
+      "raw_error_hits": 0,
+      "rows_scanned": 4,
+      "visible_hits": 0
+    }
+  },
+  "rows_scanned": 4
+}
