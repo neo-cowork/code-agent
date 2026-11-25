@@ -140,11 +140,28 @@ function delegationWorkspace(ctx: RuntimeContext): Pick<ToolContext, 'workspace'
   return { workspace: workspaceScope.primaryRoot, workspaceScope };
 }
 
+/** 任务名最长 24 个码点。 */
+const HANDOFF_TITLE_MAX_CODE_POINTS = 24;
+const SENTENCE_ENDINGS = new Set(['。', '！', '？', '!', '?']);
+
+/**
+ * 任务名取用户原话的第一句，折叠空白；第一句长过 24 个码点才按 24 截。
+ * 「明天上午 9 点提醒我交报告。请用 Bash 工具…」按 24 截是「…请用 Bash 工」：半截词，
+ * 还把用户点名的工具带进了任务名。
+ */
+function handoffTitle(userText: string): string {
+  const chars = Array.from(userText.replace(/\s+/g, ' ').trim());
+  const firstSentenceEnd = chars.findIndex((char) => SENTENCE_ENDINGS.has(char));
+  const cut = firstSentenceEnd > 0 && firstSentenceEnd < HANDOFF_TITLE_MAX_CODE_POINTS
+    ? firstSentenceEnd
+    : HANDOFF_TITLE_MAX_CODE_POINTS;
+  return chars.slice(0, cut).join('').trimEnd() || 'Background task';
+}
+
 async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
   const userText = verbatimUserRequest(ctx);
   const turnId = turnKey(ctx);
-  // 折叠空白为单个空格再截 24 个码点，保证英文请求的任务名可读（不再粘成 Runoneshell…）。
-  const title = Array.from(userText.replace(/\s+/g, ' ').trim()).slice(0, 24).join('').trimEnd() || 'Background task';
+  const title = handoffTitle(userText);
   const stableKey = `fg-handoff:${ctx.sessionId}:${turnId}`;
   const args: Record<string, unknown> = {
     title,

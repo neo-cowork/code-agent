@@ -497,6 +497,17 @@ describe('foreground narrowing gate', () => {
       expect(title).toBe('Weekly sync notes for q');
       expect(title.endsWith(' ')).toBe(false);
     });
+
+    // 任务名取用户原话的第一句：原缺陷那句按 24 截是「…请用 Bash 工」，半截词，还带着工具名。
+    it.each([
+      ['明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒', '明天上午 9 点提醒我交报告'],
+      ['明天上午 9 点提醒我交报告。别交给后台任务，直接用 Bash 工具在这里执行多行 osascript（heredoc）建提醒。', '明天上午 9 点提醒我交报告'],
+      // 英文句点不当句末（小数、缩写会误切）：仍按 24 个码点截。
+      ['Remind me at 9 tomorrow morning to hand in the report. Do not use Bash.', 'Remind me at 9 tomorrow'],
+      ['。请用 Bash 工具建提醒', '。请用 Bash 工具建提醒'],
+    ])('%s → %s', async (prompt, expected) => {
+      expect(await titleFromHandoff(prompt)).toBe(expected);
+    });
   });
 
   it('delegate handler failure keeps the guidance path and the pending reply', async () => {
@@ -599,6 +610,7 @@ describe('foreground narrowing gate', () => {
       expect(tasks).toHaveLength(1);
       expect(tasks[0]?.status).toBe('running');
       expect(tasks[0]?.workspaceScope.primaryRoot).toBe(runContext.workspace);
+      expect(tasks[0]?.title).toBe('明天上午 9 点提醒我交报告');
       expect(tasks[0]?.prompt).toContain(NO_FOLDER_PROMPT);
       expect(tasks[0]?.toolCallId).toBe('host-handoff:turn-1');
       expect(sealedResult(deps)).toMatchObject({
