@@ -7,6 +7,7 @@
 
 import type { PermissionRequestData } from '../../host/tools/types';
 import type { PermissionAskResult } from '../../shared/contract/permission';
+import { terminalApprovalPreviewText } from '../../host/tools/modules/terminal/terminalApprovalPreview';
 
 /** 审批卡选项（数字键直选 + ↑↓+Enter） */
 export type ApprovalChoice =
@@ -45,6 +46,7 @@ export function approvalKey(request: PermissionRequestData): string {
 export function approvalTarget(request: PermissionRequestData): string {
   const raw = String(
     request.details?.command
+    || terminalApprovalPreviewText(request.tool, request.details?.preview)
     || request.details?.path
     || request.details?.filePath
     || request.details?.url

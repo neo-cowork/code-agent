@@ -1,20 +1,10 @@
 import type { CronUrgency } from '@shared/contract/sessionAutomation';
-import { splitCronRunMessage } from '@shared/cronRunMessage';
+import { readableCronRunText } from '@shared/cronRunMessage';
 import { isUserOnlyCronDenial } from '@shared/cronPermissionDenied';
 import { declaresCronUrgencyQuiet, isCronUrgency, parseUrgencyHeader } from '@shared/cronUrgency';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function readableText(source: string): string {
-  return splitCronRunMessage(source).map((segment) => (
-    segment.text
-      .split(/\r?\n/)
-      .filter((line) => !/^\s*urgency\s*:/i.test(line) && !/^\s*artifact:\s*/i.test(line))
-      .join('\n')
-      .trim()
-  )).filter(Boolean).join('\n\n');
 }
 
 /** Presentation only: unknown action results remain available in technical details. */
@@ -32,7 +22,7 @@ export function cronRunResultView(value: unknown): {
   const digest = isRecord(value.digest) ? value.digest : undefined;
   const source = typeof digest?.fullSummary === 'string' ? digest.fullSummary
     : typeof digest?.summary === 'string' ? digest.summary : '';
-  const summaryText = readableText(source) || undefined;
+  const summaryText = readableCronRunText(source) || undefined;
   const parsed = parseUrgencyHeader(source);
   const declaredInDigest = parsed.urgency !== 'fyi' || declaresCronUrgencyQuiet(source);
   // A user-only denial was capped to the persisted tier by the host; the digest header must not override it.
@@ -51,7 +41,7 @@ export function cronRunResultView(value: unknown): {
       .map((artifact) => artifact.trim()))]
     : [];
   const alertReason = typeof value.alertReason === 'string'
-    ? readableText(value.alertReason) || undefined
+    ? readableCronRunText(value.alertReason) || undefined
     : undefined;
   return {
     isAgentResult: true,

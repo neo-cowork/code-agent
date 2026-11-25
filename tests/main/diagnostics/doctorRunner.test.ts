@@ -178,13 +178,22 @@ describe('runDoctor', () => {
     expect(versionMock).not.toHaveBeenCalled();
   });
 
-  it('整体超时后仍为所有未完成 check 返回 warn，报告保持完整', async () => {
+  it('整体超时后仍为所有未完成 check 返回 warn，报告保持完整', async ({ onTestFinished }) => {
+    vi.useFakeTimers();
+    // The deadline timer can fire while the wall clock still reads before the deadline.
+    const wallClock = vi.spyOn(Date, 'now').mockReturnValue(Date.now());
+    onTestFinished(() => {
+      wallClock.mockRestore();
+      vi.useRealTimers();
+    });
     networkMock.mockImplementationOnce(() => new Promise(() => undefined));
 
-    const report = await runDoctor({
+    const reportPromise = runDoctor({
       perCheckTimeoutMs: 1_000,
       overallTimeoutMs: 20,
     });
+    await vi.advanceTimersByTimeAsync(20);
+    const report = await reportPromise;
 
     const cats = new Set(report.items.map((item) => item.category));
     expect(cats).toEqual(
@@ -206,6 +215,11 @@ describe('runDoctor', () => {
       fix: { code: 'open-proxy-help' },
     });
     expect(report.items.filter((item) => item.status === 'warn').length).toBeGreaterThanOrEqual(6);
+    expect(providerHealthMock).not.toHaveBeenCalled();
+    expect(browserRelayMock).not.toHaveBeenCalled();
+    expect(mcpMock).not.toHaveBeenCalled();
+    expect(hooksMock).not.toHaveBeenCalled();
+    expect(versionMock).not.toHaveBeenCalled();
     expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.skip)
       .toBe(report.items.length);
   });
