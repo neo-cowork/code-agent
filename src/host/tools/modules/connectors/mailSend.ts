@@ -4,6 +4,8 @@
 // 旧版: src/host/tools/connectors/mailSend.ts (legacy Tool + wrapLegacyTool)
 // ============================================================================
 
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type {
   ToolHandler,
   ToolModule,
@@ -15,7 +17,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { shouldLogMailFailureDetail } from '../../outboundGuard';
 import { mailSendSchema as schema } from './mailSend.schema';
 
@@ -47,6 +49,8 @@ async function executeMailSend(
     return { ok: false, error: formatConnectorUnavailableMessage('mail', 'send'), code: 'NOT_INITIALIZED' };
   }
 
+  const locale = getHostUiLocale();
+  const { separator, mail: copy, appleScriptFailure } = getHostConnectorCopy(locale);
   try {
     const result = await connector.execute('send_message', args);
     const sent = result.data as {
@@ -59,7 +63,7 @@ async function executeMailSend(
     };
     ctx.logger.debug('mail_send', { subject: sent.subject, toCount: sent.to.length });
     const output = [
-      `已发送邮件：${sent.subject}`,
+      `${copy.sent}${separator}${sent.subject}`,
       `To: ${sent.to.join(', ')}`,
       sent.cc.length > 0 ? `CC: ${sent.cc.join(', ')}` : null,
       sent.bcc.length > 0 ? `BCC: ${sent.bcc.join(', ')}` : null,
@@ -84,7 +88,7 @@ async function executeMailSend(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已发送邮件：${sent.subject}`,
+          name: `${copy.sent}${separator}${sent.subject}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),
@@ -109,9 +113,14 @@ async function executeMailSend(
       shouldLogMailFailureDetail(),
     );
     const to = (args.to as unknown[]).filter((item): item is string => typeof item === 'string');
+    const title = String(args.subject);
+    const failureName = title ? `${copy.sendFailed}${separator}${title}` : copy.sendFailed;
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Mail', appleScriptFailure) : undefined;
+    const recipientLine = `To: ${to.join(', ')}`;
     return {
       ok: false,
       error: failure,
+      ...(userMessage ? { userMessage } : {}),
       meta: {
         action: 'send_message',
         connector: 'mail',
@@ -123,10 +132,11 @@ async function executeMailSend(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'send_message',
-          name: `发送邮件失败：${String(args.subject)}`,
+          name: failureName,
+          ...(userMessage ? { preview: [`${failureName}${separator}${userMessage}`, recipientLine].join('\n') } : {}),
           error: failure,
           metadata: { connector: 'mail', subject: args.subject, toCount: to.length },
-          detailLines: [`To: ${to.join(', ')}`],
+          detailLines: [recipientLine],
         }),
       },
     };

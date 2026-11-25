@@ -32,6 +32,7 @@ function renderCronFields(): void {
         cronExpression: '0 9 * * *',
         cronTimezone: '',
         runsOn: 'local',
+        actionType: 'agent',
       }}
       setField={() => undefined}
       errors={{}}

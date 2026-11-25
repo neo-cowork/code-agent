@@ -19,6 +19,14 @@ const PATH_PROGRAMS = new Set(['test', '[', 'ls', 'stat']);
 const TEST_OPERATORS = new Set(['!', ']', '-e', '-f', '-d', '-s', '-L', '-h', '-r']);
 
 /**
+ * printf words that mutate shell state: a leading `-v` stores output in a variable and a real `%n`
+ * conversion writes the byte count into a variable — a `%` followed only by printf flag/width/
+ * precision/length characters, then `n`. A literal trailing n like `exit=%s\n` is safe; `%%n`
+ * stays refused. Shared with the approved-rm grant parser so both gates refuse the same shape.
+ */
+export const PRINTF_STATE_WRITE_WORD = /^-v|%[-+ #0'*.0-9$hljztLq]*n/;
+
+/**
  * True when `command` only checks (test / [ / ls / stat, plus echo/printf of text) files that the
  * user approved for deletion earlier in this session. A `for` loop is covered only when every list item is such a file. Redirects to files, expansions and any
  * other path stay on the normal approval path.
@@ -56,7 +64,7 @@ export function isApprovedRmVerifyProbe(command: string, workingDirectory: strin
     const isLoopVar = (word: string) => loopVars.has(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(word)?.[1] ?? '');
     const plain = (word: string) => word.replaceAll('${?}', '').replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, name: string) => loopVars.has(name) ? '' : '$');
     if (args.some((word) => /[$`*?{}\\]/.test(plain(word)))) return false;
-    if (program === 'printf' && args.some((word) => /^-v|%[^%]*n/.test(word))) return false;
+    if (program === 'printf' && args.some((word) => PRINTF_STATE_WRITE_WORD.test(word))) return false;
     if (!PATH_PROGRAMS.has(program)) continue;
     if (program === '[' && args.at(-1) !== ']') return false;
     for (const word of args) {
