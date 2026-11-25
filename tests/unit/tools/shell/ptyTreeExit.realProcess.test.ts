@@ -371,7 +371,8 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       expect(notifications.map((n) => n.type)).toEqual([type]);
       expect(ledger.getTask(id)?.title).toBe('Start local file server');
       const message = notifications[0]!.message;
-      expect(message).toContain('Start local file server');
+      expect(message).toMatch(/^后台命令 /);
+      expect(message).not.toContain('Start local file server');
       expect(message).not.toMatch(/sandbox-exec|\/var\/folders|\/bin\/sh -c|\.log|neo-npm-/);
       expect(notifications[0]!.payload).toMatchObject({ outputFile: created.outputFile });
     } finally {

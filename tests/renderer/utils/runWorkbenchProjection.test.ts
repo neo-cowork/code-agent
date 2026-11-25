@@ -122,6 +122,22 @@ describe('runWorkbenchProjection', () => {
     },
   );
 
+  it('用户指令带隐藏 <appshot> 块时，run 标题（任务面板副标题）只取可见文字', () => {
+    const withAppshot: TraceProjection = {
+      ...projection,
+      turns: [{
+        ...projection.turns[0],
+        nodes: [
+          { id: 'user-1', type: 'user', content: '<appshot app="" name="图片批注" captured="2026-11-24T00:00:00.000Z">\n区域 1：单位不对\n</appshot>\n\n我在图片上框出了 1 处', timestamp: 100 },
+          ...projection.turns[0].nodes.slice(1),
+        ],
+      }],
+    };
+    const run = buildRunUiState({ projection: withAppshot, sessionId: 'session-1' });
+    expect(run.title).toBe('我在图片上框出了 1 处');
+    expect(run.title).not.toContain('appshot');
+  });
+
   it('requires positive completion evidence and preserves running precedence', () => {
     const emptyProjection: TraceProjection = { sessionId: 'session-new', turns: [], activeTurnIndex: -1 };
     expect(buildRunUiState({

@@ -4,7 +4,7 @@ export interface MemoryEntryAddCopy {
   title: string;
   placeholder: string;
   typeLabel: string;
-  kinds: { user: string; feedback: string; project: string; reference: string };
+  kinds: { user: string; feedback: string; project: string; people: string; reference: string };
   save: string;
   saving: string;
   cancel: string;
@@ -21,7 +21,7 @@ export const MEMORY_ENTRY_ADD_COPY: Record<'zh' | 'en', MemoryEntryAddCopy> = {
     title: '想让 Neo 记住什么？',
     placeholder: '例如：我喜欢用中文回复',
     typeLabel: '记忆类型',
-    kinds: { user: '关于我', feedback: '我喜欢的做事方式', project: '项目', reference: '参考资料' },
+    kinds: { user: '关于我', feedback: '我喜欢的做事方式', project: '项目', people: '人与组织', reference: '参考资料' },
     save: '保存',
     saving: '正在保存…',
     cancel: '取消',
@@ -36,7 +36,7 @@ export const MEMORY_ENTRY_ADD_COPY: Record<'zh' | 'en', MemoryEntryAddCopy> = {
     title: 'What should Neo remember?',
     placeholder: 'For example: I prefer replies in Chinese',
     typeLabel: 'Memory type',
-    kinds: { user: 'About me', feedback: 'How I like things done', project: 'Project', reference: 'Reference' },
+    kinds: { user: 'About me', feedback: 'How I like things done', project: 'Project', people: 'People & organizations', reference: 'Reference' },
     save: 'Save',
     saving: 'Saving…',
     cancel: 'Cancel',

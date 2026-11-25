@@ -1,6 +1,4 @@
-import React, { useState } from 'react';
-import type { Message } from '@shared/contract';
-import { generateMessageId } from '@shared/utils/id';
+import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -10,28 +8,10 @@ import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStep
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
 import { useMemberViewStore } from '../../../../../stores/memberViewStore';
-import { useMessageActionStore } from '../../../../../stores/messageActionStore';
-import { useSessionTurnActive } from '../../../../../hooks/useSessionTurnActive';
+import { useDelegationRetry } from '../../../../../hooks/useDelegationRetry';
+import { DeleteIncompleteActions } from '../../../background/DeleteIncompleteActions';
 import { GuiTakeoverDisclosureRows } from '../../../GuiTakeoverDisclosureRows';
 import type { DelegationPresentation } from './delegationPresentation';
-
-/**
- * 这张回执是否已经重试过。认当前会话里 id 以 `delegation-retry-<key>-` 开头的用户消息。
- * 有 endedAt 时，只有比这次结束更晚的重试才算；没有 endedAt 时，只要存在就算。
- */
-function delegationRetryAlreadySent(
-  messages: readonly Message[] | undefined,
-  retryPrefix: string,
-  endedAt: number | undefined,
-): boolean {
-  if (!retryPrefix) return false;
-  for (const message of messages ?? []) {
-    if (message.role !== 'user' || typeof message.id !== 'string' || !message.id.startsWith(retryPrefix)) continue;
-    if (endedAt === undefined) return true;
-    if (typeof message.timestamp === 'number' && message.timestamp > endedAt) return true;
-  }
-  return false;
-}
 
 const HEADLINE_SENTENCE_END = /[。.!！?？]+$/u;
 
@@ -171,30 +151,13 @@ function DelegationRetryActions({ presentation }: { presentation: DelegationPres
   const { t } = useI18n();
   const text = t.delegationFailedActions;
   const { memberId } = presentation;
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const messages = useSessionStore((state) => state.messages);
-  // 后台任务回执带归属会话；agentTree 节点回执没有，它只会渲染在当前会话的聊天里。
-  const sessionId = presentation.sessionId ?? currentSessionId;
-  const active = useSessionTurnActive(sessionId);
-  // 乐观锁：发送函数把用户消息写进会话之前，同一次挂载里的连点不再发出。
-  const [sent, setSent] = useState(false);
   const cancelled = presentation.state === 'cancelled';
   const task = (presentation.retryTitle ?? (cancelled ? '' : presentation.title)).trim();
-  const retryKey = memberId ?? presentation.activityIds[0];
-  const retryIdentity = retryKey ?? task;
+  const retryIdentity = memberId ?? presentation.activityIds[0] ?? task;
   const retryPrefix = retryIdentity ? `delegation-retry-${retryIdentity}-` : '';
-  const alreadyRetried = delegationRetryAlreadySent(messages, retryPrefix, presentation.endedAt);
-  const wrongSession = !currentSessionId || sessionId !== currentSessionId;
-  const disabled = sent || alreadyRetried || active || wrongSession || !task;
-  const retry = () => {
-    if (disabled || !retryPrefix) return;
-    setSent(true);
-    const draft = cancelled ? text.cancelledRetryDraft : text.retryDraft;
-    void useMessageActionStore.getState().sendPrompt(draft.replace('{task}', task), {
-      // 前缀稳定，后缀每次有效点击新生成，避免同 id 覆盖上一条用户消息。
-      clientMessageId: `${retryPrefix}${generateMessageId()}`,
-    });
-  };
+  const retry = useDelegationRetry(presentation.sessionId, retryPrefix, presentation.endedAt);
+  const draft = cancelled ? text.cancelledRetryDraft : text.retryDraft;
+  const incomplete = presentation.state === 'failed' && presentation.outcomeKey === 'delete-incomplete';
   return (
     <div className="flex items-center gap-1.5" data-testid="delegation-failed-actions">
       {memberId && (
@@ -207,14 +170,22 @@ function DelegationRetryActions({ presentation }: { presentation: DelegationPres
           {text.viewDetails}
         </Button>
       )}
-      {presentation.outcomeKey !== 'delete-incomplete' && (
+      {incomplete ? (
+        <DeleteIncompleteActions
+          key={`${retryIdentity}-${presentation.endedAt}`}
+          attemptId={retryIdentity}
+          sessionId={presentation.sessionId}
+          endedAt={presentation.endedAt}
+          leftoverPaths={presentation.leftoverPaths}
+        />
+      ) : (
         <Button
           variant="ghost"
           size="sm"
           data-testid="delegation-retry"
-          disabled={disabled}
-          title={(active || wrongSession || !task) && !sent ? text.retryBusy : undefined}
-          onClick={retry}
+          disabled={retry.disabled || !task}
+          title={retry.showBusyHint || !task ? text.retryBusy : undefined}
+          onClick={() => { void retry.send(draft.replace('{task}', task)); }}
         >
           {text.retry}
         </Button>

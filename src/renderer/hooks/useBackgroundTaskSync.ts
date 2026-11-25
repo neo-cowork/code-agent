@@ -9,6 +9,7 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import ipcService from '../services/ipcService';
 import { hasNativeBridge } from '../api/transport';
 import { createBackoffPoller } from '../utils/backoffPoller';
+import { backgroundTaskLabel } from '../utils/agentRoleLabel';
 import { createLogger } from '../utils/logger';
 import { toast } from './useToast';
 import { useI18n } from './useI18n';
@@ -67,7 +68,7 @@ function shellTerminalNotificationCopy(payload: unknown, t: Translations, langua
           : copy.durationHours.replace('{n}', String(Math.floor(minutes / 60))).replace('{m}', String(minutes % 60));
     duration = copy.shellTaskDuration.replace('{time}', time);
   }
-  const name = typeof label === 'string' && label.trim() ? label : t.agentRoleLabels.roles.background;
+  const name = backgroundTaskLabel({ source, title: typeof label === 'string' ? label : '' }, t);
   const fields = { name, duration, reason: copy.shellCommandFailed };
   const message = template.replace(/\{(name|duration|reason)\}/g, (_match, key: keyof typeof fields) => fields[key]);
   return withAutomationPromptTimeoutHint(message, language, automationPromptLikely === true);

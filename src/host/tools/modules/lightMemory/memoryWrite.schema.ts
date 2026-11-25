@@ -47,10 +47,11 @@ export const memoryWriteSchema: ToolSchema = {
       },
       type: {
         type: 'string',
-        enum: ['directive', 'user', 'feedback', 'project', 'reference', 'skill'],
+        enum: ['directive', 'user', 'feedback', 'project', 'people', 'reference', 'skill'],
         description:
           '[write] Memory type. "directive" = an explicit user-decided rule and always opens a confirmation prompt; ' +
-          'it can never be persisted automatically. "skill" = reusable procedural knowledge (how to do X), ' +
+          'it can never be persisted automatically. "people" = a person or organization: who they are, role, what they own. ' +
+          '"project" = status, milestones, owners; write dates as absolute dates (e.g. 2026-11-25), never "next Wednesday". "skill" = reusable procedural knowledge (how to do X), ' +
           'injected into the system prompt when a new task mentions related keywords.',
       },
       content: {

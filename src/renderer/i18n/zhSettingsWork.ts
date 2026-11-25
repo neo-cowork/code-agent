@@ -384,7 +384,7 @@ export const zhSettingsWork = {
       },
     },
     roles: {
-      description: '持久化角色 = 角色定义 + 角色记忆 + 工作履历。记忆与履历跨实例累积，归你所有。任何自定义 agent 在 ~/.code-agent/roles/ 下建同名目录即可升级为持久角色。',
+      description: '将 <名称>.md 放入 ~/.code-agent/agents/，专家就会出现在「我的」中。',
       listTitlePrefix: '持久化角色（',
       listTitleSuffix: '）',
       categoryCountPrefix: '（',
@@ -520,6 +520,7 @@ export const zhSettingsWork = {
         user: '用户',
         feedback: '反馈',
         project: '项目',
+        people: '人与组织',
         reference: '引用',
         unknown: '未分类',
       },
@@ -648,15 +649,7 @@ export const zhSettingsWork = {
           stale: '过期',
           archived: '归档',
         },
-        kindLabels: {
-          directive: '用户规则',
-          user: '用户',
-          feedback: '反馈',
-          project: '项目',
-          reference: '引用',
-          session: '会话',
-          pattern: '经验',
-        },
+        kindLabels: { directive: '用户规则', user: '用户', feedback: '反馈', project: '项目', people: '人与组织', reference: '引用', session: '会话', pattern: '经验' },
         stats: {
           total: '总数',
           currentMatched: '当前匹配',
