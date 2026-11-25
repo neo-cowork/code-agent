@@ -330,4 +330,14 @@ describe('boot session pick keeps a secondary page the user already opened (F15)
     await useSessionStore.getState().createSession('新对话', { workingDirectory: null });
     expect(useAppStore.getState().showCronCenter).toBe(false);
   });
+
+  it('a page-preserving new chat that reuses an existing blank draft keeps the page too', async () => {
+    const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(false);
+    await useSessionStore.getState().switchSession('busy');
+    useAppStore.getState().setShowCronCenter(true);
+    await useSessionStore.getState().createSession('新对话', { workingDirectory: null, preserveSecondaryPages: true });
+    expect(useSessionStore.getState().currentSessionId).toBe('created');
+    expect(mockDomainInvoke.mock.calls.filter(([, action]) => action === 'create')).toHaveLength(1);
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
 });
