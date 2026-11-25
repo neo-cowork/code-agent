@@ -172,10 +172,25 @@ describe('AgentRunController 断流后的 surface 终态兜底', () => {
     expect(sendSSE).toHaveBeenCalledTimes(1);
   });
 
-  it('兜底只覆盖 surface_execution，其余事件维持断流即丢的既有语义', () => {
+  it('断流后 message_delta 仍丢弃', () => {
     createController(false, true).emitSSE('message_delta', { text: 'hi', sessionId: 'session-1' });
 
     expect(broadcastSSE).not.toHaveBeenCalled();
+    expect(sendSSE).not.toHaveBeenCalled();
+  });
+
+  it('收线后的建议芯片仍要包成 agent:event 广播，data 保持数组', () => {
+    const controller = createController(false, true);
+    controller.markSettled();
+    controller.destroy();
+    const chips = [{ id: 'ctx-0', text: 'Send me the summary', source: 'context' }];
+    controller.emitAgentEvent({ type: 'suggestions_update', data: chips });
+
+    expect(broadcastSSE).toHaveBeenCalledWith('agent:event', expect.objectContaining({
+      type: 'suggestions_update',
+      data: chips,
+      sessionId: 'session-1',
+    }));
     expect(sendSSE).not.toHaveBeenCalled();
   });
 
