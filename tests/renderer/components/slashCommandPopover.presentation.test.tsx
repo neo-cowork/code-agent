@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const appState = vi.hoisted(() => ({
   setShowSettings: vi.fn(),
@@ -47,6 +47,7 @@ const registryDefs = vi.hoisted(() => ({
 const modeState = vi.hoisted(() => ({
   setEffortLevel: vi.fn(),
 }));
+const locale = vi.hoisted((): { language: 'zh' | 'en' } => ({ language: 'zh' }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: Object.assign(() => appState, { getState: () => appState }),
@@ -74,15 +75,12 @@ vi.mock('../../../src/renderer/stores/statusStore', () => ({
 }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ t: locale.language === 'zh' ? zh : en, language: locale.language }) };
 });
 vi.mock('../../../src/renderer/hooks/useKeybindingsSettings', () => ({
   useKeybindingsSettings: () => ({ keybindings: {}, platform: 'mac' }),
 }));
-vi.mock('../../../src/renderer/hooks/useI18n', async () => {
-  const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh }) };
-});
 vi.mock('@shared/keybindings', () => ({
   formatShortcutForDisplay: vi.fn(),
   getKeybindingAccelerator: vi.fn(() => undefined),
@@ -97,17 +95,57 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   unsafeInvoke: vi.fn(() => new Promise(() => {})),
 }));
 
-import { SlashCommandPopover } from '../../../src/renderer/components/features/chat/ChatInput/SlashCommandPopover';
+import { SlashCommandPopover, type SlashCommand } from '../../../src/renderer/components/features/chat/ChatInput/SlashCommandPopover';
+import { invokeDomain } from '../../../src/renderer/services/ipcService';
 
 beforeEach(() => {
   vi.restoreAllMocks();
   registryDefs.defs = [];
+  locale.language = 'zh';
+  sessionState.addMessage.mockClear();
   Element.prototype.scrollIntoView = vi.fn();
 });
 
 afterEach(cleanup);
 
 describe('SlashCommandPopover 候选行呈现', () => {
+  it.each([
+    { language: 'zh' as const, labels: ['启动协作助手', '启动协作助手', '启动协作助手', '网页抓取', '外部工具', '外部工具', '管理后台任务', '操作'] },
+    { language: 'en' as const, labels: ['Start helper', 'Start helper', 'Start helper', 'Web fetch', 'External tool', 'External tool', 'Manage background jobs', 'Action'] },
+  ])('renders /permissions in $language without internal tool IDs', async ({ language, labels }) => {
+    locale.language = language;
+    const toolNames = ['spawn_agent', 'Task', 'AgentSpawn', 'web_fetch', 'MCPUnified', 'mcp__example__invoke', 'Process', 'unknown_tool'];
+    const recent = toolNames.map((toolName, index) => ({
+      toolName, summary: index ? toolName : '', outcome: 'auto-approve', reason: '已放行', durationMs: 3,
+    }));
+    const ipc = vi.mocked(invokeDomain);
+    ipc.mockResolvedValueOnce({ mode: 'default' }).mockResolvedValueOnce({ rules: [] })
+      .mockResolvedValueOnce({ total: recent.length, recent });
+    render(
+      <SlashCommandPopover
+        isOpen
+        filter="permissions"
+        agents={[]}
+        skillRecommendations={[]}
+        capabilityItems={[]}
+        capabilitySuggestions={[]}
+        onClose={vi.fn()}
+        onSelect={(command: SlashCommand) => command.action()}
+      />,
+    );
+    const option = document.querySelector('[data-slash-command-id="permissions"]');
+    expect(option).not.toBeNull();
+    fireEvent.click(option!);
+    await waitFor(() => expect(sessionState.addMessage).toHaveBeenCalledTimes(1));
+    const text: string = sessionState.addMessage.mock.calls[0][0].content;
+    expect(text.split('\n').filter((line) => line.includes('→ auto-approve'))).toEqual(
+      labels.map((label) => `    ${label} → auto-approve  (已放行, 3ms)`),
+    );
+    for (const toolName of toolNames) {
+      expect(text.toLowerCase()).not.toContain(toolName.toLowerCase());
+    }
+  });
+
   it('技能候选用首字母头像，且不再渲染英文 kind 标签', () => {
     render(
       <SlashCommandPopover

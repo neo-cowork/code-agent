@@ -29,6 +29,7 @@ import { CronJobWorkingFolderStatus, CronRunWorkingFolderStatus } from '../../..
 import { CronWorkingFolderRow } from '../../../src/renderer/components/features/cron/CronWorkingFolderRow';
 import { buildSimpleDraft } from '../../../src/renderer/components/features/cron/CronSimpleCreate';
 import { buildCronJobInput } from '../../../src/renderer/components/features/cron/types';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
@@ -59,6 +60,7 @@ beforeEach(() => {
   ipc.invoke.mockReset();
   picker.pickNativeDirectory.mockReset();
   platform.tauri = true;
+  useAppStore.setState({ language: 'zh' });
   useSessionStore.setState({ sessions: [] } as never);
   useCronStore.setState({
     jobs: [], latestExecutions: {}, executionsByJobId: {}, selectedJobId: null,
@@ -174,6 +176,79 @@ describe('工作文件夹状态展示', () => {
   });
 });
 
+describe('工作文件夹状态行：悬停折家目录，分隔符走文案', () => {
+  const homeFolder = '/Users/demo/Documents/My Notes';
+  const folded = '~/Documents/My Notes';
+  const missingHint = '编辑任务，选一个文件夹，运行时才能读到里面的文件。';
+
+  it('英文是 Working folder: notes，中文是工作文件夹：notes', () => {
+    useAppStore.setState({ language: 'en' });
+    const { unmount } = render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: '/Users/demo/notes' } })} />);
+    expect(screen.getByTestId('cron-job-working-folder-label').textContent).toBe('Working folder: notes');
+    unmount();
+    useAppStore.setState({ language: 'zh' });
+    render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: '/Users/demo/notes' } })} />);
+    expect(screen.getByTestId('cron-job-working-folder-label').textContent).toBe('工作文件夹：notes');
+  });
+
+  it('家目录悬停折成 ~/Documents/My Notes，任务卡和运行详情都不含 /Users/ 与账号名', () => {
+    const { unmount } = render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: homeFolder } })} />);
+    const jobTitle = screen.getByTestId('cron-job-working-folder').getAttribute('title');
+    expect(jobTitle).toBe(folded);
+    expect(jobTitle).not.toContain('/Users/');
+    expect(jobTitle).not.toContain('demo');
+    unmount();
+    useSessionStore.setState({ sessions: [{ id: 'run-notes', workingDirectory: homeFolder }] } as never);
+    render(<CronRunWorkingFolderStatus sessionId="run-notes" runsOn="local" />);
+    const runTitle = screen.getByTestId('cron-run-working-folder').getAttribute('title');
+    expect(runTitle).toBe(folded);
+    expect(runTitle).not.toContain('/Users/');
+    expect(runTitle).not.toContain('demo');
+    expect(screen.getByTestId('cron-run-working-folder-label').textContent).toBe('工作文件夹：My Notes');
+  });
+
+  it('不在家目录下的文件夹悬停保留完整路径', () => {
+    render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: '/Volumes/Data/notes' } })} />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBe('/Volumes/Data/notes');
+    expect(screen.getByTestId('cron-job-working-folder-label').textContent).toBe('工作文件夹：notes');
+  });
+
+  it('恰好是家目录时悬停折成 ~', () => {
+    const { unmount } = render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: '/Users/demo' } })} />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBe('~');
+    unmount();
+    const { unmount: unmountLinux } = render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: '/home/demo' } })} />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBe('~');
+    unmountLinux();
+    render(<CronJobWorkingFolderStatus job={makeJob({ metadata: { workingDirectory: 'C:\\Users\\demo' } })} />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBe('~');
+  });
+
+  it('没选文件夹：列表卡没有 title，详情和运行详情的 title 仍是原来的提示', () => {
+    const { unmount } = render(<CronJobWorkingFolderStatus job={makeJob()} />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBeNull();
+    expect(screen.getByTestId('cron-job-working-folder').textContent).toContain('未选择工作文件夹');
+    unmount();
+    const { unmount: unmountDetail } = render(<CronJobWorkingFolderStatus job={makeJob()} showHint />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBe(missingHint);
+    unmountDetail();
+    useSessionStore.setState({ sessions: [{ id: 'run-empty' }] } as never);
+    render(<CronRunWorkingFolderStatus sessionId="run-empty" runsOn="local" />);
+    expect(screen.getByTestId('cron-run-working-folder').getAttribute('title')).toBe(missingHint);
+    expect(screen.getByTestId('cron-run-working-folder').textContent).toContain('未选择工作文件夹');
+  });
+
+  it('英文没选文件夹的可见文案是 No working folder selected', () => {
+    useAppStore.setState({ language: 'en' });
+    const { unmount } = render(<CronJobWorkingFolderStatus job={makeJob()} />);
+    expect(screen.getByTestId('cron-job-working-folder').textContent).toContain('No working folder selected');
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBeNull();
+    unmount();
+    render(<CronJobWorkingFolderStatus job={makeJob()} showHint />);
+    expect(screen.getByTestId('cron-job-working-folder').getAttribute('title')).toBe('Edit the task and pick a folder so it can read the files inside.');
+  });
+});
+
 describe('web 路径输入：输入中保留原文，失焦/保存才去空白', () => {
   let latest: Record<string, unknown> | undefined;
   const Harness: React.FC = () => {
@@ -248,6 +323,16 @@ describe('web 路径输入：输入中保留原文，失焦/保存才去空白',
     expect(input.value).toBe('~\\Documents\\My Notes');
     expect(input.value).not.toContain('\\Users\\');
     expect(latest).toEqual({ workingDirectory: stored });
+  });
+
+  it('恰好是家目录：失焦后展示 ~，提交值仍是完整路径', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    fireEvent.focus(input);
+    typeChars(input, '/Users/demo');
+    fireEvent.blur(input);
+    expect(input.value).toBe('~');
+    expect(latest).toEqual({ workingDirectory: '/Users/demo' });
   });
 
   it('不在家目录下的路径失焦后原样显示', () => {
