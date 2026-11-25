@@ -10,10 +10,13 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
+import { stripCalendarReceiptUid } from '../../../../shared/utils/calendarReceiptText';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { calendarFailureCode, describeCalendarWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarFailureForUser, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarUpdateEventSchema as schema } from './calendarUpdateEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 import { formatConnectorTime } from './connectorTime';
@@ -51,8 +54,9 @@ async function executeCalendarUpdateEvent(
     return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'change'), code: 'NOT_INITIALIZED' };
   }
 
+  const { separator, calendar: copy } = getHostConnectorCopy(getHostUiLocale());
+  const undoMetadata = await captureCalendarBefore(connector, args);
   try {
-    const undoMetadata = await captureCalendarBefore(connector, args);
     const result = await connector.execute('update_event', args);
     const event = result.data as {
       uid: string;
@@ -63,9 +67,9 @@ async function executeCalendarUpdateEvent(
       location?: string;
     };
     ctx.logger.debug('calendar_update_event', { uid: event.uid, calendar: event.calendar });
-    const startText = event.startAtMs ? formatConnectorTime(event.startAtMs) : '未知';
-    const endText = event.endAtMs ? formatConnectorTime(event.endAtMs) : '未知';
-    const output = `已更新日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- 开始：${startText}\n- 结束：${endText}${event.location ? `\n- 地点：${event.location}` : ''}`;
+    const startText = event.startAtMs ? formatConnectorTime(event.startAtMs) : copy.unknown;
+    const endText = event.endAtMs ? formatConnectorTime(event.endAtMs) : copy.unknown;
+    const output = `${copy.updated}${separator.trimEnd()}\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}\n- ${copy.start}${separator}${startText}\n- ${copy.end}${separator}${endText}${event.location ? `\n- ${copy.location}${separator}${event.location}` : ''}`;
 
     return {
       ok: true,
@@ -85,10 +89,10 @@ async function executeCalendarUpdateEvent(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已更新日历事件：${event.title}（${startText}）`,
+          name: copy.withTime(`${copy.updated}${separator}${event.title}`, startText),
           mimeType: 'text/markdown',
           contentLength: output.length,
-          preview: output.slice(0, 500),
+          preview: stripCalendarReceiptUid(output).slice(0, 500),
           metadata: {
             connector: 'calendar',
             action: 'update_event',
@@ -107,9 +111,13 @@ async function executeCalendarUpdateEvent(
       ctx.logger,
       schema.name,
     );
+    const title = (typeof args.title === 'string' && args.title.trim()) || (undoMetadata.undoable && undoMetadata.before.title);
+    const failureName = title ? `${copy.updateFailed}${separator}${title}` : copy.updateFailed;
+    const userMessage = describeCalendarFailureForUser(copy, separator, error);
     return {
       ok: false,
       error: failure,
+      userMessage,
       ...calendarFailureCode(error),
       meta: {
         action: 'update_event',
@@ -122,7 +130,8 @@ async function executeCalendarUpdateEvent(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'update_event',
-          name: `更新日历事件失败：${String(args.title ?? args.event_uid)}`,
+          name: failureName,
+          preview: `${failureName}${separator}${userMessage}`,
           error: failure,
           metadata: { connector: 'calendar', calendar: args.calendar, uid: args.event_uid, title: args.title },
         }),

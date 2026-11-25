@@ -245,6 +245,17 @@ describe('appendSystemMessage / formatDuration', () => {
 });
 
 describe('task_progress 活动标签不闪', () => {
+  it('keeps the current activity when English turn-phase steps arrive', () => {
+    const starting = createChatState();
+    const thinking = reduceAgentEvent(starting, ev('task_progress', { phase: 'thinking', step: 'Understanding the request' }));
+    expect(thinking.activity).toBe('Thinking…');
+    const searching = reduceAgentEvent(thinking, ev('task_progress', { phase: 'tool_running', step: 'Searching codebase' }));
+    for (const step of ['Writing the response', 'Writing the report']) {
+      expect(reduceAgentEvent(searching, ev('task_progress', { phase: 'generating', step }))).toBe(searching);
+      expect(reduceAgentEvent(searching, ev('agent_thinking', { message: step }))).toBe(searching);
+    }
+  });
+
   it('分析请求中 归一成 Thinking…，不与 Thinking 来回切', () => {
     let state = markRunStarted(createChatState(), 1);
     state = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking', step: '分析请求中...' }));
