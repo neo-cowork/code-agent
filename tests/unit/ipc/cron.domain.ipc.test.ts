@@ -1,3 +1,4 @@
+import { getInferenceCache } from '../../../src/host/model/inferenceCache';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
@@ -173,7 +174,11 @@ describe('generateFromPrompt', () => {
     h.chat.mockResolvedValueOnce({ content: zhReply }).mockResolvedValueOnce({ content: enReply });
     const retried = await call('generateFromPrompt', { prompt: 'x', language: 'en' });
     expect(h.chat).toHaveBeenCalledTimes(2);
-    expect(h.chat.mock.calls[1][0]).toEqual(h.chat.mock.calls[0][0]);
+    // 重试请求必须换 InferenceCache key，否则进程内缓存会回放首次的中文结果
+    const [first, second] = [h.chat.mock.calls[0][0], h.chat.mock.calls[1][0]] as Array<{ messages: never; provider: never; model: never; maxTokens: number }>;
+    const cache = getInferenceCache();
+    const keyOf = (r: typeof first) => cache.computeKey(r.messages, { provider: r.provider, model: r.model, maxTokens: r.maxTokens } as never, [], undefined);
+    expect(keyOf(second)).not.toBe(keyOf(first));
     expect(retried).toEqual({ success: true, data: JSON.parse(enReply) });
 
     // 重试仍是中文：原样返回重试结果（不在 host 里改写 notifyWhen）

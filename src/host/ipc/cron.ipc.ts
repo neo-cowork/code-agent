@@ -233,6 +233,9 @@ function restatementHasCjk(raw: string): boolean {
   }
 }
 
+const CRON_RESTATEMENT_ENGLISH_RETRY_NOTE =
+  '\nYour previous answer wrote restatement.what or restatement.notifyWhen in Chinese. Rewrite both sentences in English only.';
+
 /** UI 语言指令：restatement 两句话的语言必须显式声明，模型不会自己从界面语言推断。 */
 const CRON_RESTATEMENT_LANGUAGE_DIRECTIVE = {
   en: '\n\nLanguage: write restatement.what and restatement.notifyWhen in English.',
@@ -407,18 +410,19 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const clock = buildScheduleGenerationClock(new Date(), hostTimeZone);
     // 调用当下解析用户配置的默认 provider/model。没配过才落到出厂默认。
     const { provider, model } = resolveSessionDefaultModelConfig();
-    const chatOnce = () => router.chat({
+    const chatOnce = (retryNote = '') => router.chat({
       provider,
       model,
       messages: [
-        { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + clock.anchor + languageDirective },
+        { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + clock.anchor + languageDirective + retryNote },
         { role: 'user', content: prompt.trim() },
       ],
       maxTokens: 1024,
     });
     let raw = (await chatOnce()).content || '';
-    // 英文界面下模型偶尔仍写中文复述：同请求重试一次；重试结果原样采用（notifyWhen 是通知门规则，不在卡层替换）。
-    if (language === 'en' && restatementHasCjk(raw)) raw = (await chatOnce()).content || '';
+    // 英文界面下模型偶尔仍写中文复述：重试一次；重试结果原样采用（notifyWhen 是通知门规则，不在卡层替换）。
+    // 重试请求必须与首次不同——router.chat 有进程内 InferenceCache，逐字相同的请求会直接回放首次的中文结果。
+    if (language === 'en' && restatementHasCjk(raw)) raw = (await chatOnce(CRON_RESTATEMENT_ENGLISH_RETRY_NOTE)).content || '';
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return { success: false, error: { code: 'PARSE_ERROR', message: 'AI 返回格式异常，请重试或换个描述方式' } } satisfies IPCResponse;
