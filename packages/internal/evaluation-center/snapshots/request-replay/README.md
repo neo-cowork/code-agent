@@ -59,6 +59,8 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 
 ## 重录确认
 
+- 2026-11-24 / N-INVEST-IMAGE-VISION-PATHS-AND-ZHIPU-ENDPOINT-FU1: `npm run acceptance:snapshot-replay:record` re-recorded and self-verified 7 sessions / 16 turns. The committed corpus is byte-identical because its cases have no image turns. The production inference test and web-run request manifests cover the request changes after vision preflight and with a vision-capable main model.
+
 （行为不可见改动在此追加：日期 / PR / 说明）
 - 2026-11-24 / N-FIX-CONNECTOR-STATUS-OUTPUT-MODEL-INSTRUCTION-LEAK / 敏感变更：src/host/agent/runtime/contextAssembly/ledgerMessageProjection.ts、transcriptProjection.ts（工具结果投给模型的文本改走 modelVisibleToolOutput：仅当 metadata.modelGuidance 存在时把指引并入；录制语料无连接器 get_status 结果，请求组装字节不变）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
 - 2026-11-23 / N-FIX-BASH-BG-CONVERT-FAILED-COMMAND-HIDDEN-ISMETA / 敏感变更：src/host/agent/runtime/contextAssembly/systemContextStack.ts（仅 `historyVisibility==='meta'` 的后台 run 里，失败的 Bash 结果与发起它的助手消息不再打 isMeta；录制语料 7 会话均无 meta run、无 COMMAND_FAILED，请求组装字节不变）。本机重录时全部会话的 system 提示词与工具 schema 哈希都漂（含不带 Bash 的 single-turn-qa），与本改动无关，是本机录制环境（无 API key / 时区）与已提交语料环境不一致，故不提交本机重录产物，以本行作为同 PR 快照目录更新。
