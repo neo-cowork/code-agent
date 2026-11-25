@@ -34,13 +34,14 @@ function wrapDollarConstruct(construct: TextConstruct): TextConstruct {
     tokenize(effects, ok, nok) {
       const start = this.now();
       const wrappedOk: State = (code) => {
-        if (
-          code !== null
-          && code >= 48
-          && code <= 57
-          && !this.sliceSerialize({ start, end: this.now() }).startsWith('$$')
-        ) {
-          return nok(code);
+        const slice = this.sliceSerialize({ start, end: this.now() });
+        if (!slice.startsWith('$$')) {
+          const followedByDigit = code !== null && code >= 48 && code <= 57;
+          const spaceAfterOpener = /\s/.test(slice[1] ?? '');
+          const spaceBeforeCloser = /\s/.test(slice.at(-2) ?? '');
+          if (followedByDigit || spaceAfterOpener || spaceBeforeCloser) {
+            return nok(code);
+          }
         }
         return ok(code);
       };

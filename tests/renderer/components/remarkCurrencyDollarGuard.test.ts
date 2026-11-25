@@ -153,4 +153,12 @@ describe('remarkMathPandoc', () => {
     expect(() => updateStreamingMarkdownBlockState(null, '合计 **$124.68**（明细 $')).not.toThrow();
     expect(dedupeCodeCopyLinks(TICKET_SENTENCE)).toBe(TICKET_SENTENCE);
   });
+
+  it('keeps subsequent inline math intact after currency dollar amounts', () => {
+    const source = '成本 $5 和 $10，其中 $x$ 为税率';
+    const tree = parseWithPandoc(source);
+    const mathNodes = leaves(tree).filter(n => n.type === 'inlineMath');
+    expect(mathNodes).toHaveLength(1);
+    expect('value' in mathNodes[0] ? mathNodes[0].value : '').toBe('x');
+  });
 });
