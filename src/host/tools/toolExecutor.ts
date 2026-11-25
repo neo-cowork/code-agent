@@ -2247,7 +2247,7 @@ export class ToolExecutor {
       }) : null;
       if (preAsk) {
         if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
-        if (executionToolName === 'terminal_write' && preAsk.ledgerReason === 'tool_grant:24h') context.approvedToolCall = { toolName: executionToolName, args: params };
+        if (executionToolName === 'terminal_write' && preAsk.ledgerReason === 'tool_grant:24h') context.approvedToolCall = { toolName: executionToolName, args: { ...params } };
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
         grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
@@ -2381,7 +2381,8 @@ export class ToolExecutor {
         permissionRequest.argsFingerprint = survival.argsFingerprint;
         permissionRequest.ledgerFaithful = survival.ledgerFaithful;
       }
-      permissionRequest.details.commandGrantTarget = exactCommandTarget;
+      if (exactCommandTarget === undefined) delete permissionRequest.details.commandGrantTarget;
+      else permissionRequest.details.commandGrantTarget = exactCommandTarget;
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
       // 与 preAsk 同一判据：没有任何强制确认、也不是按应用/浏览器站点授权的请求，才允许被同任务后点的授权顺带放行。
       permissionRequest.details.grantEligible = !preAskBlocked && !computerApp && !browserSessionGrant;

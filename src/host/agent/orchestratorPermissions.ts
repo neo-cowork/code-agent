@@ -260,7 +260,12 @@ export class OrchestratorPermissionIsland {
       const req = sibling.request;
       if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
       const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
-      if (!identity || !matchToolGrant(sessionId, identity.tool, identity.target, undefined, req.details?.commandGrantTarget)) continue;
+      if (!identity) continue;
+      const commandTarget = req.details?.commandGrantTarget;
+      const tier = commandTarget
+        ? matchToolGrant(sessionId, identity.tool, identity.target, undefined, commandTarget)
+        : matchToolGrant(sessionId, identity.tool, identity.target);
+      if (!tier) continue;
       // 与 preAsk 同判据：本会话刚被拒过的同目标动作不因授权顺带放行。
       if (getDenialRegistry().refuseIfGoalDenied(req, { log: false })) continue;
       logger.info('Pending approval settled by a grant answered on a sibling card', { requestId: id, tool: req.tool, via: answered.id });

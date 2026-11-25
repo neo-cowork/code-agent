@@ -51,7 +51,9 @@ export function resolvePreAskGrant(input: {
   if (input.browserSessionTarget === null) return null;
   const identity = connectorToolGrantIdentity(input.toolName, input.browserSessionTarget ?? input.standingGrantTarget);
   if (!identity) return null;
-  const toolGrantTier = matchToolGrant(input.sessionId, identity.tool, identity.target, undefined, input.commandGrantTarget);
+  const toolGrantTier = input.commandGrantTarget
+    ? matchToolGrant(input.sessionId, identity.tool, identity.target, undefined, input.commandGrantTarget)
+    : matchToolGrant(input.sessionId, identity.tool, identity.target);
   if (toolGrantTier) {
     return {
       ledgerReason: `tool_grant:${toolGrantTier}`,
