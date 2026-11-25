@@ -138,9 +138,12 @@ describe('SlashCommandPopover 候选行呈现', () => {
     fireEvent.click(option!);
     await waitFor(() => expect(sessionState.addMessage).toHaveBeenCalledTimes(1));
     const text: string = sessionState.addMessage.mock.calls[0][0].content;
-    expect(text.split('\n').filter((line) => line.includes('→ auto-approve'))).toEqual(
-      labels.map((label) => `    ${label} → auto-approve  (已放行, 3ms)`),
+    const outcome = language === 'zh' ? '自动放行' : 'Auto-approved';
+    const tail = language === 'zh' ? '（已放行，3 毫秒）' : '(已放行, 3 ms)';
+    expect(text.split('\n').filter((line) => line.includes(`→ ${outcome}`))).toEqual(
+      labels.map((label) => `    ${label} → ${outcome}  ${tail}`),
     );
+    expect(text).not.toContain('auto-approve');
     for (const toolName of toolNames) {
       expect(text.toLowerCase()).not.toContain(toolName.toLowerCase());
     }

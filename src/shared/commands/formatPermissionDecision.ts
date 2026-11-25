@@ -1,4 +1,5 @@
 import { humanizeInternalText, type InternalTextLanguage } from '../humanizeInternalText';
+import { permissionDecisionLine } from '../i18n/permissionsCommand';
 import { PERMISSION_DECISION_LABELS } from '../i18n/permissionDecisionLabels';
 import { toolUserLabel } from '../utils/toolUserLabel';
 
@@ -29,12 +30,12 @@ function decisionToolLabel(toolName: string, language: InternalTextLanguage): st
 export function formatPermissionDecision(
   decision: PermissionDecisionLine,
   language: InternalTextLanguage,
-  trace = '',
+  trace?: { finalOutcome: string; steps: number },
 ): string {
   const toolName = decision.toolName.trim();
   const label = decisionToolLabel(toolName, language);
   // Older decisions may have stored the canonical ID as the whole summary.
   const summary = decision.summary.toLowerCase().trim() === toolName.toLowerCase() ? '' : decision.summary.substring(0, 40);
   const subject = summary ? `${label}(${summary})` : label;
-  return `${subject} → ${decision.outcome}  (${decision.reason}, ${decision.durationMs}ms${trace})`;
+  return permissionDecisionLine(language, subject, decision.outcome, decision.reason, decision.durationMs, trace);
 }
