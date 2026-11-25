@@ -4,6 +4,8 @@
 // 旧版: src/host/tools/connectors/mailDraft.ts (legacy Tool + wrapLegacyTool)
 // ============================================================================
 
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type {
   ToolHandler,
   ToolModule,
@@ -15,7 +17,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { appleScriptWriteFailureCode, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { appleScriptFailureForDisplay, appleScriptWriteFailureCode, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { mailDraftSchema as schema } from './mailDraft.schema';
 
 function normalizeAddresses(value: unknown): string[] {
@@ -63,6 +65,8 @@ async function executeMailDraft(
     return { ok: false, error: formatConnectorUnavailableMessage('mail', 'create'), code: 'NOT_INITIALIZED' };
   }
 
+  const locale = getHostUiLocale();
+  const { separator, mail: copy, appleScriptFailure } = getHostConnectorCopy(locale);
   try {
     const result = await connector.execute('draft_message', args);
     const draft = result.data as {
@@ -79,12 +83,12 @@ async function executeMailDraft(
     const cc = normalizeAddresses(draft.cc);
     const bcc = normalizeAddresses(draft.bcc);
     const output = [
-      `已创建邮件草稿：${draft.subject}`,
+      `${copy.drafted}${separator}${draft.subject}`,
       `To: ${to.join(', ')}`,
       cc.length > 0 ? `CC: ${cc.join(', ')}` : null,
       bcc.length > 0 ? `BCC: ${bcc.join(', ')}` : null,
       draft.attachments.length > 0 ? `Attachments: ${draft.attachments.join(', ')}` : null,
-      `状态：${draft.saved ? '已保存到草稿' : '未保存'}`,
+      `${copy.status}${separator}${draft.saved ? copy.saved : copy.unsaved}`,
     ].filter(Boolean).join('\n');
 
     return {
@@ -126,7 +130,7 @@ async function executeMailDraft(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已创建邮件草稿：${draft.subject}`,
+          name: `${copy.drafted}${separator}${draft.subject}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
           preview: output.slice(0, 500),
@@ -150,9 +154,14 @@ async function executeMailDraft(
       schema.name,
     );
     const to = normalizeAddresses(args.to);
+    const title = String(args.subject);
+    const failureName = title ? `${copy.draftFailed}${separator}${title}` : copy.draftFailed;
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Mail', appleScriptFailure) : undefined;
+    const recipientLine = `To: ${to.join(', ')}`;
     return {
       ok: false,
       error: failure,
+      ...(userMessage ? { userMessage } : {}),
       ...appleScriptWriteFailureCode(error),
       meta: {
         action: 'draft_message',
@@ -165,10 +174,11 @@ async function executeMailDraft(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'draft_message',
-          name: `创建邮件草稿失败：${String(args.subject)}`,
+          name: failureName,
+          ...(userMessage ? { preview: [`${failureName}${separator}${userMessage}`, recipientLine].join('\n') } : {}),
           error: failure,
           metadata: { connector: 'mail', subject: args.subject, toCount: to.length },
-          detailLines: [`To: ${to.join(', ')}`],
+          detailLines: [recipientLine],
         }),
       },
     };

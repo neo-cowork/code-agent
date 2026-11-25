@@ -25,6 +25,7 @@ import type {
 import { hasProtocolTool, resolveProtocolTool } from '../protocolToolRegistration';
 import { sameToolName } from '../toolNames';
 import { getActiveRunTraceContext } from '../../telemetry/runTraceContext';
+import { buildTerminalApprovalPreview } from '../modules/terminal/terminalApprovalPreview';
 
 // ----------------------------------------------------------------------------
 // FileReadCache — 进程级单例，避免每次构造 ctx 时重建缓存
@@ -210,7 +211,6 @@ export function buildCanUseToolFromLegacy(
     const isDangerous = typeof reason === 'string' && reason.startsWith(DANGEROUS_PREFIX);
     const cleanReason = isDangerous ? reason.slice(DANGEROUS_PREFIX.length).trimStart() : reason;
     const requestedToolName = requestHint?.tool || name || toolName;
-    const details = requestHint?.details ?? input;
 
     const approvedTopLevelCall = legacyCtx.approvedToolCall;
     if (
@@ -223,6 +223,10 @@ export function buildCanUseToolFromLegacy(
       return { allow: true };
     }
 
+    const terminalInput = requestedToolName === 'terminal_write' && typeof input.input === 'string'
+      ? input.input
+      : undefined;
+    const details = requestHint?.details ?? input;
     const type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access' =
       requestHint?.type ??
       (isDangerous
@@ -236,7 +240,7 @@ export function buildCanUseToolFromLegacy(
     // 只有工具开头那次授权（无 reason / 无 hint / 非危险）且不在「一律走审批处理器」的运行里，
     // 才允许被已记住的工具级授权放行；体内的二次确认（如 git push、删工作树）永远问人。
     // 消费与记账在 toolExecutor 的体内 requestPermission 包装器里（那里有账本与 forcePermissionHandler）。
-    const grantable = !isDangerous && !reason && !requestHint && legacyCtx.forcePermissionHandler !== true;
+    const grantable = terminalInput === undefined && !isDangerous && !reason && !requestHint && legacyCtx.forcePermissionHandler !== true;
     const sessionId = requestHint?.sessionId ?? legacyCtx.sessionId;
 
     try {
@@ -250,8 +254,14 @@ export function buildCanUseToolFromLegacy(
         type,
         tool: requestedToolName,
         // grantEligible 只由 host 写：覆盖参数里同名键，防模型自报。
-        details: { ...details, grantEligible: grantable },
-        reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
+        details: {
+          ...details,
+          ...(terminalInput !== undefined ? { preview: buildTerminalApprovalPreview(terminalInput) } : {}),
+          grantEligible: grantable,
+        },
+        reason: requestHint?.reason ?? cleanReason ?? (terminalInput === undefined
+          ? `protocol tool ${requestedToolName}`
+          : `typing into the user's live terminal: ${terminalInput.slice(0, 200)}`),
         ...(requestHint?.reasonCode ? { reasonCode: requestHint.reasonCode } : {}),
         dangerLevel: requestHint?.dangerLevel,
         decisionTrace: requestHint?.decisionTrace as never,

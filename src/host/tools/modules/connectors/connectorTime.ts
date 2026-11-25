@@ -1,3 +1,6 @@
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+
 function readProcessTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
@@ -39,6 +42,7 @@ export function formatConnectorTime(ms: number, timeZone = readProcessTimeZone()
 export function formatConnectorNow(
   now: Date | number = new Date(),
   timeZone = readProcessTimeZone(),
+  locale = getHostUiLocale(),
 ): string {
-  return `现在：${formatConnectorTime(toDate(now).getTime(), timeZone)}；时区：${timeZone}。以下时间均按该时区显示。`;
+  return getHostConnectorCopy(locale).now(formatConnectorTime(toDate(now).getTime(), timeZone), timeZone);
 }

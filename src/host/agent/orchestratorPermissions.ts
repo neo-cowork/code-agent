@@ -20,6 +20,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation/sessi
 import { notificationService } from '../services/infra/notificationService';
 import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { terminalApprovalPreviewText } from '../tools/modules/terminal/terminalApprovalPreview';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
 import {
@@ -91,6 +92,7 @@ function isApproveResponse(response: PermissionResponse): boolean {
 function buildParkedArgsPreview(request: PermissionRequest): string | undefined {
   const parts = [
     request.details?.command,
+    terminalApprovalPreviewText(request.tool, request.details?.preview),
     request.details?.path,
     request.details?.filePath,
     request.details?.url,
@@ -792,7 +794,9 @@ export class OrchestratorPermissionIsland {
       // 预览先挂到 fullRequest 再登记内存条目：会话卡（permission_request 事件）与
       // listPendingRequests 快照拿的是同一个对象引用，只算一份。
       const argsPreview = buildParkedArgsPreview(fullRequest);
-      if (argsPreview) fullRequest.argsPreview = argsPreview;
+      if (argsPreview && !terminalApprovalPreviewText(fullRequest.tool, fullRequest.details.preview)) {
+        fullRequest.argsPreview = argsPreview;
+      }
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,

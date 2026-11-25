@@ -1,4 +1,5 @@
 import type { CreateCronJobDefinition, CronJobDefinition, CronJobExecution } from './contract/cron';
+import { HIGH_FREQUENCY_RUNS_PER_DAY_THRESHOLD } from './constants/cronSchedule';
 import { cronScheduleIntervalRangeSeconds, everyScheduleIntervalSeconds } from './cronScheduleInterval';
 
 const HOURS_PER_DAY = 24;
@@ -53,7 +54,7 @@ export function estimateScheduleRuns(
   return {
     runsPerDay,
     exact,
-    highlight: local && runsPerDay > HOURS_PER_DAY,
+    highlight: local && runsPerDay > HIGH_FREQUENCY_RUNS_PER_DAY_THRESHOLD,
     cost: local && (actionType === 'agent' || actionType === 'role-wake')
       ? estimateCost(executions, runsPerDay)
       : { kind: 'none' },
