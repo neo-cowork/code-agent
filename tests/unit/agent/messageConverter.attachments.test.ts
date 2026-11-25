@@ -250,4 +250,14 @@ describe('message attachment conversion', () => {
     expect(text).toContain('📍 路径: /var/folders/xx/T/code-agent-uploads/uuid/sales.csv');
     expect(text).toContain('一月,1000');
   });
+
+  it('mention-built attachment keeps absolute path line and file contents', () => {
+    const attachment: MessageAttachment = {
+      id: 'att-m', type: 'file', category: 'text', name: 'notes.txt', size: 5,
+      mimeType: 'text/plain', data: 'hello world', path: '/tmp/ws/archive/notes.txt',
+    };
+    const serialized = JSON.stringify(buildMultimodalContent('总结', [attachment]));
+    expect(serialized).toContain('📍 路径: /tmp/ws/archive/notes.txt');
+    expect(serialized).toContain('hello world');
+  });
 });

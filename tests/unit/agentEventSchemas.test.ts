@@ -22,7 +22,7 @@ describe('AgentEventSchema', () => {
     },
     { type: 'tool_call_start', data: { id: 'call-1', name: 'Read', arguments: { path: 'README.md' } } },
     { type: 'tool_call_end', data: { toolCallId: 'call-1', success: true, output: 'ok' } },
-    { type: 'schedule_draft_requested', data: { sessionId: 'session-1', description: 'Every day at 9am summarize sales' } },
+    { type: 'schedule_draft_requested', data: { sessionId: 'session-1', requestId: 'draft-1', description: 'Every day at 9am summarize sales' } },
     {
       type: 'permission_request',
       data: {
@@ -133,7 +133,8 @@ describe('AgentEventSchema', () => {
   it.each([
     ['unknown discriminator', { type: 'fake_event', data: null }],
     ['missing required payload field', { type: 'turn_start', data: {} }],
-    ['missing schedule description', { type: 'schedule_draft_requested', data: { sessionId: 'session-1' } }],
+    ['missing schedule description', { type: 'schedule_draft_requested', data: { sessionId: 'session-1', requestId: 'draft-1' } }],
+    ['missing schedule request ID', { type: 'schedule_draft_requested', data: { sessionId: 'session-1', description: 'Weekly summary' } }],
     ['wrong payload primitive', { type: 'tool_call_end', data: { toolCallId: 1, success: true } }],
     ['wrong null terminal payload', { type: 'agent_complete', data: {} }],
     ['wrong envelope field', { type: 'turn_end', data: { turnId: 'turn-1' }, seq: '1' }],
