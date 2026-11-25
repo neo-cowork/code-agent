@@ -3,7 +3,8 @@ import type { AppSettings, ModelConfig, ModelProviderSettings } from '../../../s
 import { getProviderInfo } from '../../../src/shared/constants';
 import { ipcService } from '../../../src/renderer/services/ipcService';
 import type { ProviderInfo } from '../../../src/shared/constants';
-import { PROVIDER_ICON_ASSET_URI_PREFIX } from '../../../src/shared/modelRuntime';
+import { buildProviderInfoFromSettings, PROVIDER_ICON_ASSET_URI_PREFIX } from '../../../src/shared/modelRuntime';
+import { getProviderDisplayName } from '../../../src/renderer/i18n/settingsVocabulary';
 import {
   buildDefaultModelSettingsUpdate,
   buildManualModelSettings,
@@ -593,4 +594,74 @@ describe('ModelSettings management helpers', () => {
     );
     expect(migration?.config).toMatchObject({ provider: 'longcat', model: 'LongCat-2.0' });
   });
+
+  it.each(['zh', 'en'] as const)(
+    'formats unnamed dynamic custom providers as readable names without custom- prefix (%s)',
+    (language) => {
+      const unnamedConfig: ModelProviderSettings = {
+        enabled: true,
+        baseUrl: 'https://relay.example.com/v1',
+        model: 'claude-sonnet-4-6',
+      };
+      const rawIdAsNameConfig: ModelProviderSettings = {
+        enabled: true,
+        displayName: 'custom-commonstack-claude',
+        baseUrl: 'https://relay.example.com/v1',
+        model: 'claude-sonnet-4-6',
+      };
+      const namedConfig: ModelProviderSettings = {
+        enabled: true,
+        displayName: 'CommonStack Claude',
+        baseUrl: 'https://relay.example.com/v1',
+        model: 'claude-sonnet-4-6',
+      };
+
+      const providerConfigs: Partial<Record<ModelConfig['provider'], ModelProviderSettings>> = {
+        'custom-commonstack-claude': unnamedConfig,
+        'custom-xiaomi-ultraspeed': {
+          enabled: true,
+          displayName: 'custom-xiaomi-ultraspeed',
+          model: 'mimo-v2.6-flash',
+        },
+        'custom-named-relay': namedConfig,
+      };
+      const providers = Object.entries(providerConfigs)
+        .map(([id, cfg]) => buildProviderInfoFromSettings(id as ModelConfig['provider'], cfg))
+        .filter((provider): provider is ProviderInfo => Boolean(provider));
+
+      const rows = buildProviderManagementRows({
+        providers,
+        config,
+        providerConfigs,
+        language,
+      });
+
+      const unnamedRow = rows.find((row) => row.id === 'custom-commonstack-claude');
+      expect(unnamedRow?.id).toBe('custom-commonstack-claude');
+      expect(unnamedRow?.name).toBe('Commonstack Claude');
+      expect(unnamedRow?.name).not.toContain('custom-');
+
+      const rawIdRow = rows.find((row) => row.id === 'custom-xiaomi-ultraspeed');
+      expect(rawIdRow?.name).toBe('Xiaomi Ultraspeed');
+      expect(rawIdRow?.name).not.toContain('custom-');
+
+      const namedRow = rows.find((row) => row.id === 'custom-named-relay');
+      expect(namedRow?.name).toBe('CommonStack Claude');
+
+      // displayName equal to the provider id falls back to the same readable label
+      const rawIdRows = buildProviderManagementRows({
+        providers: [buildProviderInfoFromSettings('custom-commonstack-claude', rawIdAsNameConfig)!],
+        config,
+        providerConfigs: { 'custom-commonstack-claude': rawIdAsNameConfig },
+        language,
+      });
+      expect(rawIdRows[0]?.name).toBe('Commonstack Claude');
+
+      // Direct display-name boundary checks: blank/whitespace and built-in custom preservation
+      expect(getProviderDisplayName('custom-commonstack-claude', '   ', 'custom-commonstack-claude', language))
+        .toBe('Commonstack Claude');
+      expect(getProviderDisplayName('custom', undefined, 'Custom Provider', language))
+        .toBe(language === 'zh' ? '自定义模型服务' : 'Custom Provider');
+    },
+  );
 });
