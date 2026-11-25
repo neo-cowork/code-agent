@@ -196,6 +196,16 @@ function definition(id: string, roleId?: string, context?: Record<string, unknow
   return job;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function actionOf(job: CronJobDefinition): AgentAction {
   if (job.action.type !== 'agent') throw new Error('expected agent action');
   return job.action;
@@ -305,8 +315,8 @@ describe('executeCronAgentAction connector-lost skip', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2031, 8, 6, 8));
     probeImpl = async () => lostFeishu();
-    const writeStarted = Promise.withResolvers<void>();
-    const inboxWrite = Promise.withResolvers<object>();
+    const writeStarted = deferred<void>();
+    const inboxWrite = deferred<object>();
     automationState.recordEvent.mockImplementation(() => {
       writeStarted.resolve();
       return inboxWrite.promise;
@@ -332,8 +342,8 @@ describe('executeCronAgentAction connector-lost skip', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2031, 8, failure === 'reject' ? 7 : 8, 8));
     probeImpl = async () => lostFeishu();
-    const writeStarted = Promise.withResolvers<void>();
-    const inboxWrite = Promise.withResolvers<object | undefined>();
+    const writeStarted = deferred<void>();
+    const inboxWrite = deferred<object | undefined>();
     automationState.recordEvent.mockImplementationOnce(() => {
       writeStarted.resolve();
       return inboxWrite.promise;

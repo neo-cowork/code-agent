@@ -99,8 +99,11 @@ export async function recordCronConnectorLost(
       await recordingKeys.get(eventId);
     }
     if (recordedKeys.has(eventId)) continue;
-    const pending = Promise.withResolvers<void>();
-    recordingKeys.set(eventId, pending.promise);
+    let resolveWrite!: () => void;
+    const writeFinished = new Promise<void>((resolve) => {
+      resolveWrite = resolve;
+    });
+    recordingKeys.set(eventId, writeFinished);
     try {
       const service = getSessionAutomationService();
       const type = getCronAutomationType(definition);
@@ -136,7 +139,7 @@ export async function recordCronConnectorLost(
       continue;
     } finally {
       recordingKeys.delete(eventId);
-      pending.resolve();
+      resolveWrite();
     }
     if (notify) {
       try {
