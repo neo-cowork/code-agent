@@ -503,11 +503,10 @@ export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): str
   // 被自动收口、从未执行的步骤：用「请求…」词表加「未执行 ·」前缀，不走任何 failed 词表。
   const notRun = args[4] === 'failed' && args[6]?.notRun === true;
   const skippedBash = args[6]?.skipped === true && classifyToolName(args[0]) === 'bash';
-  const skippedDescription = skippedBash ? usableBashDescription(args[0], args[1], t) : undefined;
   const step = args[6]?.handedOff === true
     ? t.toolStepHumanize.handedOffStep
     : skippedBash
-    ? (skippedDescription ? `${t.toolStepHumanize.notRunPrefix} · ${skippedDescription}` : t.toolStepHumanize.skippedCommands.one)
+    ? t.toolStepHumanize.skippedCommands.one
     : notRun
     ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
     : buildToolStep(...args);

@@ -80,7 +80,7 @@ function buildCompletionAckInstruction(
     return `回应要求：用户还没看到子代理的完整结果。先完成你当前正在做的任务，再向用户简要说明这个后台结果：${report}${namingRule}`;
   }
   if (kind === 'shell') {
-    return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步，不要只罗列退出码、日志或命令细节。${namingRule}`;
+    return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步。没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言；不要写退出码，也不要照抄英文报错原文。用户自己写过的命令可以点名。${namingRule}`;
   }
   return `回应要求：结果只在内部上下文中。先完成必要的后续动作；没有后续动作时，不要回复用户。${namingRule}`;
 }

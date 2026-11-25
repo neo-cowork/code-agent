@@ -1,6 +1,5 @@
 import type { RunHandle } from './runContext';
 import type { RunEnvelope } from '../../shared/contract/durableRun';
-import { BACKGROUND_TASK_CANCELLED } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ParentRunTerminalSettlement');
@@ -37,7 +36,11 @@ export async function settleParentRunTerminal(envelope: RunEnvelope, getHandle: 
     // TaskManager rejection path (markFailed with the real error); cancelling it here would show "stopped".
     if (!envelope.parentRunId && envelope.status === 'cancelled') {
       const { getBackgroundTaskManager } = await import('../session/backgroundTaskManager');
-      await getBackgroundTaskManager().markCompleted(envelope.sessionId, BACKGROUND_TASK_CANCELLED);
+      const backgroundManager = getBackgroundTaskManager();
+      if (backgroundManager.isTaskRunning(envelope.sessionId)) {
+        const { settleOrHoldBackgroundRun } = await import('../session/backgroundSettlementHold');
+        await settleOrHoldBackgroundRun(backgroundManager, envelope.sessionId, envelope.runId, { status: 'interrupted' });
+      }
     }
   } catch (error) {
     // Settlement is best-effort: the parent terminal itself must still complete.

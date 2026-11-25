@@ -4,13 +4,14 @@
 // ============================================================================
 
 import React from 'react';
-import { act, cleanup, render, renderHook } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryItem } from '../../../src/shared/contract/library';
 import type { ProjectArtifact } from '../../../src/shared/contract/project';
 import type { Session } from '../../../src/shared/contract/session';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { AtMentionPopover } from '../../../src/renderer/components/features/chat/ChatInput/AtMentionPopover';
 import {
@@ -287,13 +288,14 @@ describe('useAtMentionPanel', () => {
     useSessionStore.setState({ sessions: [], currentSessionId: null });
   });
 
-  function setup(onFileSelect = vi.fn(), onSessionSelect = vi.fn(), onArtifactSelect = vi.fn()) {
+  function setup(onFileSelect = vi.fn(), onSessionSelect = vi.fn(), onArtifactSelect = vi.fn(), onLibrarySelect = vi.fn()) {
     return renderHook(() => useAtMentionPanel({
       sessionId: 'session-1',
       projectId: 'proj-1',
       onFileSelect,
       onSessionSelect,
       onArtifactSelect,
+      onLibrarySelect,
     }));
   }
 
@@ -385,9 +387,10 @@ describe('useAtMentionPanel', () => {
     expect(result.current.flatRows).toHaveLength(6);
   });
 
-  it('↑↓ 跨组循环，Enter 选中资料库行 = 切换 pin（乐观更新），选中文件行 = 插入并关闭', async () => {
+  it('↑↓ 跨组循环，Enter 选中资料库行 = 钉上并关闭，选中文件行 = 插入并关闭', async () => {
     const onFileSelect = vi.fn();
-    const { result } = setup(onFileSelect);
+    const onLibrarySelect = vi.fn();
+    const { result } = setup(onFileSelect, vi.fn(), vi.fn(), onLibrarySelect);
     await openPanel(result);
 
     // 从 0 向上 = 循环到最后一行（文件 docs）
@@ -396,19 +399,100 @@ describe('useAtMentionPanel', () => {
     act(() => { result.current.handleKeyDown(keyEvent('ArrowDown')); });
     expect(result.current.selectedIndex).toBe(0);
 
-    // Enter 在资料库行：pin 切换且面板保持打开
-    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    // Enter 在资料库行：幂等钉上，面板关闭（旧断言 isOpen 保持 true 是 FB-2793）
+    await act(async () => { result.current.handleKeyDown(keyEvent('Enter')); });
     expect(mocks.setSessionPin).toHaveBeenCalledWith('session-1', ['g1', 'p1']);
-    expect(result.current.isOpen).toBe(true);
+    expect(onLibrarySelect).toHaveBeenCalledWith(expect.objectContaining({ kind: 'library', item: expect.objectContaining({ id: 'p1' }) }));
+    expect(result.current.isOpen).toBe(false);
     expect(result.current.libraryRows[0]?.pinned).toBe(true);
 
-    // 移到文件行 Enter：插入路径并关闭面板
+    // 重新打开后移到文件行 Enter：插入路径并关闭面板
+    await openPanel(result);
     act(() => { result.current.handleKeyDown(keyEvent('ArrowDown')); });
     act(() => { result.current.handleKeyDown(keyEvent('ArrowDown')); });
     act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
     // 文件行选中把整行交给组件（文件 → 内联 chip + 附件；目录 → @path 文本）
     expect(onFileSelect).toHaveBeenCalledWith(expect.objectContaining({ path: 'src/alpha.ts', name: 'alpha.ts', isDirectory: false }));
     expect(result.current.isOpen).toBe(false);
+  });
+
+  it('Enter 选中资料库行后 pin 恰为 1 条，再选同一行仍是 1 条且不取消', async () => {
+    const pinned: string[] = [];
+    mocks.listLibraryItems.mockResolvedValue([libraryItem('lib-1', 'proj-1', 'dogfood-upload-test')]);
+    mocks.getSessionPin.mockImplementation(async () => ({ sessionId: 'session-1', itemIds: [...pinned] }));
+    mocks.setSessionPin.mockImplementation(async (sessionId: string, itemIds: string[]) => {
+      pinned.splice(0, pinned.length, ...itemIds);
+      return { sessionId, itemIds: [...pinned] };
+    });
+    const onLibrarySelect = vi.fn();
+    const { result } = setup(vi.fn(), vi.fn(), vi.fn(), onLibrarySelect);
+    await openPanel(result);
+
+    await act(async () => { result.current.handleKeyDown(keyEvent('Enter')); });
+    expect(result.current.isOpen).toBe(false);
+    expect(pinned).toEqual(['lib-1']);
+    expect(mocks.setSessionPin).toHaveBeenCalledTimes(1);
+    expect(onLibrarySelect).toHaveBeenCalledTimes(1);
+
+    await openPanel(result);
+    expect(result.current.libraryRows.map((row) => [row.item.id, row.pinned])).toEqual([['lib-1', true]]);
+    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    expect(result.current.isOpen).toBe(false);
+    expect(pinned).toEqual(['lib-1']);
+    expect(mocks.setSessionPin).toHaveBeenCalledTimes(1);
+  });
+
+  it('鼠标点击资料库行与 Enter 同走 selectRow：关掉面板且 pin 恰为 1 条', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    mocks.listLibraryItems.mockResolvedValue([libraryItem('lib-1', 'proj-1', 'dogfood-upload-test')]);
+    mocks.getSessionPin.mockResolvedValue({ sessionId: 'session-1', itemIds: [] });
+    const { result } = setup();
+    await openPanel(result);
+    const view = render(
+      <AtMentionPopover
+        query={result.current.query}
+        libraryRows={result.current.libraryRows}
+        fileRows={result.current.fileRows}
+        sessionRows={result.current.sessionRows}
+        artifactRows={result.current.artifactRows}
+        activeTab={result.current.activeTab}
+        selectedIndex={result.current.selectedIndex}
+        onTabChange={result.current.setActiveTab}
+        onSelect={result.current.selectRow}
+        onHover={result.current.setSelectedIndex}
+      />,
+    );
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: /dogfood-upload-test/ })); });
+    expect(result.current.isOpen).toBe(false);
+    expect(mocks.setSessionPin).toHaveBeenLastCalledWith('session-1', ['lib-1']);
+    cleanup();
+  });
+
+  it('草稿无会话时资料库行只追加 pending pin，再选一次不取消', async () => {
+    useComposerStore.setState({ pendingPinItemIds: [] });
+    const onLibrarySelect = vi.fn();
+    const { result } = renderHook(() => useAtMentionPanel({
+      sessionId: null,
+      projectId: null,
+      onFileSelect: vi.fn(),
+      onSessionSelect: vi.fn(),
+      onArtifactSelect: vi.fn(),
+      onLibrarySelect,
+    }));
+    await openPanel(result);
+    expect(result.current.flatRows[0]).toMatchObject({ kind: 'library', item: { id: 'g1' } });
+
+    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    expect(result.current.isOpen).toBe(false);
+    expect(useComposerStore.getState().pendingPinItemIds).toEqual(['g1']);
+    expect(mocks.setSessionPin).not.toHaveBeenCalled();
+
+    await openPanel(result);
+    act(() => { result.current.handleKeyDown(keyEvent('Enter')); });
+    await act(async () => { await Promise.resolve(); });
+    expect(useComposerStore.getState().pendingPinItemIds).toEqual(['g1']);
+    expect(result.current.isOpen).toBe(false);
+    useComposerStore.setState({ pendingPinItemIds: [] });
   });
 
   it('Ctrl+←/→ 切 Tab，裸 ←/→ 留给输入框；会话 Enter 交给引用 chip 入口', async () => {
@@ -676,6 +760,7 @@ describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
       onFileSelect: vi.fn(),
       onSessionSelect: vi.fn(),
       onArtifactSelect: vi.fn(),
+      onLibrarySelect: vi.fn(),
     }));
   }
 
@@ -783,6 +868,7 @@ describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
       onFileSelect,
       onSessionSelect: vi.fn(),
       onArtifactSelect: vi.fn(),
+      onLibrarySelect: vi.fn(),
     }));
     await openPanel(result, '@');
 
@@ -911,6 +997,7 @@ describe('AtMentionPopover 会话行 meta 只显示文件夹名', () => {
       onFileSelect: vi.fn(),
       onSessionSelect: vi.fn(),
       onArtifactSelect: vi.fn(),
+      onLibrarySelect: vi.fn(),
     }));
     await act(async () => {
       result.current.search('@', 1);
