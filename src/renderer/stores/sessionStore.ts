@@ -40,8 +40,15 @@ import { composerDraftStorageKey, removeComposerDraft } from '../components/feat
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
+import { findSessionAfterRemoval } from '../utils/workspaceGrouping';
 
 const logger = createLogger('SessionStore');
+
+function clearOpenSession(set: (partial: Partial<SessionState>) => void, sessions?: SessionWithMeta[]): void {
+  useAppStore.getState().syncActiveAgentForSession(null);
+  useAppStore.getState().syncWorkbenchForSession(null);
+  set({ ...(sessions ? { sessions } : {}), currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
+}
 
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
@@ -549,19 +556,13 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
-
         bumpSessionsLocalVersion();
-        if (currentSessionId === sessionId) {
-          if (newSessions.length > 0) {
-            set({ sessions: newSessions });
-            await get().switchSession(newSessions[0].id);
-          } else {
-            useAppStore.getState().syncActiveAgentForSession(null);
-            useAppStore.getState().syncWorkbenchForSession(null);
-            set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
-          }
-        } else {
+        const neighbour = currentSessionId === sessionId ? findSessionAfterRemoval(sessions, sessionId) : undefined;
+        if (currentSessionId !== sessionId || neighbour) {
           set({ sessions: newSessions });
+          if (neighbour) await get().switchSession(neighbour.id);
+        } else {
+          clearOpenSession(set, newSessions);
         }
       } catch (error) {
         logger.error('Failed to delete session', error);
@@ -592,16 +593,13 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
 
-        // 归档的是当前会话：IPC 落定后再切到下一条（切会话重，不进乐观路径）。
+        // 归档的是当前会话：IPC 落定后再切到同项目下一条（切会话重，不进乐观路径）。
         if (filter === 'active' && currentSessionId === sessionId) {
-          const remaining = get().sessions;
-          if (remaining.length > 0) {
-            await get().switchSession(remaining[0].id);
-          } else {
-            useAppStore.getState().syncActiveAgentForSession(null);
-            useAppStore.getState().syncWorkbenchForSession(null);
-            set({ currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
-          }
+          const liveIds = new Set(get().sessions.map((s) => s.id));
+          const removedIds = new Set(previousSessions.filter((s) => s.id === sessionId || !liveIds.has(s.id)).map((s) => s.id));
+          const neighbour = findSessionAfterRemoval(previousSessions, sessionId, removedIds);
+          if (neighbour) await get().switchSession(neighbour.id);
+          else clearOpenSession(set);
         }
 
         logger.info('Session archived', { sessionId });
