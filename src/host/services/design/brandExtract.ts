@@ -24,6 +24,7 @@ import {
 } from '../../../shared/constants';
 import { getHostUiLocale } from '../../config/hostUiLocale';
 import { ModelRouter } from '../../model/modelRouter';
+import { resolveZhipuVisionFallbackBaseUrl } from '../../model/providers/providerResolution';
 import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import type { ModelMessage } from '../../model/types';
 import { normalizeStringList } from '../../../shared/contract/designBrief';
@@ -331,7 +332,7 @@ function visionBody(model: string, base64Image: string, mimeType: string, prompt
 
 function callZhipuVision(apiKey: string, base64Image: string, mimeType: string, prompt: string, signal?: AbortSignal): Promise<string> {
   return fetchVision(
-    `${MODEL_API_ENDPOINTS.zhipuCoding}/chat/completions`,
+    `${resolveZhipuVisionFallbackBaseUrl()}/chat/completions`,
     apiKey,
     visionBody(ZHIPU_VISION_MODEL, base64Image, mimeType, prompt),
     signal,
