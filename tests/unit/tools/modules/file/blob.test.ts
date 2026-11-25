@@ -11,6 +11,9 @@ import { blobModule } from '../../../../../src/host/tools/modules/file/blob';
 import { imageAnalyzeSchema } from '../../../../../src/host/tools/modules/network/imageAnalyze.schema';
 import type { ToolDefinition } from '../../../../../src/shared/contract';
 
+/** Fields of the request ToolDefinition this test needs (names come from the production schemas). */
+type RequestToolShape = Pick<ToolDefinition, 'name' | 'description' | 'inputSchema'>;
+
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -87,7 +90,7 @@ describe('blobModule', () => {
     const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4096, 0xfe)]);
     const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4096, 0xfe)]);
 
-    const fullRequestTools: ToolDefinition[] = [
+    const fullRequestTools: RequestToolShape[] = [
       { name: blobModule.schema.name, description: blobModule.schema.description, inputSchema: blobModule.schema.inputSchema },
       { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
     ];

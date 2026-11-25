@@ -31,6 +31,9 @@ import { readModule } from '../../../../../src/host/tools/modules/file/read';
 import { imageAnalyzeSchema } from '../../../../../src/host/tools/modules/network/imageAnalyze.schema';
 import type { ToolDefinition } from '../../../../../src/shared/contract';
 
+/** Fields of the request ToolDefinition this test needs (names come from the production schemas). */
+type RequestToolShape = Pick<ToolDefinition, 'name' | 'description' | 'inputSchema'>;
+
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -415,7 +418,7 @@ describe('readModule (native)', () => {
       const body = Buffer.alloc(320 * 1024);
       for (let i = 0; i < body.length; i++) body[i] = (i * 131 + 7) & 0xff;
       await fs.writeFile(file, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), body]));
-      const requestTools: ToolDefinition[] = [
+      const requestTools: RequestToolShape[] = [
         { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
         { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
       ];
@@ -441,7 +444,7 @@ describe('readModule (native)', () => {
         Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
         Buffer.alloc(256, 0xfe),
       ]);
-      const fullTools: ToolDefinition[] = [
+      const fullTools: RequestToolShape[] = [
         { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
         { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
       ];

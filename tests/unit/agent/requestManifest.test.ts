@@ -14,6 +14,7 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
 import { readModule } from '../../../src/host/tools/modules/file/read';
 import { blobModule } from '../../../src/host/tools/modules/file/blob';
+import { getAllToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { imageAnalyzeSchema } from '../../../src/host/tools/modules/network/imageAnalyze.schema';
 
 function transcriptMessage(id: string, role: 'user' | 'assistant', content: string): Message {
@@ -270,11 +271,9 @@ describe('recordRequestManifest -> TurnState.requestToolNames -> Read / Blob ima
         Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]),
       );
 
-      const fullTools: ToolDefinition[] = [
-        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
-        { name: blobModule.schema.name, description: blobModule.schema.description, inputSchema: blobModule.schema.inputSchema },
-        { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
-      ];
+      const fullTools: ToolDefinition[] = getAllToolDefinitions().filter((tool) =>
+        [readModule.schema.name, blobModule.schema.name, imageAnalyzeSchema.name].includes(tool.name),
+      );
       const filteredTools = fullTools.filter((tool) => tool.name !== 'image_analyze');
 
       const turn = new TurnState();
