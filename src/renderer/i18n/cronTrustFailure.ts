@@ -26,6 +26,7 @@ export function cronTrustFailureSentence(
   const separator = language === 'zh' ? '' : ' ';
   if (!trustKind) return `${copy.generic}${separator}${copy.nextStep}`;
   const card = (language === 'zh' ? projectTrustTurnCardZh : projectTrustTurnCardEn).projectTrustConfirm;
-  const reason = card.reasons[trustKind].replace('{name}', folderName ?? card.folder);
+  // 文件夹名是用户起的名字：用函数替换，$&、$`、$' 原样写入，不被当成替换模式展开。
+  const reason = card.reasons[trustKind].replace('{name}', () => folderName ?? card.folder);
   return `${reason}${separator}${copy.nextStep}`;
 }

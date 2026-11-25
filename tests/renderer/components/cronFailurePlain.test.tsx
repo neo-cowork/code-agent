@@ -429,6 +429,17 @@ describe('项目文件夹信任失败（N-FIX-CRON-RUN-ERROR-TRUST-RAW-ENGLISH-P
     expect(visible).not.toContain('Project Source');
   });
 
+  // 文件夹名是用户在访达里起的名字：带 $&、$`、$' 时不能被当成替换模式展开（运行记录与事件决策共用这一句）。
+  it('文件夹名里有 $&、$`、$\' 时原样显示', () => {
+    useAppStore.setState({ language: 'zh' });
+    const folder = 'a$&b$`c$\'d';
+    const marker = cronFailureSourceText(new ProjectSourceTrustError('identity_changed', `/Users/someone/work/${folder}`));
+    expect(marker).toBe(`PROJECT_SOURCE_TRUST:identity_changed:${folder}`);
+    render(<CronExecutionDetail execution={execution(marker)} />);
+    expect(screen.getByTestId('cron-failure-sentence').textContent)
+      .toBe(`项目文件夹“${folder}”已被替换，请重新选择并确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。`);
+  });
+
   it('系统通知：通用人话，不点文件夹名', () => {
     const zh = translateCronOsNotification({
       code: 'CRON_FAILURE',
