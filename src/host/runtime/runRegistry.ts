@@ -63,6 +63,7 @@ import { createLogger } from '../services/infra/logger';
 
 import { settleParentRunTerminal } from './parentRunTerminalSettlement';
 import { settleDetachedToolOperations } from './detachedToolOperations';
+import { backgroundPrimaryRunStarted } from '../session/backgroundSettlementHold';
 const logger = createLogger('RunRegistry');
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
@@ -820,6 +821,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
 
   register(handle: RunHandle): void {
     this.registerHandle(handle, true);
+    backgroundPrimaryRunStarted(handle.context.sessionId, handle.context.runId);
   }
 
   /** 运行从 registry 消失后通知需要观察宿主空闲转场的调用方。 */

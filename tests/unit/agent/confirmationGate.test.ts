@@ -408,7 +408,7 @@ describe('ConfirmationGate', () => {
       }
     });
 
-    it('reminder update and delete previews have no Reminder ID line, and calendar UID stays', () => {
+    it('reminder previews hide Reminder ID, and calendar previews show UID only when a title is unavailable', () => {
       const update = gate.buildPreview('reminders_update', {
         list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'pay electricity', remind_at_ms: 1_763_337_600_000,
       });
@@ -424,7 +424,12 @@ describe('ConfirmationGate', () => {
       expect(deleted?.diff).not.toContain('wrong');
       expect(deleted?.diff).not.toContain('Title:');
       expect(deleted?.diff).not.toContain('Remind At:');
-      expect(calendar?.diff).toContain('UID: cal-opaque');
+      expect(calendar?.diff).toContain('Title: Review');
+      expect(calendar?.diff).not.toContain('cal-opaque');
+      const calendarWithoutTitle = gate.buildPreview('calendar_delete_event', {
+        calendar: 'Work', event_uid: 'cal-opaque',
+      });
+      expect(calendarWithoutTitle?.diff).toContain('UID: cal-opaque');
     });
   });
 
