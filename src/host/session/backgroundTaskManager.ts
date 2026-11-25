@@ -10,8 +10,10 @@ import { getSessionManager, notificationService } from '../services';
 import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
 import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
+import { buildSessionTitle, isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 
 const logger = createLogger('BackgroundTaskManager');
+const UNNAMED_SESSION_TITLE = '未命名会话';
 
 /**
  * 后台任务管理器
@@ -60,7 +62,7 @@ class BackgroundTaskManager extends EventEmitter {
 
     const sessionInfo: BackgroundSessionInfo = {
       sessionId,
-      title: session.title || '未命名会话',
+      title: session.title || UNNAMED_SESSION_TITLE,
       startedAt: Date.now(),
       backgroundedAt: Date.now(),
       status: 'running',
@@ -200,15 +202,25 @@ class BackgroundTaskManager extends EventEmitter {
   }
 
   /**
-   * 终态后按实时会话标题刷新条目标题（改名/智能标题后快照已过期），取不到回落快照。
+   * 终态标题优先读持久化标题；早期会话可能只有首条消息或移入后台时的草稿。
    * 返回 false = 读取期间条目已被移出/替换，调用方不应再通知。
    */
   private async refreshLiveTitle(sessionId: string, task: BackgroundSessionInfo): Promise<boolean> {
     try {
-      const session = await getSessionManager().getSession(sessionId);
-      const live = session?.title?.trim();
+      const sessionManager = getSessionManager();
+      const session = await sessionManager.getSession(sessionId);
       if (this.backgroundSessions.get(sessionId) !== task) return false;
-      if (live) task.title = live;
+      // Web 标题写入可能早于宿主会话缓存刷新，直接读取已持久化的标题。
+      const live = (sessionManager.getSessionTitle(sessionId) ?? session?.title)?.trim();
+      if (live && !isPlaceholderSessionTitle(live)) {
+        task.title = live;
+      } else if (task.title === UNNAMED_SESSION_TITLE || isPlaceholderSessionTitle(task.title)) {
+        const messages = await sessionManager.getMessages(sessionId);
+        if (this.backgroundSessions.get(sessionId) !== task) return false;
+        const firstUser = messages.find(message => message.role === 'user' && !message.isMeta);
+        const draft = firstUser && buildSessionTitle(firstUser.content, firstUser.attachments?.[0]?.name);
+        task.title = draft?.trim() ? draft : session?.title?.trim() || task.title;
+      }
       return true;
     } catch {
       return this.backgroundSessions.get(sessionId) === task;

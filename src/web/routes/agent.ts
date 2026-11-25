@@ -71,7 +71,7 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { generateMessageId } from '../../shared/utils/id';
-import { stripAppshotBlocks } from '../../shared/contract/appshot';
+import { buildSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
@@ -274,10 +274,6 @@ async function tryGetSharedCLISessionManager(): Promise<AgentSessionManagerLike 
   } catch {
     return null;
   }
-}
-
-function buildSessionTitle(prompt: string): string {
-  return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
 }
 
 function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMetadata | undefined {
@@ -1442,7 +1438,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
       // 截图/图片批注带的隐藏 <appshot> 块不是标题材料：先剥掉再取，剥空（纯截图）才退到附件名。
-      const titleSource = stripAppshotBlocks(visiblePrompt).trim() || requestAttachments[0]?.name || visiblePrompt;
+      const draftTitle = buildSessionTitle(visiblePrompt, requestAttachments[0]?.name);
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
@@ -1611,8 +1607,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (isNewSession && body.historyVisibility !== 'meta') {
         const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
-          const title = buildSessionTitle(titleSource);
-          broadcastSSE('session:updated', { sessionId, updates: { title } });
+          broadcastSSE('session:updated', { sessionId, updates: { title: draftTitle } });
           broadcastSSE('session:list-updated', undefined);
         }
       }
@@ -1626,7 +1621,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_user_message_persist');
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
-        title: buildSessionTitle(titleSource),
+        title: draftTitle,
         // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
         // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
         // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）
@@ -1669,7 +1664,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(titleSource),
+            title: draftTitle,
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
@@ -1703,7 +1698,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
         await sessionStore.commitTurn({
           sessionId,
-          title: buildSessionTitle(titleSource),
+          title: draftTitle,
           modelConfig: runModelConfig,
           historyLength: history.length,
           userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1735,7 +1730,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       const { assistantMsgId } = await sessionStore.commitTurn({
         sessionId,
-        title: buildSessionTitle(titleSource),
+        title: draftTitle,
         modelConfig: runModelConfig,
         historyLength: history.length,
         userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1794,7 +1789,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(titleSource),
+            title: draftTitle,
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
