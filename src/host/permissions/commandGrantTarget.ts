@@ -9,15 +9,15 @@ function commandTargetText(tool: string, args: Record<string, unknown>): string 
     return typeof args.input === 'string' && args.input.length > 0 ? args.input : undefined;
   }
   if (tool !== 'Process') return undefined;
-  const { action, session_id, task_id, data, input } = args;
+  const { action, session_id: sessionId, task_id: taskId, data, input } = args;
   if (action === 'kill') {
-    const id = session_id ?? task_id;
+    const id = sessionId ?? taskId;
     return typeof id === 'string' && id.length > 0 ? `kill:${id}` : undefined;
   }
   const payload = action === 'write' ? data : action === 'submit' ? input : undefined;
-  if (typeof session_id !== 'string' || !session_id || typeof payload !== 'string') return undefined;
+  if (typeof sessionId !== 'string' || !sessionId || typeof payload !== 'string') return undefined;
   // Quote the id so separators within the id or payload cannot collide.
-  return `${action}:${JSON.stringify(session_id)}:${payload}`;
+  return `${action}:${JSON.stringify(sessionId)}:${payload}`;
 }
 
 /** undefined: unsupported arguments. null: exact text cannot be persisted safely. */
