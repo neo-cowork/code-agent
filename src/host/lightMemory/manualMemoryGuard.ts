@@ -63,6 +63,8 @@ async function divertToCandidate(
       ...input,
       filename: pending,
       status: 'candidate',
+      // Automatic writers here target the global store; a `type: project` fact must still be approvable (no project binding).
+      scope: 'global',
       ...(supersedes ? { supersedes } : {}),
     }, { createOnly: true });
   } catch (error) {

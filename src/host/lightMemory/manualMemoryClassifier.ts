@@ -24,7 +24,8 @@ Reply with ONE strict JSON object and nothing else:
 {"label":"independent|equivalent|conflict","filename":"<filename of the matching entry from the list, or null>"}`;
 
 function clip(text: string, max: number): string {
-  const t = text.trim();
+  // Escape angle brackets so entry text cannot close the data tags it is quoted in.
+  const t = text.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
@@ -59,9 +60,10 @@ export async function classifyAgainstManualEntries(
     .map((e) => `<entry filename="${e.filename}">${clip(`${e.name}: ${e.content}`, MANUAL_RECONCILE.ENTRY_CONTENT_CHARS)}</entry>`)
     .join('\n');
   const prompt = `${PROMPT}\n\n<entries>\n${list}\n</entries>\n\n<new>${clip(`${candidate.name}: ${candidate.content}`, MANUAL_RECONCILE.CANDIDATE_CONTENT_CHARS)}</new>`;
+  const controller = new AbortController();
   try {
     const result = await withTimeout(
-      memoryTask(prompt, MANUAL_RECONCILE.MAX_TOKENS),
+      memoryTask(prompt, MANUAL_RECONCILE.MAX_TOKENS, controller.signal),
       MEMORY_TIMEOUTS.MANUAL_RECONCILE_CLASSIFY,
       'Manual memory classification timed out',
     );
@@ -80,6 +82,7 @@ export async function classifyAgainstManualEntries(
     }
     return parsed;
   } catch (error) {
+    controller.abort();
     const timedOut = error instanceof Error && /timed out/i.test(error.message);
     const reason = timedOut ? 'timeout' : 'error';
     logger.warn('classifier-failed, treating as conflict', { reason, error: error instanceof Error ? error.message : String(error) });

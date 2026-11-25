@@ -71,16 +71,17 @@ describe.each([
     manual = { filename, before: await fs.readFile(path.join(memoryDir, filename)) };
   }
 
-  async function write(content: string) {
+  async function write(content: string, factType: string = type) {
     if (source === 'session-judge') {
       return writeDurableFacts([{
-        filename: autoFilename, name: 'Weekly meeting', description: 'Day of the weekly meeting', content, type, confidence: 0.9,
+        filename: autoFilename, name: 'Weekly meeting', description: 'Day of the weekly meeting', content, type: factType as typeof type, confidence: 0.9,
       }]);
     }
     quickTask.mockResolvedValue({
       success: true,
       content: JSON.stringify({ memories: [{
         layer: 'global', filename: autoFilename, name: 'Weekly meeting', description: 'Day of the weekly meeting', content,
+        ...(factType === 'project' ? { type: factType } : {}),
       }] }),
     });
     return runRoleWriteBack({ roleId, taskPrompt: 'Update the weekly meeting schedule', finalOutput: content });
@@ -188,5 +189,19 @@ describe.each([
     await batchReviewMemoryEntries(repo, { entryIds: [id], decision: 'approve' });
     expect(await readMemoryFile(manual.filename)).toMatchObject({ status: 'archived', deprecatedBy: pending, content: original });
     expect(await readMemoryFile(pending)).toMatchObject({ status: 'active' });
+  });
+
+  it('a type: project fact diverted from a global write is approvable as a global entry', async () => {
+    await createManual();
+    reply({ label: 'conflict', filename: manual.filename });
+    await write(wednesday, 'project');
+    const [pending] = await pendingFiles();
+    const { entries } = await listUnifiedMemoryEntries(repo);
+    const id = entries.find((e) => e.source.filePath === pending)!.id;
+    const result = await batchReviewMemoryEntries(repo, { entryIds: [id], decision: 'approve' });
+    expect(result.skipped).toEqual([]);
+    expect(result.updated).toMatchObject([{ id, status: 'active', scope: 'global' }]);
+    expect(await readMemoryFile(manual.filename)).toMatchObject({ status: 'archived', deprecatedBy: pending, content: original });
+    expect(await readMemoryFile(pending)).toMatchObject({ status: 'active', content: wednesday });
   });
 });
