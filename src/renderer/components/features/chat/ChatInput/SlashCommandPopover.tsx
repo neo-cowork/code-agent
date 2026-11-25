@@ -19,6 +19,7 @@ import { useModeStore } from '../../../../stores/modeStore';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
+import { formatPermissionDecision } from '@shared/commands/formatPermissionDecision';
 import { generateMessageId } from '@shared/utils/id';
 import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
 import {
@@ -589,7 +590,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             lines.push('    (no decisions yet)');
           } else {
             for (const e of dh.recent) {
-              lines.push(`    ${e.toolName}(${e.summary.substring(0, 40)}) → ${e.outcome}  (${e.reason}, ${e.durationMs}ms)`);
+              lines.push(`    ${formatPermissionDecision(e, language)}`);
             }
           }
         } catch {
@@ -698,6 +699,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             .handler(
               {
                 surface: 'gui',
+                getLocale: () => language,
                 extensionOps,
                 skillOps,
                 mcpOps,

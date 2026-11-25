@@ -7,7 +7,7 @@ import type { CronJobDefinition } from '@shared/contract';
 import { cronSourceSessionIdFromDefinition, cronWriteScopeFolder } from '@shared/cronWriteScope';
 import { useI18n } from '../../../hooks/useI18n';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { cronFolderDisplayName } from './CronWorkingFolderRow';
+import { cronFolderDisplayName, foldHomePrefixForDisplay } from './CronWorkingFolderRow';
 
 const FolderLine: React.FC<{ folder: string | undefined; showHint?: boolean; testId: string }> = ({ folder, showHint, testId }) => {
   const copy = useI18n().t.cronWorkingFolder;
@@ -15,12 +15,12 @@ const FolderLine: React.FC<{ folder: string | undefined; showHint?: boolean; tes
     <div
       className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-zinc-500"
       data-testid={testId}
-      title={folder ?? (showHint ? copy.detailMissingHint : undefined)}
+      title={folder ? foldHomePrefixForDisplay(folder) : (showHint ? copy.detailMissingHint : undefined)}
     >
       <FolderOpen className="h-3 w-3 shrink-0" />
       <span className="min-w-0 break-all" data-testid={`${testId}-label`}>
         {folder
-          ? `${copy.detailLabel}：${cronFolderDisplayName(folder)}`
+          ? `${copy.detailLabel}${copy.detailSeparator}${cronFolderDisplayName(folder)}`
           : copy.detailMissing}
       </span>
       {!folder && showHint && <span className="min-w-0 basis-full pl-[18px] text-zinc-600">{copy.detailMissingHint}</span>}
