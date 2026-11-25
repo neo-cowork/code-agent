@@ -37,6 +37,7 @@ describe('AgentErrorCard · bad_request (en)', () => {
 
   it('extractReadableProviderReason drops empty phrases but keeps informative text', () => {
     expect(extractReadableProviderReason('Bad Request', 'en')).toBeNull();
+    expect(extractReadableProviderReason('Max iterations reached', 'en')).toBeNull();
     expect(extractReadableProviderReason('invalid request.', 'en')).toBeNull();
     expect(extractReadableProviderReason('Upstream service is temporarily under maintenance', 'en'))
       .toBe('Upstream service is temporarily under maintenance');
