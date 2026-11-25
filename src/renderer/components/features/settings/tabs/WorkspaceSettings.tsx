@@ -8,7 +8,7 @@
 // settings.workspace.recentDirectories（main 侧 setCurrent/selectDirectory 走
 // configService.addRecentDirectory），表格行的"移除"调用 removeRecent。
 // ============================================================================
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Clock,
@@ -84,7 +84,8 @@ export const WorkspaceSettings: React.FC = () => {
   const browserSession = useWorkbenchBrowserSession();
 
   const [currentDir, setCurrentDir] = useState<string | null>(null);
-  const [pickFeedback, setPickFeedback] = useState<'nothingChosen' | 'failed' | null>(null);
+  const pickAttempt = useRef(0);
+  const [pickFeedback, setPickFeedback] = useState<{ dir: string | null; kind: 'nothingChosen' | 'failed' } | null>(null);
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState<RecentDirRow | null>(null);
@@ -153,6 +154,10 @@ export const WorkspaceSettings: React.FC = () => {
   }, [selectedDetail]);
 
   const displayedCurrentDir = currentDir ?? workingDirectory;
+  useEffect(() => {
+    pickAttempt.current += 1;
+    setPickFeedback(null);
+  }, [displayedCurrentDir]);
   const rows = useMemo(() => buildRecentRows(displayedCurrentDir, recentDirs), [displayedCurrentDir, recentDirs]);
   const configScopeTiles = useMemo(() => buildConfigScopeTiles(configScope), [configScope]);
   const browserOptions = useMemo(
@@ -181,11 +186,12 @@ export const WorkspaceSettings: React.FC = () => {
   }, []);
 
   const handlePickDirectory = useCallback(async () => {
+    const attempt = ++pickAttempt.current;
     setPickFeedback(null);
     try {
       const next = await pickWorkingDirectory(workspaceText.actions.chooseDirectory);
       if (!next) {
-        setPickFeedback('nothingChosen');
+        if (attempt === pickAttempt.current) setPickFeedback({ dir: displayedCurrentDir, kind: 'nothingChosen' });
         return;
       }
       setPickFeedback(null);
@@ -194,9 +200,9 @@ export const WorkspaceSettings: React.FC = () => {
       await load();
     } catch (error) {
       logger.error('Failed to pick directory', error);
-      setPickFeedback('failed');
+      if (attempt === pickAttempt.current) setPickFeedback({ dir: displayedCurrentDir, kind: 'failed' });
     }
-  }, [load, setWorkingDirectory, workspaceText.actions.chooseDirectory]);
+  }, [displayedCurrentDir, load, setWorkingDirectory, workspaceText.actions.chooseDirectory]);
 
   const handleSwitchTo = useCallback(async (path: string) => {
     try {
@@ -318,7 +324,7 @@ export const WorkspaceSettings: React.FC = () => {
               </div>
               <MissingWorkspaceDirectoryNotice
                 dir={displayedCurrentDir}
-                pickFeedback={pickFeedback}
+                pickFeedback={pickFeedback?.dir === displayedCurrentDir ? pickFeedback.kind : null}
                 onReselect={() => { void handlePickDirectory(); }}
               />
             </>

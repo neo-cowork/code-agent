@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
@@ -33,11 +33,16 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 const GONE = '/host/gone-folder';
 const LIVE = '/host/live-folder';
 
-function configureHost(exists: boolean) {
+function configureHost(exists: boolean, recentDirs: string[] = []) {
+  let currentDir = exists ? LIVE : GONE;
   invokeDomain.mockImplementation(async (domain: string, action: string, payload?: { dir?: string }) => {
     if (domain === IPC_DOMAINS.WORKSPACE) {
-      if (action === 'getCurrent') return exists ? LIVE : GONE;
-      if (action === 'listRecent') return [];
+      if (action === 'getCurrent') return currentDir;
+      if (action === 'listRecent') return recentDirs;
+      if (action === 'setCurrent' && payload?.dir) {
+        currentDir = payload.dir;
+        return currentDir;
+      }
       if (action === 'getConfigScope') return null;
       if (action === 'getDirectorySummary') {
         return { path: payload?.dir, exists, isDirectory: exists };
@@ -132,5 +137,35 @@ describe('WorkspaceSettings missing current directory', () => {
     fireEvent.click(screen.getByRole('button', { name: '选择目录' }));
     expect(await notice.findByText('没有选择文件夹，工作区保持不变。')).toBeTruthy();
     expect(useAppStore.getState().workingDirectory).toBeNull();
+  });
+
+  it('clears cancellation feedback after switching to another missing workspace', async () => {
+    const otherMissing = '/host/other-missing-folder';
+    configureHost(false, [otherMissing]);
+    pickWorkingDirectory.mockResolvedValueOnce(null);
+    render(<WorkspaceSettings />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '重新选择文件夹' }));
+    expect(await screen.findByText('没有选择文件夹，工作区保持不变。')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '切换' }));
+    expect(await screen.findByText('找不到项目文件夹“other-missing-folder”。它可能已被移动或删除。')).toBeTruthy();
+    const notice = within(screen.getByTestId('workspace-directory-missing'));
+    expect(notice.getByRole('status').textContent).toBe('');
+  });
+
+  it('keeps feedback from the newest pick when an older pick finishes later', async () => {
+    configureHost(false);
+    const pendingPick = Promise.withResolvers<null>();
+    pickWorkingDirectory.mockReturnValueOnce(pendingPick.promise).mockRejectedValueOnce(new Error('Picker unavailable'));
+    render(<WorkspaceSettings />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '重新选择文件夹' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择目录' }));
+    expect(await screen.findByText('无法选择文件夹，请重试。')).toBeTruthy();
+
+    await act(async () => { pendingPick.resolve(null); });
+    expect(screen.getByText('无法选择文件夹，请重试。')).toBeTruthy();
+    expect(screen.queryByText('没有选择文件夹，工作区保持不变。')).toBeNull();
   });
 });
