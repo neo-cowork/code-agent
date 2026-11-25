@@ -152,6 +152,9 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
     lane_key: stableKey,
     submission_key: stableKey,
     prompt: buildDelegatedTaskPrompt(userText, userText),
+    // 槽位已满时排队。主机交接后面没有模型轮次去转述「排队 / 替换 / 暂不创建」，
+    // 那条提问没人答时不建任务，却照样以 ok 收尾。
+    queue_when_full: true,
   };
   const delegatedWorkspace = delegationWorkspace(ctx);
   const toolContext: ToolContext = {
@@ -175,13 +178,17 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
   try {
     // Dynamic: TaskManager imports AgentOrchestrator, which must not cycle back while this module loads.
     const { executeDelegateTask } = await import('../../tools/modules/commandCenter/sessionCommandCenter');
+    const { getSessionCommandCenter } = await import('../../services/commandCenter/sessionCommandCenter');
     const result = await executeDelegateTask(args, toolContext, allowTool);
-    if (!result.ok) {
+    // ok 只说明 delegate_task 处理过了：它的「尚未创建」回执也是 ok。只有本会话台账里
+    // 真有这次交接的任务（已开始或已排队），才能对用户说「交给后台任务了」。
+    const handedOff = getSessionCommandCenter().list(ctx.sessionId)
+      .some((task) => task.submissionKey === stableKey);
+    if (!result.ok || !handedOff) {
       logger.warn('Foreground denial handoff failed', {
         sessionId: ctx.sessionId,
         turnId,
-        code: result.code,
-        error: result.error,
+        ...(result.ok ? { code: 'TASK_NOT_CREATED' } : { code: result.code, error: result.error }),
       });
       return false;
     }
