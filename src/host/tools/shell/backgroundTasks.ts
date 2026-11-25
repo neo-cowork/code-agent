@@ -12,7 +12,8 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { BASH } from '../../../shared/constants';
 import { quote } from 'shell-quote';
 import { parseShellCommand } from '../../security/commandParse';
-import { getHostUiLocale, type HostUiLocale } from '../../config/hostUiLocale';
+import { getBackgroundTaskUiLanguage } from '../../config/backgroundTaskLocale';
+import type { HostUiLocale } from '../../config/hostUiLocale';
 import {
   BACKGROUND_COMMAND_TITLE,
   formatBackgroundFileActionTitle,
@@ -435,7 +436,7 @@ function shortTarget(command: string, depth = 0): string {
  * target from the command, then fall back to a generic title in the UI language.
  */
 export function resolveBackgroundTaskName(
-  description: unknown, command: string, language = getHostUiLocale(),
+  description: unknown, command: string, language = getBackgroundTaskUiLanguage(),
 ): string {
   if (typeof description === 'string') {
     const trimmed = description.trim();
