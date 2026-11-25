@@ -209,5 +209,9 @@ describe('e2e-core verdict CLI', () => {
     const out = runVerdict(['--unknown-flag']);
     expect(out.code).toBe(64);
     expect(out.stderr).toContain('Usage:');
+
+    const shortCommit = runVerdict(['--commit', 'abc12']);
+    expect(shortCommit.code).toBe(64);
+    expect(shortCommit.stderr).toContain('at least 7 characters');
   });
 });

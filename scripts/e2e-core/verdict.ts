@@ -49,6 +49,10 @@ function parseCliArgs(argv: string[], cwd: string): VerdictArgs {
     }
   }
 
+  if (expectedCommit !== null && expectedCommit.trim().length < MIN_COMMIT_PREFIX) {
+    throw new Error(`--commit needs at least ${MIN_COMMIT_PREFIX} characters`);
+  }
+
   return {
     resultPath: path.resolve(cwd, resultFile),
     expectedCommit,
