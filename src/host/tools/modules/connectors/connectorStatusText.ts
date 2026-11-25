@@ -3,6 +3,7 @@
 // one plain-language fact plus a model-directed instruction so models never relay
 // internal "X connector: unavailable|connected|disconnected" or "Capabilities:" dumps.
 
+import { getHostUiLocale } from '../../../config/hostUiLocale';
 import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 
 type StatusConnectorId = 'mail' | 'calendar' | 'reminders';
@@ -57,7 +58,11 @@ const UNAVAILABLE_ACTION_PHRASE: Record<ConnectorUnavailableAction, (copy: Conne
 };
 
 // The real UI entry: Connectors tab of the Capability Hub (renderer capabilityHub.ts).
-const CONNECTORS_PAGE_HINT = 'the Connectors page (the Connectors tab inside the Capability Hub; in the Chinese interface 能力中心 > 连接器)';
+function connectorsPageHint(): string {
+  return getHostUiLocale() === 'en'
+    ? 'the Connectors page (the Connectors tab inside the Capability Hub)'
+    : 'the Connectors page (the Connectors tab inside the Capability Hub; in the Chinese interface 能力中心 > 连接器)';
+}
 
 const CONNECTOR_COPY: Record<StatusConnectorId, ConnectorCopy> = {
   mail: {
@@ -101,7 +106,7 @@ export function formatConnectorUnavailableMessage(
   const readGuard = action === 'read'
     ? ` Do not answer this question from other sources (for example meeting records or files), and never state that there are no ${copy.emptyClaim}.`
     : '';
-  return `${copy.title} is not connected on this computer, so ${UNAVAILABLE_ACTION_PHRASE[action](copy)}. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}.${readGuard} Do not quote this line.`;
+  return `${copy.title} is not connected on this computer, so ${UNAVAILABLE_ACTION_PHRASE[action](copy)}. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${connectorsPageHint()}.${readGuard} Do not quote this line.`;
 }
 
 export interface ConnectorStatusText {
@@ -125,7 +130,7 @@ export function formatConnectorStatus(
   if (status.unavailable) {
     return {
       output: `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read.`,
-      guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`,
+      guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${connectorsPageHint()}. Do not quote this line.`,
     };
   }
 
@@ -143,12 +148,12 @@ export function formatConnectorStatus(
     if (status.detailCode && SYSTEM_SETTINGS_FIX_CODES.has(status.detailCode)) {
       return {
         output,
-        guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described above; once changed, it can be re-checked on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`,
+        guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described above; once changed, it can be re-checked on ${connectorsPageHint()}. Do not quote this line.`,
       };
     }
     return {
       output,
-      guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`,
+      guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${connectorsPageHint()}. Do not quote this line.`,
     };
   }
 

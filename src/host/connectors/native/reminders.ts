@@ -2,6 +2,8 @@
 // Native Reminders Connector - macOS Reminders via AppleScript
 // ============================================================================
 
+import { getHostConnectorCopy } from '../../../shared/i18n/hostConnectorCopy';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import { appleScriptFailureLogDetail, isAppleScriptFailure, probeFailureDetailCode } from './appleScriptFailure';
 import { createLogger } from '../../services/infra/logger';
@@ -508,23 +510,26 @@ export const remindersConnector: Connector = {
       }
       case 'create_reminder': {
         const reminder = await createReminder(payload);
+        const { separator, reminders: copy } = getHostConnectorCopy(getHostUiLocale());
         return {
           data: reminder,
-          summary: `已创建提醒：${reminder.title}`,
+          summary: `${copy.created}${separator}${reminder.title}`,
         };
       }
       case 'update_reminder': {
         const reminder = await updateReminder(payload);
+        const { separator, reminders: copy } = getHostConnectorCopy(getHostUiLocale());
         return {
           data: reminder,
-          summary: `已更新提醒：${reminder.title}`,
+          summary: `${copy.updated}${separator}${reminder.title}`,
         };
       }
       case 'delete_reminder': {
         const reminder = await deleteReminder(payload);
+        const { separator, reminders: copy } = getHostConnectorCopy(getHostUiLocale());
         return {
           data: reminder,
-          summary: `已删除提醒：${reminder.title}`,
+          summary: `${copy.deleted}${separator}${reminder.title}`,
         };
       }
       default:

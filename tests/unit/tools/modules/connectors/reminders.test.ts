@@ -11,6 +11,11 @@ import type {
 
 const execMock = vi.fn();
 const getMock = vi.fn();
+const configState = vi.hoisted(() => ({ language: 'zh' }));
+
+vi.mock('../../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
+}));
 
 vi.mock('../../../../../src/host/connectors', () => ({
   getConnectorRegistry: () => ({
@@ -51,6 +56,7 @@ async function run(
 }
 
 beforeEach(() => {
+  configState.language = 'zh';
   execMock.mockReset();
   getMock.mockReset();
   getMock.mockReturnValue({ execute: execMock });
@@ -175,6 +181,21 @@ describe('remindersModule (native)', () => {
       const lists = await run({ action: 'list_lists' });
       expect(lists.ok).toBe(false);
       if (!lists.ok) expect(lists.error).not.toMatch(/列表名称.*减少读取条数/);
+    });
+
+    it('shows the English read-timeout guidance in the failure card', async () => {
+      configState.language = 'en';
+      execMock.mockRejectedValue(Object.assign(
+        new Error('Command failed: osascript -e tell application "Reminders"'),
+        { code: 'ETIMEDOUT' },
+      ));
+      const result = await run({ action: 'list_reminders' });
+      expect(result).toMatchObject({ ok: false, code: 'timeout' });
+      if (result.ok) throw new Error('Expected a read timeout');
+      expect(result.error).toContain('try a specific list name or a lower limit');
+      expect(result.userMessage).toBe(result.error);
+      expect(result.userMessage).not.toMatch(/Command failed|osascript|did not confirm the action/);
+      expect(execMock).toHaveBeenCalledTimes(1);
     });
 
     it('keeps connector validation errors intact instead of rewriting to a retry hint', async () => {
