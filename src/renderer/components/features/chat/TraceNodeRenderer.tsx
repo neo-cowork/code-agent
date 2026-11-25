@@ -374,6 +374,7 @@ const AssistantTextNode: React.FC<{
   const metadataWakeFields = wakeRationaleFromMetadata(node.metadata);
 
   const preannounce = node.metadata?.backgroundTaskPreannounce;
+  const handoffEnded = node.metadata?.backgroundHandoffEnded;
   const preannounceCopy = preannounce?.title
     ? interpolate(t.backgroundPanel.preannounce.named, { title: preannounce.title })
     : t.backgroundPanel.preannounce.generic;
@@ -548,6 +549,12 @@ const AssistantTextNode: React.FC<{
             {assistantTextBody}
           </MessageContextFrame>
         ) : assistantTextBody
+      )}
+
+      {handoffEnded && (
+        <div data-testid="background-handoff-ended-note" className="mt-1 text-xs text-zinc-500">
+          {t.backgroundPanel.handoffEnded[handoffEnded]}
+        </div>
       )}
 
       {/* ADR-068 刀 4（D5）：断流续接状态行——同一 streaming 消息内嵌，一屏一个信号；

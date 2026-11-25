@@ -22,6 +22,8 @@ const sessionManagerState = vi.hoisted(() => ({
   addMessageToSession: vi.fn(),
 }));
 
+vi.mock('../../../src/host/config/hostUiLocale', () => ({ getHostUiLocale: vi.fn() }));
+
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => sessionManagerState,
 }));
@@ -58,6 +60,8 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   },
 }));
 
+import { getHostUiLocale } from '../../../src/host/config/hostUiLocale';
+import { StreamHandler } from '../../../src/host/agent/runtime/streamHandler';
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { NudgeManager } from '../../../src/host/agent/nudgeManager';
 import { GoalTracker } from '../../../src/host/agent/goalTracker';
@@ -93,7 +97,11 @@ describe('MessageProcessor text-only close with a real NudgeManager', () => {
     return () => rmSync(workDir, { recursive: true, force: true });
   });
 
-  it('persists exactly one assistant message at iteration 7 and does not continue (P2b retired)', async () => {
+  it.each([
+    ['en', ['Understanding the request', 'Writing the response', 'Response complete']],
+    ['zh', ['分析请求中...', '生成回复中...', '回复完成']],
+  ] as const)('emits %s steps and persists one assistant message without continuing at iteration 7', async (locale, labels) => {
+    vi.mocked(getHostUiLocale).mockReturnValue(locale);
     // 真实 NudgeManager：todo/task 存取链无 DB 时自然返回空清单，P1-P5/P7/P0 的
     // 真实判定全部走过——此前 P2b 恰好在这个形状（iterations≥6 + 空清单 + 纯文本
     // 收尾）注入 <task-tracking-hint> 并让调用方 continue。
@@ -123,23 +131,27 @@ describe('MessageProcessor text-only close with a real NudgeManager', () => {
     };
     const addAndPersistMessage = vi.fn();
     const injectSystemMessage = vi.fn();
-    const processor = new MessageProcessor(
-      ctx as DeepPartial<RuntimeContext> as RuntimeContext,
-      {
+    const context = ctx as DeepPartial<RuntimeContext> as RuntimeContext;
+    const contextAssembly = {
         generateId: () => 'assistant-close-1',
         stripInternalFormatMimicry: (content: string) => content,
         addAndPersistMessage,
         injectSystemMessage,
         updateContextHealth: vi.fn(),
         checkAndAutoCompress: vi.fn(),
-      } as unknown as ContextAssembly,
-      {
-        emitTaskProgress: vi.fn(),
-        emitTaskComplete: vi.fn(),
-        tryParseTodosFromResponse: vi.fn(),
-      } as unknown as RunFinalizer,
-      {} as ToolExecutionEngine,
-    );
+    } as unknown as ContextAssembly;
+    const emitTaskProgress = vi.fn();
+    const runFinalizer = {
+      emitTaskProgress,
+      emitTaskStats: vi.fn(),
+      emitTaskComplete: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+    } as unknown as RunFinalizer;
+    const processor = new MessageProcessor(context, contextAssembly, runFinalizer, {} as ToolExecutionEngine);
+    const stream = new StreamHandler(context, contextAssembly, runFinalizer);
+    stream.setupIteration(7, SHEET_CARD_PROMPT, {
+      startSpan: vi.fn(),
+    } as unknown as Parameters<StreamHandler['setupIteration']>[2]);
 
     const action = await processor.handleTextResponse(
       {
@@ -155,6 +167,12 @@ describe('MessageProcessor text-only close with a real NudgeManager', () => {
 
     // 收尾正文恰好落一条 assistant 消息，循环收口，不再有第二轮生成
     expect(action).toBe('break');
+    expect(emitTaskProgress.mock.calls).toEqual([
+      ['thinking', labels[0]], ['generating', labels[1]], ['completed', labels[2]],
+    ]);
+    if (locale === 'en') {
+      for (const [, step] of emitTaskProgress.mock.calls) expect(step).not.toMatch(/\p{Script=Han}|\buid\b/iu);
+    }
     expect(addAndPersistMessage).toHaveBeenCalledTimes(1);
     expect(addAndPersistMessage).toHaveBeenCalledWith(expect.objectContaining({
       id: 'assistant-close-1',
