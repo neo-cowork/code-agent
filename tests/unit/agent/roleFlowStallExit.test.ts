@@ -257,7 +257,7 @@ describe('用户结束角色流程', () => {
 
   it('确认卡已生成的真实消息形状不落停摆消息', async () => {
     const messages = proposeHistory(true);
-    messages[2].toolResults![0].output = '已为「晨报摘要员」生成草稿，确认卡已弹出，等待用户点击确认。';
+    messages[2].toolResults![0].output = '已为「晨报摘要员」将草稿加入待确认队列，需用户确认（确认前不会创建或入库）。';
     const ctx = mkCtx(messages);
     const assembly = mkAssembly();
     expect(await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '请在确认卡上点击确认完成创建' })).toBe(false);
