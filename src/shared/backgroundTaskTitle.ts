@@ -24,11 +24,16 @@ export function formatBackgroundFileActionTitle(
   return `${prefix}${shortSource}${connector}${shortDestination}`;
 }
 
+export function isEnglishBackgroundFileActionTitle(title: string): boolean {
+  return /^(?:Copy|Move) [^\r\n]+ to [^\r\n]+$/.test(title);
+}
+
 export function isForeignBackgroundTaskTitle(title: string, language: 'zh' | 'en'): boolean {
-  // File names can contain CJK even when the action and connector are in English.
-  if (/^(?:Copy|Move) [^\r\n]+ to [^\r\n]+$/.test(title)) return language === 'zh';
   const hasCjk = containsCjk(title);
-  return language === 'en' ? hasCjk : !hasCjk && /[A-Za-z]{2,}\s+[A-Za-z]/.test(title);
+  // English file-action titles may include CJK basenames.
+  return language === 'en'
+    ? hasCjk && !isEnglishBackgroundFileActionTitle(title)
+    : !hasCjk && /[A-Za-z]{2,}\s+[A-Za-z]/.test(title);
 }
 
 /** Choose a display title without changing the original task or notification payload. */

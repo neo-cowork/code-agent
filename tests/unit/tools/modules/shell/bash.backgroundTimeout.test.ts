@@ -128,6 +128,8 @@ describe('Bash tool background branch ledger titles', () => {
     ['en', 'echo done', undefined, 'Background command'],
     ['zh', copy, 'Copy the report', '复制 missing-report.txt 到 archive'],
     ['zh', 'cp 报告.txt archive/', 'Copy 报告.txt to archive', '复制 报告.txt 到 archive'],
+    ['zh', 'cp -t archive 报告.txt', 'Copy 报告.txt to archive', 'Copy 报告.txt to archive'],
+    ['zh', 'rsync -a 报告.txt archive/', 'Copy 报告.txt to archive', 'Copy 报告.txt to archive'],
     ['en', copy, '复制报告', 'Copy missing-report.txt to archive'],
     ['zh', 'echo done', 'Print the result', '后台命令'],
     ['en', 'echo done', '打印结果', 'Background command'],

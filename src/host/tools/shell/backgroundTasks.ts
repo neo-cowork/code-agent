@@ -17,6 +17,7 @@ import type { HostUiLocale } from '../../config/hostUiLocale';
 import {
   BACKGROUND_COMMAND_TITLE,
   formatBackgroundFileActionTitle,
+  isEnglishBackgroundFileActionTitle,
   isForeignBackgroundTaskTitle,
 } from '../../../shared/backgroundTaskTitle';
 
@@ -417,7 +418,12 @@ export function resolveBackgroundTaskName(
   if (typeof description === 'string') {
     const trimmed = description.trim();
     if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60
-      && !isForeignBackgroundTaskTitle(trimmed, language)) return trimmed;
+      && !isForeignBackgroundTaskTitle(trimmed, language)) {
+      if (language === 'zh' && isEnglishBackgroundFileActionTitle(trimmed)) {
+        return fileActionTitle(command, language) || trimmed;
+      }
+      return trimmed;
+    }
   }
   return fileActionTitle(command, language) || shortTarget(command) || BACKGROUND_COMMAND_TITLE[language];
 }
