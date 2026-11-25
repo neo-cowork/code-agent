@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeFunnel, RoleWakeProposal, TrashedRoleEntry } from '@shared/contract/roleAssets';
+import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeFunnel, RoleWakeLedgerRecentRow, RoleWakeProposal, TrashedRoleEntry } from '@shared/contract/roleAssets';
 import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
 import { useRoleLabelsStore } from '../stores/roleLabelsStore';
@@ -72,6 +72,10 @@ export async function retryFirstWake(roleId: string): Promise<{ retried: boolean
 
 export async function getRoleWakeFunnel(roleId: string): Promise<RoleWakeFunnel> {
   return ipcService.invokeDomain<RoleWakeFunnel>(IPC_DOMAINS.ROLES, 'wakeLedgerGet', { roleId });
+}
+
+export async function getRoleWakeLedgerRecent(roleId: string): Promise<RoleWakeLedgerRecentRow[]> {
+  return ipcService.invokeDomain<RoleWakeLedgerRecentRow[]>(IPC_DOMAINS.ROLES, 'wakeLedgerRecent', { roleId });
 }
 
 /** roles IPC wakeProposalsList。每日醒来「外部增量」给出的一键工作提议（pending）。 */
