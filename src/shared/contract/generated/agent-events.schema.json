@@ -1256,6 +1256,16 @@
             "standingGrantTarget": {
               "type": "string"
             },
+            "commandGrantTarget": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "browserSessionGrant": {
               "type": "object",
               "properties": {

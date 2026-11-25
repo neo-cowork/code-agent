@@ -9,6 +9,7 @@ import { withConnectorReconnectGuidance } from './connectorReconnectGuidance';
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
+import { commandGrantTarget } from '../../permissions/commandGrantTarget';
 import type {
   ToolContext as ProtocolToolContext,
   CanUseToolFn,
@@ -258,6 +259,9 @@ export function buildCanUseToolFromLegacy(
         details: {
           ...details,
           ...(terminalInput !== undefined ? { preview: buildTerminalApprovalPreview(terminalInput) } : {}),
+          commandGrantTarget: !reason && !requestHint && sameToolName(requestedToolName, toolName)
+            ? commandGrantTarget(requestedToolName, input)
+            : undefined,
           grantEligible: grantable,
         },
         reason: requestHint?.reason ?? cleanReason ?? (terminalInput === undefined
