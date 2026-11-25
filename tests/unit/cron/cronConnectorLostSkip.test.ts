@@ -315,14 +315,45 @@ describe('executeCronAgentAction connector-lost skip', () => {
     const second = definition('job-overlap-second', 'feishu-expert');
     const firstRun = executeCronAgentAction(host, first, actionOf(first), 'exec-overlap-first');
     await writeStarted.promise;
+    const secondRun = executeCronAgentAction(host, second, actionOf(second), 'exec-overlap-second');
     try {
-      await executeCronAgentAction(host, second, actionOf(second), 'exec-overlap-second');
+      await vi.waitFor(() => expect(probeStarts).toHaveBeenCalledTimes(2));
+      await new Promise<void>((resolve) => setImmediate(resolve));
       expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
       expect(notificationService.getRecentNotifications()).toEqual([]);
     } finally {
       inboxWrite.resolve({});
-      await firstRun;
+      await Promise.all([firstRun, secondRun]);
     }
+    expect(notificationService.getRecentNotifications()).toHaveLength(1);
+  });
+
+  it.each(['reject', 'empty'])('retries an overlapping skip if the first inbox write fails (%s)', async (failure) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, failure === 'reject' ? 7 : 8, 8));
+    probeImpl = async () => lostFeishu();
+    const writeStarted = Promise.withResolvers<void>();
+    const inboxWrite = Promise.withResolvers<object | undefined>();
+    automationState.recordEvent.mockImplementationOnce(() => {
+      writeStarted.resolve();
+      return inboxWrite.promise;
+    }).mockResolvedValueOnce({});
+    const first = definition('job-failed-first', 'feishu-expert');
+    const second = definition('job-failed-second', 'feishu-expert');
+    const firstRun = executeCronAgentAction(host, first, actionOf(first), 'exec-failed-first');
+    await writeStarted.promise;
+    const secondRun = executeCronAgentAction(host, second, actionOf(second), 'exec-failed-second');
+    await vi.waitFor(() => expect(probeStarts).toHaveBeenCalledTimes(2));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
+    if (failure === 'reject') inboxWrite.reject(new Error('inbox write failed'));
+    else inboxWrite.resolve(undefined);
+    const results = await Promise.all([firstRun, secondRun]);
+    expect(results).toEqual([
+      expect.objectContaining({ status: 'skipped' }),
+      expect.objectContaining({ status: 'skipped' }),
+    ]);
+    expect(automationState.recordEvent).toHaveBeenCalledTimes(2);
     expect(notificationService.getRecentNotifications()).toHaveLength(1);
   });
   it('executeCronAgentAction skips before creating a session when the refreshed probe reports a core CLI connector signed out', async () => {

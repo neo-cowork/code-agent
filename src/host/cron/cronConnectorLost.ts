@@ -26,7 +26,7 @@ import { notificationService } from '../services/infra/notificationService';
 import { getCronAutomationType, localDayKey } from './cronAutomationBridge';
 
 const recordedKeys = new Set<string>();
-const recordingKeys = new Set<string>();
+const recordingKeys = new Map<string, Promise<void>>();
 
 function displayName(connectorId: string): string {
   return CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === connectorId)?.displayName ?? connectorId;
@@ -95,8 +95,12 @@ export async function recordCronConnectorLost(
   const day = localDayKey(nowMs);
   for (const connectorId of new Set(connectorIds)) {
     const eventId = `connector_lost:${connectorId}:${day}`;
-    if (recordedKeys.has(eventId) || recordingKeys.has(eventId)) continue;
-    recordingKeys.add(eventId);
+    while (recordingKeys.has(eventId)) {
+      await recordingKeys.get(eventId);
+    }
+    if (recordedKeys.has(eventId)) continue;
+    const pending = Promise.withResolvers<void>();
+    recordingKeys.set(eventId, pending.promise);
     try {
       const service = getSessionAutomationService();
       const type = getCronAutomationType(definition);
@@ -132,6 +136,7 @@ export async function recordCronConnectorLost(
       continue;
     } finally {
       recordingKeys.delete(eventId);
+      pending.resolve();
     }
     if (notify) {
       try {
