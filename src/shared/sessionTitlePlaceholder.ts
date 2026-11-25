@@ -22,7 +22,7 @@ export function deriveInitMemorySessionTitle(
   if (!INIT_MEMORY_COMMAND.test(message.trim())) return null;
   const base = INIT_MEMORY_SESSION_TITLE[language];
   const folder = folderName?.trim();
-  return folder ? `${base} · ${folder}` : base;
+  return folder ? `${folder} · ${base}` : base;
 }
 
 /** 英文 UI 下把存量/新写入的 Appshot 固定名显示成英文；其它标题原样返回。 */
