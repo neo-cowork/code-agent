@@ -143,8 +143,8 @@ export const cronClient = {
     return invokeCron<CronMailSourcesResult>('listMailSources');
   },
 
-  generateFromPrompt(prompt: string) {
-    return invokeCron<Record<string, unknown>>('generateFromPrompt', { prompt });
+  generateFromPrompt(prompt: string, language?: 'zh' | 'en') {
+    return invokeCron<Record<string, unknown>>('generateFromPrompt', { prompt, ...(language ? { language } : {}) });
   },
 };
 
