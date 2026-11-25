@@ -11,6 +11,7 @@ import { useMemberViewStore } from '../../../../../stores/memberViewStore';
 import { useDelegationRetry } from '../../../../../hooks/useDelegationRetry';
 import { DeleteIncompleteActions } from '../../../background/DeleteIncompleteActions';
 import { GuiTakeoverDisclosureRows } from '../../../GuiTakeoverDisclosureRows';
+import { DelegationLeftoverShells } from './DelegationLeftoverShells';
 import type { DelegationPresentation } from './delegationPresentation';
 
 const HEADLINE_SENTENCE_END = /[。.!！?？]+$/u;
@@ -139,6 +140,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
           {toolFailure.detail && <span className="text-zinc-400"> · {toolFailure.detail}</span>}
         </div>
       )}
+      <DelegationLeftoverShells presentation={presentation} />
       {(presentation.state === 'failed' || presentation.state === 'cancelled') && (
         <DelegationRetryActions presentation={presentation} />
       )}

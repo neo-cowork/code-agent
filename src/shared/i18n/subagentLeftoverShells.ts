@@ -1,11 +1,11 @@
+import { BACKGROUND_COMMAND_TITLE } from '../backgroundTaskTitle';
 import {
   getSystemPromptHint,
   type SessionTaskSlotLocale,
 } from './sessionTaskSlot';
 
 export interface SubagentLeftoverShellReportItem {
-  commandSummary: string;
-  taskId: string;
+  title: string;
   elapsedMs: number;
   mayAwaitSystemPrompt: boolean;
 }
@@ -27,9 +27,12 @@ export function formatSubagentLeftoverShellReport(
   const heading = locale === 'zh'
     ? '此子代理结束后，以下命令仍在运行：'
     : 'Left running after this agent ended:';
-  const lines = items.map((item) => locale === 'zh'
-    ? `- \`${item.commandSummary}\`（任务 ${item.taskId}，已运行 ${durationText(item.elapsedMs, locale)}）。仍在运行，可手动停止。`
-    : `- \`${item.commandSummary}\` (task ${item.taskId}, running ${durationText(item.elapsedMs, locale)}). Still running — can be stopped manually.`);
+  const lines = items.map((item) => {
+    const title = item.title.trim() || BACKGROUND_COMMAND_TITLE[locale];
+    return locale === 'zh'
+      ? `- ${title}（已运行 ${durationText(item.elapsedMs, locale)}）。仍在运行，可手动停止。`
+      : `- ${title} (running ${durationText(item.elapsedMs, locale)}). Still running — can be stopped manually.`;
+  });
   if (items.some((item) => item.mayAwaitSystemPrompt)) {
     lines.push(getSystemPromptHint(locale));
   }
