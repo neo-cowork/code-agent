@@ -481,7 +481,7 @@ describe('shared command host ports', () => {
     expect((await permissionsCommand.handler(present.ctx, [])).success).toBe(true);
     const rows = present.lines[0].split('\n').filter((line) => line.includes(language === 'zh' ? '→ 自动放行' : '→ Auto-approved'));
     expect(rows.map((row) => row.trim().replace(/^\d{2}:\d{2}:\d{2} /, ''))).toEqual(
-      [helper, helper, helper, web, external, external, background, unknown].map((label) => (language === 'zh' ? `${label} → 自动放行  （已放行，3 毫秒）` : `${label} → Auto-approved  (已放行, 3 ms)`)),
+      [helper, helper, helper, web, external, external, background, unknown].map((label) => (language === 'zh' ? `${label} → 自动放行  （已放行，3 毫秒）` : `${label} → Auto-approved  (system rule, 3 ms)`)),
     );
     for (const toolName of toolNames) {
       expect(rows.join('\n').toLowerCase()).not.toContain(toolName.toLowerCase());

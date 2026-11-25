@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { formatPermissionsBlock } from '../../src/shared/i18n/permissionsCommand';
+import { formatPermissionDecision } from '../../src/shared/commands/formatPermissionDecision';
 import { permissionsCommand } from '../../src/shared/commands/definitions/newCommands';
 import { permissionVocabularyEn, permissionVocabularyZh } from '../../src/renderer/i18n/permissionVocabulary';
 import type { CommandContext } from '../../src/shared/commands/types';
@@ -32,7 +33,7 @@ async function runCli(language: 'zh' | 'en', mode: string): Promise<string> {
     loadDecisionHistory: async () => ({
       getDecisionHistory: () => ({
         getRecent: () => OUTCOMES.map((outcome) => ({
-          timestamp: now, toolName: 'spawn_agent', summary: '', outcome, reason: '已放行', durationMs: 3,
+          timestamp: now, toolName: 'spawn_agent', summary: '', outcome, reason: 'safe-command', durationMs: 3,
           decisionTrace: { finalOutcome: outcome, steps: [1, 2] },
         })),
         getAll: () => OUTCOMES,
@@ -56,11 +57,30 @@ describe('/permissions 诊断块跟随界面语言', () => {
 
   it('en CLI 整块为英文，无中文，无内部 id', async () => {
     const text = await runCli('en', 'default');
-    expect(text.replaceAll('已放行', '')).not.toMatch(/[一-鿿]/);
+    expect(text).not.toMatch(/[一-鿿]/);
     for (const id of OUTCOMES) expect(text).not.toContain(id);
     expect(text).toContain('Auto-approved');
     expect(text).toContain('Request approval');
     expect(text).toContain('3 ms');
+  });
+
+  it('zh 决定行：safe-command 译成中文，未登记的英文 reason 不原样露出', () => {
+    const line = formatPermissionDecision({ toolName: 'Bash', summary: 'ls -la', outcome: 'auto-approve', reason: 'safe-command', durationMs: 8 }, 'zh');
+    expect(line).toBe('运行命令(ls -la) → 自动放行  （安全命令，8 毫秒）');
+    expect(line.replace('ls -la', '')).not.toMatch(/[A-Za-z]{2,}/);
+    const unknown = formatPermissionDecision({ toolName: 'Bash', summary: 'ls', outcome: 'policy-deny', reason: 'some_new_internal_code', durationMs: 1 }, 'zh');
+    expect(unknown).not.toContain('some_new_internal_code');
+    expect(formatPermissionDecision({ toolName: 'Bash', summary: 'ls', outcome: 'policy-deny', reason: 'some_new_internal_code', durationMs: 1 }, 'en')).not.toContain('some_new_internal_code');
+  });
+
+  it('决定摘要不露绝对家目录，也不在引号中间截断', () => {
+    const summary = 'ls -la "/Users/leo/work/out/N-FIX-PERMISSIONS-SLASH-DIAG/some folder"';
+    for (const language of ['zh', 'en'] as const) {
+      const line = formatPermissionDecision({ toolName: 'Bash', summary, outcome: 'auto-approve', reason: 'safe-command', durationMs: 8 }, language);
+      expect(line).not.toContain('/Users/leo');
+      expect(line).not.toContain('leo');
+      expect((line.match(/"/g) ?? []).length % 2).toBe(0);
+    }
   });
 
   it('未知的结果词不露原始 id', () => {

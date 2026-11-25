@@ -139,7 +139,7 @@ describe('SlashCommandPopover 候选行呈现', () => {
     await waitFor(() => expect(sessionState.addMessage).toHaveBeenCalledTimes(1));
     const text: string = sessionState.addMessage.mock.calls[0][0].content;
     const outcome = language === 'zh' ? '自动放行' : 'Auto-approved';
-    const tail = language === 'zh' ? '（已放行，3 毫秒）' : '(已放行, 3 ms)';
+    const tail = language === 'zh' ? '（已放行，3 毫秒）' : '(system rule, 3 ms)';
     expect(text.split('\n').filter((line) => line.includes(`→ ${outcome}`))).toEqual(
       labels.map((label) => `    ${label} → ${outcome}  ${tail}`),
     );

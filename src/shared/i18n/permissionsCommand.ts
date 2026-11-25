@@ -75,6 +75,32 @@ const ruleDecisionLabels = {
   en: { allow: 'allow', prompt: 'ask', forbidden: 'forbid' },
 } as const satisfies Record<Language, Record<string, string>>;
 
+// toolExecutor / toolExecutorDecisionTrace 的 recordDecision 实际写入的 reason 码；未登记的不原样露出。
+const reasonLabels = {
+  zh: {
+    'safe-command': '安全命令', 'pre-approved': '已预先批准', 'user-permission-rule': '你设置的权限规则',
+    'exec-policy': '命令规则', 'readonly-probe-plan': '只读探查', 'approved-rm-verify-probe': '已批准的删除核对',
+    'lenient-mode': '宽松模式', 'directive-memory-headless-skip-permissions': '后台记忆写入',
+    'cua-app-target-unresolved': '无法确定要操作的应用', 'command_analysis_sticky': '此前已拦截的命令',
+    'peermsg-launder': '来自其他助手的消息', 'peer-origin-unattended': '无人值守的外部来源',
+    'permission_path_analysis_failed': '路径无法分析', 'user-denied-sticky': '此前已被你拒绝',
+    'no-approval-ui': '没有可用的审批界面', security: '安全检查', policy: '策略限制', classifier: '安全检查',
+    'path policy': '路径限制', user: '你', unspecified: '已批准',
+    'run tool policy (--tools/--disallowed-tools)': '运行时工具限制',
+  },
+  en: {
+    'safe-command': 'safe command', 'pre-approved': 'pre-approved', 'user-permission-rule': 'your permission rule',
+    'exec-policy': 'command rule', 'readonly-probe-plan': 'read-only probe', 'approved-rm-verify-probe': 'approved delete check',
+    'lenient-mode': 'lenient mode', 'directive-memory-headless-skip-permissions': 'background memory write',
+    'cua-app-target-unresolved': 'target app not identified', 'command_analysis_sticky': 'previously blocked command',
+    'peermsg-launder': 'message from another assistant', 'peer-origin-unattended': 'unattended outside source',
+    'permission_path_analysis_failed': 'path could not be analyzed', 'user-denied-sticky': 'previously denied by you',
+    'no-approval-ui': 'no approval screen available', security: 'safety check', policy: 'policy limit', classifier: 'safety check',
+    'path policy': 'path limit', user: 'you', unspecified: 'approved',
+    'run tool policy (--tools/--disallowed-tools)': 'run-time tool limit',
+  },
+} as const satisfies Record<Language, Record<string, string>>;
+
 const has = (table: object, key: string): boolean => Object.prototype.hasOwnProperty.call(table, key);
 
 function permissionModeLabel(language: Language, mode: string): string {
@@ -87,6 +113,15 @@ function permissionOutcomeLabel(language: Language, outcome: string): string {
   return has(table, outcome) ? table[outcome] : messages[language].unknownOutcome;
 }
 
+function permissionReasonLabel(language: Language, reason: string): string {
+  const table: Record<string, string> = reasonLabels[language];
+  if (has(table, reason)) return table[reason];
+  const generic = language === 'zh' ? '按系统规则' : 'system rule';
+  const looksLikeId = /^[a-z0-9_:.-]+$/i.test(reason);
+  if (language === 'zh') return /[A-Za-z]{2,}/.test(reason) ? generic : reason;
+  return looksLikeId || /[\u4e00-\u9fff]/.test(reason) ? generic : reason;
+}
+
 export function permissionDecisionLine(
   language: Language,
   subject: string,
@@ -97,7 +132,7 @@ export function permissionDecisionLine(
 ): string {
   const m = messages[language];
   const traceText = trace ? m.trace(permissionOutcomeLabel(language, trace.finalOutcome), trace.steps) : '';
-  return m.decision(subject, permissionOutcomeLabel(language, outcome), reason, durationMs, traceText);
+  return m.decision(subject, permissionOutcomeLabel(language, outcome), permissionReasonLabel(language, reason), durationMs, traceText);
 }
 
 function relativeTime(language: Language, ts: number, now: number): string {
