@@ -4,8 +4,27 @@
 
 import { createLogger } from '../infra/logger';
 import { stripTelemetryRecoveryNotice } from '../../../shared/telemetryRecovery';
+import { LANGUAGE_NAME, type SessionTitleLanguage } from '../../../shared/sessionTitlePrompt';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 
 const logger = createLogger('PromptSuggestions');
+
+// 同一份提示词正文；只换输出语言句、对话角色标签和长度上限。zh 正文与改前逐字相同。
+const TRANSCRIPT_LABEL: Record<SessionTitleLanguage, { user: string; assistant: string }> = {
+  zh: { user: '用户', assistant: '助手' },
+  en: { user: 'User', assistant: 'Assistant' },
+};
+const SUGGESTION_LENGTH_RULE: Record<SessionTitleLanguage, string> = {
+  zh: '15 字以内',
+  en: 'at most 8 words',
+};
+// 与会话标题的 CJK_CHAR 同一字符类，但不用 /g，避免 test() 的 lastIndex 串行漏判。
+const CJK_SCRIPT = /[㐀-鿿豈-﫿぀-ヿ가-힯]/;
+
+function matchesUiScript(line: string, language: SessionTitleLanguage): boolean {
+  const hasCjk = CJK_SCRIPT.test(line);
+  return language === 'en' ? !hasCjk : hasCjk;
+}
 
 const CONTEXT_MESSAGE_LIMIT = 10;
 const USER_MESSAGE_MAX_CHARS = 600;
@@ -60,6 +79,8 @@ export async function generateContextSuggestions(
   messages: Array<{ role: string; content?: string }>,
 ): Promise<PromptSuggestion[]> {
   try {
+    const language = readUiLanguage();
+    const labels = TRANSCRIPT_LABEL[language];
     // Extract recent conversation context
     const windowed = messages
       .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
@@ -67,7 +88,8 @@ export async function generateContextSuggestions(
     const recentMessages = windowed
       .map(m => {
         const limit = m.role === 'user' ? USER_MESSAGE_MAX_CHARS : ASSISTANT_MESSAGE_MAX_CHARS;
-        return `${m.role === 'user' ? '用户' : '助手'}: ${stripTelemetryRecoveryNotice(m.content || '').slice(0, limit)}`;
+        const label = m.role === 'user' ? labels.user : labels.assistant;
+        return `${label}: ${stripTelemetryRecoveryNotice(m.content || '').slice(0, limit)}`;
       })
       .join('\n');
 
@@ -75,9 +97,10 @@ export async function generateContextSuggestions(
 
     const { quickTask } = await import('../../model/quickModel');
 
-    const prompt = `根据以下对话，生成 2-3 个用户可能的后续提问或指令。要求：
+    const prompt = `Write every suggestion in ${LANGUAGE_NAME[language]}.
+根据以下对话，生成 2-3 个用户可能的后续提问或指令。要求：
 - 每行一个建议，不要编号
-- 简短（15 字以内），以动词开头
+- 简短（${SUGGESTION_LENGTH_RULE[language]}），以动词开头
 - 基于对话上下文，是合理的下一步操作
 - 不要重复已经完成的事情
 - 尊重用户在对话中提出的任何拒绝、禁止、限制或偏好，后说的优先；绝不建议被拒绝的操作，也不建议它的同义做法
@@ -87,6 +110,10 @@ export async function generateContextSuggestions(
 ${recentMessages}
 
 后续建议：`;
+    logger.debug('Context suggestion prompt language', {
+      language,
+      rule: `Write every suggestion in ${LANGUAGE_NAME[language]}.`,
+    });
 
     const result = await quickTask(prompt);
     if (!result.success || !result.content) return [];
@@ -96,12 +123,20 @@ ${recentMessages}
       .map(l => l.replace(/^[-•\d.]\s*/, '').trim())
       .filter(l => l.length > 2 && l.length < 50);
 
+    const scriptMatched = lines.filter(l => matchesUiScript(l, language));
+    if (scriptMatched.length < lines.length) {
+      logger.debug('Dropped suggestions whose script mismatches the UI language', {
+        reason: language === 'en' ? 'contains-cjk' : 'no-cjk',
+        dropped: lines.length - scriptMatched.length,
+      });
+    }
+
     const banned = extractBannedTerms(windowed);
     const allowed = banned.length
-      ? lines.filter(l => !banned.some(t => mentionsTerm(l, t)))
-      : lines;
-    if (allowed.length < lines.length) {
-      logger.debug('Dropped suggestions containing user-banned terms', { dropped: lines.length - allowed.length });
+      ? scriptMatched.filter(l => !banned.some(t => mentionsTerm(l, t)))
+      : scriptMatched;
+    if (allowed.length < scriptMatched.length) {
+      logger.debug('Dropped suggestions containing user-banned terms', { dropped: scriptMatched.length - allowed.length });
     }
 
     return allowed.slice(0, 3).map((text, i) => ({
