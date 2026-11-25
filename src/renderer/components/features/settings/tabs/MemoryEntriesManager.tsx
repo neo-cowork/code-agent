@@ -680,7 +680,6 @@ export const MemoryEntriesManager: React.FC<{
                                     disabled
                                     aria-label={memoryText.entries.batchReview.directiveNeedsConfirmation}
                                   />
-                                  {memoryText.entries.batchReview.directiveNeedsConfirmation}
                                 </span>
                               );
                             }
@@ -706,6 +705,12 @@ export const MemoryEntriesManager: React.FC<{
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>
                           <div className="mt-1 max-w-[380px] truncate text-zinc-500">{row.summary || row.id}</div>
                           {row.replacementHint && <div className="mt-1 max-w-[380px] text-zinc-400">{row.replacementHint}</div>}
+                          {(() => {
+                            const entry = entries.find((item) => item.id === row.id);
+                            return entry?.status === 'candidate' && entry.kind === 'directive'
+                              ? <div className="mt-1 max-w-[380px] text-[11px] text-zinc-500">{memoryText.entries.batchReview.directiveNeedsConfirmation}</div>
+                              : null;
+                          })()}
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">
                           {row.statusLabel}
