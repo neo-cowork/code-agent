@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { Nodes, Root } from 'mdast';
 import { remarkCurrencyDollarGuard } from '../../../src/renderer/components/features/chat/MessageBubble/remarkCurrencyDollarGuard';
+import { remarkMathPandoc } from '../../../src/renderer/components/features/chat/MessageBubble/remarkMathPandoc';
+import { remarkTrimCjkAutolink } from '../../../src/renderer/components/features/chat/MessageBubble/remarkTrimCjkAutolink';
 import { updateStreamingMarkdownBlockState } from '../../../src/renderer/components/features/chat/MessageBubble/streamingMarkdownBlocks';
 import { dedupeCodeCopyLinks } from '../../../src/renderer/components/features/chat/MessageBubble/dedupeCodeCopyLinks';
 
@@ -59,5 +62,95 @@ describe('remarkCurrencyDollarGuard', () => {
     expect(updateStreamingMarkdownBlockState(null, sentence).blocks[0].content).toBe(sentence);
     const codeCopy = `${sentence}\n\n[copy](!copy)\n\n\`\`\`text\ncopy\n\`\`\``;
     expect(dedupeCodeCopyLinks(codeCopy)).toBe(`${sentence}\n\n${' '.repeat('[copy](!copy)'.length)}\n\n\`\`\`text\ncopy\n\`\`\``);
+  });
+});
+
+function parseWithPandoc(source: string): Root {
+  const processor = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkTrimCjkAutolink)
+    .use(remarkMathPandoc)
+    .use(remarkCurrencyDollarGuard);
+  return processor.runSync(processor.parse(source), { value: source });
+}
+
+function collectTypes(node: Nodes): string[] {
+  const types: string[] = [node.type];
+  if ('children' in node) {
+    for (const child of node.children) {
+      types.push(...collectTypes(child));
+    }
+  }
+  return types;
+}
+
+describe('remarkMathPandoc', () => {
+  const TICKET_SENTENCE = '合计 **$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。';
+
+  it.each([
+    { source: '**$5**', expectStrong: true, strongText: '$5' },
+    { source: TICKET_SENTENCE, expectStrong: true, strongText: '$124.68' },
+    { source: '$5 和 $10', expectStrong: false, strongText: null },
+    { source: '**$1,234.50**', expectStrong: true, strongText: '$1,234.50' },
+  ])('preserves bold around currency dollars without literal **: $source', ({ source, expectStrong, strongText }) => {
+    const tree = parseWithPandoc(source);
+    const types = collectTypes(tree);
+    expect(types).not.toContain('inlineMath');
+    const text = leaves(tree).map(n => ('value' in n ? n.value : '')).join('');
+    expect(text).not.toContain('**');
+    if (expectStrong) {
+      expect(types).toContain('strong');
+      const paragraph = tree.children[0];
+      expect(paragraph && 'children' in paragraph).toBe(true);
+      const strongNode = paragraph && 'children' in paragraph
+        ? paragraph.children.find(c => c.type === 'strong')
+        : undefined;
+      expect(strongNode).toBeDefined();
+      const strongVal = strongNode ? leaves(strongNode).map(n => ('value' in n ? n.value : '')).join('') : '';
+      expect(strongVal).toBe(strongText);
+    } else {
+      expect(types).not.toContain('strong');
+    }
+  });
+
+  it.each([
+    '$x^2$',
+    '$\\bar{x}$',
+    '$5$',
+    '$$\nE=mc^2\n$$',
+    'a $$ E=mc^2 $$2 b',
+  ])('keeps valid math identical to unguarded remarkMath: %s', (source) => {
+    const pandocTree = unified().use(remarkParse).use(remarkMathPandoc).runSync(
+      unified().use(remarkParse).use(remarkMathPandoc).parse(source),
+      { value: source },
+    );
+    expect(pandocTree).toEqual(parse(source, false));
+  });
+
+  it('agrees across MarkdownCore, streamingMarkdownBlocks, and dedupeCodeCopyLinks chains', () => {
+    const markdownCoreTree = parseWithPandoc(TICKET_SENTENCE);
+    const streamingParser = unified().use(remarkParse).use(remarkGfm).use(remarkMathPandoc);
+    const streamingTree = streamingParser.runSync(streamingParser.parse(TICKET_SENTENCE), { value: TICKET_SENTENCE });
+    const dedupeParser = unified().use(remarkParse).use(remarkGfm).use(remarkMathPandoc);
+    const dedupeTree = dedupeParser.runSync(dedupeParser.parse(TICKET_SENTENCE), { value: TICKET_SENTENCE });
+
+    for (const tree of [markdownCoreTree, streamingTree, dedupeTree]) {
+      const types = collectTypes(tree);
+      expect(types).toContain('strong');
+      expect(types).not.toContain('inlineMath');
+    }
+    expect(collectTypes(streamingTree)).toEqual(collectTypes(markdownCoreTree));
+    expect(collectTypes(dedupeTree)).toEqual(collectTypes(markdownCoreTree));
+
+    const blockState = updateStreamingMarkdownBlockState(null, TICKET_SENTENCE);
+    expect(blockState.blocks.length).toBeGreaterThan(0);
+    const reParsed = parseWithPandoc(blockState.blocks.map(b => b.content).join(''));
+    expect(collectTypes(reParsed)).toContain('strong');
+    expect(collectTypes(reParsed)).not.toContain('inlineMath');
+
+    // Half-streamed prefix must not throw
+    expect(() => updateStreamingMarkdownBlockState(null, '合计 **$124.68**（明细 $')).not.toThrow();
+    expect(dedupeCodeCopyLinks(TICKET_SENTENCE)).toBe(TICKET_SENTENCE);
   });
 });

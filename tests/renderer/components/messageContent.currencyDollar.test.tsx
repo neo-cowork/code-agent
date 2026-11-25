@@ -3,6 +3,7 @@ import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
+import { updateStreamingMarkdownBlockState } from '../../../src/renderer/components/features/chat/MessageBubble/streamingMarkdownBlocks';
 
 afterEach(cleanup);
 
@@ -66,5 +67,43 @@ describe('MessageContent currency dollars', () => {
     await waitForMarkdown(container);
     expect(container.textContent).toBe(streamingText);
     expect(container.querySelectorAll('.katex')).toHaveLength(0);
+  });
+
+  it('renders bold around currency dollar when later dollar amounts exist', async () => {
+    const ticketSentence = '合计 **$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。';
+    const { container } = render(<MessageContent content={ticketSentence} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.querySelector('strong')?.textContent).toBe('$124.68');
+    expect(container.textContent).not.toContain('**');
+    expect(container.textContent?.match(/\$/g)).toHaveLength(3);
+    expect(container.querySelectorAll('.katex')).toHaveLength(0);
+  });
+
+  it.each([
+    { content: '**$5**', strongText: '$5' },
+    { content: '**$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。', strongText: '$124.68' },
+    { content: '$5 和 $10', strongText: null },
+    { content: '**$1,234.50**', strongText: '$1,234.50' },
+  ])('renders currency bold cases without literal **: $content', async ({ content, strongText }) => {
+    const { container } = render(<MessageContent content={content} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.textContent).not.toContain('**');
+    expect(container.querySelectorAll('.katex')).toHaveLength(0);
+    if (strongText) {
+      expect(container.querySelector('strong')?.textContent).toBe(strongText);
+    } else {
+      expect(container.querySelector('strong')).toBeNull();
+    }
+  });
+
+  it('keeps streaming blocks consistent with full render for bold currency sentence', async () => {
+    const ticketSentence = '合计 **$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。';
+    const blockState = updateStreamingMarkdownBlockState(null, ticketSentence);
+    const combined = blockState.blocks.map(b => b.content).join('');
+    const { container } = render(<MessageContent content={combined} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.querySelector('strong')?.textContent).toBe('$124.68');
+    expect(container.textContent).not.toContain('**');
+    expect(() => updateStreamingMarkdownBlockState(null, '合计 **$124.68**（明细 $')).not.toThrow();
   });
 });
