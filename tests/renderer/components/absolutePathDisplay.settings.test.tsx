@@ -32,7 +32,7 @@ const scope = {
   workingDirectory: ROOT,
   generatedAt: 1,
   layers: [{
-    id: 'user', label: 'User', description: 'user layer', pathLabel: '~', presentCount: 1, activeCount: 1, warningCount: 0,
+    id: 'user', label: 'User', description: 'user layer', pathLabel: '/Users/alice/.code-agent', presentCount: 1, activeCount: 1, warningCount: 0,
     items: [{
       id: 'cfg', label: 'Settings', description: 'settings file', path: '/Users/alice/.code-agent/settings.json',
       kind: 'file', exists: true, active: true, private: false, status: 'present',
