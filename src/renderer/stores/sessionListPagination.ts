@@ -165,6 +165,15 @@ function applyClientFilter(sessions: SessionListMeta[], filter: SessionFilter): 
   return sessions.filter((s) => (filter === 'archived' ? s.isArchived : !s.isArchived));
 }
 
+// Creating a replacement session can refresh the list during the undo window.
+// The host still has the pending rows until the timer commits the deletion.
+function excludePendingDeletes(sessions: SessionListMeta[]): SessionListMeta[] {
+  const pending = useSessionUIStore.getState().pendingDelete;
+  if (!pending) return sessions;
+  const deleted = new Set(pending.ids);
+  return sessions.filter((session) => !deleted.has(session.id));
+}
+
 export async function executeLoadSessions(
   deps: SessionListPaginationDeps,
   options?: { silent?: boolean },
@@ -197,10 +206,10 @@ export async function executeLoadSessions(
       (sessions || []).map((session) => normalizeSession(session as Session & { messageCount?: number; turnCount?: number })),
       filter,
     );
-    const sessionsWithMeta = preserveParkedContinueOnRefresh(
+    const sessionsWithMeta = excludePendingDeletes(preserveParkedContinueOnRefresh(
       get().sessions,
       keepOpenedOutsideWindow(get().sessions, refreshedWindow),
-    );
+    ));
 
     useSessionListLoadStore.setState({ settled: true, loading: false, error: false, errorCode: null });
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
@@ -254,7 +263,7 @@ export async function executeLoadOlderSessions(deps: SessionListPaginationDeps):
     // 重复扫到上一页末尾若干行——按 id 去重，只追加真正的新行。
     const current = get().sessions;
     const knownIds = new Set(current.map((session) => session.id));
-    const fresh = pageWithMeta.filter((session) => !knownIds.has(session.id));
+    const fresh = excludePendingDeletes(pageWithMeta).filter((session) => !knownIds.has(session.id));
 
     set({
       sessions: fresh.length > 0 ? [...current, ...fresh] : current,
