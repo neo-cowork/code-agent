@@ -39,6 +39,12 @@ describe('scheduled result location i18n drift', () => {
   it('en matches the live Automations title and Run history tab', () => {
     expect(en.scheduleConfirm.reviewInbox).toBe(`${en.cronCenter.title} → ${en.cronCenter.tabRuns}`);
   });
+  it('en result channel copy names the live Run history tab', () => {
+    const { resultPushNone, resultPushNoneDefault, resultPushNoAccounts, tabRuns } = en.cronCenter;
+    const mismatches = [resultPushNone, resultPushNoneDefault, resultPushNoAccounts]
+      .filter((copy) => !copy.includes(tabRuns) || copy.includes('To review'));
+    expect(mismatches).toEqual([]);
+  });
 });
 
 it.each(['zh', 'en'] as const)('production result rows without resultChannel (%s)', (language) => {
