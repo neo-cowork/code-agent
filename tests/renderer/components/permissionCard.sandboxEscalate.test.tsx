@@ -100,7 +100,7 @@ describe('sandbox escalation approval card', () => {
 
     expect(html).toContain('沙盒拦截了这一步');
     expect(html).toContain(FILE_REASON);
-    expect(html).toMatch(/<p class="[^"]*font-mono[^"]*" data-testid="sandbox-escalation-path">neo-sandbox\/neo-x\.txt<\/p>/);
+    expect(html).toMatch(/<p class="[^"]*font-mono[^"]*" data-testid="sandbox-escalation-path">\/tmp\/neo-sandbox\/neo-x\.txt<\/p>/);
     expect(buttonLabel(html, '允许仅这一次', 'y')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain(GENERIC_CONSEQUENCE);
@@ -125,7 +125,7 @@ describe('sandbox escalation approval card', () => {
 
     expect(html).toContain('沙盒拦截了这一步');
     expect(html).toContain(DIR_REASON);
-    expect(html).toMatch(/<p class="[^"]*font-mono[^"]*" data-testid="sandbox-escalation-path">neo-sandbox\/neo-dir<\/p>/);
+    expect(html).toMatch(/<p class="[^"]*font-mono[^"]*" data-testid="sandbox-escalation-path">\/tmp\/neo-sandbox\/neo-dir<\/p>/);
     expect(buttonLabel(html, '允许仅这一次', 'y')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain(GENERIC_CONSEQUENCE);

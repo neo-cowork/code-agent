@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { Translations } from '../../hooks/useI18n';
 import type { PermissionType, PermissionConfig } from './types';
+import { foldHomePrefixForDisplay } from '../../utils/formatPathForDisplay';
 
 /** 卡片类型标题的唯一出口：全部走 i18n，utils 里不留任何语言字面量；未登记类型落中性标题。 */
 export function getPermissionTitle(type: PermissionType, p: Translations['decisionCard']['permission']): string {
@@ -153,6 +154,23 @@ const DANGEROUS_PATTERNS = [
 export function isDangerousCommand(command?: string): boolean {
   if (!command) return false;
   return DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
+}
+
+// 格式化文件路径（缩短显示）：先把家目录折成 ~（不露账户名），再按长度缩写。
+// 句子里的路径（删除/写入后果、沙箱被拦路径）保留完整位置，只去掉账户名；
+// 文件行用 formatPathForDisplay 的 parent/file 形式。
+export function formatFilePath(path: string, maxLength = 60): string {
+  const folded = foldHomePrefixForDisplay(path);
+  if (folded.length <= maxLength) return folded;
+
+  const parts = folded.split('/');
+  if (parts.length <= 3) return folded;
+
+  // 保留前两部分和最后两部分
+  const start = parts.slice(0, 2).join('/');
+  const end = parts.slice(-2).join('/');
+
+  return `${start}/.../${end}`;
 }
 
 // 解析命令获取基础命令名
