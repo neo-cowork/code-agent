@@ -3,7 +3,8 @@ import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolL
 import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
-import { formatFilePath, isDangerousCommand } from './utils';
+import { isDangerousCommand } from './utils';
+import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { PermissionRequestReason } from '@shared/contract';
@@ -199,7 +200,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   const target = request.details.affectedPath
     || fileTarget(request)
     || parsedRmTargets.targets[0];
-  const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
+  const safeTarget = target ? formatPathForDisplay(redactCredentialText(target)) : undefined;
   // 写入类后果句里的上传 / 临时目录路径用位置词显示（含 .. 的路径原样）；删除后果句保持原口径。
   const humanTarget = target ? humanizeToolPath(redactCredentialText(target), language, request.details.pathDisplay) : undefined;
   const writeTarget = humanTarget && safeTarget && humanTarget !== redactCredentialText(target ?? '') ? humanTarget : safeTarget;

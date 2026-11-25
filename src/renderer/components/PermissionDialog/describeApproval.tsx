@@ -13,7 +13,8 @@ import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
-import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
+import { getPermissionConfig, getPermissionTitle } from './utils';
+import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
 import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
@@ -128,7 +129,7 @@ function folderConsequence(request: PermissionRequest, p: Translations['decision
     : access === 'read_only'
       ? p.consequenceFolderReadOnly
       : p.consequenceFolderUnknown;
-  const target = formatFilePath(redactCredentialText(request.details.path ?? ''));
+  const target = formatPathForDisplay(redactCredentialText(request.details.path ?? ''));
   return copy.replace('{target}', target);
 }
 

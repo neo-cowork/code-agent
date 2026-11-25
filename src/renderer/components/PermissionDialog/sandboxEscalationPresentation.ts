@@ -1,6 +1,6 @@
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { PermissionRequest } from './types';
-import { formatFilePath } from './utils';
+import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 
 const SANDBOX_ESCALATION_ACTIONS = new Set([
   'sandbox_escalate_once',
@@ -23,5 +23,5 @@ export function sandboxEscalationQuestion(reason: string | undefined, fallback: 
 export function sandboxEscalationDeniedPath(request: Pick<PermissionRequest, 'details'>): string | undefined {
   const deniedPath = request.details.deniedPath;
   if (!deniedPath) return undefined;
-  return formatFilePath(redactCredentialText(deniedPath));
+  return formatPathForDisplay(redactCredentialText(deniedPath));
 }

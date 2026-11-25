@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
-import { formatFilePath } from './utils';
+import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
@@ -492,7 +492,8 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
   const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
-  const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatFilePath(visibleValue)) : visibleValue;
+  const workspaceRoot = useAppStore().workingDirectory;
+  const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatPathForDisplay(visibleValue, { workspaceRoot })) : visibleValue;
 
   const lines = rawDisplayValue.split('\n');
   const shouldFold = Boolean(
@@ -530,7 +531,7 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={isPath && humanPath !== visibleValue ? humanPath : redactedValue}
+        title={isPath ? rawDisplayValue : redactedValue}
       >
         {displayValue}
       </div>

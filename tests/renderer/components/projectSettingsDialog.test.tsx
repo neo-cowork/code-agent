@@ -163,8 +163,10 @@ describe('ProjectSettingsDialog', () => {
       const fullPath = i === 0 ? longPath : `${longPath}-docs`;
       expect(row.className).toContain('grid-cols-1');
       expect(row.className).toContain('min-w-0');
-      const span = row.querySelector(`span[title="${fullPath}"]`) as HTMLElement;
-      expect(span.textContent).toBe(fullPath);
+      const shown = fullPath.replace('/Users/leo', '~');
+      const span = row.querySelector(`span[title="${shown}"]`) as HTMLElement;
+      expect(span.textContent).toBe(shown);
+      expect(row.innerHTML).not.toContain('/Users/');
       expect(span.className).toContain('truncate');
       expect(span.className).toContain('min-w-0');
       expect(span.parentElement!.className).toContain('min-w-0');

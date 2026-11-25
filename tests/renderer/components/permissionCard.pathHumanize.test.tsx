@@ -91,7 +91,7 @@ describe('RequestDetails 文件行路径人话化', () => {
       storeState.language = lang;
       storeState.request = readReq(p);
       const html = render();
-      expect(html).toContain(p);
+      expect(html).toContain(p.replace('/Users/x', '~'));
       expect(html).not.toContain('你上传的文件');
       expect(html).not.toContain('Your uploaded file');
     }
@@ -101,7 +101,7 @@ describe('RequestDetails 文件行路径人话化', () => {
     storeState.language = 'en';
     storeState.request = readReq('/Users/x/project/a.png', { path: '/tmp/x', kind: 'temp', rest: 'x' });
     const html = render();
-    expect(html).toContain('/Users/x/project/a.png');
+    expect(html).toContain('~/project/a.png');
     expect(html).not.toContain('Temporary file');
   });
 
@@ -112,7 +112,7 @@ describe('RequestDetails 文件行路径人话化', () => {
   ])('穿越路径即使被标成临时也原样显示：%s', (p) => {
     storeState.language = 'en';
     storeState.request = readReq(p, { path: p, kind: 'temp', rest: 'passwd' });
-    expect(render()).toContain(p);
+    expect(render()).toContain(p.replace('/Users/x', '~'));
   });
 });
 
@@ -149,9 +149,9 @@ describe('RequestDetails 写入后果句路径人话化', () => {
     for (const boundary of [undefined, 'file.external_write']) {
       storeState.request = writeReq(p, boundary);
       const html = render();
-      // 后果句沿用 formatFilePath 的长路径缩写，但仍是绝对路径而不是上传位置词
-      expect(consequenceOf(html)).toMatch(/\/Users\/.*avatar\.png/);
-      expect(html).toContain(p);
+      // 后果句家目录折成 ~，但仍是真实目录路径而不是上传位置词
+      expect(consequenceOf(html)).toMatch(/~\/project\/.*avatar\.png/);
+      expect(html).toContain(p.replace('/Users/x', '~'));
       expect(html).not.toContain('你上传的文件');
       expect(html).not.toContain('Your uploaded file');
     }

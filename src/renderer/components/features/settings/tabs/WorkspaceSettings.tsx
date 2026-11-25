@@ -40,6 +40,7 @@ import {
 } from '../../../../utils/workbenchPresentation';
 import { useI18n } from '../../../../hooks/useI18n';
 import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
+import { formatPathForDisplay } from '../../../../utils/formatPathForDisplay';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { MissingWorkspaceDirectoryNotice } from './MissingWorkspaceDirectoryNotice';
@@ -590,8 +591,8 @@ export const WorkspaceSettings: React.FC = () => {
                           </span>
                           <div className="min-w-0">
                             <div className="text-sm font-medium text-zinc-200">{row.label}</div>
-                            <div className="mt-0.5 truncate font-mono text-[11px] text-zinc-500" title={row.path}>
-                              {row.path}
+                            <div className="mt-0.5 truncate font-mono text-[11px] text-zinc-500" title={formatPathForDisplay(row.path)}>
+                              {formatPathForDisplay(row.path)}
                             </div>
                           </div>
                         </button>
@@ -893,8 +894,8 @@ const ConfigScopeLayerBlock: React.FC<{
                     </div>
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <code className="block truncate text-[11px] text-zinc-300" title={item.path}>
-                      {item.path}
+                    <code className="block truncate text-[11px] text-zinc-300" title={formatPathForDisplay(item.path)}>
+                      {formatPathForDisplay(item.path)}
                     </code>
                     {item.detail && (
                       <div className="mt-1 text-[11px] text-zinc-500">{item.detail}</div>

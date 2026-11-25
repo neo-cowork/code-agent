@@ -18,6 +18,7 @@ import type {
 import { useComposerStore } from '../../../stores/composerStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatPathForDisplay } from '../../../utils/formatPathForDisplay';
 import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSession';
 import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
 import { buildBrowserWorkbenchStatusRows } from '../../../utils/workbenchPresentation';
@@ -409,7 +410,7 @@ export const BrowserSurfaceContent: React.FC = () => {
               <div className="space-y-1.5 text-[11px]">
                 <InfoRow label="Port" value={bridge?.port ? String(bridge.port) : '未启动'} />
                 <InfoRow label="Token" value={bridge?.tokenHint || '未生成'} />
-                <InfoRow label="Extension" value={bridge?.extensionPath ? '已打包' : '未找到'} title={bridge?.extensionPath || undefined} />
+                <InfoRow label="Extension" value={bridge?.extensionPath ? '已打包' : '未找到'} title={bridge?.extensionPath ? formatPathForDisplay(bridge.extensionPath) : undefined} />
                 <InfoRow label="Leased" value={String(bridge?.attachedTabCount || 0)} />
               </div>
 
@@ -529,7 +530,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                             {' · '}
                             {profile.profileName}
                           </span>
-                          <span className="mt-0.5 block truncate text-zinc-500" title={profile.profileDir}>
+                          <span className="mt-0.5 block truncate text-zinc-500" title={formatPathForDisplay(profile.profileDir)}>
                             {summarizeProfilePath(profile.profileDir)}
                           </span>
                         </span>

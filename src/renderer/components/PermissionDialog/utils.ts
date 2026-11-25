@@ -155,20 +155,6 @@ export function isDangerousCommand(command?: string): boolean {
   return DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-// 格式化文件路径（缩短显示）
-export function formatFilePath(path: string, maxLength = 60): string {
-  if (path.length <= maxLength) return path;
-
-  const parts = path.split('/');
-  if (parts.length <= 3) return path;
-
-  // 保留前两部分和最后两部分
-  const start = parts.slice(0, 2).join('/');
-  const end = parts.slice(-2).join('/');
-
-  return `${start}/.../${end}`;
-}
-
 // 解析命令获取基础命令名
 export function getBaseCommand(command?: string): string {
   if (!command) return '';

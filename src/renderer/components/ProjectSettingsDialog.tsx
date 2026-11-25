@@ -13,6 +13,7 @@ import {
 } from '../services/projectClient';
 import { useI18n } from '../hooks/useI18n';
 import { isWebMode } from '../utils/platform';
+import { formatPathForDisplay } from '../utils/formatPathForDisplay';
 import { Z_LAYERS } from '../styles/zLayers';
 import { createLogger } from '../utils/logger';
 
@@ -232,7 +233,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 truncate text-zinc-200" title={source.path}>{source.path}</span>
+                      <span className="min-w-0 truncate text-zinc-200" title={formatPathForDisplay(source.path)}>{formatPathForDisplay(source.path)}</span>
                       {source.role === 'primary' && <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-badge-accent">Primary</span>}
                     </div>
                     <span className={source.trustState === 'trusted' ? 'text-[10px] text-zinc-500' : 'text-[10px] text-badge-danger'}>
@@ -245,7 +246,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <select
-                    aria-label={copy.sourceAccessAria.replace('{path}', source.path)}
+                    aria-label={copy.sourceAccessAria.replace('{path}', formatPathForDisplay(source.path))}
                     value={source.access}
                     disabled={source.role === 'primary'}
                     onChange={(event) => setAccess(index, event.target.value as 'read_only' | 'read_write')}

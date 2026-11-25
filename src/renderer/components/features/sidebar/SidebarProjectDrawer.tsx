@@ -1,4 +1,5 @@
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { formatPathForDisplay } from '../../../utils/formatPathForDisplay';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React from 'react';
 import {
@@ -472,7 +473,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     </div>
                     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-zinc-600">
                       <span className="min-w-0 flex-1 truncate">
-                        {session.summary || session.workingDirectory || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
+                        {session.summary || (session.workingDirectory ? formatPathForDisplay(session.workingDirectory) : '') || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
                       </span>
                     </div>
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
