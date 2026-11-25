@@ -284,7 +284,7 @@ export const WorkspaceSettings: React.FC = () => {
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
-              [workspaceText.summary.currentCwd, displayedCurrentDir ?? workspaceText.values.notSet, workspaceText.summary.currentCwdCaption],
+              [workspaceText.summary.currentCwd, displayedCurrentDir ? formatPathForDisplay(displayedCurrentDir) : workspaceText.values.notSet, workspaceText.summary.currentCwdCaption],
               [workspaceText.summary.defaultOpenTarget, describeOpenTarget(defaultOpenTarget, workspaceText.openTargets), workspaceText.summary.defaultOpenTargetCaption],
               [workspaceText.summary.localBridge, getDesktopShellLabel(), isWebMode() ? workspaceText.summary.localBridgeWebCaption : workspaceText.summary.localBridgeIpcCaption],
               [workspaceText.summary.recentCount, String(rows.length), workspaceText.summary.recentCountCaption],
@@ -300,7 +300,7 @@ export const WorkspaceSettings: React.FC = () => {
             <>
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
                 <Folder className="h-3.5 w-3.5 text-zinc-500" />
-                <span className="flex-1 truncate font-mono" title={displayedCurrentDir}>{displayedCurrentDir}</span>
+                <span className="flex-1 truncate font-mono" title={formatPathForDisplay(displayedCurrentDir)}>{formatPathForDisplay(displayedCurrentDir)}</span>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -670,7 +670,7 @@ export const WorkspaceSettings: React.FC = () => {
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-medium text-zinc-100">{selectedDetail.label}</div>
-                <div className="mt-1 break-all font-mono text-[11px] text-zinc-500">{selectedDetail.path}</div>
+                <div className="mt-1 break-all font-mono text-[11px] text-zinc-500">{formatPathForDisplay(selectedDetail.path)}</div>
               </div>
               <button
                 type="button"

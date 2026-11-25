@@ -37,6 +37,14 @@ describe('formatPathForDisplay', () => {
     expect(formatPathForDisplay('/Users/alice/up/x/../../../etc/hosts', { workspaceRoot: root })).toBe('~/up/x/../../../etc/hosts');
   });
 
+  it('/Users/.. 之类的「账户名」不折成 ~，相对路径与 ~ 写法原样', () => {
+    expect(formatPathForDisplay('/Users/../etc/passwd')).toBe('/Users/../etc/passwd');
+    expect(formatPathForDisplay('/Users/..')).toBe('/Users/..');
+    expect(formatPathForDisplay('C:\\Users\\..\\Windows\\x.ini')).toBe('C:\\Users\\..\\Windows\\x.ini');
+    expect(formatPathForDisplay('src/utils/format.ts')).toBe('src/utils/format.ts');
+    expect(formatPathForDisplay('~/Documents/secrets/a.txt')).toBe('~/Documents/secrets/a.txt');
+  });
+
   it('单段与空串原样', () => {
     expect(formatPathForDisplay('notes.txt')).toBe('notes.txt');
     expect(formatPathForDisplay('/etc')).toBe('/etc');

@@ -43,14 +43,6 @@
     "count": 1,
     "reason": "Skill 被官方版本压住时的来源文件路径，skillsInstalled.projectOverride 测试钉住完整路径用于区分来源；后续单"
   },
-  "src/renderer/components/features/settings/tabs/WorkspaceSettings.tsx": {
-    "count": 3,
-    "reason": "当前目录卡片与详情抽屉：另一条在途分支 mq/fix-web-missing-workspace-reselect-noop 同文件改动，本单只动两处列表行；后续单"
-  },
-  "src/renderer/components/features/sidebar/SidebarProjectDrawer.tsx": {
-    "count": 1,
-    "reason": "项目抽屉里的 sources 行，不在本单范围（本单只改会话副标题）；后续单"
-  },
   "src/renderer/components/features/voice/VoiceAuditDialog.tsx": {
     "count": 1,
     "reason": "语音审计录音目录，不在本单范围；后续单"

@@ -67,7 +67,9 @@ describe.each([['en', en], ['zh', zh]] as const)('WorkspaceSettings 路径行 (%
 
     const titles = allTitles(container);
     expect(titles).toEqual(expect.arrayContaining(['~/work/bar', '~/.code-agent/settings.json']));
-    // 范围外（当前目录卡片 / 详情抽屉）不在本单；这里只断言两处列表行。
+    // 整页（含「当前 CWD」摘要格、当前目录行）都不含绝对路径。
+    expect(container.innerHTML).not.toContain('/Users/');
+    expect(screen.getAllByText('~/work/foo').length).toBeGreaterThan(0);
     const recentRow = screen.getByText('~/work/bar').closest('tr') as HTMLElement;
     const scopeRow = screen.getByText('~/.code-agent/settings.json').closest('tr') as HTMLElement;
     for (const el of [recentRow, scopeRow]) {

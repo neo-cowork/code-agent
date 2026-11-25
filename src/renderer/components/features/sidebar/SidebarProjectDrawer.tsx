@@ -118,7 +118,7 @@ function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translation
 
 function getPrimaryPath(paths: string[], t: Translations): string {
   const primary = paths.find((path) => path.trim());
-  return primary || t.sidebarProject.unboundWorkspace;
+  return primary ? formatPathForDisplay(primary) : t.sidebarProject.unboundWorkspace;
 }
 
 export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
@@ -529,7 +529,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   <div className="text-[10px] font-medium text-zinc-500">{p.workspace}</div>
                   <div className="mt-1 grid gap-1">
                     {paths.slice(0, 6).map((path) => (
-                      <div key={path} className="truncate text-[11px] text-zinc-400">{path}</div>
+                      <div key={path} className="truncate text-[11px] text-zinc-400">{formatPathForDisplay(path)}</div>
                     ))}
                   </div>
                 </div>

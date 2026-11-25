@@ -10,12 +10,12 @@
  * 恰好是家目录本身时折成 `~`。渲染端拿不到真实家目录，另一账户的家目录也会被折掉。
  */
 export function foldHomePrefixForDisplay(path: string): string {
-  const unixHome = /^(?:\/Users|\/home)\/[^/]+\/(.*)$/.exec(path);
+  const unixHome = /^(?:\/Users|\/home)\/(?!\.{1,2}\/)[^/]+\/(.*)$/.exec(path);
   if (unixHome) return `~/${unixHome[1]}`;
-  if (/^(?:\/Users|\/home)\/[^/]+$/.test(path)) return '~';
-  const windowsHome = /^[A-Za-z]:\\Users\\[^\\]+\\(.*)$/.exec(path);
+  if (/^(?:\/Users|\/home)\/(?!\.{1,2}$)[^/]+$/.test(path)) return '~';
+  const windowsHome = /^[A-Za-z]:\\Users\\(?!\.{1,2}\\)[^\\]+\\(.*)$/.exec(path);
   if (windowsHome) return `~\\${windowsHome[1]}`;
-  if (/^[A-Za-z]:\\Users\\[^\\]+$/.test(path)) return '~';
+  if (/^[A-Za-z]:\\Users\\(?!\.{1,2}$)[^\\]+$/.test(path)) return '~';
   return path;
 }
 
@@ -41,6 +41,9 @@ export function formatPathForDisplay(path: string, options: { workspaceRoot?: st
       }
     }
   }
+
+  // 已是相对路径或 ~ 开头的写法（模型传的 src/utils/format.ts、~/Documents/x）原样显示，不再缩。
+  if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(raw)) return raw;
 
   const folded = foldHomePrefixForDisplay(raw);
   if (folded !== raw) return folded;
