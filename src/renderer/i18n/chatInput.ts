@@ -286,7 +286,7 @@ export const chatInputZh = {
     projectScope: '本项目',
     globalScope: '全局',
     pinnedBadge: '已带入对话',
-    noResults: '没有匹配的引用',
+    noResults: '没有匹配的专家或引用',
   },
   pendingCommand: {
     removeAria: '取消命令 {name}',
@@ -773,7 +773,7 @@ export const chatInputEn: typeof chatInputZh = {
     projectScope: 'This project',
     globalScope: 'Global',
     pinnedBadge: 'Pinned to this session',
-    noResults: 'No matching references',
+    noResults: 'No matching experts or references',
   },
   pendingCommand: {
     removeAria: 'Cancel command {name}',

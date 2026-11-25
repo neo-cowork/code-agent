@@ -1,5 +1,7 @@
 import { zh, type Translations } from '../../../../i18n/zh';
 import { interpolatePlural } from '../../../../i18n/interpolate';
+import { isPanelVisibleAgent, type AgentListEntry } from '@shared/contract/agentRegistry';
+import { getAgentCommandToken } from './agentCommand';
 
 export interface MentionRoutingAgent {
   id: string;
@@ -13,10 +15,24 @@ export interface ParsedAgentMentionRouting {
   targetAgentIds: string[];
 }
 
+/** 面板行：swarm agent（无 kind）或已保存专家（kind 'expert'，id 带前缀避免与 swarm id 撞）。 */
+interface AgentMentionRow extends MentionRoutingAgent {
+  kind?: 'expert';
+  /** 专家真实 id（kind 'expert' 时有值） */
+  expertId?: string;
+  /** 次要信息：专家的职业 */
+  role?: string;
+  /** 专家的 /agent token */
+  expertToken?: string;
+  expertName?: string;
+}
+
 export interface AgentMentionAutocompleteResult {
   query: string;
-  matches: MentionRoutingAgent[];
+  matches: AgentMentionRow[];
 }
+
+const EXPERT_ROW_ID_PREFIX = 'expert:';
 
 // mention token 允许的字符：ASCII 字母数字 + ._- + 汉字（Script=Han，角色名可为中文）。
 // 集中一处定义，下方 normalize/解析/补全的正则共用同一字符类，防止漂移。
@@ -173,11 +189,43 @@ export function syncLeadingAgentMentions(
   return content ? `${mentionPrefix} ${content}` : `${mentionPrefix} `;
 }
 
+function getExpertMentionRows(
+  normalizedQuery: string,
+  experts: AgentListEntry[],
+): AgentMentionRow[] {
+  // 空 query（只敲了 @）不列专家：留给文件/引用面板
+  if (!normalizedQuery) return [];
+  return experts.filter(isPanelVisibleAgent).flatMap((entry) => {
+    const token = getAgentCommandToken(entry);
+    const aliases = new Set<string>();
+    for (const raw of [entry.id, entry.name, entry.displayName ?? '', token]) {
+      const normalized = normalizeMentionToken(raw);
+      if (!normalized) continue;
+      aliases.add(normalized);
+      aliases.add(normalized.replace(/-/g, ''));
+    }
+    if (aliases.has('neo')) return [];
+    if (!Array.from(aliases).some((alias) => alias.startsWith(normalizedQuery))) return [];
+    const name = entry.displayName || entry.name || entry.id;
+    return [{
+      id: `${EXPERT_ROW_ID_PREFIX}${entry.id}`,
+      name,
+      mentionToken: token,
+      kind: 'expert' as const,
+      expertId: entry.id,
+      expertToken: token,
+      expertName: name,
+      role: entry.profession,
+    }];
+  });
+}
+
 export function getLeadingAgentMentionAutocomplete(
   value: string,
   agents: MentionRoutingAgent[],
   _neoTopicCandidates?: MentionRoutingAgent[],
   _t: Translations = zh,
+  experts: AgentListEntry[] = [],
 ): AgentMentionAutocompleteResult | null {
   const query = getTrailingMentionQuery(value);
   if (query === null) {
@@ -185,7 +233,7 @@ export function getLeadingAgentMentionAutocomplete(
   }
 
   const normalizedQuery = normalizeMentionToken(query);
-  const matches = agents.filter((agent) => {
+  const swarmMatches = agents.filter((agent) => {
     // @neo 已从 composer 入口移除（2026-07-29 拍板，工作卡改从 Neo 协同页发起），
     // swarm agent 命名为 neo 也不在直连候选里出现。
     if (isReservedNeoMention(agent.id) || isReservedNeoMention(agent.name) || isReservedNeoMention(agent.mentionToken ?? '')) {
@@ -198,6 +246,7 @@ export function getLeadingAgentMentionAutocomplete(
     return Array.from(aliases).some((alias) => alias.startsWith(normalizedQuery));
   });
 
+  const matches: AgentMentionRow[] = [...swarmMatches, ...getExpertMentionRows(normalizedQuery, experts)];
   if (matches.length === 0) {
     return null;
   }
@@ -206,6 +255,13 @@ export function getLeadingAgentMentionAutocomplete(
     query,
     matches,
   };
+}
+
+/** 去掉行尾的 `@query`（选中专家后 chip 立即生效，不留文本）。 */
+export function removeTrailingAgentMentionQuery(value: string): string {
+  const query = getTrailingMentionQuery(value);
+  if (query === null) return value;
+  return value.slice(0, value.length - `@${query}`.length);
 }
 
 export function applyAgentMentionSuggestion(
@@ -271,6 +327,7 @@ export function parseLeadingAgentMentions(
 export function isLeadingAgentMentionInput(
   value: string,
   agents: MentionRoutingAgent[],
+  experts: AgentListEntry[] = [],
 ): boolean {
-  return getLeadingAgentMentionAutocomplete(value, agents) !== null;
+  return getLeadingAgentMentionAutocomplete(value, agents, undefined, zh, experts) !== null;
 }
