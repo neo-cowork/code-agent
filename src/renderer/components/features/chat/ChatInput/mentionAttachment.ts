@@ -84,7 +84,7 @@ export async function buildMentionAttachment(input: BuildMentionAttachmentInput)
     id: generateAttachmentId(),
     type: 'file',
     category,
-    name: input.path,
+    name: input.name,
     size: data.length,
     mimeType: 'text/plain',
     data,
