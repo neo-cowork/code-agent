@@ -8,6 +8,8 @@ import React from 'react';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionGrantEntry } from '@shared/contract';
+import { registerMigratedTools } from '../../../src/host/tools/modules';
+import { ToolRegistry } from '../../../src/host/tools/registry';
 import { en, zh } from '../../../src/renderer/i18n';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
@@ -267,6 +269,61 @@ describe('PermissionGrantList terminal grant titles', () => {
     }
     expect(rows[0].textContent).toContain(language === 'zh' ? '限时放行 · 24 小时内' : 'Temporary allow · 24 hours');
     expect(view.getAllByTestId('permission-grant-revoke')).toHaveLength(terminalGrants.length);
+  });
+});
+
+describe('PermissionGrantList registered tool titles', () => {
+  const toolNames = new Set<string>();
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    const registry = new ToolRegistry();
+    registerMigratedTools(registry, platform, true);
+    for (const schema of registry.getSchemas()) toolNames.add(schema.name);
+  }
+
+  // These English titles use the same words as the tool ID. The
+  // normalized substring check flags them, so pin the exact displayed copy.
+  const expectedOverlaps = {
+    zh: {},
+    en: {
+      Edit: 'Edit file',
+      Process: 'Manage terminal processes',
+      Read: 'Read file',
+      WebFetch: 'Web fetch',
+      WebSearch: 'Web search',
+      Write: 'Write file',
+      calendar: 'Calendar',
+      mail: 'Mail',
+      meeting_records: 'meeting records',
+      memory_search: 'Memory search',
+      reminders: 'Reminders',
+      web_fetch: 'Web fetch',
+    },
+  };
+
+  it.each(['zh', 'en'] as const)(`%s titles for all ${toolNames.size} registered tools avoid raw IDs`, async (language) => {
+    useAppStore.setState({ language });
+    const names = [...toolNames];
+    expect(names).toContain('terminal_write');
+    invokeDomain.mockResolvedValue(names.map((name): PermissionGrantEntry => ({
+      id: `tool-24h:${name}`,
+      kind: 'tool-timed',
+      label: name,
+      source: '24h',
+      grantedAt: GRANTED_AT,
+      expiresAt: GRANTED_AT + 24 * 60 * 60 * 1000,
+    })));
+
+    const view = render(<PermissionGrantList />);
+    const rows = await view.findAllByTestId('permission-grant-row');
+    expect(rows).toHaveLength(names.length);
+    const overlaps: Record<string, string> = {};
+    const normalize = (value: string) => value.toLowerCase().replace(/[-_\s]/g, '');
+    for (const [index, name] of names.entries()) {
+      const title = rows[index].querySelector('.text-sm')?.textContent?.trim() ?? '';
+      expect(title, name).not.toBe('');
+      if (normalize(title).includes(normalize(name))) overlaps[name] = title;
+    }
+    expect(overlaps).toEqual(expectedOverlaps[language]);
   });
 });
 
