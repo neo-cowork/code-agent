@@ -11,10 +11,12 @@ import { applySessionsMigrations } from '../../../src/host/services/core/databas
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import {
   deriveFallbackSessionTitle,
+  deriveInitMemorySessionTitle,
   deriveRuleSummaryTitle,
   isProvisionalAutoTitle,
   resolveSessionTitle,
 } from '../../../src/shared/sessionTitlePlaceholder';
+import { initMemorySessionTitle } from '../../../src/host/services/infra/sessionFolderName';
 
 const coreDatabase = vi.hoisted(() => ({ current: null as unknown }));
 const quick = vi.hoisted(() => ({
@@ -273,14 +275,41 @@ describe('SessionManager.addMessage -> title update', () => {
 
     beforeEach(() => { ui.language = 'zh'; quick.replies = ['会话记忆初始化指令说明']; });
 
-    it('user-chosen folder: zh title carries the folder name, small model skipped', async () => {
-      expect(await sendInit('/tmp/家庭账本项目')).toBe('初始化项目记忆 · 家庭账本项目');
+    it('user-chosen folder: zh title carries the folder name first, small model skipped', async () => {
+      const title = await sendInit('/tmp/家庭账本项目');
+      expect(title).toBe('家庭账本项目 · 初始化项目记忆');
+      expect(title.startsWith('家庭账本项目')).toBe(true);
       expect(quick.prompts).toHaveLength(0);
     });
 
-    it('en UI uses the English template', async () => {
+    it('en UI puts the folder name first in the English template', async () => {
       ui.language = 'en';
-      expect(await sendInit('/tmp/Family Ledger', '/init-memory --force', '/init-memory --force')).toBe('Set up project memory · Family Ledger');
+      const title = await sendInit('/tmp/Family Ledger', '/init-memory --force', '/init-memory --force');
+      expect(title).toBe('Family Ledger · Set up project memory');
+      expect(title.startsWith('Family Ledger')).toBe(true);
+    });
+
+    it('initMemorySessionTitle returns folder-first zh and en titles directly', async () => {
+      ui.language = 'zh';
+      const zhTitle = await initMemorySessionTitle('/init-memory', '/tmp/家庭账本项目');
+      expect(zhTitle).toBe('家庭账本项目 · 初始化项目记忆');
+      expect(zhTitle?.startsWith('家庭账本项目')).toBe(true);
+
+      ui.language = 'en';
+      const enTitle = await initMemorySessionTitle('/init-memory', '/tmp/Family Ledger');
+      expect(enTitle).toBe('Family Ledger · Set up project memory');
+      expect(enTitle?.startsWith('Family Ledger')).toBe(true);
+    });
+
+    it('deriveInitMemorySessionTitle covers zh/en with folder, omitted/whitespace folder, and non-init messages', () => {
+      expect(deriveInitMemorySessionTitle('/init-memory', 'zh', '家庭账本项目')).toBe('家庭账本项目 · 初始化项目记忆');
+      expect(deriveInitMemorySessionTitle('/init-memory --force', 'en', 'Family Ledger')).toBe('Family Ledger · Set up project memory');
+      expect(deriveInitMemorySessionTitle('/init-memory', 'zh')).toBe('初始化项目记忆');
+      expect(deriveInitMemorySessionTitle('/init-memory', 'en')).toBe('Set up project memory');
+      expect(deriveInitMemorySessionTitle('/init-memory', 'zh', '   ')).toBe('初始化项目记忆');
+      expect(deriveInitMemorySessionTitle('/init-memory', 'en', '\t \n')).toBe('Set up project memory');
+      expect(deriveInitMemorySessionTitle('帮我总结今天的会议纪要', 'zh', '家庭账本项目')).toBeNull();
+      expect(deriveInitMemorySessionTitle('/init-memory-extra', 'en', 'Family Ledger')).toBeNull();
     });
 
     it('system-assigned directory omits the folder part', async () => {
