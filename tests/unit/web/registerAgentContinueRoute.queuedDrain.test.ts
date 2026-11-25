@@ -7,19 +7,26 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
-import { armQuotaWaitOnPark, registerQuotaWaitContinuer } from '../../../src/host/runtime/quotaWaitTimer';
+import { registerEnvResumeContinuer } from '../../../src/host/runtime/envResumeWaiter';
+import { armQuotaWaitOnPark, clearQuotaWaitTimer, registerQuotaWaitContinuer } from '../../../src/host/runtime/quotaWaitTimer';
 import type { Message } from '../../../src/shared/contract';
 import { registerAgentContinueRoute } from '../../../src/web/routes/registerAgentContinueRoute';
 import { createWebQueuedInputDrain, releaseThenTriggerWebQueuedInputDrain } from '../../../src/web/routes/webQueuedInputDrain';
 
 const SESSION = 'session-parked';
+const RUN = 'run-parked';
 
 describe('continue route drains queued inputs when the resumed run settles', () => {
   const databases: BetterSqlite3.Database[] = [];
   let server: http.Server | undefined;
+  let releaseResume: (() => void) | undefined;
 
   afterEach(async () => {
+    clearQuotaWaitTimer(RUN);
     registerQuotaWaitContinuer(null);
+    registerEnvResumeContinuer(null);
+    releaseResume?.();
+    releaseResume = undefined;
     if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
     server = undefined;
     for (const db of databases.splice(0)) db.close();
@@ -49,18 +56,20 @@ describe('continue route drains queued inputs when the resumed run settles', () 
     const source: Message = { id: 'source-1', role: 'user', content: 'go', timestamp: 1, metadata: {} };
     const hasParked = opts.hasParked ?? true;
     const registry = {
-      findRecoveredWaitingRun: () => (hasParked ? { runId: 'run-parked', sessionId: SESSION } : undefined),
+      findRecoveredWaitingRun: () => (hasParked ? { runId: RUN, sessionId: SESSION } : undefined),
       getDurableCheckpointState: () => ({ sourceMessageId: source.id }),
       resetDurableResumeBudget: async () => undefined,
       parkDurable: async () => undefined,
     };
-    let finishResume!: () => void;
+    const resume = Promise.withResolvers<void>();
+    releaseResume = resume.resolve;
     const taskManager = {
       getSessionState: () => ({ status: 'idle' as const }),
-      resumeExistingDurableRun: () => new Promise<void>((resolve) => {
+      resumeExistingDurableRun: async () => {
         active = true;
-        finishResume = () => { active = false; resolve(); };
-      }),
+        await resume.promise;
+        active = false;
+      },
     };
     const router = express.Router();
     registerAgentContinueRoute(router, registry as never, () => taskManager as never, async () => [source],
@@ -81,7 +90,12 @@ describe('continue route drains queued inputs when the resumed run settles', () 
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sessionId: SESSION }),
       });
     };
-    return { repository, ran, drain, enqueue, post, finish: () => finishResume(), setActive: (v: boolean) => { active = v; } };
+    return {
+      repository, ran, drain, enqueue, post,
+      // The continuation is ready only after it takes ownership of the session.
+      get finish() { return active ? resume.resolve : undefined; },
+      setActive: (v: boolean) => { active = v; },
+    };
   }
 
   it('(a) normal run release with a queued row sends it', async () => {
@@ -96,12 +110,11 @@ describe('continue route drains queued inputs when the resumed run settles', () 
     const t = setup();
     const response = t.post();
     await vi.waitFor(() => expect(typeof t.finish).toBe('function'));
-    await new Promise((r) => setTimeout(r, 20));
     t.enqueue();
     await new Promise((r) => setTimeout(r, 30));
     expect(t.ran).toEqual([]);
     expect(t.repository.getById('q1')?.status).toBe('queued');
-    t.finish();
+    t.finish!();
     expect((await response).status).toBe(200);
     await vi.waitFor(() => expect(t.ran).toEqual(['追加一条']));
     expect(t.repository.getById('q1')?.status).toBe('consumed');
@@ -121,12 +134,12 @@ describe('continue route drains queued inputs when the resumed run settles', () 
 
   it('(d) quota-wait continuer triggers drain after the resumed run resolves', async () => {
     const t = setup();
-    armQuotaWaitOnPark({ runId: 'run-parked', sessionId: SESSION, dueAt: Date.now() + 10 });
-    await new Promise((r) => setTimeout(r, 60));
+    armQuotaWaitOnPark({ runId: RUN, sessionId: SESSION, dueAt: Date.now() + 10 });
+    await vi.waitUntil(() => typeof t.finish === 'function');
     t.enqueue();
     await new Promise((r) => setTimeout(r, 30));
     expect(t.ran).toEqual([]);
-    t.finish();
+    t.finish!();
     await vi.waitFor(() => expect(t.ran).toEqual(['追加一条']));
     expect(t.repository.getById('q1')?.status).toBe('consumed');
   });
