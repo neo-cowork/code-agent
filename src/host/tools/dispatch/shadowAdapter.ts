@@ -9,6 +9,7 @@ import { withConnectorReconnectGuidance } from './connectorReconnectGuidance';
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
+import { commandGrantTarget } from '../../permissions/commandGrantTarget';
 import type {
   ToolContext as ProtocolToolContext,
   CanUseToolFn,
@@ -151,6 +152,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,
     allowedToolNames: legacy?.allowedToolNames as readonly string[] | undefined,
     foregroundToolFace: legacy?.foregroundToolFace === true ? true : undefined,
+    requestToolNames: legacy?.requestToolNames as readonly string[] | undefined,
     skillDiscoveryService: legacy?.skillDiscoveryService,
     telemetryCollector: legacy?.telemetryCollector,
     neoTag: input.legacyCtx.neoTag,
@@ -257,6 +259,9 @@ export function buildCanUseToolFromLegacy(
         details: {
           ...details,
           ...(terminalInput !== undefined ? { preview: buildTerminalApprovalPreview(terminalInput) } : {}),
+          commandGrantTarget: !reason && !requestHint && sameToolName(requestedToolName, toolName)
+            ? commandGrantTarget(requestedToolName, input)
+            : undefined,
           grantEligible: grantable,
         },
         reason: requestHint?.reason ?? cleanReason ?? (terminalInput === undefined

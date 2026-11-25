@@ -91,7 +91,7 @@ class BlobHandler implements ToolHandler<Record<string, unknown>, string> {
       }
 
       if (action === 'read_text') {
-        const refusal = await guardBinaryNotText(filePath, ' Blob stat still returns size/mime for images.');
+        const refusal = await guardBinaryNotText(filePath, ' Blob stat still returns size/mime for images.', ctx.requestToolNames);
         if (refusal) return refusal;
       }
 

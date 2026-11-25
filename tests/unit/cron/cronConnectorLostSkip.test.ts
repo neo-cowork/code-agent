@@ -3,11 +3,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { CONNECTOR_CARD_TIMEOUTS } from '../../../src/shared/constants/timeouts';
+import { CRON_CONNECTOR_LOST } from '../../../src/shared/constants/cronErrors';
 
 const warn = vi.hoisted(() => vi.fn());
+const settings = vi.hoisted(() => ({ language: 'zh' }));
 const automationState = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
-  recordEvent: vi.fn(async () => undefined),
+  recordEvent: vi.fn<() => Promise<object | undefined>>(),
   getBySourceRef: vi.fn(() => null),
   upsert: vi.fn(),
 }));
@@ -50,14 +52,10 @@ vi.mock('../../../src/host/services/core/configService', () => ({
     onSettingsUpdated: vi.fn(),
     getServiceApiKey: () => undefined,
     getSettings: () => ({
-      ui: { language: 'zh' },
+      ui: { language: settings.language },
       model: { provider: 'openai', model: 'gpt-test', temperature: 0.2 },
     }),
   }),
-}));
-
-vi.mock('../../../src/host/services/infra/notificationService', () => ({
-  notificationService: { notifyTaskComplete: vi.fn() },
 }));
 
 vi.mock('../../../src/host/services/wake/wakeService', () => ({
@@ -147,6 +145,7 @@ import {
 import { executeCronAgentAction } from '../../../src/host/cron/cronAgentAction';
 import { countTrailingCronFailures } from '../../../src/host/cron/cronFailurePolicy';
 import { CronService } from '../../../src/host/cron/cronService';
+import { notificationService } from '../../../src/host/services/infra/notificationService';
 
 interface CronServiceHarness {
   jobs: Map<string, { definition: CronJobDefinition }>;
@@ -197,6 +196,16 @@ function definition(id: string, roleId?: string, context?: Record<string, unknow
   return job;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function actionOf(job: CronJobDefinition): AgentAction {
   if (job.action.type !== 'agent') throw new Error('expected agent action');
   return job.action;
@@ -216,6 +225,10 @@ function serviceFor(job: CronJobDefinition): CronServiceHarness {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+  settings.language = 'zh';
+  notificationService.clearRecentNotifications();
+  automationState.recordEvent.mockResolvedValue(undefined);
   jobs.clear();
   probeImpl = async () => undefined;
   releaseHang = undefined;
@@ -236,11 +249,123 @@ afterEach(async () => {
   registerCliConnectorStatusProbeStarter(undefined);
   replaceCliConnectorConnectionStatusCache([]);
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   await Promise.resolve();
   await Promise.resolve();
 });
 
 describe('executeCronAgentAction connector-lost skip', () => {
+  it('records one dry-run notification for two same-day skips using Feishu', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, 1, 8));
+    settings.language = 'en';
+    automationState.recordEvent.mockResolvedValue({});
+    probeImpl = async () => lostFeishu();
+    const first = definition('job-same-day-first', 'feishu-expert');
+    const second = definition('job-same-day-second', 'feishu-expert');
+    await executeCronAgentAction(host, first, actionOf(first), 'exec-same-day-first');
+    await executeCronAgentAction(host, second, actionOf(second), 'exec-same-day-second');
+    const notifications = notificationService.getRecentNotifications();
+    process.stdout.write(`${JSON.stringify(notifications, null, 2)}\n`);
+    expect(notifications).toEqual([expect.objectContaining({
+      type: 'cron_connector_lost',
+      code: CRON_CONNECTOR_LOST,
+      sessionId: '',
+      title: 'Feishu signed out',
+      body: "Today's scheduled task didn't run. Reconnect to resume future runs.",
+      delivery: 'dry_run',
+    })]);
+    expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('records two localized dry-run notifications when two connectors are signed out', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, 2, 8));
+    automationState.recordEvent.mockResolvedValue({});
+    probeImpl = async () => {
+      replaceCliConnectorConnectionStatusCache([
+        { id: 'feishu', connected: false, lostReason: 'cli_not_logged_in' },
+        { id: 'tmeet', connected: false, lostReason: 'cli_missing_configuration' },
+      ]);
+    };
+    const job = definition('job-two-notifications', 'both-expert');
+    await executeCronAgentAction(host, job, actionOf(job), 'exec-two-notifications');
+    const notifications = notificationService.getRecentNotifications();
+    process.stdout.write(`${JSON.stringify(notifications, null, 2)}\n`);
+    expect(notifications.map(({ title }) => title)).toEqual(['飞书已退出登录', '腾讯会议已退出登录']);
+    expect(notifications.map(({ body }) => body)).toEqual(Array(2).fill(
+      '今天的定时任务没有运行。重新连接后，任务会按计划继续运行。',
+    ));
+  });
+
+  it('records one more dry-run notification on the next local day', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, 3, 23, 59));
+    automationState.recordEvent.mockResolvedValue({});
+    probeImpl = async () => lostFeishu();
+    const job = definition('job-next-day', 'feishu-expert');
+    await executeCronAgentAction(host, job, actionOf(job), 'exec-before-midnight');
+    expect(notificationService.getRecentNotifications()).toHaveLength(1);
+    vi.setSystemTime(new Date(2031, 8, 4, 0, 1));
+    await executeCronAgentAction(host, job, actionOf(job), 'exec-after-midnight');
+    expect(notificationService.getRecentNotifications()).toHaveLength(2);
+  });
+
+  it('dedupes overlapping skips while the first inbox write is pending', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, 6, 8));
+    probeImpl = async () => lostFeishu();
+    const writeStarted = deferred<void>();
+    const inboxWrite = deferred<object>();
+    automationState.recordEvent.mockImplementation(() => {
+      writeStarted.resolve();
+      return inboxWrite.promise;
+    });
+    const first = definition('job-overlap-first', 'feishu-expert');
+    const second = definition('job-overlap-second', 'feishu-expert');
+    const firstRun = executeCronAgentAction(host, first, actionOf(first), 'exec-overlap-first');
+    await writeStarted.promise;
+    const secondRun = executeCronAgentAction(host, second, actionOf(second), 'exec-overlap-second');
+    try {
+      await vi.waitFor(() => expect(probeStarts).toHaveBeenCalledTimes(2));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
+      expect(notificationService.getRecentNotifications()).toEqual([]);
+    } finally {
+      inboxWrite.resolve({});
+      await Promise.all([firstRun, secondRun]);
+    }
+    expect(notificationService.getRecentNotifications()).toHaveLength(1);
+  });
+
+  it.each(['reject', 'empty'])('retries an overlapping skip if the first inbox write fails (%s)', async (failure) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, failure === 'reject' ? 7 : 8, 8));
+    probeImpl = async () => lostFeishu();
+    const writeStarted = deferred<void>();
+    const inboxWrite = deferred<object | undefined>();
+    automationState.recordEvent.mockImplementationOnce(() => {
+      writeStarted.resolve();
+      return inboxWrite.promise;
+    }).mockResolvedValueOnce({});
+    const first = definition('job-failed-first', 'feishu-expert');
+    const second = definition('job-failed-second', 'feishu-expert');
+    const firstRun = executeCronAgentAction(host, first, actionOf(first), 'exec-failed-first');
+    await writeStarted.promise;
+    const secondRun = executeCronAgentAction(host, second, actionOf(second), 'exec-failed-second');
+    await vi.waitFor(() => expect(probeStarts).toHaveBeenCalledTimes(2));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(automationState.recordEvent).toHaveBeenCalledTimes(1);
+    if (failure === 'reject') inboxWrite.reject(new Error('inbox write failed'));
+    else inboxWrite.resolve(undefined);
+    const results = await Promise.all([firstRun, secondRun]);
+    expect(results).toEqual([
+      expect.objectContaining({ status: 'skipped' }),
+      expect.objectContaining({ status: 'skipped' }),
+    ]);
+    expect(automationState.recordEvent).toHaveBeenCalledTimes(2);
+    expect(notificationService.getRecentNotifications()).toHaveLength(1);
+  });
   it('executeCronAgentAction skips before creating a session when the refreshed probe reports a core CLI connector signed out', async () => {
     probeImpl = async () => {
       lostFeishu();
@@ -262,6 +387,7 @@ describe('executeCronAgentAction connector-lost skip', () => {
     expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventId: expect.stringMatching(/^connector_lost:feishu:\d{4}-\d{2}-\d{2}$/),
     }));
+    expect(notificationService.getRecentNotifications()).toEqual([]);
   });
 
   it('两个核心 CLI 都未登录时 skipReason 按探测顺序用逗号拼 id', async () => {
@@ -344,6 +470,9 @@ describe('executeCronAgentAction connector-lost skip', () => {
   });
 
   it('一次性任务在核心 CLI 未登录时仍建会话并调模型，不返回跳过', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2031, 8, 5, 8));
+    automationState.recordEvent.mockResolvedValue({});
     probeImpl = async () => {
       lostFeishu();
     };
@@ -362,6 +491,10 @@ describe('executeCronAgentAction connector-lost skip', () => {
     expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventId: expect.stringMatching(/^connector_lost:feishu:\d{4}-\d{2}-\d{2}$/),
     }));
+    expect(notificationService.getRecentNotifications()).toEqual([]);
+    const recurring = definition('job-after-at', 'feishu-expert');
+    await executeCronAgentAction(host, recurring, actionOf(recurring), 'exec-after-at');
+    expect(notificationService.getRecentNotifications()).toEqual([]);
   });
 
   it('心跳窗外先返回，不探测连接器', async () => {
@@ -383,6 +516,7 @@ describe('executeCronAgentAction connector-lost skip', () => {
   });
 
   it('运行后工具结果里的 MCP 401 仍记 connector_lost 收件箱，且这次运行已经调了模型', async () => {
+    automationState.recordEvent.mockResolvedValue({});
     agentState.getMessages.mockReturnValue([{
       role: 'tool',
       toolResults: [{
@@ -399,6 +533,7 @@ describe('executeCronAgentAction connector-lost skip', () => {
     expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventId: expect.stringMatching(/^connector_lost:notion:\d{4}-\d{2}-\d{2}$/),
     }));
+    expect(notificationService.getRecentNotifications()).toEqual([]);
   });
 });
 

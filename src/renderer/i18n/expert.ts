@@ -126,6 +126,10 @@ export const expertZh = {
       noOutput: '尚未产出结果',
       close: '关闭',
       loading: '正在读取工作记录…',
+      durationUnderOneSecond: '不到 1 秒',
+      durationSeconds: '{n} 秒',
+      durationMinutes: '{m} 分',
+      durationMinutesSeconds: '{m} 分 {s} 秒',
     },
     basicSummary: { abilities: '能力', noAbilities: '暂时没有额外能力。' },
     visual: {
@@ -488,6 +492,10 @@ export const expertEn: typeof expertZh = {
       noOutput: 'No result yet',
       close: 'Close',
       loading: 'Loading work record…',
+      durationUnderOneSecond: 'under 1 sec',
+      durationSeconds: '{n} sec',
+      durationMinutes: '{m} min',
+      durationMinutesSeconds: '{m} min {s} sec',
     },
     basicSummary: { abilities: 'Abilities', noAbilities: 'No extra abilities yet.' },
     visual: {
