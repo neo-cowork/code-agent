@@ -1,5 +1,6 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
 import { describeHelperFailureReasons, readHelperOutcomes } from './helperOutcomeCopy';
+import { SCHEDULE_DRAFT_FAILURE } from '@shared/constants/cronErrors';
 import { CONNECTOR_RECONNECT_ZH } from '@shared/i18n/connectorReconnect';
 import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 import type { ToolCall } from '@shared/contract';
@@ -282,6 +283,8 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'READ_DIGEST_MISMATCH',
   'READ_REQUIRED_AFTER_SEARCH',
   'COMMAND_FAILED',
+  SCHEDULE_DRAFT_FAILURE.GENERATION,
+  SCHEDULE_DRAFT_FAILURE.NOT_SHOWN,
 ]);
 
 /**
@@ -558,6 +561,9 @@ for (const key of Object.keys(CONNECTOR_RECONNECT_ZH) as Array<keyof typeof CONN
 }
 
 export function localizeToolUserMessage(message: string, t: Translations): string {
+  if (message === SCHEDULE_DRAFT_FAILURE.GENERATION || message === SCHEDULE_DRAFT_FAILURE.NOT_SHOWN) {
+    return t.toolErrors.codes[message].summary;
+  }
   if (message === FOREIGN_SLOT_DENIAL_ZH) return t.agentError.hostReasons[HostReasonCode.ForeignDataDir].summary;
   const key = connectorMessageKeys.get(message);
   return key === undefined ? message : t.toolErrors.connectorReconnect[key];

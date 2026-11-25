@@ -1,2 +1,7 @@
 /** Stable failure code shared by cron creation and webhook setup. */
 export const CRON_CLOUD_NOT_CONFIGURED = 'CRON_CLOUD_NOT_CONFIGURED';
+
+export const SCHEDULE_DRAFT_FAILURE = {
+  GENERATION: 'SCHEDULE_DRAFT_GENERATION_FAILED',
+  NOT_SHOWN: 'SCHEDULE_CARD_NOT_SHOWN',
+} as const;
