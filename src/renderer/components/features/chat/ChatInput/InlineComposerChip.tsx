@@ -31,6 +31,8 @@ export interface InlineChipView {
   thumbnail?: string;
   /** 文件名右侧的次要说明（如 PDF 页数）；缺省则只显示文件名 */
   description?: string;
+  /** 悬停提示（同名文件 chip 的相对路径）；缺省无 title */
+  title?: string;
 }
 
 export function InlineComposerChip({
@@ -72,6 +74,7 @@ export function InlineComposerChip({
       role="group"
       tabIndex={0}
       aria-label={chip.label}
+      title={chip.title}
       data-inline-chip={chip.kind}
       onKeyDown={(event) => {
         if (event.key !== 'Delete' && event.key !== 'Backspace') return;
