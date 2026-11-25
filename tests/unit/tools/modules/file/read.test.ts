@@ -29,6 +29,7 @@ vi.mock('../../../../../src/host/services/infra/logger', () => ({
 
 import { readModule } from '../../../../../src/host/tools/modules/file/read';
 import { imageAnalyzeSchema } from '../../../../../src/host/tools/modules/network/imageAnalyze.schema';
+import { toolSearchSchema } from '../../../../../src/host/tools/modules/search/toolSearch.schema';
 import type { ToolDefinition } from '../../../../../src/shared/contract';
 
 /** Fields of the request ToolDefinition this test needs (names come from the production schemas). */
@@ -435,6 +436,29 @@ describe('readModule (native)', () => {
           expect(result.error).toContain('image_analyze');
           expect(result.error).toContain('get_content');
           expect(result.error).toContain(target);
+        }
+      }
+    });
+
+    it('keeps the ToolSearch pointer for a not-yet-loaded image_analyze when ToolSearch is in the request list', async () => {
+      const target = path.join(tmpDir, 'local-photo.png');
+      await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));
+      const requestTools: RequestToolShape[] = [
+        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
+        { name: toolSearchSchema.name, description: toolSearchSchema.description, inputSchema: toolSearchSchema.inputSchema },
+      ];
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: target },
+        makeCtx({ requestToolNames: requestTools.map((tool) => tool.name) }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('already in the conversation');
+        expect(result.error).toContain('load image_analyze first with ToolSearch select:image_analyze.');
+        for (const absent of ['browser_action', 'get_content', 'get_dom_snapshot']) {
+          expect(result.error).not.toContain(absent);
         }
       }
     });

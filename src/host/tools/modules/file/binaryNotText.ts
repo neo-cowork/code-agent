@@ -31,6 +31,14 @@ function imageReadHint(requestToolNames?: readonly string[]): string {
       'to understand a picture use image_analyze (a deferred tool: load it first with ToolSearch select:image_analyze).'
     );
   }
+  // image_analyze 是延迟工具：本请求没带它但带了 ToolSearch 时仍可加载，保留这条指路；
+  // 两者都不在（如识图预处理成功后被移除、ToolSearch 被收窄）就一个工具名都不提。
+  if (requestToolNames?.includes('ToolSearch')) {
+    return (
+      `${IMAGE_READ_HINT_NO_TOOL} If it is not in the conversation and you need to see it, ` +
+      'load image_analyze first with ToolSearch select:image_analyze.'
+    );
+  }
   return IMAGE_READ_HINT_NO_TOOL;
 }
 
