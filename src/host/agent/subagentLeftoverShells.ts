@@ -14,8 +14,8 @@ import { commandMayAwaitSystemPrompt } from '../task/macosAutomationPrompt';
 import {
   getAllBackgroundTasks,
   getBackgroundTaskPid,
+  resolveBackgroundTaskName,
 } from '../tools/modules/shell/backgroundTaskLedger';
-import { resolveBackgroundTaskName } from '../tools/modules/shell/backgroundTaskSources';
 
 const logger = createLogger('SubagentLeftoverShells');
 
