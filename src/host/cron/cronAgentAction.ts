@@ -195,7 +195,6 @@ export async function executeCronAgentAction(
     disableAutoAgent: true,
     mode: 'normal',
     ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
-    initiatingUserText,
     eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
     toolScope: { optInPersonalSkillIds },
   };
@@ -228,7 +227,7 @@ export async function executeCronAgentAction(
           timeZone, action.allowedPersonalSkillIds)
           + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
         undefined,
-        agentRunOptions,
+        { ...agentRunOptions, initiatingUserText },
         eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
       );
       result = await runWithCronJobBudget(definition.maxRunBudget, () => runWithAgentTimeout(
