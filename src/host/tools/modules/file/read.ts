@@ -124,7 +124,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
     onProgress?.({ stage: 'starting', detail: `read ${path.basename(filePath)}` });
 
     // 二进制/结构化格式拦截 — 防止读到乱码后幻觉
-    const refusal = binaryRefusalForExtension(filePath);
+    const refusal = binaryRefusalForExtension(filePath, undefined, '', ctx.requestToolNames);
     if (refusal) {
       if (isChatUploadPath(filePath)) {
         try {
@@ -138,7 +138,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       return refusal;
     }
     // 无后缀/改名的图片、PDF：魔数兜底
-    const sniffed = await guardBinaryNotText(filePath);
+    const sniffed = await guardBinaryNotText(filePath, '', ctx.requestToolNames);
     if (sniffed) return sniffed;
 
     try {
