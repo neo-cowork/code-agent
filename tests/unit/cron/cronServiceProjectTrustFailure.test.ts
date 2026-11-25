@@ -116,7 +116,7 @@ describe('cron 项目文件夹信任失败落库为稳定标记', () => {
     expect(execution.error).toBe(marker);
     expect(storedErrorFor(execution.id)).toBe(marker);
     const payload = JSON.stringify(notifyState.notifyTaskComplete.mock.calls);
-    expect(payload).toContain('项目文件夹需要重新确认。');
+    expect(payload).toContain('定时任务失败：项目文件夹需要重新确认。');
     expectNoPathOrEnglish(payload);
     expect(payload).not.toContain('notes-proj');
     await service.shutdown();
