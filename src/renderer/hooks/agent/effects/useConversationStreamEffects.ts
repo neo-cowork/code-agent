@@ -568,8 +568,9 @@ export function applyConversationStreamEvent(
         }
 
         // 结果由 addMessage 回填到工具调用上；当正文提交会把结果 JSON 写进草稿、盖掉模型前言。
-        if (isSealedToolResultsMessage(event.data)) {
-          if (!getFreshMessages().some((message) => message.id === event.data.id)) actions.addMessage(event.data);
+        const sealedResults = isSealedToolResultsMessage(event.data) ? event.data : undefined;
+        if (sealedResults) {
+          if (!getFreshMessages().some((message) => message.id === sealedResults.id)) actions.addMessage(sealedResults);
           break;
         }
 
