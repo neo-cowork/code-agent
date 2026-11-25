@@ -74,13 +74,27 @@ describe('/permissions 诊断块跟随界面语言', () => {
   });
 
   it('决定摘要不露绝对家目录，也不在引号中间截断', () => {
-    const summary = 'ls -la "/Users/leo/work/out/N-FIX-PERMISSIONS-SLASH-DIAG/some folder"';
+    const summary = 'ls -la "/Users/someone/projects/weekly/some folder"';
     for (const language of ['zh', 'en'] as const) {
       const line = formatPermissionDecision({ toolName: 'Bash', summary, outcome: 'auto-approve', reason: 'safe-command', durationMs: 8 }, language);
-      expect(line).not.toContain('/Users/leo');
-      expect(line).not.toContain('leo');
+      expect(line).not.toContain('/Users/someone');
+      expect(line).not.toContain('someone');
       expect((line.match(/"/g) ?? []).length % 2).toBe(0);
     }
+  });
+
+  it('引号内的命令超长时不被整段丢掉，引号补全', () => {
+    const line = formatPermissionDecision({ toolName: 'Bash', summary: "bash -lc 'rm -rf /var/very/long/directory/name/that/keeps/going'", outcome: 'policy-deny', reason: 'exec-policy', durationMs: 1 }, 'en');
+    expect(line).toContain("bash -lc 'rm -rf");
+    expect(line).toContain("…'");
+  });
+
+  it('检查轨迹区分放行与拒绝，不落到「已处理」', () => {
+    const base = { toolName: 'Bash', summary: 'ls', outcome: 'auto-approve', reason: 'safe-command', durationMs: 1 };
+    expect(formatPermissionDecision(base, 'zh', { finalOutcome: 'allow', steps: 2 })).toContain('检查轨迹 放行/2');
+    expect(formatPermissionDecision(base, 'zh', { finalOutcome: 'deny', steps: 1 })).toContain('检查轨迹 拒绝/1');
+    expect(formatPermissionDecision(base, 'en', { finalOutcome: 'deny', steps: 1 })).toContain('checks denied/1');
+    expect(formatPermissionDecision(base, 'en', { finalOutcome: 'allow', steps: 1 })).not.toContain('Handled');
   });
 
   it('未知的结果词不露原始 id', () => {

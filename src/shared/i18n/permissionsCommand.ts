@@ -101,6 +101,12 @@ const reasonLabels = {
   },
 } as const satisfies Record<Language, Record<string, string>>;
 
+// 检查轨迹的 finalOutcome 在 host 里既有 allow/deny，也有历史结果 id。
+const traceVerdictLabels = {
+  zh: { allow: '放行', deny: '拒绝' },
+  en: { allow: 'allowed', deny: 'denied' },
+} as const satisfies Record<Language, Record<string, string>>;
+
 const has = (table: object, key: string): boolean => Object.prototype.hasOwnProperty.call(table, key);
 
 function permissionModeLabel(language: Language, mode: string): string {
@@ -111,6 +117,11 @@ function permissionModeLabel(language: Language, mode: string): string {
 function permissionOutcomeLabel(language: Language, outcome: string): string {
   const table: Record<string, string> = outcomeLabels[language];
   return has(table, outcome) ? table[outcome] : messages[language].unknownOutcome;
+}
+
+function permissionTraceLabel(language: Language, finalOutcome: string): string {
+  const verdicts: Record<string, string> = traceVerdictLabels[language];
+  return has(verdicts, finalOutcome) ? verdicts[finalOutcome] : permissionOutcomeLabel(language, finalOutcome);
 }
 
 function permissionReasonLabel(language: Language, reason: string): string {
@@ -131,7 +142,7 @@ export function permissionDecisionLine(
   trace?: { finalOutcome: string; steps: number },
 ): string {
   const m = messages[language];
-  const traceText = trace ? m.trace(permissionOutcomeLabel(language, trace.finalOutcome), trace.steps) : '';
+  const traceText = trace ? m.trace(permissionTraceLabel(language, trace.finalOutcome), trace.steps) : '';
   return m.decision(subject, permissionOutcomeLabel(language, outcome), permissionReasonLabel(language, reason), durationMs, traceText);
 }
 
