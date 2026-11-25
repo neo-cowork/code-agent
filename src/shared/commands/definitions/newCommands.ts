@@ -646,7 +646,7 @@ export const permissionsCommand: CommandDefinition = {
       if (recent.length === 0) {
         lines.push('    (no decisions yet)');
       } else {
-        const language = ctx.language === 'zh' ? 'zh' : 'en';
+        const language = ctx.getLocale?.() ?? 'zh';
         for (const entry of recent) {
           const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
           const trace = entry.decisionTrace

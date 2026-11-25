@@ -30,11 +30,16 @@ describe('PermissionClassifier reason copy', () => {
 
   it.each([
     ['MCPUnified', { action: 'status' }, undefined, 'approve', '自动放行：查看外部工具状态'],
-    ['MCPUnified', { action: 'list_tools' }, undefined, 'approve', '自动放行：查看外部工具状态'],
-    ['MCPUnified', { action: 'list_resources' }, undefined, 'approve', '自动放行：查看外部工具状态'],
-    ['MCPUnified', { action: 'read_resource' }, undefined, 'approve', '自动放行：查看外部工具状态'],
-    ['Process', { action: 'poll' }, undefined, 'approve', '自动放行：查看后台任务'],
-    ['Process', { action: 'kill' }, undefined, 'ask', '控制后台任务需要确认'],
+    ['MCPUnified', { action: 'list_tools' }, undefined, 'approve', '自动放行：查看外部工具列表'],
+    ['MCPUnified', { action: 'list_resources' }, undefined, 'approve', '自动放行：查看外部资源列表'],
+    ['MCPUnified', { action: 'read_resource' }, undefined, 'approve', '自动放行：读取外部资源'],
+    ['Process', { action: 'list' }, undefined, 'approve', '自动放行：查看后台任务列表'],
+    ['Process', { action: 'poll' }, undefined, 'approve', '自动放行：查看后台任务进度'],
+    ['Process', { action: 'log' }, undefined, 'approve', '自动放行：查看后台任务日志'],
+    ['Process', { action: 'output' }, undefined, 'approve', '自动放行：查看后台任务输出'],
+    ['Process', { action: 'write' }, undefined, 'ask', '向后台任务写入内容需要确认'],
+    ['Process', { action: 'submit' }, undefined, 'ask', '向后台任务提交一行内容需要确认'],
+    ['Process', { action: 'kill' }, undefined, 'ask', '停止后台任务需要确认'],
     ['Process', { action: 'unexpected_action' }, undefined, 'ask', '无法识别后台任务操作，需要确认'],
     ['Process', {}, undefined, 'ask', '无法识别后台任务操作，需要确认'],
     ['ReadOnlyExample', {}, 'read', 'approve', '自动放行：只读权限'],
@@ -46,5 +51,6 @@ describe('PermissionClassifier reason copy', () => {
     expect(result.reason).not.toMatch(/[a-z]/i);
     expect(result.hostReason?.modelText).toBe(reason);
     expect(result.hostReason?.metadata?.toolName).toBe(toolName);
+    if (decision === 'ask') expect(result.traceStep?.reason.modelText).toBe(reason);
   });
 });

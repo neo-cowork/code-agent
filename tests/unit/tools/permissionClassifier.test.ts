@@ -806,9 +806,9 @@ describe('PermissionClassifier', () => {
     );
 
     expect(observation.decision).toBe('approve');
-    expect(observation.reason).toBe('自动放行：查看后台任务');
+    expect(observation.reason).toBe('自动放行：查看后台任务列表');
     expect(control.decision).toBe('ask');
-    expect(control.reason).toBe('控制后台任务需要确认');
+    expect(control.reason).toBe('停止后台任务需要确认');
   });
 
   it('does not let a command policy prefix allow approve a compound tail', async () => {

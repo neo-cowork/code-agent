@@ -450,7 +450,7 @@ describe('shared command host ports', () => {
     const text = present.lines[0];
     expect(text).toContain('Mode:     strict — asks first');
     expect(text).toContain('git status *');
-    expect(text).toContain('Action(list files)');
+    expect(text).toContain('操作(list files)');
 
     const missing = makeCtx();
     expect((await permissionsCommand.handler(missing.ctx, [])).success).toBe(true);
@@ -474,7 +474,7 @@ describe('shared command host ports', () => {
       durationMs: 3,
     }));
     const present = makeCtx({
-      language,
+      getLocale: () => language,
       loadDecisionHistory: async () => ({ getDecisionHistory: () => ({ getRecent: () => recent, getAll: () => recent }) }),
     });
 

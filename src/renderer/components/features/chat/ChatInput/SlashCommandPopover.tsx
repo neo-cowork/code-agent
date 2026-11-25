@@ -699,7 +699,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             .handler(
               {
                 surface: 'gui',
-                language,
+                getLocale: () => language,
                 extensionOps,
                 skillOps,
                 mcpOps,
