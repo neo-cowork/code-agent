@@ -1,5 +1,5 @@
 import type { CronNotificationLocale } from '../../shared/i18n/cronNotificationTitle';
-import type { CronFailurePresentationKind } from '../../shared/utils/cronFailureClassification';
+import { classifyCronFailure, type CronFailurePresentationKind } from '../../shared/utils/cronFailureClassification';
 
 type FailureSentenceKind = Exclude<CronFailurePresentationKind, 'cloud_unavailable' | 'login_wall'>;
 
@@ -31,4 +31,16 @@ export function cronFailureNoticeSentence(
   locale: CronNotificationLocale,
 ): string {
   return failureSentences[locale][kind === 'login_wall' ? 'other' : kind];
+}
+
+/**
+ * 写回会话的失败短句（角色线程收据、源会话的 automation 回流消息；这些消息整条是中文，不随界面语言）。
+ * 项目文件夹信任失败只写文件夹名的人话：落库的 execution.error 是内部标记
+ * PROJECT_SOURCE_TRUST:<kind>:<文件夹名>（存量是英文原句 + 本机绝对路径），不能原样给用户看。
+ * 其它失败返回 undefined，由调用方写各自的原文。
+ */
+export function cronProjectTrustFailureText(storedError: string | undefined): string | undefined {
+  const classified = classifyCronFailure(storedError ?? '');
+  if (classified.kind !== 'project_trust') return undefined;
+  return classified.folderName ? `项目文件夹“${classified.folderName}”需要重新确认` : '项目文件夹需要重新确认';
 }
