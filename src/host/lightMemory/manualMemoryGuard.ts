@@ -38,6 +38,9 @@ export async function reconcileManualMemoryWrite(input: GuardInput): Promise<Gua
   const relation = await classifyAgainstManualEntries(manualEntries, input);
   if (relation.label === 'independent') return 'proceed';
   if (relation.label === 'equivalent') {
+    // The manual entry already holds this fact. A same-named auto file with different text is
+    // stale though: let the normal auto-vs-auto overwrite refresh it instead of leaving it in conflict.
+    if (current && normalizeForCompare(current.content) !== normalizeForCompare(input.content)) return 'proceed';
     logger.info('skipped-equivalent', { filename: relation.filename, source: input.source, semantic: true });
     return 'skipped-equivalent';
   }

@@ -22,7 +22,7 @@ vi.mock('../../../../src/host/model/quickModel', async (importOriginal) => ({
 import { applySchema } from '../../../../src/host/services/core/database/schema';
 import { MemoryRepository } from '../../../../src/host/services/core/repositories/MemoryRepository';
 import { createLogger } from '../../../../src/host/services/infra/logger';
-import { readMemoryFile } from '../../../../src/host/lightMemory/lightMemoryIpc';
+import { readMemoryFile, writeLightMemoryFile } from '../../../../src/host/lightMemory/lightMemoryIpc';
 import { writeDurableFacts } from '../../../../src/host/lightMemory/durableFactWriter';
 import { runRoleWriteBack } from '../../../../src/host/services/roleAssets/roleWriteBack';
 import { ensureRoleAssetDirs } from '../../../../src/host/services/roleAssets/roleAssetService';
@@ -203,5 +203,15 @@ describe.each([
     expect(result.updated).toMatchObject([{ id, status: 'active', scope: 'global' }]);
     expect(await readMemoryFile(manual.filename)).toMatchObject({ status: 'archived', deprecatedBy: pending, content: original });
     expect(await readMemoryFile(pending)).toMatchObject({ status: 'active', content: wednesday });
+  });
+
+  it('equivalent to a manual entry but same-named auto file holds different text → that file is refreshed', async () => {
+    await createManual();
+    await writeLightMemoryFile({ filename: autoFilename, name: 'Weekly meeting', description: 'Day', type, content: 'The weekly meeting is on Monday.' });
+    reply({ label: 'equivalent', filename: manual.filename });
+    await write('We meet every Tuesday for the weekly meeting.');
+    expect(await readMemoryFile(autoFilename)).toMatchObject({ content: expect.stringContaining('every Tuesday') });
+    expect(await pendingFiles()).toEqual([]);
+    expect(await fs.readFile(path.join(memoryDir, manual.filename))).toEqual(manual.before);
   });
 });
