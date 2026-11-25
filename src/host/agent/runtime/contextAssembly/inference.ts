@@ -53,6 +53,7 @@ import { runMaxModeInference } from './inferenceMaxMode';
 import { isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
 import { settleQuotaWaitInference } from './quotaWaitTurn';
 import { createDocumentEvidenceStream } from '../documentEvidenceStream';
+import { createNarrationHold } from '../narrationSuppression';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
 import {
@@ -695,7 +696,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     // 所以 turn 由 pushContent 边收边存（取消/转向走 abort，inference Promise 立刻 reject，
     // finish 根本执行不到，preserveStreamedPartial 只能靠 turn 里那份留底——正是
     // 2026-08-01 真机实测修掉的那个 bug），这里只负责把攒满一整句的正文发给前端。
-    const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, (text) => emitAssistantMessageDelta(ctx, 'content', text));
+    const narrationHold = createNarrationHold(ctx.runtime.turn?.runUserPrompt ?? '', (text) => emitAssistantMessageDelta(ctx, 'content', text));
+    const contentStreamFilter = createDocumentEvidenceStream(ctx.runtime.messages, narrationHold.emit);
 
     const pushContent = (text: string) => { ctx.runtime.turn.appendStreamedContent(text); contentStreamFilter.push(text); };
     // ADR-068 D4：无人值守轮（loop/cron·heartbeat·channel 会话、async_agent、goal）续接取高预算，同 run 连续断流轮数到阈值熔断（预算 0）；前台不传，adapter 用默认预算
@@ -843,7 +845,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       // 熔断计数：断流轮 +1；只有「成功且无断流」才清零——熔断轮（预算 0 不发 reconnecting）再断流抛错时计数保持，熔断不被一次失败解除（PR #1839 ai-review Important）
       if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : roundSucceeded ? 0 : ctx.inferenceRecovery.consecutiveStreamBreakRounds;
     }
-    if (!ctx.runtime.control.isCancelled) contentStreamFilter.finish(response.content);
+    if (!ctx.runtime.control.isCancelled) { contentStreamFilter.finish(response.content); narrationHold.settle((response.toolCalls?.length ?? 0) > 0); }
     response = applyCommandCenterPreannounce(response, commandCenterPreannounce, extractUserRequestText([...modelMessages].reverse().find((message) => message.role === 'user')));
     if (pendingCapabilityFallback && !response.fallback) {
       response.actualProvider = pendingCapabilityFallback.to.provider;

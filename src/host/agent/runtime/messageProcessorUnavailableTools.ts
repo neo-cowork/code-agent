@@ -39,6 +39,7 @@ import {
   filterToolDefinitionsByStrictSkillBoundary,
 } from '../../tools/skillBoundaryScope';
 import { isToolNameAllowedByWorkbenchScope } from '../../tools/workbenchToolScope';
+import { userFacingMessage } from './narrationSuppression';
 
 export interface UnavailableToolCallsDeps {
   ctx: RuntimeContext;
@@ -126,7 +127,7 @@ export async function handleUnavailableToolCalls(
         metadata: attachTurnQualityMetadata(ctx, undefined, response),
       };
       await contextAssembly.addAndPersistMessage(assistantMsg);
-      ctx.onEvent({ type: 'message', data: assistantMsg });
+      ctx.onEvent({ type: 'message', data: userFacingMessage(assistantMsg) });
 
       const recoveryResults: ToolResult[] = toolCalls.map((toolCall) => {
         const wasUnavailable = unavailableToolCalls.some((c) => c.id === toolCall.id);

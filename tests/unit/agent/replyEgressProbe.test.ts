@@ -220,4 +220,49 @@ describe('ContextAssembly.addAndPersistMessage ReplyEgress probe', () => {
       error: 'simulated detector failure',
     });
   });
+  describe('mid-run English narration suppression (zh user)', () => {
+    const SENTENCE = "I'll pull your mail and calendar state first.";
+    const toolCalls = [{ id: 'call-1', name: 'bash', arguments: { command: 'ls' } }];
+
+    it('hides English narration + tool call from the persisted copy, keeps original in memory/metadata, logs action=suppressed', async () => {
+      const { ctx, assembly, persisted } = createRealContextAssembly('请汇总我昨晚到现在的未读邮件和日历变动');
+      await assembly.addAndPersistMessage({
+        id: 'msg-narr', role: 'assistant', content: SENTENCE, toolCalls, timestamp: 1_700_000_000_020,
+      });
+
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0].content).toBe('');
+      expect(persisted[0].toolCalls).toHaveLength(1);
+      expect(persisted[0].metadata).toMatchObject({ narrationSuppressed: true, suppressedNarration: SENTENCE });
+      expect(ctx.messages[0].content).toBe(SENTENCE);
+
+      const calls = replyEgressCalls();
+      expect(calls).toHaveLength(1);
+      const [, payload] = calls[0] as [string, Record<string, unknown>];
+      expect(payload).toMatchObject({
+        reason: 'reply_egress_leak_detected', action: 'suppressed', categories: ['english_reply_to_zh'],
+      });
+    });
+
+    it('keeps the sentence for a final answer, an English-requesting user, and Chinese narration', async () => {
+      const finalAnswer = createRealContextAssembly('请汇总我昨晚到现在的未读邮件');
+      await finalAnswer.assembly.addAndPersistMessage({
+        id: 'm-final', role: 'assistant', content: SENTENCE, timestamp: 1_700_000_000_021,
+      });
+      const wantsEnglish = createRealContextAssembly('请用英文回复，并查一下我的邮件');
+      await wantsEnglish.assembly.addAndPersistMessage({
+        id: 'm-en', role: 'assistant', content: SENTENCE, toolCalls, timestamp: 1_700_000_000_022,
+      });
+      const zhNarration = createRealContextAssembly('请汇总我昨晚到现在的未读邮件');
+      await zhNarration.assembly.addAndPersistMessage({
+        id: 'm-zh', role: 'assistant', content: '我先拉取你的邮件和日历状态。', toolCalls, timestamp: 1_700_000_000_023,
+      });
+
+      expect(finalAnswer.persisted[0].content).toBe(SENTENCE);
+      expect(finalAnswer.persisted[0].metadata?.narrationSuppressed).toBeUndefined();
+      expect(wantsEnglish.persisted[0].content).toBe(SENTENCE);
+      expect(zhNarration.persisted[0].content).toBe('我先拉取你的邮件和日历状态。');
+      expect(replyEgressCalls().some((call) => (call[1] as Record<string, unknown>).action === 'suppressed')).toBe(false);
+    });
+  });
 });

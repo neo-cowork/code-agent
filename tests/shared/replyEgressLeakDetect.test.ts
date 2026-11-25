@@ -135,6 +135,27 @@ describe('detectReplyEgressLeaks: denial paraphrases (FU1)', () => {
     expect(detectReplyEgressLeaks(reply, zhUser).categories).toEqual([]);
   });
 
+  describe('real mid-run narration samples (FB-1262 + 2026-11-17 realrun)', () => {
+    const zhMorning = '请汇总我从昨晚到现在的未读邮件、即时消息和日历变动，给我一份晨间分诊……';
+    const zhMeeting = '帮我把这周要开的会议建进日历，并检查有没有时间冲突';
+    const zhForm = '帮我在浏览器里填一下这个报名表单';
+    const samples: Array<[string, string]> = [
+      ["I'll inventory the available connectors first.", zhMorning],
+      ['Mail is connected, calendar needs a real read attempt. Checking both plus mail contents.', zhMorning],
+      ['Task folder is empty — need to find the meeting source. Checking both.', zhMeeting],
+      ["I'll open the form in the browser and fill it in.", zhForm],
+      ["I'll pull your mail and calendar state first.", zhMorning],
+    ];
+
+    it.each(samples)('flags "%s" for a Chinese user with tool calls', (reply, user) => {
+      expect(detectReplyEgressLeaks(reply, user, { hasToolCalls: true }).categories).toContain('english_reply_to_zh');
+    });
+
+    it.each(samples)('does not flag "%s" for an English user', (reply) => {
+      expect(detectReplyEgressLeaks(reply, 'Summarize my unread mail and calendar changes', { hasToolCalls: true }).categories).toEqual([]);
+    });
+  });
+
   it('does not fire on legitimate sentences or English requests', () => {
     expect(detectReplyEgressLeaks('终端里的配色可以在设置中调整，也可以禁用闪烁光标。', '终端配色怎么改').categories).toEqual([]);
     expect(detectReplyEgressLeaks('OK', zhUser, { hasToolCalls: true }).categories).toEqual([]);

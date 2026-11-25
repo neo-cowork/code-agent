@@ -84,6 +84,7 @@ import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
 import { getHostUiLocale } from '../../config/hostUiLocale';
+import { userFacingMessage } from './narrationSuppression';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -788,7 +789,7 @@ export class MessageProcessor {
     await this.contextAssembly.addAndPersistMessage(assistantMessage);
 
     logger.debug('[AgentLoop] Emitting message event for tool calls');
-    this.ctx.onEvent({ type: 'message', data: assistantMessage });
+    this.ctx.onEvent({ type: 'message', data: userFacingMessage(assistantMessage) });
 
     // Execute tools
     logger.debug('[AgentLoop] Starting executeToolsWithHooks...');
