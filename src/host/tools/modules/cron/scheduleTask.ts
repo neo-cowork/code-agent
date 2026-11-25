@@ -51,6 +51,11 @@ export const scheduleTaskModule: ToolModule<Record<string, unknown>, string> = {
             ok: false, code: SCHEDULE_DRAFT_FAILURE.NOT_SHOWN, userMessage: SCHEDULE_DRAFT_FAILURE.NOT_SHOWN,
             error: `The scheduled-task confirmation card could not be shown. Tell the user in plain language that the card could not be displayed and no task was created.${replaced} Keep the reply to these facts without guessing why it failed.`,
           };
+        case 'discarded':
+          return {
+            ok: false, code: SCHEDULE_DRAFT_FAILURE.DISCARDED, userMessage: SCHEDULE_DRAFT_FAILURE.DISCARDED,
+            error: 'The user dismissed the scheduled-task draft. Tell them in their language that the draft was dismissed and no task was created.',
+          };
         case 'aborted':
           return { ok: false, code: 'ABORTED', error: 'The draft request was cancelled. No task was created.' };
       }

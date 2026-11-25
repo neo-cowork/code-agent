@@ -124,6 +124,10 @@ export const toolErrorCodesZh = {
     summary: '没能显示确认卡，定时任务未创建',
     detail: '',
   },
+  [SCHEDULE_DRAFT_FAILURE.DISCARDED]: {
+    summary: '已取消确认，定时任务未创建',
+    detail: '',
+  },
   COMMAND_FAILED: {
     summary: '命令运行失败',
     detail: '命令运行失败，可展开查看输出',
@@ -249,6 +253,10 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   },
   [SCHEDULE_DRAFT_FAILURE.NOT_SHOWN]: {
     summary: 'Could not show the confirmation card. No scheduled task was created.',
+    detail: '',
+  },
+  [SCHEDULE_DRAFT_FAILURE.DISCARDED]: {
+    summary: 'Confirmation cancelled. No scheduled task was created.',
     detail: '',
   },
   COMMAND_FAILED: {

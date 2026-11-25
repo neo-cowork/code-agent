@@ -285,6 +285,7 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'COMMAND_FAILED',
   SCHEDULE_DRAFT_FAILURE.GENERATION,
   SCHEDULE_DRAFT_FAILURE.NOT_SHOWN,
+  SCHEDULE_DRAFT_FAILURE.DISCARDED,
 ]);
 
 /**
@@ -561,7 +562,9 @@ for (const key of Object.keys(CONNECTOR_RECONNECT_ZH) as Array<keyof typeof CONN
 }
 
 export function localizeToolUserMessage(message: string, t: Translations): string {
-  if (message === SCHEDULE_DRAFT_FAILURE.GENERATION || message === SCHEDULE_DRAFT_FAILURE.NOT_SHOWN) {
+  if (message === SCHEDULE_DRAFT_FAILURE.GENERATION
+      || message === SCHEDULE_DRAFT_FAILURE.NOT_SHOWN
+      || message === SCHEDULE_DRAFT_FAILURE.DISCARDED) {
     return t.toolErrors.codes[message].summary;
   }
   if (message === FOREIGN_SLOT_DENIAL_ZH) return t.agentError.hostReasons[HostReasonCode.ForeignDataDir].summary;

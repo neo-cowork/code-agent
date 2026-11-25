@@ -63,7 +63,9 @@ beforeEach(() => {
       throw new Error('Unexpected cron request: ' + action);
     },
   });
-  vi.spyOn(Element.prototype, 'getClientRects').mockReturnValue([new DOMRect(0, 0, 300, 120)] as unknown as DOMRectList);
+  vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+    return (this.closest('[hidden]') ? [] : [new DOMRect(0, 0, 300, 120)]) as unknown as DOMRectList;
+  });
 });
 
 afterEach(() => {
@@ -90,22 +92,24 @@ async function start(sessionId = 's1') {
   return { result };
 }
 
-function Composer({ sessionId = 's1', busy = false, canShow = true }: {
-  sessionId?: string; busy?: boolean; canShow?: boolean;
+function Composer({ sessionId = 's1', busy = false, canShow = true, hidden = false }: {
+  sessionId?: string; busy?: boolean; canShow?: boolean; hidden?: boolean;
 }) {
   const form = useRef<HTMLFormElement>(null);
   const draft = useScheduleDraft(sessionId);
   useScheduleDraftRequest(sessionId, busy, draft, form);
   return (
-    <form ref={form}>
-      {canShow && draft.pendingScheduleDraft && <ScheduleConfirmCard
-        draft={draft.pendingScheduleDraft}
-        confirming={false}
-        onConfirm={vi.fn()}
-        onDismiss={draft.discardPendingScheduleDraft}
-        onDraftChange={draft.storePendingScheduleDraft}
-      />}
-    </form>
+    <section hidden={hidden}>
+      <form ref={form}>
+        {canShow && draft.pendingScheduleDraft && <ScheduleConfirmCard
+          draft={draft.pendingScheduleDraft}
+          confirming={false}
+          onConfirm={vi.fn()}
+          onDismiss={draft.discardPendingScheduleDraft}
+          onDraftChange={draft.storePendingScheduleDraft}
+        />}
+      </form>
+    </section>
   );
 }
 
@@ -143,6 +147,22 @@ describe('schedule draft request recovery', () => {
 
     view.rerender(<Composer />);
     expect(await screen.findByText(/确认定时任务|Confirm scheduled task/i)).toBeTruthy();
+    expect(await result).toMatchObject({ ok: true });
+  });
+
+  it('acknowledges when an ancestor reveals an already mounted card', async () => {
+    const view = render(<Composer hidden />);
+    const { result } = await start();
+    const card = await screen.findByText(/确认定时任务|Confirm scheduled task/i);
+    expect(card.closest('[hidden]')).not.toBeNull();
+    await act(async () => {
+      // Give the initial visibility probe time to run while the ancestor is still hidden.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    expect(getScheduleDraftRequest('s1')).toMatchObject({ state: 'prepared' });
+
+    view.rerender(<Composer />);
+    await waitFor(() => expect(getScheduleDraftRequest('s1')).toMatchObject({ state: 'shown' }));
     expect(await result).toMatchObject({ ok: true });
   });
 

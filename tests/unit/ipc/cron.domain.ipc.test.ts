@@ -108,7 +108,7 @@ describe('attended schedule drafts through the cron IPC route', () => {
     h.getSession.mockResolvedValueOnce(null);
     expect(await call('ackScheduleDraft', { ...ref, status: 'prepared', draft: input })).toEqual({ success: true, data: false });
     expect(await call('ackScheduleDraft', { ...ref, status: 'discarded' })).toEqual({ success: true, data: true });
-    expect(await result).toBe('not_shown');
+    expect(await result).toBe('discarded');
     expect(await call('createJob', { ...input, scheduleDraftRequest: ref })).toMatchObject({
       success: false, error: { code: 'SCHEDULE_DRAFT_UNAVAILABLE' },
     });

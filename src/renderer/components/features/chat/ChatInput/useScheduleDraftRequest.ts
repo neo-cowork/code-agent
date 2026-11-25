@@ -123,7 +123,12 @@ export function useScheduleDraftRequest(
     };
     // ComposerSlot may mount the card on a later commit or after a blocking notice clears.
     const observer = new MutationObserver(checkVisibility);
-    observer.observe(form, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
+    const visibilityAttributes = ['class', 'hidden', 'style'];
+    observer.observe(form, { childList: true, subtree: true, attributes: true, attributeFilter: visibilityAttributes });
+    // A member conversation can hide the main composer without modifying its subtree.
+    for (let parent = form.parentElement; parent; parent = parent.parentElement) {
+      observer.observe(parent, { attributes: true, attributeFilter: visibilityAttributes });
+    }
     document.addEventListener('visibilitychange', checkVisibility);
     window.addEventListener('focus', checkVisibility);
     checkVisibility();

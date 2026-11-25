@@ -3,10 +3,10 @@ import { SCHEDULE_DRAFT_ACK_TIMEOUT_MS } from '../../shared/constants/timeouts';
 import type { ScheduleDraftAck, ScheduleDraftRequest } from '../../shared/ipc/schemas/cron';
 import { createLogger } from '../services/infra/logger';
 
-type Result = 'shown' | 'generation_failed' | 'not_shown' | 'aborted';
+type Result = 'shown' | 'generation_failed' | 'not_shown' | 'discarded' | 'aborted';
 type Entry = {
   request: ScheduleDraftRequest;
-  finish: (result: Result) => void;
+  finish: (result: Result, keepDraft?: boolean) => void;
   confirming: boolean;
 };
 
@@ -22,15 +22,16 @@ export function registerScheduleDraftRequest(sessionId: string, description: str
   const entry: Entry = {
     request,
     confirming: false,
-    finish(outcome) {
+    finish(outcome, keepDraft = false) {
       clearTimeout(timeout);
       signal.removeEventListener('abort', abort);
-      if (outcome !== 'shown' && requests.get(sessionId) === entry) requests.delete(sessionId);
+      if (!keepDraft && requests.get(sessionId) === entry) requests.delete(sessionId);
       resolve(outcome);
     },
   };
   const abort = () => entry.finish('aborted');
-  const timeout = setTimeout(() => entry.finish('not_shown'), SCHEDULE_DRAFT_ACK_TIMEOUT_MS);
+  // Bound the tool's wait. A prepared draft can still be shown when the composer becomes visible.
+  const timeout = setTimeout(() => entry.finish('not_shown', entry.request.state === 'prepared'), SCHEDULE_DRAFT_ACK_TIMEOUT_MS);
   requests.set(sessionId, entry);
   signal.addEventListener('abort', abort, { once: true });
   if (signal.aborted) abort();
@@ -60,7 +61,7 @@ export function acknowledgeScheduleDraft(ack: ScheduleDraftAck): boolean {
       if (request.state === 'prepared') {
         entry.request = { ...request, state: 'shown' };
         logger.info('Scheduled-task card acknowledged', { sessionId: ack.sessionId, requestId: ack.requestId });
-        entry.finish('shown');
+        entry.finish('shown', true);
       }
       return true;
     case 'generation_failed':
@@ -69,7 +70,7 @@ export function acknowledgeScheduleDraft(ack: ScheduleDraftAck): boolean {
       return true;
     case 'discarded':
       if (entry.confirming) return false;
-      entry.finish('not_shown');
+      entry.finish('discarded');
       return true;
   }
 }

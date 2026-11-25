@@ -87,14 +87,34 @@ describe('registered schedule_task module', () => {
     });
   });
 
-  it('times out an unshown card and rejects a late renderer ACK', async () => {
+  it('times out an unprepared request and rejects a late renderer ACK', async () => {
     vi.useFakeTimers();
     const run = start('weekly summary');
     const { requestId } = await run.emitted;
-    expect(acknowledgeScheduleDraft({ sessionId, requestId, status: 'prepared', draft: {} })).toBe(true);
     await vi.advanceTimersByTimeAsync(SCHEDULE_DRAFT_ACK_TIMEOUT_MS);
     expect(await run.result).toMatchObject({ ok: false, code: 'SCHEDULE_CARD_NOT_SHOWN', error: expect.stringContaining('no task was created') });
-    expect(acknowledgeScheduleDraft({ sessionId, requestId, status: 'shown' })).toBe(false);
+    expect(acknowledgeScheduleDraft({ sessionId, requestId, status: 'prepared', draft: {} })).toBe(false);
+  });
+
+  it('times out the tool while retaining a prepared draft for a later visible composer', async () => {
+    vi.useFakeTimers();
+    const run = start('weekly summary');
+    const ref = await run.emitted;
+    expect(acknowledgeScheduleDraft({ ...ref, status: 'prepared', draft: { name: 'Weekly summary' } })).toBe(true);
+    await vi.advanceTimersByTimeAsync(SCHEDULE_DRAFT_ACK_TIMEOUT_MS);
+    expect(await run.result).toMatchObject({ ok: false, code: 'SCHEDULE_CARD_NOT_SHOWN' });
+    expect(getScheduleDraftRequest(sessionId)).toMatchObject({ state: 'prepared', draft: { name: 'Weekly summary' } });
+    expect(acknowledgeScheduleDraft({ ...ref, status: 'shown' })).toBe(true);
+    expect(getScheduleDraftRequest(sessionId)).toMatchObject({ state: 'shown' });
+  });
+
+  it('reports dismissal if the user cancels before the visibility ACK arrives', async () => {
+    const run = start('weekly summary');
+    const ref = await run.emitted;
+    expect(acknowledgeScheduleDraft({ ...ref, status: 'prepared', draft: { name: 'Weekly summary' } })).toBe(true);
+    expect(acknowledgeScheduleDraft({ ...ref, status: 'discarded' })).toBe(true);
+    expect(await run.result).toMatchObject({ ok: false, code: 'SCHEDULE_DRAFT_DISCARDED' });
+    expect(getScheduleDraftRequest(sessionId)).toBeNull();
   });
 
   it('cancels a waiting draft when the tool is aborted', async () => {
