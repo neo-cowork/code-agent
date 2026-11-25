@@ -49,6 +49,12 @@ export function isPlaceholderSessionTitle(title: string | null | undefined): boo
   return named.startsWith('Session ') || named.startsWith('CLI Session ');
 }
 
+/** 首轮草稿标题与后台通知共用可见正文和截断规则。 */
+export function buildSessionTitle(prompt: string, attachmentName?: string): string {
+  const source = stripAppshotBlocks(prompt).trim() || attachmentName || prompt;
+  return source.length > 30 ? source.substring(0, 30) + '...' : source;
+}
+
 /** 剥掉 appshot 块后留给小模型和降级标题的正文。纯 appshot 用固定名。 */
 export function sessionTitleSource(sourceText: string, language: TitleLanguage = 'zh'): string {
   const visibleMessage = stripAppshotBlocks(sourceText);
