@@ -14,14 +14,23 @@ function listTsx(dir: string): string[] {
   });
 }
 
-/** 一行 className 看起来像手写 pill：rounded(-full|-sm|-md|-lg|-xl) + text-xs|[10px]|[11px] + px-，且没有任何防折行类。 */
+/**
+ * pill 的横向 padding：px- / pl- / pr- / ps- / pe-，任意值（含 px-[14px] 这类方括号值）。
+ * 原先只认 px-：把 px-3 改写成 pl-3 pr-3，这一行就从闸门里消失，一个防折行类都不用加
+ * （907b57bf7 的 member-bash-step 行就是这样把闸门改绿的）。
+ * 只认不带变体前缀的类名：md:px-3、placeholder:px-2、peer-focus:px-2 不算，变体前缀不在本闸范围。
+ */
+function hasPillPadding(tokens: string[]): boolean {
+  return tokens.some((t) => /^(px|pl|pr|ps|pe)-/.test(t));
+}
+
+/** 一行 className 看起来像手写 pill：rounded(-full|-sm|-md|-lg|-xl) + text-xs|[10px]|[11px] + 横向 padding，且没有任何防折行类。 */
 function isUnprotectedPillLine(line: string): boolean {
   if (!line.includes('className') || line.includes('<Badge')) return false;
   const tokens = line.split(/[\s"'`{}=]+/);
   const rounded = tokens.some((t) => /^rounded(-(full|sm|md|lg|xl))?$/.test(t));
   const small = tokens.some((t) => t === 'text-xs' || t === 'text-[10px]' || t === 'text-[11px]');
-  const padded = tokens.some((t) => t.startsWith('px-'));
-  if (!rounded || !small || !padded) return false;
+  if (!rounded || !small || !hasPillPadding(tokens)) return false;
   return !tokens.some((t) => t === 'whitespace-nowrap' || t === 'shrink-0' || t === 'truncate');
 }
 
@@ -56,6 +65,30 @@ describe('hand-written pill nowrap ratchet', () => {
     expect(isUnprotectedPillLine('<span className="rounded-full px-2 py-1 text-xs">x</span>')).toBe(true);
     expect(isUnprotectedPillLine('<span className="whitespace-nowrap rounded-full px-2 py-1 text-xs">x</span>')).toBe(false);
     expect(isUnprotectedPillLine('<Badge className="rounded-full px-2 text-xs">x</Badge>')).toBe(false);
+  });
+
+  // N-FIX-PILL-NOWRAP-RATCHET-PADDING-BYPASS：横向 padding 换一种拼法也算 padding，不许靠改写绕过闸门。
+  it.each(['px-3', 'pl-3', 'pr-3', 'ps-3', 'pe-3', 'px-[14px]'])('counts %s as pill padding', (padding) => {
+    expect(isUnprotectedPillLine(`<span className="rounded-full text-xs ${padding}">x</span>`)).toBe(true);
+  });
+
+  it('a pill written with pl- pr- is flagged, and whitespace-nowrap protects it', () => {
+    expect(isUnprotectedPillLine('<span className="rounded-full pl-3 pr-3 text-xs">x</span>')).toBe(true);
+    expect(isUnprotectedPillLine('<span className="rounded-full pl-3 pr-3 text-xs whitespace-nowrap">x</span>')).toBe(false);
+  });
+
+  it.each([
+    'py-1',
+    'pt-1',
+    'pb-1',
+    'my-1',
+    'mx-1',
+    // 变体前缀不在本闸范围：带前缀的 padding 不算。
+    'md:px-3',
+    'placeholder:px-2',
+    'peer-focus:px-2',
+  ])('does not count %s as pill padding', (padding) => {
+    expect(isUnprotectedPillLine(`<span className="rounded-full text-xs ${padding}">x</span>`)).toBe(false);
   });
 });
 
