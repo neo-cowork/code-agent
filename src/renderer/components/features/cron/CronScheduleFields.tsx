@@ -15,15 +15,17 @@ import { Select } from '../../primitives/Select';
 import { Button } from '../../primitives/Button';
 import { TimeInput24 } from '../../primitives';
 import { formatCronExpressionLabel } from '@shared/cronHumanize';
+import { estimateScheduleRuns } from '@shared/cronScheduleEstimate';
 import { compileSimpleSchedule, decompileSimpleSchedule, type SimpleFrequency } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatScheduleRunCount } from '../../../i18n/cronScheduleEstimate';
 import type { CronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
 
 interface CronScheduleFieldsProps {
   draft: Pick<
     CronJobDraft,
-    'scheduleType' | 'atDatetime' | 'everyInterval' | 'everyUnit' | 'everyStartAt' | 'everyEndAt' | 'cronExpression' | 'cronTimezone' | 'runsOn'
+    'scheduleType' | 'atDatetime' | 'everyInterval' | 'everyUnit' | 'everyStartAt' | 'everyEndAt' | 'cronExpression' | 'cronTimezone' | 'runsOn' | 'actionType'
   >;
   setField: <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => void;
   errors: Partial<Record<'atDatetime' | 'everyInterval' | 'cronExpression', string>>;
@@ -118,6 +120,14 @@ const CronBranch: React.FC<CronScheduleFieldsProps> = ({ draft, setField, errors
   const [customPick, setCustomPick] = useState<boolean | null>(null);
   const custom = customPick ?? simple === null;
   const showSimple = !custom && simple !== null;
+  const expression = draft.cronExpression.trim();
+  const estimate = !showSimple && expression
+    ? estimateScheduleRuns({
+        type: 'cron',
+        expression,
+        timezone: draft.cronTimezone.trim() || undefined,
+      }, draft.runsOn, draft.actionType, [])
+    : undefined;
 
   const update = (next: { freq: SimpleFrequency; time: string; weekday: string }) => {
     const compiled = compileSimpleSchedule({ ...next, intervalHours: '1', onceAt: '' });
@@ -190,9 +200,10 @@ const CronBranch: React.FC<CronScheduleFieldsProps> = ({ draft, setField, errors
             {timezoneField}
           </div>
           <p className="text-xs text-zinc-500" data-testid="cron-custom-hint">{cc.editorChrome.cronCustomHint}</p>
-          {draft.cronExpression.trim() !== '' && (
+          {expression !== '' && (
             <p className="text-xs text-zinc-400" data-testid="cron-custom-preview">
               {cc.editorChrome.cronPreviewLabel}{formatCronExpressionLabel(draft.cronExpression, draft.cronTimezone || undefined, language)}
+              {estimate && <span className="block">{formatScheduleRunCount(t.cronScheduleEstimate, estimate)}</span>}
             </p>
           )}
           {simple !== null && (
