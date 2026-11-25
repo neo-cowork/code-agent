@@ -519,7 +519,6 @@ describe.sequential('subagent leftover background shells', () => {
     await vi.waitFor(() => expect(pgrepProcessGroup(ownedPid!)).not.toBe(''), { timeout: 5_000, interval: 50 });
 
     const stopResponse = await taskHandler!(null, {
-      domain: IPC_DOMAINS.TASK,
       action: 'cancelBackgroundTask',
       payload: { taskId: ledgerId },
     });
