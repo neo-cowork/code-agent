@@ -77,6 +77,7 @@ import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
 import { createRunContext, type RunHandle } from '../runtime/runContext';
+import { executingBackgroundPrimaryRunId } from '../session/backgroundSettlementHold';
 import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
@@ -938,7 +939,8 @@ export class AgentOrchestrator {
       ? `${baseSystemPrompt}\n\n${options.neoTag.promptLayer}`
       : baseSystemPrompt;
 
-    const nativeRunId = options?.runId?.trim() || `run-${generateMessageId()}`;
+    const primaryRunId = options?.runRegistration === 'auxiliary' ? undefined : executingBackgroundPrimaryRunId(sessionId);
+    const nativeRunId = options?.runId?.trim() || primaryRunId || `run-${generateMessageId()}`;
     let registeredRun: RunHandle | undefined;
     let runCompletedNormally = false;
     let rolePresetSessionId: string | undefined;

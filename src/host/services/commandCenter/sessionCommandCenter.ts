@@ -3,6 +3,7 @@ import { collectDeliverableFileArtifacts } from '../../tools/artifacts/collectDe
 import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../../session/approvedRmSettlementTargets';
 import { settleBackgroundOnTaskComplete } from '../../task/backgroundTaskTerminal';
 import { resolveBackgroundRunSettlement } from '../../session/backgroundRunSettlement';
+import { backgroundChildAdmitted, backgroundChildSettled } from '../../session/backgroundSettlementHold';
 import { notificationService } from '../infra/notificationService';
 import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
 import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
@@ -282,6 +283,7 @@ export class SessionCommandCenter {
       toolCallId: input.toolCallId,
     };
     this.tasks(input.sessionId).set(id, task);
+    backgroundChildAdmitted(task);
     this.projectTask(task);
     if (admission.outcome === 'started') this.launch(task);
     return { outcome: admission.outcome, task: { ...task } };
@@ -902,12 +904,10 @@ export class SessionCommandCenter {
       }
     }
 
-    // 账本落终态必须**先于**下面那个 await：task.status 在上面已经同步变成 failed 且投影出去了，
-    // 而账本要等投影 Promise 落地才记终态。中间这段窗口里，前台从 task_status 已经看得到
-    // failed，立刻用同一 submissionKey 重试——账本里那个 slot 还是 running，admit() 返回
-    // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
+    // Settle the slot synchronously so a retry cannot reuse an already terminal task.
+    // Only then release any waiting parent.
     const startable = this.ledger(task.sessionId).settle(task.id, status);
-    if (trackedDelete && status === 'completed') {
+    if (!backgroundChildSettled(task) && trackedDelete && status === 'completed') {
       void settleBackgroundOnTaskComplete(task.sessionId, task.id, {}, () => (
         this.manager.getSessionState(task.sessionId).status === 'running' || this.manager.hasActivePrimaryRun(task.sessionId)
       )).catch((error: unknown) => {
