@@ -446,7 +446,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     stepCount: number;
     toolNames: string[];
   } | null>(null);
-  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft } = useScheduleDraft(currentSessionId);
+  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, clearRequestDraft } = useScheduleDraft(currentSessionId);
   // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
   const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
@@ -1095,14 +1095,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSessionReferences,
     setArtifactReferences,
     setScheduleComposerOpen,
-    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule },
+    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule, clearRequestDraft },
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
-  useScheduleDraftRequest(currentSessionId, creatingSchedule, runScheduleCreation);
+  useScheduleDraftRequest(currentSessionId, creatingSchedule, { pendingScheduleDraft, storePendingScheduleDraft, clearRequestDraft }, formRef);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 

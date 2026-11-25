@@ -27,9 +27,9 @@ import type {
 import {
   VISUAL_EDIT_MODEL_TEXT,
   VISUAL_EDIT_MODEL_VISION,
-  MODEL_API_ENDPOINTS,
   MODEL_MAX_TOKENS,
 } from '../../../../shared/constants';
+import { resolveZhipuVisionFallbackBaseUrl } from '../../../model/providers/providerResolution';
 
 /** 按调用形态选模型：有 screenshot 走 vision model，否则走 text model。
  *  env override: VISUAL_EDIT_MODEL_TEXT / VISUAL_EDIT_MODEL_VISION */
@@ -229,7 +229,7 @@ async function callZhipuVision(args: {
   };
 
   const response = await fetchWithTimeout(
-    `${MODEL_API_ENDPOINTS.zhipuCoding}/chat/completions`,
+    `${resolveZhipuVisionFallbackBaseUrl()}/chat/completions`,
     {
       method: 'POST',
       headers: {

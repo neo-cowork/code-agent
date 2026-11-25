@@ -263,7 +263,7 @@ export const cronCenterZh = {
     resultPushChooseAccount: '选择一个已连接账号',
     resultPushChooseConversation: '选择接收会话',
     resultPushLoading: '正在读取会话…',
-    resultPushNoAccounts: '还没有连接消息通道，结果会留在「待过目」里。',
+    resultPushNoAccounts: '还没有连接消息通道，结果会留在「运行记录」里。',
     resultPushConnect: '去连接一个',
     resultPushNoConversations: '这个账号暂时没有可发送的会话。',
     resultPushManualLabel: '接收会话 ID',
