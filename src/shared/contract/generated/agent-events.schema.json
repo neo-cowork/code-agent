@@ -4737,12 +4737,16 @@
         "sessionId": {
           "type": "string"
         },
+        "requestId": {
+          "type": "string"
+        },
         "description": {
           "type": "string"
         }
       },
       "required": [
         "sessionId",
+        "requestId",
         "description"
       ],
       "additionalProperties": false
