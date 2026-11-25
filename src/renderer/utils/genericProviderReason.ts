@@ -27,7 +27,7 @@ const DISALLOWED_PATTERNS: readonly RegExp[] = [
 ];
 
 /** 没有任何可纠正信息的空泛短语（statusText 回显）：不当作「服务商返回」展示。 */
-const EMPTY_PHRASE_RE = /^(?:bad request|invalid request)\.?$/i;
+const EMPTY_PHRASE_RE = /^(?:bad request|invalid request|max iterations reached)\.?$/i;
 
 export function extractReadableProviderReason(
   rawMessage: string | undefined | null,
