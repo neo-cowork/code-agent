@@ -55,6 +55,12 @@ const PERSONAL_CHAT_SOURCE_RULE: Record<SessionTitleLanguage, string> = {
     'If the task involves personal chat sources such as WeChat/IM, do not search for or call any tool, skill, or command line that reads personal chat history; instead output a single line: "Not read: WeChat/IM (scheduled jobs don\'t read personal chats by default; to allow it, tick "Allow this task to use these personal skills" on the "Action" page of the task editor)". Keep that quoted line verbatim, character for character; do not reword the page or option names.',
 };
 
+function mentionsChatSource(prompt: string): boolean {
+  return /微信|即时消息|聊天/.test(prompt)
+    || /\bIM\b/.test(prompt)
+    || /\b(?:wechat|wecom|instant\s+messages?|chat\s+(?:history|messages))\b/i.test(prompt);
+}
+
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
  *
@@ -97,7 +103,7 @@ export function buildCronAgentPrompt(
   // 判不出语言才跟 UI。en 行里的选项/页面名必须与 en i18n 真实词条一致：
   // 「允许本任务使用这些个人技能」= cronPersonalSkills.en.label、
   // 「执行动作」= cronEditorChrome en tabs.action —— 改词条时两处同步。
-  const personalChatSourceRule = personalSkillIds?.length ? '' : PERSONAL_CHAT_SOURCE_RULE[
+  const personalChatSourceRule = personalSkillIds?.length || !mentionsChatSource(prompt) ? '' : PERSONAL_CHAT_SOURCE_RULE[
     detectMessageLanguage(prompt) ?? readUiLanguage()
   ];
   const personalSourceInstruction = personalSkillIds?.length
