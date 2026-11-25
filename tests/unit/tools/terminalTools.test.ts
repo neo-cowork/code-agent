@@ -6,6 +6,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, ToolContext, ToolModule, ToolResult } from '../../../src/host/protocol/tools';
+import type { PermissionRequestData } from '../../../src/host/tools/types';
+import type { RequestPermissionResult } from '../../../src/shared/contract/permission';
+import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 interface FakeSession {
   data: string;
@@ -195,7 +198,64 @@ describe('terminal_write approval chain (红线：过审批链 + bash 同档安�
     const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
     await run(terminalWriteModule, { input: 'npm run build' }, canUseTool);
 
-    expect(canUseTool.mock.calls[0][2]).not.toMatch(/^dangerous:/);
+    expect(canUseTool.mock.calls[0][2]).toBeUndefined();
+  });
+});
+
+describe('terminal_write through ToolExecutor and the protocol registry', () => {
+  const input = "printf 'terminal approval\\n'";
+  const allowOnce = { approved: true, approvalSource: 'user' } as const;
+  const denyRequest = { approved: false, denialSource: 'user' } as const;
+
+  async function execute(firstDecision: RequestPermissionResult, command = input) {
+    const requestPermission = vi.fn<(request: PermissionRequestData) => Promise<RequestPermissionResult>>()
+      .mockResolvedValueOnce(firstDecision)
+      .mockResolvedValue(denyRequest);
+    const executor = new ToolExecutor({
+      workingDirectory: '/tmp',
+      requestPermission,
+      forcePermissionHandler: true,
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('terminal_write', { input: command }, { sessionId: 'chat-1' });
+    for (const [request] of requestPermission.mock.calls) {
+      expect(request.details.command).toBeUndefined();
+      expect(request.details.preview).toEqual({ type: 'command', summary: command });
+    }
+    return { result, requestPermission };
+  }
+
+  it('injects ordinary terminal input after exactly one Allow once', async () => {
+    const { result, requestPermission } = await execute(allowOnce);
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    expect(written).toEqual([{ sessionId: 'chat-1', data: `${input}\r` }]);
+  });
+
+  it('does not inject anything when the first card is denied', async () => {
+    const { result, requestPermission } = await execute(denyRequest);
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(written).toEqual([]);
+  });
+
+  it('rejects empty terminal input before building an approval card', async () => {
+    const { result, requestPermission } = await execute(allowOnce, '');
+
+    expect(result).toMatchObject({ success: false, metadata: { code: 'INVALID_ARGS' } });
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(written).toEqual([]);
+  });
+
+  it('still applies the inner decision after outer machine approval', async () => {
+    const { result, requestPermission } = await execute({ approved: true, approvalSource: 'dev-auto-approve' });
+
+    expect(requestPermission).toHaveBeenCalledTimes(2);
+    expect(requestPermission.mock.calls[1][0].details.grantEligible).toBe(false);
+    expect(result.success).toBe(false);
+    expect(written).toEqual([]);
   });
 });
 

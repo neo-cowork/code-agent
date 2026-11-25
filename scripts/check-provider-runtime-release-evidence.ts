@@ -52,6 +52,7 @@ interface LedgerRecord {
 }
 
 const LEDGER_MAX_AGE_DAYS = 30;
+const LEDGER_EXPIRY_WARNING_DAYS = 7;
 const LONG_SESSION_MAX_AGE_DAYS = 14;
 const STOP_MAX_AGE_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -119,6 +120,16 @@ function dateAgeDays(value: unknown, now: Date, label: string, maxAge: number, e
   const age = (now.valueOf() - parsed.valueOf()) / DAY_MS;
   if (age < -1) errors.push(`${label} is dated in the future`);
   if (age > maxAge) errors.push(`${label} is stale: older than ${maxAge} days`);
+}
+
+function ledgerExpiryWarning(raw: Record<string, unknown>, now: Date): string | null {
+  if (typeof raw.id !== 'string' || typeof raw.date !== 'string') return null;
+  const parsed = new Date(raw.date.includes('T') ? raw.date : `${raw.date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.valueOf())) return null;
+  const ageDays = (now.valueOf() - parsed.valueOf()) / DAY_MS;
+  if (ageDays <= LEDGER_MAX_AGE_DAYS - LEDGER_EXPIRY_WARNING_DAYS || ageDays > LEDGER_MAX_AGE_DAYS) return null;
+  const expiresOn = new Date(parsed.valueOf() + LEDGER_MAX_AGE_DAYS * DAY_MS).toISOString().slice(0, 10);
+  return `::warning::ledger record ${raw.id} expires on ${expiresOn}; rerun the live smoke before the evidence goes stale`;
 }
 
 function scanSensitive(relativePath: string, value: unknown, errors: string[]): void {
@@ -197,7 +208,7 @@ function validateFixture(
   scanSensitive(relativePath, fixture, errors);
 }
 
-function validateLedger(options: GateOptions, errors: string[]): Map<string, LedgerRecord> {
+function validateLedger(options: GateOptions, errors: string[], warnings: string[]): Map<string, LedgerRecord> {
   const relativePath = 'docs/capabilities/provider-runtime-live-smoke-ledger.json';
   const ledger = readJson(options.root, relativePath, errors);
   const records = new Map<string, LedgerRecord>();
@@ -234,6 +245,8 @@ function validateLedger(options: GateOptions, errors: string[]): Map<string, Led
         errors.push(`${label} verified record is missing evidence`);
       }
       dateAgeDays(raw.date, options.now, label, LEDGER_MAX_AGE_DAYS, errors);
+      const warning = ledgerExpiryWarning(raw, options.now);
+      if (warning) warnings.push(warning);
     }
     if (typeof raw.id === 'string') {
       if (records.has(raw.id)) errors.push(`${label} duplicates ledger id ${raw.id}`);
@@ -378,9 +391,10 @@ function validateStopReport(
   changedSince(options.root, String(report.gitHead ?? ''), STOP_RELEVANT, relativePath, errors);
 }
 
-export async function checkProviderRuntimeReleaseEvidence(options: GateOptions): Promise<string[]> {
+export async function checkProviderRuntimeReleaseEvidence(options: GateOptions): Promise<{ errors: string[]; warnings: string[] }> {
   const errors: string[] = [];
-  const ledger = validateLedger(options, errors);
+  const warnings: string[] = [];
+  const ledger = validateLedger(options, errors, warnings);
   const matrix = await validateMatrix(options, ledger, errors);
   validateReleaseMaterials(options, matrix, errors);
   if (options.mode === 'full') {
@@ -403,7 +417,7 @@ export async function checkProviderRuntimeReleaseEvidence(options: GateOptions):
       }
     }
   }
-  return errors;
+  return { errors, warnings };
 }
 
 function parseOptions(argv: string[]): GateOptions {
@@ -427,7 +441,8 @@ function parseOptions(argv: string[]): GateOptions {
 
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
-  const errors = await checkProviderRuntimeReleaseEvidence(options);
+  const { errors, warnings } = await checkProviderRuntimeReleaseEvidence(options);
+  for (const warning of warnings) console.log(warning);
   if (errors.length > 0) {
     console.error('Provider/runtime release evidence gate failed:');
     for (const error of errors) console.error(`- ${error}`);

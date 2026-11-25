@@ -7,8 +7,9 @@ export const cronScheduleEstimateZh = {
     shortestGap: (count: string) => `${count}（按最短间隔估算）`,
     usd: (cost: string) => `每天约 ${cost}`,
     flatFee: '不按美元计费',
-    unknown: '首次运行后可见费用',
-    frequent: '运行间隔越短，额度消耗越快。',
+    unknown: '无法提前估算费用，如需付费则按实际用量计',
+    frequent: '每次运行都会调用你的模型并消耗模型额度。运行间隔越短，额度消耗越快。',
+    frequentWithoutModel: '运行间隔越短，任务运行越频繁。',
   },
 };
 
@@ -21,7 +22,18 @@ export const cronScheduleEstimateEn = {
     shortestGap: (count: string) => `${count}, based on the shortest gap between runs`,
     usd: (cost: string) => `about ${cost}/day`,
     flatFee: 'not billed in USD',
-    unknown: 'cost visible after the first run',
-    frequent: 'Shorter intervals use up your quota faster.',
+    unknown: 'cost cannot be estimated up front. Any charges are based on actual usage',
+    frequent: 'Each run calls your model and uses your model quota. Shorter intervals use it faster.',
+    frequentWithoutModel: 'Shorter intervals make this task run more often.',
   },
 };
+
+export function formatScheduleRunCount(
+  copy: typeof cronScheduleEstimateEn.cronScheduleEstimate,
+  { runsPerDay, exact }: { runsPerDay: number; exact: boolean },
+): string {
+  const count = runsPerDay < 1
+    ? copy.lessThanDaily
+    : exact ? copy.about(runsPerDay) : copy.atMost(runsPerDay);
+  return exact ? count : copy.shortestGap(count);
+}
