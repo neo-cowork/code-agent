@@ -640,7 +640,7 @@ export const MemoryEntriesManager: React.FC<{
               </div>
             </div>
 
-            <div className="max-h-[520px] overflow-auto">
+            <div className="max-h-[520px] overflow-auto @container">
               {busy === 'load' ? (
                 <div className="flex h-40 items-center justify-center">
                   <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
@@ -652,8 +652,8 @@ export const MemoryEntriesManager: React.FC<{
                       <th className="w-9 px-2 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.entry}</th>
                       <th className="w-[96px] px-2 py-2 font-medium">{memoryText.entries.table.status}</th>
-                      <th className="w-[100px] px-2 py-2 font-medium">{memoryText.entries.table.kind}</th>
-                      <th className="w-[104px] px-2 py-2 font-medium">
+                      <th className="w-[100px] px-2 py-2 font-medium @max-[520px]:hidden">{memoryText.entries.table.kind}</th>
+                      <th className="w-[104px] px-2 py-2 font-medium @max-[420px]:hidden">
                         {memoryText.entries.table.updated} / {memoryText.entries.table.source}
                       </th>
                     </tr>
@@ -725,8 +725,8 @@ export const MemoryEntriesManager: React.FC<{
                             <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-background-badge" title={row.backgroundWriteLabel}>{row.backgroundWriteLabel}</div>
                           )}
                         </td>
-                        <td className="break-words px-2 py-3 align-top text-zinc-300">{row.kindLabel}</td>
-                        <td className="break-words px-2 py-3 align-top text-zinc-400">
+                        <td className="break-words px-2 py-3 align-top text-zinc-300 @max-[520px]:hidden">{row.kindLabel}</td>
+                        <td className="break-words px-2 py-3 align-top text-zinc-400 @max-[420px]:hidden">
                           <div>{row.updatedAtLabel}</div>
                           <div className="mt-1 text-[11px] text-zinc-500">
                             {entries.find((item) => item.id === row.id)?.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : row.sourceLabel}
