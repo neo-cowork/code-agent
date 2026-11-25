@@ -582,6 +582,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             projectId,
             {
               name: detail.project.name,
+              primaryPath: detail.sources.find((source) => source.role === 'primary')?.path
+                || detail.project.workspacePath || undefined,
               status: detail.project.status,
               description: detail.project.description,
               spacePromotedAt: detail.project.spacePromotedAt ?? null,

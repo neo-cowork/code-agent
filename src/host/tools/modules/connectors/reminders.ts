@@ -21,7 +21,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeStatusDetail, formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import { describeStatusDetail, formatConnectorStatus, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
@@ -58,11 +58,13 @@ function buildRemindersMeta(
   output: string,
   metadata: Record<string, unknown>,
   name: string,
+  modelGuidance?: string,
 ): Record<string, unknown> {
   return {
     action,
     connector: 'reminders',
     ...metadata,
+    ...(modelGuidance ? { modelGuidance } : {}),
     artifact: createVirtualArtifact({
       sourceTool: schema.name,
       kind: 'text',
@@ -117,11 +119,11 @@ async function executeReminders(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = formatConnectorStatusOutput('reminders', status);
+      const { output, guidance } = formatConnectorStatus('reminders', status);
       return {
         ok: true,
         output,
-        meta: buildRemindersMeta(ctx, action, output, { status }, copy.read.status),
+        meta: buildRemindersMeta(ctx, action, output, { status }, copy.read.status, guidance),
       };
     }
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'read'), code: 'NOT_INITIALIZED' };
@@ -159,11 +161,11 @@ async function executeReminders(
           meta: { accessProbeDenied: true },
         };
       }
-      const output = formatConnectorStatusOutput('reminders', status);
+      const { output, guidance } = formatConnectorStatus('reminders', status);
       return {
         ok: true,
         output,
-        meta: buildRemindersMeta(ctx, action, output, { status }, copy.read.status),
+        meta: buildRemindersMeta(ctx, action, output, { status }, copy.read.status, guidance),
       };
     }
 

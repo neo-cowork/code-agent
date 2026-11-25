@@ -74,4 +74,31 @@ describe('toolUserLabel', () => {
     expect(toolUserLabel('mail_send')).toBe('邮件：发送邮件');
     expect(toolUserLabel('mail_send', 'en')).toBe('Mail: send an email');
   });
+  it.each([
+    ['terminal_write', '向终端输入', 'Type into terminal'],
+    ['process_write', '向终端输入', 'Type into terminal'],
+    ['process_submit', '向终端输入', 'Type into terminal'],
+    ['Process', '管理终端进程', 'Manage terminal processes'],
+    ['Terminal_Write', '向终端输入', 'Type into terminal'],
+    ['terminal-write', '向终端输入', 'Type into terminal'],
+  ])('%s names the terminal action in zh/en without the raw id', (tool, zh, en) => {
+    expect(toolUserLabel(tool, 'zh')).toBe(zh);
+    expect(toolUserLabel(tool, 'en')).toBe(en);
+    expect(toolUserLabel(tool, 'zh')).not.toBe('操作');
+    expect(toolUserLabel(tool, 'en')).not.toBe('Action');
+    expect(permissionNotice(tool, 'zh').body).toBe(`等你确认：${zh}`);
+    expect(permissionNotice(tool, 'en').body).toBe(`Needs your approval: ${en}`);
+    for (const raw of ['terminal_write', 'process_write', 'process_submit', 'Process', 'Terminal_Write', 'terminal-write']) {
+      expect(toolUserLabel(tool, 'zh')).not.toContain(raw);
+      expect(toolUserLabel(tool, 'en')).not.toContain(raw);
+      expect(permissionNotice(tool, 'zh').body).not.toContain(raw);
+      expect(permissionNotice(tool, 'en').body).not.toContain(raw);
+    }
+  });
+  it('unmapped future tools stay 操作/Action', () => {
+    expect(toolUserLabel('some_future_tool')).toBe('操作');
+    expect(toolUserLabel('some_future_tool', 'en')).toBe('Action');
+    expect(toolUserLabel('ppt_generate')).toBe('操作');
+    expect(toolUserLabel('spawn_agent', 'en')).toBe('Action');
+  });
 });

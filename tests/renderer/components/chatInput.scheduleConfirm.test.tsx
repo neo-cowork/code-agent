@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   generateFromPrompt: vi.fn(),
   createJob: vi.fn(),
   getRecentExecutions: vi.fn().mockResolvedValue([]),
+  language: 'zh' as 'zh' | 'en',
   toast: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
@@ -25,7 +26,8 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: mocks.toast }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ t: mocks.language === 'en' ? en : zh, language: mocks.language }) };
 });
 
 import {
@@ -669,8 +671,8 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     const next = onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft;
     expect(next.input.schedule).toEqual({ type: 'cron', expression: '30 8 * * *' });
     expect(next.input.scheduleType).toBe('cron');
-    // 只动调度，其余字段原样带回
-    expect(next.restatement).toEqual(agentDraft().restatement);
+    // 时间真的变了：what 清空走兜底链（旧句子可能带旧间隔），notifyWhen 原样保留
+    expect(next.restatement).toEqual({ what: '', notifyWhen: agentDraft().restatement!.notifyWhen });
   });
 
   it('when 行：每周档带星期选择；每小时档编译成 every hours', () => {
@@ -843,5 +845,92 @@ describe('schedule confirmation recurring timezone labels', () => {
       render(<ScheduleConfirmCard draft={{ input, description: '备份照片', sourceSessionId: null }} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
       expect(screen.getByText(expected)).toBeTruthy();
     }
+  });
+});
+
+describe('schedule restatement — UI 语言透传与改时间后的旧间隔', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.language = 'zh';
+    mocks.generateFromPrompt.mockResolvedValue(generatedDraft);
+    mocks.createJob.mockResolvedValue(createdJob);
+  });
+  afterEach(() => {
+    mocks.language = 'zh';
+  });
+
+  it.each(['en', 'zh'] as const)('%s UI：generateFromPrompt 带上 language', async (language) => {
+    mocks.language = language;
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+    await act(async () => {
+      await result.current.runScheduleCreation('check Hacker News every minute');
+    });
+    expect(mocks.generateFromPrompt).toHaveBeenCalledWith('check Hacker News every minute', language);
+  });
+
+  const staleDraft: PendingScheduleDraft = {
+    input: {
+      ...rowInput,
+      schedule: { type: 'every', interval: 1, unit: 'minutes' },
+    } as CreateCronJobInput,
+    restatement: { what: '每两分钟检查一次新的 AI 帖子', notifyWhen: '出现新的 AI 帖子时通知我' },
+    description: '每分钟看一下 Hacker News',
+    sourceSessionId: 'session-1',
+  };
+
+  function renderStateful(initial: PendingScheduleDraft) {
+    let latest = initial;
+    const Host = () => {
+      const [draft, setDraft] = React.useState(initial);
+      latest = draft;
+      return <ScheduleConfirmCard draft={draft} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={setDraft} />;
+    };
+    const view = render(<Host />);
+    return { view, getDraft: () => latest };
+  }
+
+  it('改时间（每 1 分钟 → 每小时）：What 行不再带旧间隔，notifyWhen 行与值原样保留', () => {
+    const { view, getDraft } = renderStateful(staleDraft);
+    expect(view.container.textContent).toContain('每两分钟');
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'hourly' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(getDraft().input.schedule).toEqual({ type: 'every', interval: 1, unit: 'hours' });
+    expect(view.container.textContent).not.toContain('每两分钟');
+    expect(view.container.textContent).toContain('出现新的 AI 帖子时通知我');
+    expect(getDraft().restatement).toEqual({ what: '', notifyWhen: '出现新的 AI 帖子时通知我' });
+  });
+
+  it('改时间后确认：写入 action.notifyWhen 的值不变', async () => {
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+    await act(async () => {
+      await result.current.runScheduleCreation('每分钟看一下 Hacker News');
+    });
+    const draft = result.current.pendingScheduleDraft!;
+    act(() => {
+      result.current.storePendingScheduleDraft({
+        ...draft,
+        input: { ...draft.input, schedule: { type: 'every', interval: 1, unit: 'hours' } },
+        restatement: { what: '', notifyWhen: draft.restatement!.notifyWhen },
+      });
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+    expect(mocks.createJob.mock.calls[0]?.[0].action.notifyWhen).toBe(generatedDraft.restatement.notifyWhen);
+  });
+
+  it('时间没变（保存同一个 schedule）：模型写的句子保留', () => {
+    const hourly: PendingScheduleDraft = {
+      ...staleDraft,
+      input: { ...staleDraft.input, schedule: { type: 'every', interval: 1, unit: 'hours' } } as CreateCronJobInput,
+    };
+    const { view, getDraft } = renderStateful(hourly);
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.click(screen.getByText('保存'));
+    expect(getDraft().restatement).toEqual(staleDraft.restatement);
+    expect(view.container.textContent).toContain('每两分钟');
   });
 });
