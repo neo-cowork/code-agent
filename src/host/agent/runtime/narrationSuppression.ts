@@ -5,7 +5,7 @@ import { detectReplyEgressLeaks } from '../../../shared/replyEgressLeakDetect';
  * 中文对话里，工具调用间的英文过渡句不给用户看（不翻译、不重写，原文留在 metadata）。
  * 只认「带工具调用 + english_reply_to_zh」；最终答复与用户要求英文的情形仍走观测。
  */
-export function isEnglishNarrationForZh(content: string, userPrompt: string, hasToolCalls: boolean): boolean {
+function isEnglishNarrationForZh(content: string, userPrompt: string, hasToolCalls: boolean): boolean {
   if (!hasToolCalls || !content) return false;
   return detectReplyEgressLeaks(content, userPrompt, { hasToolCalls: true }).categories.includes('english_reply_to_zh');
 }
