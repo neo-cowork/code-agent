@@ -51,6 +51,6 @@ describe('PermissionClassifier reason copy', () => {
     expect(result.reason).not.toMatch(/[a-z]/i);
     expect(result.hostReason?.modelText).toBe(reason);
     expect(result.hostReason?.metadata?.toolName).toBe(toolName);
-    if (decision === 'ask') expect(result.traceStep?.reason.modelText).toBe(reason);
+    if (decision === 'ask') expect(result.traceStep).toMatchObject({ reason: { modelText: reason } });
   });
 });
