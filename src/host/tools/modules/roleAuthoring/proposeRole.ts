@@ -321,6 +321,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
         `- 工具：${toolsLine}\n` +
         (draft.dailyBriefTime ? `- 每日简报：确认后每天 ${draft.dailyBriefTime} 醒来\n` : '') +
         changeBlock +
+        (editingRoleId && dailyBriefTime ? '- dailyBriefTime 对修改无效，该专家原有的唤醒时间不变\n' : '') +
         `请告诉用户：可以直接确认${verb}，或继续提出修改（你会重新起草）。在用户确认前不要重复调用本工具，除非用户要求改动。`,
       meta: {
         draftId: draft.id,

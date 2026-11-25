@@ -74,7 +74,8 @@ export const proposeRoleSchema: ToolSchema = {
         description:
           'Daily wake time in 24h HH:mm. Fill it ONLY when the USER\'s own words in this conversation clearly state a fixed daily clock time for this expert to wake ' +
           '(e.g. user says "每天早上 9 点" -> "09:00"). If the user gave no clock time, you MUST omit this field entirely: ' +
-          'never choose a time yourself, never use a default or the format example as a value, and a time you write into the system prompt does not count. ' +
+          'never choose a time yourself, never use a default or the format example as a value, and do not write a fixed daily clock time into the system prompt unless the user stated one. ' +
+          'When you do fill this field, any clock time in the system prompt must equal it. ' +
           'Ignored when editingRoleId is set.',
       },
     },
