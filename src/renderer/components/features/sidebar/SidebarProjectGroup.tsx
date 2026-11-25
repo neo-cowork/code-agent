@@ -134,6 +134,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   }, [menuOpen]);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
+  const newSessionDirectory = group.projectId ? projectMeta?.primaryPath : group.path;
   const summary = buildSidebarProjectSummary({
     group,
     backgroundSessionMap,
@@ -356,7 +357,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             type="button"
             aria-label={p.newSessionIn.replace('{name}', summary.displayName)}
             title={p.newSessionIn.replace('{name}', summary.displayName)}
-            onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path, group.projectId)}
+            onClick={(e) => handleNewWorkspaceChat(e, group.key, newSessionDirectory, group.projectId)}
             disabled={isCreatingSession || (creatingWorkspaceKey !== null && creatingWorkspaceKey !== group.key)}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:opacity-50"
           >
@@ -386,7 +387,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           meta={projectMeta}
           fallbackSessionCount={group.sessions.length}
           onOpenArtifactSession={handleOpenProjectArtifactSession}
-          onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path, group.projectId); }}
+          onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, newSessionDirectory, group.projectId); }}
           onMetaChange={(update) => {
             const projectId = group.projectId;
             if (!projectId) return;
@@ -418,7 +419,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             setProjectDrawerKey(null);
           }}
           onStartGoal={async (goal) => {
-            await handleStartProjectGoal(goal, group.key, group.path, group.projectId);
+            await handleStartProjectGoal(goal, group.key, newSessionDirectory, group.projectId);
             setProjectDrawerKey(null);
           }}
           onOpenGoalSession={async (sessionId) => {
@@ -430,7 +431,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             setProjectDrawerKey(null);
           }}
           onNewSession={async () => {
-            await createWorkspaceChat(group.key, group.path, group.projectId);
+            await createWorkspaceChat(group.key, newSessionDirectory, group.projectId);
             setProjectDrawerKey(null);
           }}
           onRenameProject={group.projectId
