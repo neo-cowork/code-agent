@@ -1,14 +1,16 @@
 // 前台收窄的每一类都必须当场放行，或在同一轮交给生产 delegate_task。
 // 豁免：plan-exit 兜底、角色边界、无人值守轮、foregroundToolFace 为 false。
 import { EventEmitter } from 'node:events';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResponse } from '../../../../src/host/agent/loopTypes';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
 import type { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
-import type { Message, ToolResult } from '../../../../src/shared/contract';
+import type { Message, ToolCall, ToolResult } from '../../../../src/shared/contract';
 import type { AgentEvent } from '../../../../src/shared/contract';
 import type { TaskManagerEvent } from '../../../../src/host/task/TaskManager';
+import { settleForegroundToolDenial } from '../../../../src/host/agent/runtime/foregroundDenialHandoff';
 import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 import { TurnState } from '../../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../../src/host/agent/runtime/controlState';
@@ -16,6 +18,9 @@ import { ContextHealthState } from '../../../../src/host/agent/runtime/contextHe
 import { RunStatsState } from '../../../../src/host/agent/runtime/runStatsState';
 import { ToolExecutionEngine } from '../../../../src/host/agent/runtime/toolExecutionEngine';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+import { createRunContext } from '../../../../src/host/runtime/runContext';
+import { getDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
+import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
 import {
   BACKGROUND_HANDOFF_PENDING_REPLY,
   BACKGROUND_HANDOFF_SENTENCE,
@@ -84,7 +89,10 @@ import {
   getSessionCommandCenter,
   resetSessionCommandCenterForTest,
 } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
-import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/services/commandCenter/sessionTaskSlotLedger';
+import {
+  getSessionTaskConcurrencyPool,
+  resetSessionTaskConcurrencyPoolForTest,
+} from '../../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import { resetBackgroundTaskLedgerForTest } from '../../../../src/host/task/backgroundTaskLedger';
 
 class FakeTaskManager extends EventEmitter {
@@ -507,5 +515,144 @@ describe('foreground narrowing gate', () => {
     expect(assistantTexts(ctx)).toEqual([BACKGROUND_HANDOFF_PENDING_REPLY]);
     expect(logState.warn.mock.calls.map(([line]) => line)).toContain('Foreground denial handoff failed');
     expect(ledgerEvents.filter((row) => row.toolName === 'delegate_task')).toHaveLength(0);
+  });
+
+  // 没选文件夹的会话（「未分类」）：从生产入口 settleForegroundToolDenial 进，用用户的原话和多行 osascript heredoc。
+  // 运行时上下文上没有 Project Source，工作目录只有 run 级执行器知道（无文件夹首轮只规划路径，盘上还没建）。
+  describe('no-folder session through settleForegroundToolDenial', () => {
+    const NO_FOLDER_PROMPT = '明天上午 9 点提醒我交报告。请用 Bash 工具执行多行 osascript（heredoc）建提醒';
+    const OSA_HEREDOC = [
+      "osascript <<'EOF'",
+      'set dueDate to current date',
+      'set time of dueDate to 0',
+      'set dueDate to dueDate + (days * 1)',
+      'set time of dueDate to 9 * hours',
+      'tell application "Reminders"',
+      '    make new reminder with properties {name:"交报告", remind me date:dueDate}',
+      'end tell',
+      'EOF',
+    ].join('\n');
+    const BASH_CALL: ToolCall = {
+      id: 'bash-nofolder',
+      name: 'Bash',
+      arguments: { command: OSA_HEREDOC, description: '用 osascript 创建明早 9 点交报告提醒' },
+    } as ToolCall;
+
+    function noFolderCtx(workRoot: string, overrides: Record<string, unknown> = {}) {
+      const runContext = createRunContext({
+        runId: 'run-nofolder-1',
+        sessionId: 'runtime-nofolder-1',
+        workspace: workRoot,
+        cwd: workRoot,
+      });
+      const toolExecutor = new ToolExecutor({
+        requestPermission: async () => true,
+        workingDirectory: runContext.cwd,
+        runContext,
+      });
+      toolExecutor.setAuditEnabled(false);
+      const ctx = buildCtx({
+        sessionId: runContext.sessionId,
+        runId: runContext.runId,
+        foregroundToolFace: true,
+        workspaceScope: undefined,
+        workingDirectory: runContext.cwd,
+        toolExecutor,
+        allowedToolNames: getTextForegroundToolNamesForPrompt(NO_FOLDER_PROMPT),
+        messages: [{ id: 'user-1', role: 'user', content: NO_FOLDER_PROMPT, timestamp: Date.now() }] as Message[],
+        ...overrides,
+      });
+      (ctx.turn as TurnState).beginRun(NO_FOLDER_PROMPT);
+      (ctx.turn as TurnState).beginTurn('turn-1', 'iteration-1');
+      return { ctx, runContext };
+    }
+
+    function settle(ctx: ReturnType<typeof buildCtx>, deps: ReturnType<typeof buildDeps>) {
+      return settleForegroundToolDenial({
+        ctx: ctx as unknown as RuntimeContext,
+        contextAssembly: deps.contextAssembly as unknown as ContextAssembly,
+        guard: { toolCallRetryCount: 0 },
+        response: responseOf([BASH_CALL]),
+        toolCalls: [BASH_CALL],
+        planModeActive: () => false,
+      });
+    }
+
+    function sealedResult(deps: ReturnType<typeof buildDeps>): ToolResult | undefined {
+      return deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+    }
+
+    it.each([
+      ['planned session folder under the default work root', (root: string) => path.join(root, '任务_1125_明天上午 9 点提醒我交报告')],
+      ['the default work root itself', (root: string) => root],
+    ])('hands off in the same turn when the workspace is %s', async (_label, workRootOf) => {
+      const workRoot = workRootOf(getDefaultWorkDirectory());
+      const { ctx, runContext } = noFolderCtx(workRoot);
+      const deps = buildDeps(ctx);
+
+      const action = await settle(ctx, deps);
+
+      expect(action).toBe('break');
+      expect(assistantTexts(ctx)).toEqual([BACKGROUND_HANDOFF_SENTENCE]);
+      expect(deps.injected).toHaveLength(0);
+      const tasks = getSessionCommandCenter().list(ctx.sessionId);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]?.status).toBe('running');
+      expect(tasks[0]?.workspaceScope.primaryRoot).toBe(runContext.workspace);
+      expect(tasks[0]?.prompt).toContain(NO_FOLDER_PROMPT);
+      expect(tasks[0]?.toolCallId).toBe('host-handoff:turn-1');
+      expect(sealedResult(deps)).toMatchObject({
+        toolCallId: 'bash-nofolder',
+        success: false,
+        error: 'HANDED_OFF_TO_BACKGROUND',
+        metadata: { code: 'HANDED_OFF_TO_BACKGROUND', bounced: true, skipped: true },
+      });
+      expect(ledgerEvents.some((row) => row.phase === 'begin' && row.toolName === 'delegate_task' && row.toolCallId === 'host-handoff:turn-1')).toBe(true);
+      const lines = logState.warn.mock.calls.map(([line]) => line);
+      expect(lines).not.toContain('Foreground denial handoff failed');
+      expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
+    });
+
+    // 并发池被别的会话占满：主机交接后面没有模型轮次去转述「排队 / 替换 / 暂不创建」，
+    // 所以直接排队。任务必须真的在台账里，收尾才能说「交给后台任务了」。
+    it('queues the task when the shared task pool is already full, instead of asking a question nobody answers', async () => {
+      const pool = getSessionTaskConcurrencyPool();
+      for (let index = 0; index < pool.globalLimit; index += 1) {
+        expect(pool.acquire(`other-session-task-${index}`)).toBe(true);
+      }
+      const { ctx } = noFolderCtx(getDefaultWorkDirectory());
+      const deps = buildDeps(ctx);
+
+      const action = await settle(ctx, deps);
+
+      expect(action).toBe('break');
+      const tasks = getSessionCommandCenter().list(ctx.sessionId);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]?.status).toBe('queued');
+      expect((taskManagerHolder.manager as FakeTaskManager).startBackgroundTask).not.toHaveBeenCalled();
+      expect(assistantTexts(ctx)).toEqual([BACKGROUND_HANDOFF_SENTENCE]);
+      expect(deps.persisted.map((message) => message.content).join('\n')).not.toContain('尚未创建');
+      expect(sealedResult(deps)?.metadata?.code).toBe('HANDED_OFF_TO_BACKGROUND');
+      expect(logState.warn.mock.calls.map(([line]) => line)).not.toContain('Foreground denial handoff failed');
+    });
+
+    // delegate_task 的「尚未创建」回执也是 ok：没有任务就不能说交接成功，回到原有的指引路径。
+    it('keeps the guidance path when delegate_task answers ok without creating a task', async () => {
+      const spawn = vi.spyOn(getSessionCommandCenter(), 'spawn')
+        .mockResolvedValue({ outcome: 'requires_choice', active: [] });
+      const { ctx } = noFolderCtx(getDefaultWorkDirectory(), { maxToolCallRetries: 0 });
+      const deps = buildDeps(ctx);
+
+      const action = await settle(ctx, deps);
+
+      spawn.mockRestore();
+      expect(action).toBe('break');
+      expect(getSessionCommandCenter().list(ctx.sessionId)).toHaveLength(0);
+      expect(assistantTexts(ctx)).not.toContain(BACKGROUND_HANDOFF_SENTENCE);
+      expect(assistantTexts(ctx).at(-1)).toBe(BACKGROUND_HANDOFF_PENDING_REPLY);
+      expect(sealedResult(deps)?.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+      expect(logState.warn.mock.calls).toContainEqual(['Foreground denial handoff failed', expect.objectContaining({ code: 'TASK_NOT_CREATED' })]);
+      expect(ledgerEvents.filter((row) => row.toolName === 'delegate_task')).toHaveLength(0);
+    });
   });
 });
