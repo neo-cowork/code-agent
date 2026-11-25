@@ -1,6 +1,8 @@
 // host metadata.code 的用户文案。独立文件是因为 chatTranscript.ts 已贴 max-lines。
 // 键是 host 下发的 code 原文。带 {param} 的句子由 metadata 同名字段填入。
 
+import { SCHEDULE_DRAFT_FAILURE } from '@shared/constants/cronErrors';
+
 export const toolErrorCodesZh = {
   USER_INPUT_TIMEOUT: {
     summary: '等待你的决定超时',
@@ -113,6 +115,18 @@ export const toolErrorCodesZh = {
   NOT_INITIALIZED: {
     summary: '这项功能还没有准备好',
     detail: '如果是邮件、日历这类连接，请在能力中心 > 连接器里打开后再试。',
+  },
+  [SCHEDULE_DRAFT_FAILURE.GENERATION]: {
+    summary: '没能准备好确认卡，定时任务未创建',
+    detail: '',
+  },
+  [SCHEDULE_DRAFT_FAILURE.NOT_SHOWN]: {
+    summary: '没能显示确认卡，定时任务未创建',
+    detail: '',
+  },
+  [SCHEDULE_DRAFT_FAILURE.DISCARDED]: {
+    summary: '已取消确认，定时任务未创建',
+    detail: '',
   },
   COMMAND_FAILED: {
     summary: '命令运行失败',
@@ -232,6 +246,18 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   NOT_INITIALIZED: {
     summary: 'This feature isn\'t ready yet',
     detail: 'For connections such as Mail or Calendar, turn them on in Capability Hub > Connectors, then try again.',
+  },
+  [SCHEDULE_DRAFT_FAILURE.GENERATION]: {
+    summary: 'Could not prepare the confirmation card. No scheduled task was created.',
+    detail: '',
+  },
+  [SCHEDULE_DRAFT_FAILURE.NOT_SHOWN]: {
+    summary: 'Could not show the confirmation card. No scheduled task was created.',
+    detail: '',
+  },
+  [SCHEDULE_DRAFT_FAILURE.DISCARDED]: {
+    summary: 'Confirmation cancelled. No scheduled task was created.',
+    detail: '',
   },
   COMMAND_FAILED: {
     summary: 'The command failed to run',

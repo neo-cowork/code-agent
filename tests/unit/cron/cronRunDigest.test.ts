@@ -101,8 +101,8 @@ describe('buildCronAgentPrompt delivery digest instruction', () => {
   });
 
   it('includes the missing personal chat source sentence with the per-task checkbox pointer', () => {
-    const enabled = buildCronAgentPrompt('检查', null, true, new Date('2026-09-30T00:00:00.000Z'));
-    const disabled = buildCronAgentPrompt('检查', null, false, new Date('2026-09-30T00:00:00.000Z'));
+    const enabled = buildCronAgentPrompt('检查微信', null, true, new Date('2026-09-30T00:00:00.000Z'));
+    const disabled = buildCronAgentPrompt('检查微信', null, false, new Date('2026-09-30T00:00:00.000Z'));
 
     for (const prompt of [enabled, disabled]) {
       expect(prompt).toContain('未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）');
@@ -147,8 +147,8 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
     + plainLanguageSummaryInstruction;
   const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
-  const expectedEnabled = ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
-  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', denialInstruction, '', deliveryDigest].join('\n');
+  const expectedEnabled = ['检查微信', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查微信', '', timeAnchor, '', personalChatSourceRule, '', denialInstruction, '', deliveryDigest].join('\n');
 
   afterEach(() => {
     vi.doUnmock('../../../src/shared/todayAnchor');
@@ -165,14 +165,14 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   }
 
   it('缺省 urgencyCriteria 时两种模式逐字节匹配含拒绝归因规则的固定模板', async () => {
-    expect(await buildWithFrozenAnchor('检查', null, true, NOW)).toBe(expectedEnabled);
-    expect(await buildWithFrozenAnchor('检查', null, false, NOW)).toBe(expectedDisabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, true, NOW)).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, false, NOW)).toBe(expectedDisabled);
   });
 
   it('带上旧快照时缺省判据的产出同样逐字节相同', async () => {
-    const withSnapshot = await buildWithFrozenAnchor('检查', '旧快照内容', true, NOW);
+    const withSnapshot = await buildWithFrozenAnchor('检查微信', '旧快照内容', true, NOW);
     expect(withSnapshot).toBe(
-      ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
+      ['检查微信', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
         '请把上面的快照和本次看到的内容对比，这次只需要说明变化。', '', snapshotGuidance, '', deliveryDigest].join('\n'),
     );
   });
@@ -192,8 +192,8 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   });
 
   it('空白判据回落缺省定义（逐字节）', async () => {
-    expect(await buildWithFrozenAnchor('检查', null, true, NOW, '   ')).toBe(expectedEnabled);
-    expect(await buildWithFrozenAnchor('检查', null, false, NOW, '')).toBe(expectedDisabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, true, NOW, '   ')).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, false, NOW, '')).toBe(expectedDisabled);
   });
 });
 
@@ -228,8 +228,8 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
     + plainLanguageSummaryInstruction;
   const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
-  const expectedEnabled = ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
-  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', denialInstruction, '', deliveryDigest].join('\n');
+  const expectedEnabled = ['检查微信', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查微信', '', timeAnchor, '', personalChatSourceRule, '', denialInstruction, '', deliveryDigest].join('\n');
   const RULE = '只有需要今天处理的紧急事项';
 
   afterEach(() => {
@@ -245,13 +245,13 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
   }
 
   it('无 notifyWhen 时两种模式逐字节匹配含拒绝归因规则的固定模板', async () => {
-    expect(await buildWithFrozenAnchor('检查', null, true, NOW, undefined, undefined)).toBe(expectedEnabled);
-    expect(await buildWithFrozenAnchor('检查', null, false, NOW, undefined, undefined)).toBe(expectedDisabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, true, NOW, undefined, undefined)).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, false, NOW, undefined, undefined)).toBe(expectedDisabled);
   });
 
   it('空白 notifyWhen 与缺省逐字节相同（空判据 = 每次都通知的旧行为）', async () => {
-    expect(await buildWithFrozenAnchor('检查', null, true, NOW, undefined, '   ')).toBe(expectedEnabled);
-    expect(await buildWithFrozenAnchor('检查', null, false, NOW, undefined, '')).toBe(expectedDisabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, true, NOW, undefined, '   ')).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查微信', null, false, NOW, undefined, '')).toBe(expectedDisabled);
   });
 
   it('设置判据时两种模式都在末尾追加 <cron_alert> 打扰指令，判据原文入 prompt', async () => {
