@@ -10,6 +10,9 @@ export const zhSettingsWork = {
       saving: '保存中…',
       actions: {
         chooseDirectory: '选择目录',
+        reselectWebHint: '网页版没法选这台电脑上的文件夹，请在桌面版里重新选择这个文件夹。',
+        pickDirectoryNothingChosen: '没有选择文件夹，工作区保持不变。',
+        pickDirectoryFailed: '无法选择文件夹，请重试。',
         revealInFinder: '在访达中打开',
         change: '更换',
         clear: '清除',
