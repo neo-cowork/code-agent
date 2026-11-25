@@ -71,11 +71,12 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { generateMessageId } from '../../shared/utils/id';
+import { stripAppshotBlocks } from '../../shared/contract/appshot';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
-import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
+import { settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -1440,7 +1441,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
-      const titleSource = visiblePrompt.trim() || requestAttachments[0]?.name || visiblePrompt;
+      // 截图/图片批注带的隐藏 <appshot> 块不是标题材料：先剥掉再取，剥空（纯截图）才退到附件名。
+      const titleSource = stripAppshotBlocks(visiblePrompt).trim() || requestAttachments[0]?.name || visiblePrompt;
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
@@ -1767,12 +1769,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         isBackground && finalStatus === 'completed');
       if (isBackground) {
         const errorData = runController.lastTerminalErrorData;
-        await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement({
+        await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext.runId, {
           status: finalStatus,
           leftoverPaths,
           errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
           errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
-        }));
+        });
       }
 
       await durableRunLifecycle.markSuccess({ finalStatus });
@@ -1846,10 +1848,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      await getBackgroundTaskManager().markFailed(
-        sessionId,
-        resolveBackgroundRunSettlement({ status: 'error', errorMessage: message }).message,
-      );
+      const backgroundManager = getBackgroundTaskManager();
+      if (backgroundManager.isTaskRunning(sessionId)) {
+        await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext?.runId, { status: 'error', errorMessage: message });
+      }
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
       const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);
@@ -1985,7 +1987,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
   });
 
-  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory);
+  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory, queuedInputDrain.handleReleasedSession);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

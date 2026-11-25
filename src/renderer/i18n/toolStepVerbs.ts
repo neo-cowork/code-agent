@@ -98,6 +98,7 @@ interface DomainActionSet {
 
 interface ToolStepVerbBundle {
   listSeparator: string;
+  eventReply: Record<ToolStepStatus, string>;
   groupSingular: Record<ToolStepStatus, Partial<ToolStepVerbSet['group']>>;
   statusForms: Record<NonCompletedToolStepStatus, ToolStepVerbSet>;
   domainActions: Record<ToolStepStatus, {
@@ -171,6 +172,12 @@ interface ToolStepVerbBundle {
 
 export const toolStepVerbsZh: ToolStepVerbBundle = {
   listSeparator: '、',
+  eventReply: {
+    'pending-approval': '请求回复消息',
+    running: '正在处理回复',
+    completed: '已处理回复',
+    failed: '处理回复未成功',
+  },
   groupSingular: { completed: {}, failed: {}, running: {}, 'pending-approval': {} },
   statusForms: {
     'pending-approval': {
@@ -310,6 +317,12 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
 
 export const toolStepVerbsEn: ToolStepVerbBundle = {
   listSeparator: ', ',
+  eventReply: {
+    'pending-approval': 'Request to reply to a message',
+    running: 'Processing the reply',
+    completed: 'Processed the reply',
+    failed: 'Could not process the reply',
+  },
   groupSingular: {
     completed: { explored: 'Looked at content {count} time', ran: 'Ran {count} command', searchedWeb: 'Searched the web {count} time', mcp: 'Called tools {count} time', subagent: 'Dispatched {count} agent task', planned: 'Updated tasks {count} time', skill: 'Used skills {count} time', used: 'Ran {count} step' },
     failed: { explored: 'Could not inspect content {count} time', ran: 'Could not run {count} command', searchedWeb: 'Could not search the web {count} time', mcp: 'Could not call tools {count} time', subagent: 'Could not dispatch {count} agent task', planned: 'Could not update tasks {count} time', skill: 'Could not use skills {count} time', used: 'Could not run {count} step' },

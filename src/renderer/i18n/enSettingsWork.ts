@@ -383,7 +383,7 @@ export const enSettingsWork = {
       },
     },
     roles: {
-      description: 'Persistent roles combine a role definition, role memory, and work history. Memory and history accumulate across instances and stay yours. Any custom agent becomes persistent by creating a matching directory under ~/.code-agent/roles/.',
+      description: 'Put <name>.md in ~/.code-agent/agents/ and the expert will appear under Mine.',
       listTitlePrefix: 'Persistent roles (',
       listTitleSuffix: ')',
       categoryCountPrefix: ' (',
@@ -519,6 +519,7 @@ export const enSettingsWork = {
         user: 'User',
         feedback: 'Feedback',
         project: 'Project',
+        people: 'People & organizations',
         reference: 'Reference',
         unknown: 'Uncategorized',
       },
@@ -647,15 +648,7 @@ export const enSettingsWork = {
           stale: 'Stale',
           archived: 'Archived',
         },
-        kindLabels: {
-          directive: 'User directive',
-          user: 'User',
-          feedback: 'Feedback',
-          project: 'Project',
-          reference: 'Reference',
-          session: 'Session',
-          pattern: 'Pattern',
-        },
+        kindLabels: { directive: 'User directive', user: 'User', feedback: 'Feedback', project: 'Project', people: 'People & organizations', reference: 'Reference', session: 'Session', pattern: 'Pattern' },
         stats: {
           total: 'Total',
           currentMatched: 'Current matches',

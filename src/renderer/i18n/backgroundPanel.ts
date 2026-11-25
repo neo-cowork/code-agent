@@ -9,6 +9,10 @@ export const backgroundPanelZh = {
     title: '后台任务',
     preannounce: BACKGROUND_TASK_PREANNOUNCE.zh,
     interrupted: '应用重启时这个后台任务还没做完，已被中断，结果没能送回这里。需要的话请重新发起。',
+    handoffEnded: {
+      interrupted: '后台任务已中断，结果不会再送达。',
+      failed: '后台任务没有完成，结果不会再送达。',
+    },
     shellCommandFailed: '命令未能成功完成',
     shellTaskStarted: '已在后台开始执行',
     shellTaskFinished: '「{name}」已完成{duration}。',
@@ -40,6 +44,10 @@ export const backgroundPanelEn: typeof backgroundPanelZh = {
     title: 'Background tasks',
     preannounce: BACKGROUND_TASK_PREANNOUNCE.en,
     interrupted: 'The app restarted while this background task was still running, so it was interrupted and its result could not be delivered. Please start it again if you still need it.',
+    handoffEnded: {
+      interrupted: 'The background task was interrupted, so no result will follow.',
+      failed: 'The background task failed, so no result will follow.',
+    },
     shellCommandFailed: 'The command did not finish successfully',
     shellTaskStarted: 'Started in the background',
     shellTaskFinished: '“{name}” finished{duration}.',
