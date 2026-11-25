@@ -7,6 +7,7 @@
 // ============================================================================
 
 import * as fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,6 +38,25 @@ import { beginRunPolicy, endRunPolicy } from '../../../src/host/permissions/runP
 import { getDecisionHistory, resetDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+
+const HAS_POPPLER = existsSync('/opt/homebrew/bin/pdfinfo') || existsSync('/usr/bin/pdfinfo') || existsSync('/usr/local/bin/pdfinfo');
+
+function minimalPdf(text: string): string {
+  const stream = `BT /F1 12 Tf 50 700 Td (${text}) Tj ET`;
+  const objects = [
+    '<</Type/Catalog/Pages 2 0 R>>',
+    '<</Type/Pages/Kids[3 0 R]/Count 1>>',
+    '<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>',
+    `<</Length ${stream.length}>>\nstream\n${stream}\nendstream`,
+    '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>',
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((body, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  return `${out}trailer<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`;
+}
 
 const SESSION = 'k2-probe-session';
 const RUN_ID = 'k2-probe-run';
@@ -152,6 +172,52 @@ describe('一句话规则先于只读探测免卡', () => {
     await run(ATTRS);
     expect(asks).toEqual([]);
   });
+  // 主干的只读探测新增了「读 PDF」一步（pdfinfo / pdftotext 到 stdout），并按用户的 Read 规则逐路径复核。
+  // 一句话规则写在 Read 上时同样要先于它生效：带角色范围的、以及 preapprove 未命中短语的，都回审批链。
+  describe.skipIf(!HAS_POPPLER)('读 PDF 的探测 × 写在 Read 上的一句话规则', () => {
+    const pdfInfo = () => `pdfinfo ${path.join(root, 'x.pdf')}`;
+    beforeEach(async () => { await fs.writeFile(path.join(root, 'x.pdf'), minimalPdf('Party A pays Party B within 30 days')); });
+
+    it('对照：没有规则时走探测、不出卡', async () => {
+      beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '看看这份合同几页' });
+      const result = await run(pdfInfo());
+      expect(result.metadata?.readonlyProbePlan).toBe(true);
+      expect(asks).toEqual([]);
+    });
+
+    it.each(['ask', 'handback', 'deny'] as const)('带角色范围的 %s：该角色的 run 不走探测，回审批链', async (behavior) => {
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior, rule: `Read(${root}/**)`, roleId: ROLE }] });
+      beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '看看这份合同几页' });
+      await run(pdfInfo());
+      expect(probeRows()).toHaveLength(0);
+      expect(asks).toHaveLength(1);
+    });
+
+    it('带角色范围的规则只管该角色：别的角色照常走探测', async () => {
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'handback', rule: `Read(${root}/**)`, roleId: ROLE }] });
+      beginRunPolicy(RUN_ID, SESSION, { roleId: 'legal', initiatingText: '看看这份合同几页' });
+      const result = await run(pdfInfo());
+      expect(result.metadata?.readonlyProbePlan).toBe(true);
+      expect(asks).toEqual([]);
+    });
+
+    it('preapprove 未命中短语：不走探测，回审批链', async () => {
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule: `Read(${root}/**)`, phrases: ['读合同'] }] });
+      beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: '例行检查' });
+      await run(pdfInfo());
+      expect(probeRows()).toHaveLength(0);
+      expect(asks).toHaveLength(1);
+    });
+
+    it('preapprove 命中短语：照常走探测', async () => {
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule: `Read(${root}/**)`, phrases: ['读合同'] }] });
+      beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: '帮我读合同' });
+      const result = await run(pdfInfo());
+      expect(result.metadata?.readonlyProbePlan).toBe(true);
+      expect(asks).toEqual([]);
+    });
+  });
+
   describe('定时任务（已授权文件夹内）', () => {
     const listThenEcho = () => `ls -la "${root}"; echo "done"`;
 

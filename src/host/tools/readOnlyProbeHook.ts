@@ -76,7 +76,10 @@ function readRulesAllow(absolutePath: string, sessionId?: string): boolean {
     const matched = getPolicyEngine().evaluate({
       tool, level: 'read', description: `tool: ${tool}`, filePath: absolutePath, sessionId,
     }, rules).matchedRule;
-    return !matched || matched.action === 'allow';
+    if (matched && matched.action !== 'allow') return false;
+    // N-PERM-NL-RULES-K2：同 userRulesAllow——角色范围与触发短语由一句话规则的消费端判定。
+    const nlKind = resolveUserRuleOutcomeForTool(sessionId, tool, { filePath: absolutePath }).kind;
+    return nlKind === 'none' || nlKind === 'preapproved';
   });
 }
 
