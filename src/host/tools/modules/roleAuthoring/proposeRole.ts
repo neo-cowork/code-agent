@@ -169,6 +169,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     const category = typeof args.category === 'string' ? (args.category as SkillCategory) : undefined;
     const tools = toStringArray(args.tools);
     const userExpectation = typeof args.userExpectation === 'string' ? args.userExpectation.trim() : '';
+    const dailyBriefTime = typeof args.dailyBriefTime === 'string' ? args.dailyBriefTime : undefined;
     const editingRoleId =
       typeof args.editingRoleId === 'string' && args.editingRoleId.trim() ? args.editingRoleId.trim() : undefined;
 
@@ -222,6 +223,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
       tools,
       systemPrompt,
       userExpectation,
+      dailyBriefTime,
       sessionId: ctx.sessionId,
       editingRoleId,
     };
@@ -317,7 +319,9 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
         `已为「${draft.roleId}」生成${editingRoleId ? '修改' : ''}草稿，确认卡已弹出，等待用户点击确认。\n` +
         `- 描述：${draft.description || '（无）'}\n` +
         `- 工具：${toolsLine}\n` +
+        (draft.dailyBriefTime ? `- 每日简报：确认后每天 ${draft.dailyBriefTime} 醒来\n` : '') +
         changeBlock +
+        (editingRoleId && dailyBriefTime ? '- dailyBriefTime 对修改无效，该专家原有的唤醒时间不变\n' : '') +
         `请告诉用户：可以直接确认${verb}，或继续提出修改（你会重新起草）。在用户确认前不要重复调用本工具，除非用户要求改动。`,
       meta: {
         draftId: draft.id,
