@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formatConnectorStatus } from '../../../../../src/host/tools/modules/connectors/connectorStatusText';
+
+vi.mock('../../../../../src/host/config/hostUiLocale', () => ({ getHostUiLocale: () => 'en' }));
 
 describe('get_status text keeps cause + fix hint from detailCode', () => {
   it('calendar restricted tells the model the Connectors page cannot fix it', () => {

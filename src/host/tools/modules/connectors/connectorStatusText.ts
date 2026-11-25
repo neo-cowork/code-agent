@@ -1,10 +1,10 @@
 // Shared plain-language status text for native Mail / Calendar / Reminders get_status.
-// Structured meta.status stays untouched for programmatic callers; text output gives
-// one plain-language fact plus a model-directed instruction so models never relay
-// internal "X connector: unavailable|connected|disconnected" or "Capabilities:" dumps.
+// Structured meta.status stays intact. Cards show the status text, and the model
+// receives separate guidance for explaining it in the user's language.
 
 import { getHostUiLocale } from '../../../config/hostUiLocale';
 import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
+import { getSpecificConnectorStatusCopy } from '../../../../shared/i18n/connectorReconnect';
 
 type StatusConnectorId = 'mail' | 'calendar' | 'reminders';
 
@@ -27,11 +27,6 @@ const DETAIL_CODE_GUIDANCE: Record<NativeConnectorDetailCode, string> = {
   photos_failed: 'Reading the Photos library failed. Try again shortly.',
   photos_unavailable: 'The Photos library is not available on this computer.',
 };
-
-// Codes whose fix lives in macOS System Settings rather than on the Connectors page.
-const SYSTEM_SETTINGS_FIX_CODES: ReadonlySet<NativeConnectorDetailCode> = new Set([
-  'automation_not_authorized', 'calendar_undecided', 'calendar_denied', 'calendar_write_only',
-]);
 
 /** Model-facing fact for a status: legacy detail wins, else the detailCode guidance. */
 export function describeStatusDetail(status: { detail?: string; error?: string; detailCode?: NativeConnectorDetailCode }): string {
@@ -127,6 +122,15 @@ export function formatConnectorStatus(
   },
 ): ConnectorStatusText {
   const copy = CONNECTOR_COPY[connectorId];
+  const specific = !status.connected ? getSpecificConnectorStatusCopy(status.detailCode) : undefined;
+  if (specific) {
+    const guidance = specific.remedy === 'restricted'
+      ? `Tell the user in plain words, in their own language, that ${copy.userTarget} is blocked by a system restriction and there is nothing they can change themselves. Do not send them to the Connectors page or System Settings. Do not quote this line.`
+      : specific.remedy === 'system-settings'
+        ? `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described in the status; once changed, it can be re-checked on ${connectorsPageHint()}. Do not quote this line.`
+        : 'Tell the user in plain words, in their own language, where this connector is available. Do not suggest reconnecting it. Do not quote this line.';
+    return { output: specific[getHostUiLocale()], guidance };
+  }
   if (status.unavailable) {
     return {
       output: `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read.`,
@@ -139,18 +143,6 @@ export function formatConnectorStatus(
 
   if (!status.connected) {
     const output = `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence}`;
-    if (status.detailCode === 'calendar_restricted') {
-      return {
-        output,
-        guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is blocked by a system restriction and there is nothing they can change themselves. Do not send them to the Connectors page or System Settings. Do not quote this line.`,
-      };
-    }
-    if (status.detailCode && SYSTEM_SETTINGS_FIX_CODES.has(status.detailCode)) {
-      return {
-        output,
-        guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and what to change in System Settings as described above; once changed, it can be re-checked on ${connectorsPageHint()}. Do not quote this line.`,
-      };
-    }
     return {
       output,
       guidance: `Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${connectorsPageHint()}. Do not quote this line.`,
