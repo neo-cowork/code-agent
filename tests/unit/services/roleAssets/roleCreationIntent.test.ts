@@ -113,3 +113,35 @@ describe('expert authoring intent must not capture other role meanings', () => {
     expect(matchRoleAuthoringSeed(text)).toMatchObject({ kind: 'natural-language', skillName: 'create-role' });
   });
 });
+
+describe('matchRoleAuthoringSeed English create-expert phrasing', () => {
+  it.each([
+    'Create an expert that checks my calendar every morning and tells me what is coming up',
+    'make me an assistant that tracks competitors',
+    'Build a research agent for weekly reports',
+    'I need an expert for meeting notes',
+  ])('affirmative → create-role seed: %s', (text) => {
+    expect(matchRoleAuthoringSeed(text)).toEqual({
+      kind: 'natural-language', skillName: 'create-role', text: `/create-role ${text}`,
+    });
+  });
+
+  it.each([
+    "Don't create an expert",
+    'How do I create an expert',
+    'Can I create an expert?',
+    'Create an expert?',
+    'list my experts',
+    'delete the expert',
+    'a role in the game',
+    'Create a role in the game',
+    'Create a game character',
+    'Create an IAM role for Lambda',
+    'set up a meeting',
+    'create an expert introduction page',
+    'build an assistant website',
+    'Create experts',
+  ])('not a create request → null: %s', (text) => {
+    expect(matchRoleAuthoringSeed(text)).toBeNull();
+  });
+});
