@@ -26,7 +26,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
-import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import { formatConnectorStatus, formatConnectorUnavailableMessage } from './connectorStatusText';
 import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 import { formatConnectorTime } from './connectorTime';
 
@@ -51,11 +51,13 @@ function buildMailMeta(
   action: string,
   output: string,
   metadata: Record<string, unknown>,
+  modelGuidance?: string,
 ): Record<string, unknown> {
   return {
     action,
     connector: 'mail',
     ...metadata,
+    ...(modelGuidance ? { modelGuidance } : {}),
     artifact: createVirtualArtifact({
       sourceTool: schema.name,
       kind: 'text',
@@ -107,11 +109,11 @@ async function executeMail(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = formatConnectorStatusOutput('mail', status);
+      const { output, guidance } = formatConnectorStatus('mail', status);
       return {
         ok: true,
         output,
-        meta: buildMailMeta(ctx, action, output, { status }),
+        meta: buildMailMeta(ctx, action, output, { status }, guidance),
       };
     }
     return { ok: false, error: formatConnectorUnavailableMessage('mail', 'read'), code: 'NOT_INITIALIZED' };
@@ -123,11 +125,11 @@ async function executeMail(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
-      const output = formatConnectorStatusOutput('mail', status);
+      const { output, guidance } = formatConnectorStatus('mail', status);
       return {
         ok: true,
         output,
-        meta: buildMailMeta(ctx, action, output, { status }),
+        meta: buildMailMeta(ctx, action, output, { status }, guidance),
       };
     }
 

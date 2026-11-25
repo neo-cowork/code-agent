@@ -9,6 +9,7 @@ import { calendarDeleteEventModule } from '../../../src/host/tools/modules/conne
 import { calendarUpdateEventModule } from '../../../src/host/tools/modules/connectors/calendarUpdateEvent';
 import { formatConnectorTime } from '../../../src/host/tools/modules/connectors/connectorTime';
 import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import { cleanToolResultDisplayText } from '../../../src/renderer/utils/toolResultDisplayText';
 import type { ToolArtifact } from '../../../src/shared/contract/artifactBlob';
 import { toolProgressLabel } from '../../../src/shared/utils/toolProgressLabel';
@@ -260,7 +261,7 @@ describe('mail, reminders and Calendar read receipts', () => {
   });
 
   it('localizes disconnected Calendar status through the dispatch guidance', async () => {
-    execute.mockResolvedValue({ data: { connected: false, detailCode: 'calendar_desktop_only', capabilities: [] } });
+    execute.mockResolvedValue({ data: { connected: false, capabilities: [] } });
     const handler = await calendarModule.createHandler();
     const result = await handler.execute({ action: 'get_status' }, ctx, async () => ({ allow: true }));
     expect(result.ok).toBe(true);
@@ -275,6 +276,40 @@ describe('mail, reminders and Calendar read receipts', () => {
     const shown = cleanToolResultDisplayText('calendar', dispatched.output, en.rendererHumanPipe.toolDetails);
     expect(shown).toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
     expect(artifact?.preview).toBe(shown);
+    expect(cleanToolResultDisplayText('calendar', String(dispatched.meta?.modelGuidance), en.rendererHumanPipe.toolDetails))
+      .toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
+    vi.mocked(getHostUiLocale).mockReturnValue('zh');
+    const zhResult = withConnectorReconnectGuidance('calendar', result);
+    expect(zhResult.ok).toBe(true);
+    if (!zhResult.ok) throw new Error(zhResult.error);
+    expect(zhResult.output).toBe('这次还没读到所需数据，请在能力中心 > 连接器重新连接后再试。');
+    expect(zhResult.output).not.toMatch(/[a-z]/i);
+    expect((zhResult.meta?.artifact as ToolArtifact | undefined)?.preview).toBe(zhResult.output);
+  });
+
+  it.each([
+    ['en', 'calendar_denied', 'System Settings > Privacy & Security > Calendars'],
+    ['zh', 'calendar_denied', '系统设置 > 隐私与安全性 > 日历'],
+    ['en', 'calendar_desktop_only', 'desktop app'],
+    ['zh', 'calendar_desktop_only', '桌面应用'],
+    ['en', 'platform_unsupported', 'Mac'],
+    ['en', 'calendar_write_only', 'Full Access'],
+    ['en', 'calendar_undecided', 'System Settings > Privacy & Security > Calendars'],
+    ['en', 'calendar_restricted', 'restricted by the system'],
+  ] as const)('keeps specific %s Calendar status for %s through dispatch', async (locale, detailCode, expected) => {
+    vi.mocked(getHostUiLocale).mockReturnValue(locale);
+    execute.mockResolvedValue({ data: { connected: false, readiness: 'unchecked', detailCode, capabilities: [] } });
+    const handler = await calendarModule.createHandler();
+    const result = withConnectorReconnectGuidance('calendar', await handler.execute({ action: 'get_status' }, ctx, async () => ({ allow: true })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+
+    const displayCopy = (locale === 'en' ? en : zh).rendererHumanPipe.toolDetails;
+    const shown = cleanToolResultDisplayText('calendar', result.output, displayCopy);
+    expect(shown).toContain(expected);
+    expect(shown).not.toMatch(/Reconnect in Capability Hub|在能力中心 > 连接器重新连接|runtime|Tell the user|Do not quote/i);
+    expect((result.meta?.artifact as ToolArtifact | undefined)?.preview).toBe(shown);
+    expect(result.meta?.modelGuidance).not.toMatch(/complete user-facing answer/i);
   });
 
   const reads = [

@@ -61,6 +61,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 
 （行为不可见改动在此追加：日期 / PR / 说明）
 - 2026-11-24 / N-FIX-ROLE-CREATE-DAILY-9AM-DEFAULT-SILENT-REDESIGN / 敏感变更：src/host/tools/modules/roleAuthoring/proposeRole.schema.ts（propose_role 新增可选字段 dailyBriefTime）。propose_role 仅在「建角色」流程的严格工具集内暴露，录制语料 7 会话 16 轮均不含该流程；`npm run acceptance:snapshot-replay:record` 重录并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
+- 2026-11-24 / N-FIX-CONNECTOR-STATUS-OUTPUT-MODEL-INSTRUCTION-LEAK / 敏感变更：src/host/agent/runtime/contextAssembly/ledgerMessageProjection.ts、transcriptProjection.ts（工具结果投给模型的文本改走 modelVisibleToolOutput：仅当 metadata.modelGuidance 存在时把指引并入；录制语料无连接器 get_status 结果，请求组装字节不变）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
 - 2026-11-23 / N-FIX-BASH-BG-CONVERT-FAILED-COMMAND-HIDDEN-ISMETA / 敏感变更：src/host/agent/runtime/contextAssembly/systemContextStack.ts（仅 `historyVisibility==='meta'` 的后台 run 里，失败的 Bash 结果与发起它的助手消息不再打 isMeta；录制语料 7 会话均无 meta run、无 COMMAND_FAILED，请求组装字节不变）。本机重录时全部会话的 system 提示词与工具 schema 哈希都漂（含不带 Bash 的 single-turn-qa），与本改动无关，是本机录制环境（无 API key / 时区）与已提交语料环境不一致，故不提交本机重录产物，以本行作为同 PR 快照目录更新。
 - 2026-11-22 / N-FIX-CONTEXT-POPOVER-STALE-AND-AGENT-FAIL-UNNAMED-FU1-FU2-FU1-NATURAL-FAIL-WEB-FU1 / 后台派发提示的元数据增加工具调用 ID，用于界面关联任务。重录 7 会话 16 轮并自验通过，快照目录零差异。
 - 2026-11-23 / PR #3234（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）/ 合入 main 后运行 `npm run acceptance:snapshot-replay:record`，7 会话 16 轮自验通过，与 main 快照零差异。inference.ts、toolDefinitions.ts 和 replyToEvent.schema.ts 的回复工具仅在有宿主事件目的地绑定的运行中注入，本语料均为非事件会话。
