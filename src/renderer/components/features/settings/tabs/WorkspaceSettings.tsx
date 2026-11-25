@@ -84,6 +84,7 @@ export const WorkspaceSettings: React.FC = () => {
   const browserSession = useWorkbenchBrowserSession();
 
   const [currentDir, setCurrentDir] = useState<string | null>(null);
+  const [pickFeedback, setPickFeedback] = useState<'nothingChosen' | 'failed' | null>(null);
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState<RecentDirRow | null>(null);
@@ -180,15 +181,20 @@ export const WorkspaceSettings: React.FC = () => {
   }, []);
 
   const handlePickDirectory = useCallback(async () => {
+    setPickFeedback(null);
     try {
       const next = await pickWorkingDirectory(workspaceText.actions.chooseDirectory);
-      if (next) {
-        setCurrentDir(next);
-        setWorkingDirectory(next);
-        await load();
+      if (!next) {
+        setPickFeedback('nothingChosen');
+        return;
       }
+      setPickFeedback(null);
+      setCurrentDir(next);
+      setWorkingDirectory(next);
+      await load();
     } catch (error) {
       logger.error('Failed to pick directory', error);
+      setPickFeedback('failed');
     }
   }, [load, setWorkingDirectory, workspaceText.actions.chooseDirectory]);
 
@@ -312,6 +318,7 @@ export const WorkspaceSettings: React.FC = () => {
               </div>
               <MissingWorkspaceDirectoryNotice
                 dir={displayedCurrentDir}
+                pickFeedback={pickFeedback}
                 onReselect={() => { void handlePickDirectory(); }}
               />
             </>

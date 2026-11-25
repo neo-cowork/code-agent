@@ -9,6 +9,9 @@ export const enSettingsWork = {
       saving: 'Saving...',
       actions: {
         chooseDirectory: 'Choose directory',
+        reselectWebHint: "A browser tab can't choose a folder on this computer. Re-select it in the desktop app.",
+        pickDirectoryNothingChosen: 'No folder was chosen. The workspace is unchanged.',
+        pickDirectoryFailed: 'Could not choose a folder. Please try again.',
         revealInFinder: 'Reveal in Finder',
         change: 'Change',
         clear: 'Clear',
