@@ -128,7 +128,7 @@ const PermissionGrantList: React.FC = () => {
                     : copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
                 </div>
                 {(grant.kind === 'tool-target' || grant.kind === 'tool-timed') && grant.detail ? (
-                  <div className="mt-0.5 truncate text-xs text-zinc-400">{copy.targetLabel.replace('{target}', grant.detail)}</div>
+                  <div className="mt-0.5 truncate text-xs text-zinc-400" title={grant.detail}>{copy.targetLabel.replace('{target}', () => grant.detail ?? '')}</div>
                 ) : null}
               </div>
               <Button

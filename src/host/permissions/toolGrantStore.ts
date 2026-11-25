@@ -12,7 +12,8 @@
 //           tool_permission_grants 表（schemaToolGrants），重启不破坏承诺。
 //
 // 匹配 key 纪律：铸造与消费两侧的 target 都取 toolExecutor 透传的
-// standingGrantTarget（external）或 browserSessionGrant.target（浏览器），null 只匹配 null——无 target 的
+// standingGrantTarget（external）、browserSessionGrant.target（浏览器）或 commandGrantTarget（终端/进程 24h）。
+// null 只匹配 null——无 target 的
 // 工具级授权绝不放大成「对任何去向都允许」。时钟注入：match/list 的 now 参数
 // 缺省才是 Date.now()（调用边），测试注入同一判据。
 // 本模块不注册任何 agent 可调用工具（no-self-revoke），消费方见
@@ -20,6 +21,7 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { TOOL_GRANT_TIERS } from '../../shared/constants/timeouts';
+import { usesCommand24hGrant } from './commandGrantTarget';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 
@@ -133,12 +135,16 @@ function mintRun(sessionId: string, tool: string, target: string | null, granted
 }
 
 /** run 档优先（更窄）；两档 target 都要求精确一致（null 只匹配 null）。 */
-function match(sessionId: string | null | undefined, tool: string, target: string | null, now: number): ToolGrantTier | null {
+function match(sessionId: string | null | undefined, tool: string, target: string | null, now: number, commandTarget?: string | null): ToolGrantTier | null {
   const key = toolKey(tool, target);
   if (sessionId && runs.get(sessionId)?.has(key)) return 'run';
   if (sessionId && sessions.get(sessionId)?.has(key)) return 'session';
+  // The null-target legacy rows remain in the ledger but are no longer usable as 24h grants.
+  const timedTarget = usesCommand24hGrant(tool) ? commandTarget || undefined : target;
+  if (timedTarget === undefined) return null;
+  const timedKey = toolKey(tool, timedTarget);
   const hit = repo?.list().some(
-    (row) => row.tool_key === key && !isExpired(row.expires_at, now),
+    (row) => row.tool_key === timedKey && !isExpired(row.expires_at, now),
   );
   return hit ? '24h' : null;
 }
@@ -196,9 +202,10 @@ export function matchToolGrant(
   tool: string,
   target: string | null = null,
   now: number = Date.now(),
+  commandTarget?: string | null,
 ): ToolGrantTier | null {
   ensureRepoBound();
-  return match(sessionId, tool, target, now);
+  return match(sessionId, tool, target, now, commandTarget);
 }
 
 export function listToolGrants(now: number = Date.now()): ToolGrantListItem[] {
