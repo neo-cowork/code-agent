@@ -45,9 +45,10 @@ import { findSessionAfterRemoval } from '../utils/workspaceGrouping';
 const logger = createLogger('SessionStore');
 
 function clearOpenSession(set: (partial: Partial<SessionState>) => void, sessions?: SessionWithMeta[]): void {
+  invalidatePendingSessionSwitches();
   useAppStore.getState().syncActiveAgentForSession(null);
   useAppStore.getState().syncWorkbenchForSession(null);
-  set({ ...(sessions ? { sessions } : {}), currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
+  set({ ...(sessions ? { sessions } : {}), currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null, isLoading: false, isHydratingSession: false });
 }
 
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
@@ -572,7 +573,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
     archiveSession: async (sessionId: string) => {
       const { filter } = useSessionUIStore.getState();
-      const { currentSessionId, sessions } = get();
+      const { sessions } = get();
       const previousSessions = sessions;
       // 乐观更新（2026-08-01 归档连点）：行先消失/置标，失败回滚；版本号 +1 让在途 loadSessions 丢弃陈旧快照。
       bumpSessionsLocalVersion();
@@ -594,7 +595,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
 
         // 归档的是当前会话：IPC 落定后再切到同项目下一条（切会话重，不进乐观路径）。
-        if (filter === 'active' && currentSessionId === sessionId) {
+        if (filter === 'active' && get().currentSessionId === sessionId) {
           const liveIds = new Set(get().sessions.map((s) => s.id));
           const removedIds = new Set(previousSessions.filter((s) => s.id === sessionId || !liveIds.has(s.id)).map((s) => s.id));
           const neighbour = findSessionAfterRemoval(previousSessions, sessionId, removedIds);

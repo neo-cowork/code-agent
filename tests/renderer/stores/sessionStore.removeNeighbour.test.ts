@@ -164,4 +164,77 @@ describe('sessionStore deleteSession / archiveSession same-project landing', () 
 
     expect(useSessionStore.getState().currentSessionId).toBe(projectANewest.id);
   });
+
+  it('archiveSession preserves a session opened while archive IPC is in flight instead of clearing to blank', async () => {
+    const all = [projectBFirst, projectAMiddle];
+    let resolveArchive: (value: unknown) => void = () => {};
+    const byId = new Map(all.map((s) => [s.id, s]));
+    mockDomainInvoke.mockImplementation((_domain: string, action: string, payload?: { sessionId?: string }) => {
+      if (action === 'archive') {
+        return new Promise((resolve) => {
+          resolveArchive = resolve;
+        });
+      }
+      if (action === 'load') {
+        const found = payload?.sessionId ? byId.get(payload.sessionId) : undefined;
+        return Promise.resolve({
+          success: true,
+          data: found ? { ...found, messages: [{ id: 'm-b', role: 'user', content: 'stay', timestamp: 1 }], todos: [] } : null,
+        });
+      }
+      return Promise.resolve({ success: true, data: [] });
+    });
+
+    useSessionStore.setState({ sessions: all, currentSessionId: projectAMiddle.id });
+    const pendingArchive = useSessionStore.getState().archiveSession(projectAMiddle.id);
+
+    // User opens another session before archive IPC finishes
+    await useSessionStore.getState().switchSession(projectBFirst.id);
+    resolveArchive({ success: true, data: {} });
+    await pendingArchive;
+
+    expect(useSessionStore.getState().currentSessionId).toBe(projectBFirst.id);
+    expect(useSessionStore.getState().messages).toHaveLength(1);
+  });
+
+  it.each(['archiveSession', 'deleteSession'] as const)(
+    '%s clears isHydratingSession/isLoading and invalidates an in-flight switchSession when group empties',
+    async (action) => {
+      const all = [projectBFirst, projectAMiddle];
+      let resolveLoad: (value: unknown) => void = () => {};
+      mockDomainInvoke.mockImplementation((_domain: string, ipcAction: string) => {
+        if (ipcAction === 'archive' || ipcAction === 'delete') {
+          return Promise.resolve({ success: true, data: {} });
+        }
+        if (ipcAction === 'load') {
+          return new Promise((resolve) => {
+            resolveLoad = resolve;
+          });
+        }
+        return Promise.resolve({ success: true, data: [] });
+      });
+
+      useSessionStore.setState({ sessions: all, currentSessionId: null });
+      const inflightSwitch = useSessionStore.getState().switchSession(projectAMiddle.id);
+      expect(useSessionStore.getState().isHydratingSession).toBe(true);
+      expect(useSessionStore.getState().isLoading).toBe(true);
+
+      await useSessionStore.getState()[action](projectAMiddle.id);
+
+      expect(useSessionStore.getState().currentSessionId).toBeNull();
+      expect(useSessionStore.getState().isHydratingSession).toBe(false);
+      expect(useSessionStore.getState().isLoading).toBe(false);
+
+      // Late resolution of the superseded switchSession load must not resurrect the removed session
+      resolveLoad({
+        success: true,
+        data: { ...projectAMiddle, messages: [{ id: 'stale', role: 'user', content: 'stale', timestamp: 1 }], todos: [] },
+      });
+      await inflightSwitch;
+
+      expect(useSessionStore.getState().currentSessionId).toBeNull();
+      expect(useSessionStore.getState().messages).toEqual([]);
+      expect(useSessionStore.getState().isHydratingSession).toBe(false);
+    },
+  );
 });
