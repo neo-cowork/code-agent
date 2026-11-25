@@ -198,9 +198,9 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
     const { getSessionCommandCenter } = await import('../../services/commandCenter/sessionCommandCenter');
     const result = await executeDelegateTask(args, toolContext, allowTool);
     // ok 只说明 delegate_task 处理过了：它的「尚未创建」回执也是 ok。只有本会话台账里
-    // 真有这次交接的任务（已开始或已排队），才能对用户说「交给后台任务了」。
+    // 真有这次交接的任务、而且还在跑或还在排队，才能对用户说「交给后台任务了」。
     const handedOff = getSessionCommandCenter().list(ctx.sessionId)
-      .some((task) => task.submissionKey === stableKey);
+      .some((task) => task.submissionKey === stableKey && (task.status === 'running' || task.status === 'queued'));
     if (!result.ok || !handedOff) {
       logger.warn('Foreground denial handoff failed', {
         sessionId: ctx.sessionId,

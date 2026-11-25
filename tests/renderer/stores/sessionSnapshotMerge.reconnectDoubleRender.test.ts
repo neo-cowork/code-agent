@@ -807,4 +807,34 @@ describe('主机同轮收尾（前台拒绝后交给后台）：收尾句只画�
     expect(visibleSequence(projectTurns(merged, SESSION_ID, true).turns.at(-1)!))
       .toEqual([PREAMBLE, 'tool:Bash', HANDOFF]);
   });
+
+  // 累加器缺省 messageId = turnId：这不是点名另一条消息。断流续接分段后没有提交就收尾的轮次，
+  // 终态快照仍要按轮次重定向，落到续答段，而不是写回断点段。
+  it('快照的 messageId 只是轮次 id 的缺省值时仍按轮次重定向（终态快照落到续答段）', () => {
+    let messages: Message[] = [
+      { id: USER_ID, role: 'user', content: '断流续接的问题', timestamp: 1_000 },
+      { id: LIVE_TURN_ID, role: 'assistant', content: '断点前的半截', timestamp: 1_700 },
+      { id: 'segment-2', role: 'assistant', content: '', timestamp: 1_800 },
+    ];
+    const state = streamState();
+    state.currentTurnMessageId = 'segment-2';
+    state.segmentRedirectByTurn.set(LIVE_TURN_ID, { segmentId: 'segment-2', splitAtAttempt: 1 });
+    const actions = streamActions(() => messages, (next) => { messages = next; });
+
+    applyConversationStreamEvent(
+      {
+        type: 'message_snapshot',
+        sessionId: SESSION_ID,
+        data: { role: 'assistant', turnId: LIVE_TURN_ID, messageId: LIVE_TURN_ID, content: '断点前的半截接上的后半截', isFinal: true },
+      },
+      state,
+      actions,
+    );
+
+    expect(messages.map((message) => [message.id, message.content])).toEqual([
+      [USER_ID, '断流续接的问题'],
+      [LIVE_TURN_ID, '断点前的半截'],
+      ['segment-2', '断点前的半截接上的后半截'],
+    ]);
+  });
 });

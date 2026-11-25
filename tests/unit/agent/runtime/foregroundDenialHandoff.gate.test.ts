@@ -666,5 +666,25 @@ describe('foreground narrowing gate', () => {
       expect(logState.warn.mock.calls).toContainEqual(['Foreground denial handoff failed', expect.objectContaining({ code: 'TASK_NOT_CREATED' })]);
       expect(ledgerEvents.filter((row) => row.toolName === 'delegate_task')).toHaveLength(0);
     });
+
+    // 任务刚起就失败（台账里有它，但已是终态）：不算交接，不能对用户说「交给后台任务了」。
+    it('does not report a handoff when the task fails while it is being launched', async () => {
+      const manager = taskManagerHolder.manager as FakeTaskManager;
+      manager.startBackgroundTask.mockImplementation((taskId: string, sessionId: string) => {
+        manager.emit('task_error', { type: 'task_error', sessionId, data: { taskId, error: 'background run refused to start' } } satisfies TaskManagerEvent);
+        return Promise.resolve();
+      });
+      const { ctx } = noFolderCtx(getDefaultWorkDirectory(), { maxToolCallRetries: 0 });
+      const deps = buildDeps(ctx);
+
+      const action = await settle(ctx, deps);
+
+      expect(action).toBe('break');
+      expect(getSessionCommandCenter().list(ctx.sessionId).map((task) => task.status)).toEqual(['failed']);
+      expect(assistantTexts(ctx)).not.toContain(BACKGROUND_HANDOFF_SENTENCE);
+      expect(sealedResult(deps)?.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+      expect(logState.warn.mock.calls).toContainEqual(['Foreground denial handoff failed', expect.objectContaining({ code: 'TASK_NOT_CREATED' })]);
+      expect(ledgerEvents.filter((row) => row.toolName === 'delegate_task')).toHaveLength(0);
+    });
   });
 });

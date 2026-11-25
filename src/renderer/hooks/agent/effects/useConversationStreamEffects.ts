@@ -346,8 +346,10 @@ export function applyConversationStreamEvent(
         if (!snapshotData) break;
         if (snapshotData.isMeta) break;
         const freshMsgs = getFreshMessages();
-        // 快照点名的消息已在列表里（主机封住工具调用后同轮另起的收尾消息）：内容属于它，不写回这一轮的草稿。
-        const named = snapshotData.messageId
+        // 快照点名的是另一条消息（messageId ≠ turnId）且已在列表里（主机封住工具调用后同轮另起的
+        // 收尾消息）：内容属于它，不写回这一轮的草稿。messageId 等于 turnId 是累加器的缺省值，
+        // 仍按轮次走重定向（断流续接分段后，没有提交就收尾的轮次，终态快照要落到续答段）。
+        const named = snapshotData.turnId && snapshotData.messageId && snapshotData.messageId !== snapshotData.turnId
           ? freshMsgs.find((message) => message.id === snapshotData.messageId && message.role === 'assistant')
           : undefined;
         const targetMessageId = named?.id
