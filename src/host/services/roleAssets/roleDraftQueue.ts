@@ -39,6 +39,7 @@ const logger = createLogger('RoleDraftQueue');
 
 const DRAFT_META_FILENAME = 'draft.json';
 const DRAFT_AGENT_FILENAME = 'agent.md';
+const DAILY_BRIEF_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** 角色草稿来源：对话式起草（本期唯一来源） */
 export type RoleDraftOrigin = 'conversational';
@@ -58,6 +59,8 @@ export interface RoleDraftMeta {
   systemPrompt: string;
   /** 用户对这位专家的期望（访谈里那句原话）；确认时落成 roles/<roleId>/USER.md */
   userExpectation?: string;
+  /** 每天醒来的钟点（HH:mm，模型填写，host 只校验）；缺省 = 不设定时唤醒 */
+  dailyBriefTime?: string;
   /** 草稿来源 */
   origin: RoleDraftOrigin;
   /** 起草会话 id */
@@ -165,6 +168,8 @@ export interface RoleDraftInput {
   tools?: string[];
   systemPrompt: string;
   userExpectation?: string;
+  /** HH:mm 24h；新建角色时落成每日简报，改已有角色时忽略 */
+  dailyBriefTime?: string;
   sessionId: string;
   timestamp?: number;
   /** 有值 = 对话式改已有角色（覆盖该角色定义，绝不动其记忆/履历） */
@@ -194,6 +199,14 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
   }
   if (!input.systemPrompt?.trim()) {
     return { draft: null, reason: '缺少系统提示词（systemPrompt）' };
+  }
+
+  const dailyBriefTime = input.dailyBriefTime?.trim() || undefined;
+  if (!editingRoleId && dailyBriefTime !== undefined && !DAILY_BRIEF_TIME_PATTERN.test(dailyBriefTime)) {
+    return {
+      draft: null,
+      reason: `dailyBriefTime 格式不对："${input.dailyBriefTime}"，请用 24 小时制 HH:mm（如 09:00、08:30）；用户没明确说钟点就不要填这个字段`,
+    };
   }
 
   if (editingRoleId) {
@@ -235,6 +248,7 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
     tools,
     systemPrompt: input.systemPrompt,
     ...(input.userExpectation?.trim() ? { userExpectation: input.userExpectation.trim() } : {}),
+    ...(!editingRoleId && dailyBriefTime ? { dailyBriefTime } : {}),
     origin: 'conversational',
     sessionId: input.sessionId,
     createdAt,
@@ -350,6 +364,19 @@ export async function installRoleDraft(
     // 入队失败绝不把一次成功的 confirm 变成失败——只记日志。
     if (!isEdit) {
       await reloadAgentRegistry();
+      if (meta.dailyBriefTime) {
+        const [hh, mm] = meta.dailyBriefTime.split(':');
+        try {
+          const { writeRoleProactivityConfig } = await import('./roleProactivityWrite');
+          await writeRoleProactivityConfig(meta.roleId, { level: 'daily', cadence: `0 ${Number(mm)} ${Number(hh)} * * *` });
+        } catch (error) {
+          logger.warn('Daily brief schedule not applied after role install (install unaffected)', {
+            roleId: meta.roleId,
+            dailyBriefTime: meta.dailyBriefTime,
+            reason: String(error),
+          });
+        }
+      }
       try {
         const { enqueueFirstWake } = await import('./roleFirstWake');
         const firstWake = await enqueueFirstWake(meta.roleId);

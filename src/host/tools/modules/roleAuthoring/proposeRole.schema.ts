@@ -69,6 +69,12 @@ export const proposeRoleSchema: ToolSchema = {
           'When set, confirming overwrites the role definition but NEVER touches the role\'s accumulated memories or history. ' +
           'Omit this field entirely when creating a brand-new role.',
       },
+      dailyBriefTime: {
+        type: 'string',
+        description:
+          'Daily wake time in 24h HH:mm (e.g. "09:00", "08:30"). Fill it ONLY when the user clearly states a fixed daily clock time ' +
+          'for the expert to wake, or the system prompt you write fixes one. Omit otherwise; never guess. Ignored when editingRoleId is set.',
+      },
     },
     required: ['roleId', 'systemPrompt'],
   },
