@@ -1004,8 +1004,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setValue,
     setShowSlashPopover,
     setSlashFilter,
-    setPendingAgentSelection,
-    setActiveAgentId,
+    setPendingAgentSelection, setActiveAgentId,
+    dismissAtMention: atMention.dismiss,
     onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 

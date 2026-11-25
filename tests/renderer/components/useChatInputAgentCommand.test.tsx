@@ -67,6 +67,7 @@ function setup(value: string) {
     setSlashFilter: state.setSlashFilter,
     setPendingAgentSelection: state.setPendingAgentSelection,
     setActiveAgentId: state.setActiveAgentId,
+    dismissAtMention: vi.fn(),
   }));
   return { state, hook };
 }
@@ -172,6 +173,7 @@ describe('useChatInputAgentCommand', () => {
       setSlashFilter: state.setSlashFilter,
       setPendingAgentSelection: state.setPendingAgentSelection,
       setActiveAgentId: state.setActiveAgentId,
+      dismissAtMention: vi.fn(),
     }));
     expect(hook.result.current.isAgentMentionAutocompleteOpen).toBe(true);
 
@@ -215,6 +217,7 @@ describe('useChatInputAgentCommand', () => {
       setSlashFilter: state.setSlashFilter,
       setPendingAgentSelection: state.setPendingAgentSelection,
       setActiveAgentId: state.setActiveAgentId,
+      dismissAtMention: vi.fn(),
     }));
 
     expect(hook.result.current.isAgentMentionAutocompleteOpen).toBe(true);
@@ -259,6 +262,7 @@ describe('useChatInputAgentCommand · @专家名', () => {
       setSlashFilter: vi.fn(),
       setPendingAgentSelection: state.setPendingAgentSelection,
       setActiveAgentId: state.setActiveAgentId,
+      dismissAtMention: vi.fn(),
     }));
     return { state, hook };
   }

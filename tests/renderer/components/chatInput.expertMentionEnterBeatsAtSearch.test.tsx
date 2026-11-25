@@ -83,5 +83,8 @@ describe('@专家名：专家行优先于引用搜索消费 Enter', () => {
     await waitFor(() => expect(document.querySelector('div.popover-enter button')?.textContent).toContain('周报整理员'));
     fireEvent.keyDown(root, { key: 'Enter' });
     expect(useAppStore.getState().activeAgentId).toBe('weekly-reporter');
+    // 选中后引用搜索不能再冒出来（计时器到点 / 面板重开会吞掉或误触下一次 Enter）
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(document.querySelector('[data-at-mention-popover]')).toBeNull();
   });
 });

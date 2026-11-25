@@ -30,6 +30,8 @@ export interface UseChatInputAgentCommandParams {
   setSlashFilter: React.Dispatch<React.SetStateAction<string>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
   setActiveAgentId: (id: string | null) => void;
+  /** agent 行（swarm/专家）打开时关掉 @ 引用搜索：二者互斥，晚到的专家列表不能留着搜索计时器/面板。 */
+  dismissAtMention: () => void;
   /** Escape 清空输入框时丢掉失败重发 pending id。 */
   onComposerDraftDiscarded?: () => void;
 }
@@ -51,6 +53,7 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
     setSlashFilter,
     setPendingAgentSelection,
     setActiveAgentId,
+    dismissAtMention,
     onComposerDraftDiscarded,
   } = params;
 
@@ -72,6 +75,9 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
     && agentMentionAutocomplete.matches.length > 0
     && dismissedAgentAutocompleteValue !== value,
   );
+  useEffect(() => {
+    if (isAgentMentionAutocompleteOpen) dismissAtMention();
+  }, [isAgentMentionAutocompleteOpen, dismissAtMention]);
   const agentSlashCommandQuery = useMemo(() => getAgentSlashCommandQuery(value), [value]);
   const agentCommandOptions = useMemo(
     () => agentSlashCommandQuery === null
