@@ -89,7 +89,7 @@ const LENGTH_HINT: Record<SessionTitleLanguage, string> = {
   en: '3-8 English words',
 };
 
-const LANGUAGE_NAME: Record<SessionTitleLanguage, string> = {
+export const LANGUAGE_NAME: Record<SessionTitleLanguage, string> = {
   zh: 'Chinese',
   en: 'English',
 };
