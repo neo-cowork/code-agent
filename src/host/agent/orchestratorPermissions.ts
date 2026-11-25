@@ -32,6 +32,7 @@ import {
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
+import { commandGrantKey } from '../permissions/commandGrantTarget';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { matchToolGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -261,7 +262,7 @@ export class OrchestratorPermissionIsland {
       if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
       const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
       if (!identity) continue;
-      const commandTarget = req.details?.commandGrantTarget;
+      const commandTarget = commandGrantKey(req.tool, req.details?.commandGrantTarget, sessionId, req.details);
       const tier = commandTarget
         ? matchToolGrant(sessionId, identity.tool, identity.target, undefined, commandTarget)
         : matchToolGrant(sessionId, identity.tool, identity.target);

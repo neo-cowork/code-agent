@@ -29,3 +29,30 @@ export function commandGrantTarget(tool: string, args: Record<string, unknown>):
     .some((part) => typeof part === 'string' && redactCommandSecrets(part) !== part);
   return containsSecret || /\p{Surrogate}/u.test(text) ? null : text;
 }
+
+const TERMINAL_GRANT_PREFIX = 'terminal:';
+
+/** The input is the visible scope. The storage key also binds where and how it was approved. */
+export function commandGrantKey(
+  tool: string,
+  target: string | null | undefined,
+  sessionId: string | undefined,
+  args: Record<string, unknown>,
+): string | undefined {
+  if (!target) return undefined;
+  if (tool !== 'terminal_write') return target;
+  if (!sessionId) return undefined;
+  const explicit = args.session_id;
+  const terminalId = typeof explicit === 'string' && explicit.length > 0 ? explicit : sessionId;
+  return TERMINAL_GRANT_PREFIX + JSON.stringify([sessionId, terminalId, args.pressEnter !== false, target]);
+}
+
+export function commandGrantDisplayTarget(tool: string, target: string): string {
+  if (tool !== 'terminal_write' || !target.startsWith(TERMINAL_GRANT_PREFIX)) return target;
+  try {
+    const scope: unknown = JSON.parse(target.slice(TERMINAL_GRANT_PREFIX.length));
+    return Array.isArray(scope) && typeof scope[3] === 'string' ? scope[3] : target;
+  } catch {
+    return target;
+  }
+}

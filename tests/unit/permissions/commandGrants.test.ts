@@ -96,6 +96,21 @@ describe('24h command grants through ToolExecutor', () => {
     expect(pty.terminalWrite).toHaveBeenCalledTimes(4);
   });
 
+  it('asks before changing the terminal, conversation, or Enter behavior of an approved input', async () => {
+    const args = { input: 'echo hello', pressEnter: false };
+    expect((await executor.execute('terminal_write', args, { sessionId })).success).toBe(true);
+    expect((await executor.execute('terminal_write', args, { sessionId })).success).toBe(true);
+    expect(cards).toHaveLength(1);
+
+    response = 'allow';
+    await executor.execute('terminal_write', args, { sessionId: 'another-conversation' });
+    expect(cards).toHaveLength(2);
+    await executor.execute('terminal_write', { ...args, session_id: 'another-terminal' }, { sessionId });
+    expect(cards).toHaveLength(3);
+    await executor.execute('terminal_write', { input: args.input }, { sessionId });
+    expect(cards).toHaveLength(4);
+  });
+
   it.each([
     { action: 'write', data: 'echo hello' },
     { action: 'submit', input: 'echo hello' },

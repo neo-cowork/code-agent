@@ -35,7 +35,7 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
-import { commandGrantTarget } from '../permissions/commandGrantTarget';
+import { commandGrantKey, commandGrantTarget } from '../permissions/commandGrantTarget';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { classifyFileWrite } from './fileWriteClassification';
 import { classifyToolPath } from './utils/toolPathKind';
@@ -2240,7 +2240,7 @@ export class ToolExecutor {
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
-        standingGrantTarget, commandGrantTarget: exactCommandTarget,
+        standingGrantTarget, commandGrantTarget: commandGrantKey(executionToolName, exactCommandTarget, effectiveSessionId, params),
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: preAskBlocked,

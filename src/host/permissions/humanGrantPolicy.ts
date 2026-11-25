@@ -13,7 +13,7 @@ import { createLogger } from '../services/infra/logger';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { mintAppGrantSession, mintAppGrantStanding } from './appGrantStore';
 import { recordBrowserSessionGrant } from './browserSessionGrant';
-import { usesCommand24hGrant } from './commandGrantTarget';
+import { commandGrantKey, usesCommand24hGrant } from './commandGrantTarget';
 import { connectorToolGrantIdentity } from './connectorToolAccess';
 import { mintTool24hGrant, mintToolRunGrant } from './toolGrantStore';
 
@@ -92,12 +92,15 @@ export function recordHumanGrant(
     }
   } else if (response === 'allow_24h' && !app?.name) {
     const scoped = usesCommand24hGrant(request.tool);
-    const target = scoped ? request.details?.commandGrantTarget : identity.target;
+    const commandTarget = request.details?.commandGrantTarget;
+    const target = scoped
+      ? commandGrantKey(request.tool, commandTarget, request.sessionId, request.details)
+      : identity.target;
     if (scoped && !target) {
       logger.warn('24h command grant treated as allow once', {
         tool: request.tool,
         requestId: request.id,
-        reason: target === null ? 'command_redaction_or_invalid_text' : 'exact_command_scope_unavailable',
+        reason: commandTarget === null ? 'command_redaction_or_invalid_text' : 'exact_command_scope_unavailable',
       });
       return;
     }

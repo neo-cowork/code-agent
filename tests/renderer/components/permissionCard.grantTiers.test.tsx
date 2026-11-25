@@ -85,6 +85,16 @@ describe('PermissionCard grant tiers', () => {
   });
 
   it.each([
+    ['zh', '此次批准仅生效一次'],
+    ['en', 'This approval applies once'],
+  ] as const)('explains the one-time response for a redacted scope in %s', (language, scope) => {
+    state.language = language;
+    state.request = { ...request, tool: 'terminal_write', type: 'command', details: { commandGrantTarget: null } };
+    render(<PermissionCard />);
+    expect(screen.getByText(scope)).toBeTruthy();
+  });
+
+  it.each([
     ['zh', 'run', '本次任务内允许', '本次任务', '限时放行'],
     ['zh', '24h', '24 小时内允许', '24 小时内', '限时放行'],
     ['en', 'run', 'Allow for this task', 'This task', 'Temporary allow'],

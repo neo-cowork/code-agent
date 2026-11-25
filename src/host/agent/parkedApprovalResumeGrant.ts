@@ -47,6 +47,8 @@ export function applyGrantAfterRestartClaim(input: {
       action: typeof ledgerArgs.action === 'string' ? ledgerArgs.action : undefined,
       standingGrantTarget: payload.standingGrantTarget ?? undefined,
       commandGrantTarget: commandGrantTarget(payload.tool, ledgerArgs),
+      session_id: ledgerArgs.session_id,
+      pressEnter: ledgerArgs.pressEnter,
       sensitiveStep: payload.sensitiveStep,
       browserSessionGrant: payload.browserSessionGrant,
       targetApp: targetApp ?? undefined,
