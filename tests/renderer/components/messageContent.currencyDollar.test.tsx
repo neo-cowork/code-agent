@@ -106,4 +106,50 @@ describe('MessageContent currency dollars', () => {
     expect(container.textContent).not.toContain('**');
     expect(() => updateStreamingMarkdownBlockState(null, '合计 **$124.68**（明细 $')).not.toThrow();
   });
+
+  it.each([
+    { content: '成本$5和$10，其中$x$为税率', bold: null },
+    { content: '合计 **$124.68**（明细 $124.68），其中$x$为税率', bold: '$124.68' },
+  ])('renders only the formula as katex when it follows currency dollars: $content', async ({ content, bold }) => {
+    const { container } = render(<MessageContent content={content} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(katexSources(container)).toEqual(['x']);
+    expect(textOutsideKatex(container)).toBe(content.replace('$x$', '').replace(/\*\*/g, ''));
+    expect(container.querySelector('strong')?.textContent ?? null).toBe(bold);
+  });
+
+  it('renders a currency range as plain text instead of a formula', async () => {
+    const content = '范围$5-$10$';
+    const { container } = render(<MessageContent content={content} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.textContent).toBe(content);
+    expect(container.querySelectorAll('.katex')).toHaveLength(0);
+  });
+
+  it('keeps the formula as katex while its sentence streams in', async () => {
+    const partial = '合计 **$124.68**（明细 $124.68），其中$x';
+    const final = `${partial}$为税率`;
+    const { container, rerender } = render(<MessageContent content={partial} isUser={false} isStreaming />);
+    await waitForMarkdown(container);
+    expect(katexSources(container)).toEqual([]);
+    expect(container.textContent).not.toContain('**');
+    rerender(<MessageContent content={final} isUser={false} isStreaming />);
+    await waitFor(() => expect(katexSources(container)).toEqual(['x']));
+    const streamingText = container.textContent;
+    expect(container.querySelector('strong')?.textContent).toBe('$124.68');
+    rerender(<MessageContent content={final} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.textContent).toBe(streamingText);
+    expect(katexSources(container)).toEqual(['x']);
+  });
 });
+
+function katexSources(container: HTMLElement): Array<string | null> {
+  return [...container.querySelectorAll('.katex annotation')].map(node => node.textContent);
+}
+
+function textOutsideKatex(container: HTMLElement): string {
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.katex').forEach(node => node.remove());
+  return clone.textContent ?? '';
+}

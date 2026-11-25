@@ -161,4 +161,101 @@ describe('remarkMathPandoc', () => {
     expect(mathNodes).toHaveLength(1);
     expect('value' in mathNodes[0] ? mathNodes[0].value : '').toBe('x');
   });
+
+  it.each([
+    { source: '成本$5和$10，其中$x$为税率', strong: [] as string[] },
+    { source: '合计 **$124.68**（明细 $124.68），其中$x$为税率', strong: ['$124.68'] },
+  ])('keeps the formula after a currency-rejected closer as math: $source', ({ source, strong }) => {
+    const tree = parseWithPandoc(source);
+    expect(inlineMathValues(tree)).toEqual(['x']);
+    expect(strongValues(tree)).toEqual(strong);
+    expect(textOutsideMath(tree)).toBe(source.replace('$x$', '').replace(/\*\*/g, ''));
+  });
+
+  it.each(['范围$5-$10$', 'a $1 and $2$'])('does not let a currency-rejected closer open math: %s', (source) => {
+    const tree = parseWithPandoc(source);
+    expect(inlineMathValues(tree)).toEqual([]);
+    expect(textOutsideMath(tree)).toBe(source);
+  });
+
+  it('leaves the next formula to its own dollars after a spacing-rejected pair', () => {
+    expect(inlineMathValues(parseWithPandoc('设 $x $为变量，$y$ 为常数'))).toEqual(['y']);
+  });
+
+  it.each([
+    '成本$5和$10，其中$x$为税率，$y$为单价',
+    '成本 $5 和 $10，其中 $x$ 为税率',
+    '设 $x $为变量，$y$ 为常数',
+    '范围$5-$10$',
+    '总价$1,234.50，单价$12.50，共$98.80',
+    '设 $x_1$ 和 $x_2$，价格 $100 和 $200，利润 $y$',
+    'a $$ E=mc^2 $$2 b',
+    '$5$',
+    '$x^2$',
+  ])('renders the same formulas as remark-math plus the guard: %s', (source) => {
+    const spans = (tree: Root) => allNodes(tree)
+      .filter(node => node.type === 'inlineMath')
+      .map(node => `${node.position?.start.offset}-${node.position?.end.offset}`);
+    expect(spans(parseWithPandoc(source))).toEqual(spans(parse(source)));
+  });
+
+  it('agrees across the three chains when a formula follows bold currency', () => {
+    const source = '合计 **$124.68**（明细 $124.68），其中$x$为税率';
+    const expected = collectTypes(parseWithPandoc(source));
+    expect(expected.filter(type => type === 'strong')).toHaveLength(1);
+    expect(expected.filter(type => type === 'inlineMath')).toHaveLength(1);
+    // Plugin sets of the module-level parsers in streamingMarkdownBlocks and dedupeCodeCopyLinks.
+    const streamingParser = unified().use(remarkParse).use(remarkGfm).use(remarkMathPandoc);
+    const dedupeParser = unified().use(remarkParse).use(remarkGfm).use(remarkMathPandoc);
+    for (const parser of [streamingParser, dedupeParser]) {
+      const tree = parser.runSync(parser.parse(source), { value: source }) as Root;
+      expect(collectTypes(tree)).toEqual(expected);
+    }
+  });
+
+  it('streams the bold-currency-plus-formula sentence without turning prose into math', () => {
+    const source = '合计 **$124.68**（明细 $124.68），其中$x$为税率';
+    let state = updateStreamingMarkdownBlockState(null, '');
+    for (let end = 1; end <= source.length; end++) {
+      const prefix = source.slice(0, end);
+      state = updateStreamingMarkdownBlockState(state, prefix);
+      const streamed = state.blocks.map(block => block.content).join('');
+      const full = updateStreamingMarkdownBlockState(null, prefix).blocks.map(block => block.content).join('');
+      expect(streamed).toBe(full);
+      expect(inlineMathValues(parseWithPandoc(streamed))).toEqual(prefix.includes('$x$') ? ['x'] : []);
+      const withCopy = `${streamed}\n\n[copy](!copy)\n\n\`\`\`text\ncopy\n\`\`\``;
+      expect(dedupeCodeCopyLinks(withCopy)).toBe(`${streamed}\n\n${' '.repeat('[copy](!copy)'.length)}\n\n\`\`\`text\ncopy\n\`\`\``);
+    }
+    expect(strongValues(parseWithPandoc(state.blocks.map(block => block.content).join('')))).toEqual(['$124.68']);
+  });
+
+  it('does not carry rejected closers into the next document of a reused parser', () => {
+    const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMathPandoc).use(remarkCurrencyDollarGuard);
+    const run = (source: string) => processor.runSync(processor.parse(source), { value: source }) as Root;
+    expect(inlineMathValues(run('ab $1 and $2$'))).toEqual([]);
+    expect(inlineMathValues(run('0123456789$x^2$'))).toEqual(['x^2']);
+  });
 });
+
+function allNodes(node: Nodes): Nodes[] {
+  return 'children' in node ? [node, ...node.children.flatMap(allNodes)] : [node];
+}
+
+function inlineMathValues(node: Nodes): string[] {
+  return allNodes(node)
+    .filter(inner => inner.type === 'inlineMath')
+    .map(inner => 'value' in inner ? inner.value : '');
+}
+
+function strongValues(node: Nodes): string[] {
+  return allNodes(node)
+    .filter(inner => inner.type === 'strong')
+    .map(textOutsideMath);
+}
+
+function textOutsideMath(node: Nodes): string {
+  return leaves(node)
+    .filter(leaf => leaf.type !== 'inlineMath')
+    .map(leaf => 'value' in leaf ? leaf.value : '')
+    .join('');
+}

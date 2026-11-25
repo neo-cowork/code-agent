@@ -26,22 +26,25 @@ interface MicromarkExtensionLike {
   text?: Record<number, TextConstruct | TextConstruct[] | null | undefined>;
 }
 
-function wrapDollarConstruct(construct: TextConstruct): TextConstruct {
+function wrapDollarConstruct(construct: TextConstruct, rejected: WeakMap<object, Set<number>>): TextConstruct {
   const original = construct.tokenize;
   if (!original) return construct;
   return {
     ...construct,
     tokenize(effects, ok, nok) {
+      // Keyed by the tokenizer, which lives for one block of text.
+      const rejectedHere = rejected.get(this) ?? new Set<number>();
+      rejected.set(this, rejectedHere);
+      const openerOffset = this.now().offset;
+      // micromark retries the rejected `$` as an opener; keep it plain text.
+      if (rejectedHere.has(openerOffset)) return (code) => nok(code);
       const start = this.now();
       const wrappedOk: State = (code) => {
-        const slice = this.sliceSerialize({ start, end: this.now() });
-        if (!slice.startsWith('$$')) {
-          const followedByDigit = code !== null && code >= 48 && code <= 57;
-          const spaceAfterOpener = /\s/.test(slice[1] ?? '');
-          const spaceBeforeCloser = /\s/.test(slice.at(-2) ?? '');
-          if (followedByDigit || spaceAfterOpener || spaceBeforeCloser) {
-            return nok(code);
-          }
+        const end = this.now();
+        const slice = this.sliceSerialize({ start, end });
+        if (!slice.startsWith('$$') && code !== null && code >= 48 && code <= 57) {
+          rejectedHere.add(end.offset - 1);
+          return nok(code);
         }
         return ok(code);
       };
@@ -51,8 +54,10 @@ function wrapDollarConstruct(construct: TextConstruct): TextConstruct {
 }
 
 /**
- * Wraps `remark-math` so a closing single `$` immediately followed by a digit
- * (Pandoc's currency rule) does not close an inline math span during lexing.
+ * Wraps `remark-math` so a closing single `$` followed by a digit (Pandoc's
+ * currency rule) does not close an inline math span during lexing. That `$`
+ * stays plain text as an opener too: the next `$` pairs as it did before, so
+ * the prose up to it is not turned into math.
  */
 export const remarkMathPandoc: Plugin<[RemarkMathOptions?], Root> = function (options) {
   remarkMath.call(this, options);
@@ -62,9 +67,10 @@ export const remarkMathPandoc: Plugin<[RemarkMathOptions?], Root> = function (op
   const dollarEntry = lastExt?.text?.[36];
   if (!extensions || !lastExt || !dollarEntry) return;
 
+  const rejected = new WeakMap<object, Set<number>>();
   const wrappedDollar = Array.isArray(dollarEntry)
-    ? dollarEntry.map(wrapDollarConstruct)
-    : wrapDollarConstruct(dollarEntry);
+    ? dollarEntry.map(construct => wrapDollarConstruct(construct, rejected))
+    : wrapDollarConstruct(dollarEntry, rejected);
 
   extensions[extensions.length - 1] = {
     ...lastExt,
