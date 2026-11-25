@@ -1,10 +1,14 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { render as renderClient } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
-import { languages } from '../../../src/renderer/i18n';
+import { languages, type Language } from '../../../src/renderer/i18n';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { mergeSnapshotWithLiveTail } from '../../../src/renderer/stores/sessionSnapshotMerge';
 import { projectBackgroundReceipts } from '../../../src/renderer/utils/backgroundReceiptProjection';
 import type { Message } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
@@ -89,5 +93,169 @@ describe('backgroundTaskStopped after a finished foreground turn', () => {
       projectTurns([...before, interrupted], 'session', false), [failedTask], [], languages.en,
     );
     expect(withReceipt.turns.flatMap((turn) => turn.nodes.map((node) => node.id))).not.toContain('interrupt');
+  });
+});
+
+describe('background handoff ended note', () => {
+  const marker: Message = {
+    id: 'restart', role: 'system', content: 'Interrupted', timestamp: 3,
+    metadata: { backgroundTaskInterrupted: { taskId: 't1' } },
+  };
+  const task = (status: Task['status'], id = 't1', interrupted = false): Task => ({
+    id, status, source: 'session_command_center', title: 'Weekly report',
+    ...(interrupted ? { failure: { message: 'Interrupted', reason: 'session_command_task_interrupted_by_restart' } } : {}),
+    createdAt: 2, updatedAt: 3, events: [], outputRefs: [],
+  });
+  const delegate = (taskId: string): NonNullable<Message['toolCalls']>[number] => ({
+    id: `call-${taskId}`, name: 'delegate_task', arguments: {},
+    result: {
+      toolCallId: `call-${taskId}`, success: true, metadata: { sessionTask: { tasks: [{ taskId }] } },
+    },
+  });
+  const promise = 'I handed this to a background task and will tell you the result when it finishes.';
+  const reply: Message = {
+    id: 'reply', role: 'assistant', timestamp: 2, content: promise, toolCalls: [delegate('t1')],
+  };
+  const testId = 'data-testid="background-handoff-ended-note"';
+
+  function render(entries: Message[], tasks: Task[], language: Language = 'en') {
+    const previousLanguage = useAppStore.getState().language;
+    useAppStore.setState({ language });
+    try {
+      const projection = projectBackgroundReceipts(projectTurns(entries, 'session', false), tasks, [], languages[language]);
+      const nodes = projection.turns.flatMap((turn) => turn.nodes).filter((node) => node.type === 'assistant_text');
+      const view = renderClient(<>{nodes.map((node) => <TraceNodeRenderer key={node.id} node={node} />)}</>);
+      const html = view.container.innerHTML;
+      view.unmount();
+      return html;
+    } finally {
+      useAppStore.setState({ language: previousLanguage });
+    }
+  }
+
+  it.each([
+    ['zh', '后台任务已中断，结果不会再送达。'],
+    ['en', 'The background task was interrupted, so no result will follow.'],
+  ] as const)('appends the %s interrupted copy below the unedited reply', (language, interrupted) => {
+    const running = [messages[0], reply];
+    for (const [html, copy] of [
+      [render([...running, marker], [], language), interrupted],
+      [render(running, [task('failed', 't1', true)], language), interrupted],
+    ]) {
+      expect(html.split(testId)).toHaveLength(2);
+      expect(html).toContain(copy);
+      expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
+      expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
+    }
+  });
+
+  it('leaves an ordinary failure without a note because the foreground is still woken with the outcome', () => {
+    const html = render([messages[0], reply], [task('failed')]);
+    expect(html).toContain(promise);
+    expect(html).not.toContain(testId);
+  });
+
+  it('leaves the handoff open when a sibling delegate in the same message is not interrupted', () => {
+    const combined: Message = { ...reply, toolCalls: [delegate('t1'), delegate('t2')] };
+    for (const sibling of [task('running', 't2'), task('completed', 't2'), task('failed', 't2')]) {
+      expect(render([messages[0], combined, marker], [sibling])).not.toContain(testId);
+    }
+  });
+
+  it.each(['completed', 'running', 'cancelled'] as const)('leaves a %s task without a note', (status) => {
+    const text = 'I am sending this to the background.';
+    const withPreview = { ...reply, content: text + '\n' + promise, metadata: { backgroundTaskPreannounce: { text } } };
+    const html = render([messages[0], withPreview], [task(status)]);
+    expect(html).toContain(promise);
+    expect(html).not.toContain(testId);
+  });
+
+  it('renders once under the last text segment when every delegate was interrupted', () => {
+    const combined: Message = {
+      ...reply,
+      toolCalls: [delegate('t1'), delegate('t2')],
+      contentParts: [
+        { type: 'text', text: 'I have split the work into two tasks.' },
+        { type: 'tool_call', toolCallId: 'call-t1' },
+        { type: 'text', text: promise },
+        { type: 'tool_call', toolCallId: 'call-t2' },
+      ],
+    };
+    const html = render([messages[0], combined, marker], [task('failed', 't2', true)]);
+    expect(html.split(testId)).toHaveLength(2);
+    expect(html).toContain('The background task was interrupted, so no result will follow.');
+    expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
+  });
+
+  it('replays the interruption from persisted messages without saving derived metadata', () => {
+    const entries = [messages[0], reply, marker];
+    const html = render(entries, []);
+    const serialized = JSON.stringify(entries);
+    expect(serialized).not.toContain('backgroundHandoffEnded');
+    expect(html).toContain(testId);
+    expect(render(JSON.parse(serialized), [])).toEqual(html);
+  });
+
+  it('does not attach the note to another reply when the calling message has no text', () => {
+    const toolOnly = { ...reply, content: '', reasoning: 'Planning' };
+    const otherReply: Message = { ...reply, id: 'other', toolCalls: [] };
+    expect(render([messages[0], toolOnly, otherReply, marker], [])).not.toContain(testId);
+  });
+
+  it('puts the note under the acknowledgement when the dispatch only had a system preview', () => {
+    const text = 'I am sending this to the background.';
+    const dispatch = {
+      ...reply, content: text, metadata: {
+        backgroundTaskPreannounce: { text, toolCallId: 'call-t1' },
+        correlation: { traceId: 'foreground-run', turnId: 'dispatch-turn' },
+      },
+    };
+    const acknowledgement = {
+      ...reply, id: 'acknowledgement', toolCalls: [],
+      metadata: { correlation: { traceId: 'foreground-run', turnId: 'reply-turn' } },
+    };
+    const html = render([messages[0], dispatch, acknowledgement, marker], []);
+    expect(html.split(testId)).toHaveLength(2);
+    expect(html).not.toContain(text);
+    expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
+    const unrelated = { ...acknowledgement, metadata: { correlation: { traceId: 'other-run', turnId: 'other-turn' } } };
+    expect(render([messages[0], dispatch, unrelated, marker], [])).not.toContain(testId);
+  });
+
+  it('shows an interrupted handoff note under the live acknowledgement after merging the snapshot', () => {
+    const text = 'I am sending this to the background.';
+    const dispatch: Message = {
+      ...reply, content: text, metadata: {
+        backgroundTaskPreannounce: { text, toolCallId: 'call-t1' },
+        correlation: { turnId: 'dispatch-turn', traceId: 'foreground-run' },
+      },
+    };
+    const acknowledgement: Message = {
+      ...reply, id: 'acknowledgement', toolCalls: [],
+      metadata: { correlation: { turnId: 'reply-turn', traceId: 'foreground-run' } },
+    };
+    const live: Message[] = [messages[0], ...[dispatch, acknowledgement].map((message, index) => ({
+      ...message, id: index === 0 ? 'dispatch-turn' : 'reply-turn',
+      metadata: { correlation: { turnId: index === 0 ? 'dispatch-turn' : 'reply-turn' } },
+    }))];
+    const failed: Task = {
+      ...task('failed', 't1', true),
+    };
+    const snapshot = [messages[0], dispatch, acknowledgement];
+    const merged = mergeSnapshotWithLiveTail(snapshot, live);
+    const html = render(merged.messages, [failed], 'zh');
+    expect(html.split(testId)).toHaveLength(2);
+    expect(html).toContain('后台任务已中断，结果不会再送达。');
+    expect(html.indexOf(promise)).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf(promise)).toBeLessThan(html.indexOf(testId));
+
+    const unrelated = {
+      ...acknowledgement,
+      metadata: { correlation: { turnId: 'reply-turn', traceId: 'other-run' } },
+    };
+    expect(render(mergeSnapshotWithLiveTail([messages[0], dispatch, unrelated], live).messages, [failed], 'zh'))
+      .not.toContain(testId);
   });
 });

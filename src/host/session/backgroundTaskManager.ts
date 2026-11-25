@@ -149,6 +149,7 @@ class BackgroundTaskManager extends EventEmitter {
     // 发送系统通知。force：后台完成提醒绕过焦点门——用户可能正停在 app 里聊别的会话
     // （与 loop/定时任务同一档「默默长跑、完成才冒头」）。通知摘要不吃裸 code
     // （USER_CANCELLED 由 renderer 翻译面板行；系统通知这头就地给人话）。
+    logger.info('notifyTaskComplete', { sessionId });
     notificationService.notifyTaskComplete({
       sessionId,
       sessionTitle: task.title,
