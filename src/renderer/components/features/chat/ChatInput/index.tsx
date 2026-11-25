@@ -54,6 +54,7 @@ import {
   useAtMentionPanel,
   type AtMentionArtifactRow,
   type AtMentionFileRow,
+  type AtMentionLibraryRow,
   type AtMentionSessionRow,
 } from './useAtMentionPanel';
 import { AtMentionPopover } from './AtMentionPopover';
@@ -852,7 +853,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // @ 触发面板（任务 14：资料库 pin + 工作区文件分组；任务 15：query echo + 键盘导航）
   // 文件行选中 = 触发词原位变文件 chip + 构建附件（文本类内联内容，二进制只带路径）；
-  // 目录行保留旧行为（@path 文本）；资料库行选中在 hook 内切换 pin。
+  // 目录行保留旧行为（@path 文本）；资料库行只清掉尾部 @query，chip 由 pin 对账补到末尾。
   const handleAtFileSelect = useCallback((row: AtMentionFileRow) => {
     const editor = inputAreaRef.current;
     const caret = editor?.getCaretOffset() ?? latestValueRef.current.length;
@@ -918,12 +919,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         }]);
     replaceAtTriggerWithChip({ key: `artifact:${row.id}`, kind: 'artifact', id: row.id });
   }, [replaceAtTriggerWithChip]);
+  const handleAtLibrarySelect = useCallback((row: AtMentionLibraryRow) => {
+    const editor = inputAreaRef.current;
+    if (!editor || row.kind !== 'library') return;
+    // 光标可能不在触发词末尾（← 后再 Enter）：向后吞掉词尾残字，向前找 @ 起点
+    const caret = editor.getCaretOffset();
+    const text = latestValueRef.current;
+    const tail = text.slice(caret).match(/^@?[^\s@]*/)?.[0] ?? '';
+    const end = caret + tail.length;
+    const triggerMatch = text.slice(0, end).match(/@([^\s@]*)$/);
+    if (!triggerMatch) { editor.focus(); return; }
+    editor.replaceRangeWithText(end - triggerMatch[0].length, end, '');
+    editor.focus();
+  }, []);
   const atMention = useAtMentionPanel({
     sessionId: currentSessionId ?? null,
     projectId: pinScopeProjectId,
     onFileSelect: handleAtFileSelect,
     onSessionSelect: handleAtSessionSelect,
     onArtifactSelect: handleAtArtifactSelect,
+    onLibrarySelect: handleAtLibrarySelect,
   });
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {

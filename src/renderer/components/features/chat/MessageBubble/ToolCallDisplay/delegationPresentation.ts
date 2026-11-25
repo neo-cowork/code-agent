@@ -30,6 +30,7 @@ interface DelegationReceiptOutput {
 export interface DelegationPresentation {
   state: DelegationReceiptState;
   outcomeKey?: OutcomeKey;
+  leftoverPaths?: readonly string[];
   title: string;
   lastToolStep?: LastToolStep;
   guiDisclosures?: AgentTreeNode['guiDisclosures'];
@@ -223,6 +224,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
   return {
     state,
     outcomeKey: incomplete ? 'delete-incomplete' : undefined,
+    leftoverPaths: incomplete ? task.leftoverPaths : undefined,
     title: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
       ?? displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,

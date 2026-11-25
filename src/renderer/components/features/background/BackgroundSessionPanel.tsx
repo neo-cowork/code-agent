@@ -23,6 +23,7 @@ import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutco
 import { deleteIncompleteFileNames } from '../../../utils/agentFailureCopy';
 import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
 import { IconButton } from '../../primitives';
+import { DeleteIncompleteActions } from './DeleteIncompleteActions';
 
 interface BackgroundTaskLineLabels {
   /** 终态词：统一取 outcomeWords（与任务面板同一词表） */
@@ -106,7 +107,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
     <div
       data-testid="background-session-item"
       data-status={session.status}
-      className="flex items-center gap-1 bg-zinc-700 rounded-lg pr-1"
+      className="flex flex-wrap items-center gap-1 bg-zinc-700 rounded-lg pr-1"
     >
       <button
         onClick={onForeground}
@@ -151,6 +152,17 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
           size="md"
           onClick={onClear}
         />
+      )}
+      {session.status === 'failed' && session.completionMessage === BACKGROUND_TASK_DELETE_INCOMPLETE && (
+        <div className="basis-full px-2 pb-1">
+          <DeleteIncompleteActions
+            key={session.startedAt}
+            sessionId={session.sessionId}
+            attemptId={`${session.sessionId}-${session.startedAt}`}
+            leftoverPaths={session.leftoverPaths}
+            openSession
+          />
+        </div>
       )}
     </div>
   );
