@@ -592,6 +592,16 @@ describe('foreground task-result wake', () => {
     expect(prompt).toContain('改动在分支里时只写分支名');
   });
 
+  it.each(['completed', 'failed'] as const)('asks for a one-sentence file-name-only report on %s', async (status) => {
+    const wake = createForegroundWake(dependencies());
+    await wake(task(), status);
+    const prompt = sendMessage.mock.calls[0][0] as string;
+    expect(prompt).toContain('汇报只写一句话');
+    expect(prompt).toContain('涉及文件只写文件名，不带目录');
+    expect(prompt).toContain('不要用列表、代码块、标题');
+    expect(prompt).toContain('不要写绝对路径或 ~ 开头的路径');
+  });
+
   it('falls back to the 240-char summary when the task has no resultText (legacy shape)', async () => {
     const wake = createForegroundWake(dependencies());
     await wake({ ...task(), summary: 'x'.repeat(240) }, 'completed');

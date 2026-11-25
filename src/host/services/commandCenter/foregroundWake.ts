@@ -226,7 +226,7 @@ function wakePrompt(task: SessionCommandTask, status: Extract<WakeStatus, 'compl
   const supplement = task.userInputCount ? `期间用户直接给它补了 ${task.userInputCount} 句。` : '';
   // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
   const resultText = task.resultText ?? task.summary ?? task.detail ?? '无摘要';
-  return `${backgroundWakePromptHead(task.shortName, outcome)}${resultText}。${supplement}没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言；不要写退出码，也不要照抄英文报错原文。用户自己写过的命令可以点名。汇报时不要原样引用 agent_ 开头的内部编号，也不要写带这类编号的临时目录路径；改动在分支里时只写分支名。`;
+  return `${backgroundWakePromptHead(task.shortName, outcome)}${resultText}。${supplement}没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言；不要写退出码，也不要照抄英文报错原文。用户自己写过的命令可以点名。汇报只写一句话，用用户的语言说清做完了什么（涉及文件只写文件名，不带目录），不要用列表、代码块、标题，不要写绝对路径或 ~ 开头的路径，也不要提「第几批」这类内部拆分；失败时再加一句下一步。汇报时不要原样引用 agent_ 开头的内部编号，也不要写带这类编号的临时目录路径；改动在分支里时只写分支名。`;
 }
 
 export function createForegroundWake(
