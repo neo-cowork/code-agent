@@ -303,6 +303,8 @@ export const MEMORY_TIMEOUTS = {
   TRIGGER: 5_000,
   /** 用户规则写入确认弹窗等待上限 */
   DIRECTIVE_CONFIRM: 120_000,
+  /** 自动全局记忆写入前，对照手写记忆的语义分类调用超时 */
+  MANUAL_RECONCILE_CLASSIFY: 20_000,
 } as const;
 
 /** 测试运行器超时 */

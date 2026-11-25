@@ -8,6 +8,7 @@ import {
   writeLightMemoryFile,
   type LightMemoryFile,
 } from './lightMemoryIpc';
+import { classifyAgainstManualEntries, listActiveManualEntries } from './manualMemoryClassifier';
 
 const logger = createLogger('ManualMemoryGuard');
 
@@ -17,29 +18,52 @@ export function normalizeForCompare(value: string): string {
 
 type GuardOutcome = 'proceed' | 'skipped-equivalent' | 'diverted-to-candidate' | 'skipped-known';
 
-export async function reconcileManualMemoryWrite(
-  input: Pick<LightMemoryFile, 'filename' | 'name' | 'description' | 'type' | 'content'>
-    & { source: 'session-judge' | 'role-writeback' },
-): Promise<GuardOutcome> {
-  const current = await readMemoryFile(input.filename, { strict: true });
-  if (current?.source !== 'manual') return 'proceed';
+type GuardInput = Pick<LightMemoryFile, 'filename' | 'name' | 'description' | 'type' | 'content'>
+  & { source: 'session-judge' | 'role-writeback' };
 
-  const normalized = normalizeForCompare(input.content);
-  const target = { filename: current.filename, source: input.source };
-  if (normalized === normalizeForCompare(current.content)) {
-    logger.info('skipped-equivalent', target);
-    return 'skipped-equivalent';
+export async function reconcileManualMemoryWrite(input: GuardInput): Promise<GuardOutcome> {
+  const current = await readMemoryFile(input.filename, { strict: true });
+  if (current?.source === 'manual') {
+    const target = { filename: current.filename, source: input.source };
+    if (normalizeForCompare(input.content) === normalizeForCompare(current.content)) {
+      logger.info('skipped-equivalent', target);
+      return 'skipped-equivalent';
+    }
+    // Manual entries created by Settings use canonical lowercase filenames.
+    return divertToCandidate(input, current.filename.toLowerCase(), current.filename);
   }
 
-  const hash = createHash('sha256').update(normalized).digest('hex').slice(0, 8);
-  const pending = sanitizeLightMemoryFilename(current.filename, `-pending-${hash}`);
+  const manualEntries = await listActiveManualEntries();
+  if (manualEntries.length === 0) return 'proceed';
+  const relation = await classifyAgainstManualEntries(manualEntries, input);
+  if (relation.label === 'independent') return 'proceed';
+  if (relation.label === 'equivalent') {
+    logger.info('skipped-equivalent', { filename: relation.filename, source: input.source, semantic: true });
+    return 'skipped-equivalent';
+  }
+  return divertToCandidate(
+    input,
+    relation.filename ? relation.filename.toLowerCase() : undefined,
+    relation.filename ?? undefined,
+    relation.reason ?? 'semantic-conflict',
+  );
+}
+
+async function divertToCandidate(
+  input: GuardInput,
+  supersedes: string | undefined,
+  targetFilename: string | undefined,
+  reason?: string,
+): Promise<GuardOutcome> {
+  const hash = createHash('sha256').update(normalizeForCompare(input.content)).digest('hex').slice(0, 8);
+  const pending = sanitizeLightMemoryFilename(targetFilename ?? input.filename, `-pending-${hash}`);
+  const target = { filename: targetFilename ?? null, source: input.source };
   try {
     await writeLightMemoryFile({
       ...input,
       filename: pending,
       status: 'candidate',
-      // Manual entries created by Settings use canonical lowercase filenames.
-      supersedes: current.filename.toLowerCase(),
+      ...(supersedes ? { supersedes } : {}),
     }, { createOnly: true });
   } catch (error) {
     const failure = error as NodeJS.ErrnoException;
@@ -48,7 +72,7 @@ export async function reconcileManualMemoryWrite(
     return 'skipped-known';
   }
 
-  logger.info('diverted-to-candidate', { ...target, pending });
+  logger.info('diverted-to-candidate', { ...target, pending, ...(reason ? { reason } : {}) });
   await rebuildLightMemoryIndex();
   const { getDatabase } = await import('../services/core/databaseService');
   const db = getDatabase();
