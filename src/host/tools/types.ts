@@ -73,6 +73,8 @@ export interface ToolContext {
   allowedToolNames?: readonly string[];
   /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
   foregroundToolFace?: boolean;
+  /** 本次 LLM 请求实际下发的工具名列表（来自 requestManifest）；缺省表示未知。 */
+  requestToolNames?: readonly string[];
   /** Run-scoped discovery source; production callers omit it and use the app singleton. */
   skillDiscoveryService?: SkillDiscoveryService;
   /** Run-scoped telemetry owner propagated to spawned agents. */

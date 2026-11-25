@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveInputPath } from '../../utils/resolveInputPath';
 import * as https from 'https';
+import * as http from 'http';
 import { createRequire } from 'node:module';
 import type {
   ToolHandler,
@@ -22,7 +23,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import PptxGenJS from 'pptxgenjs';
-import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '../../../../shared/constants';
+import { ZHIPU_VISION_MODEL, MODEL_MAX_TOKENS } from '../../../../shared/constants';
+import { resolveZhipuVisionFallbackBaseUrl } from '../../../model/providers/providerResolution';
 import type { PPTGenerateParams, SlideImage, ChartMode, ResearchContext, VlmCallback, SlideData } from '../../media/ppt/types';
 import { getThemeConfig } from '../../media/ppt/themes';
 import { parseContentToSlides } from '../../media/ppt/parser';
@@ -320,13 +322,17 @@ export async function executePptGenerate(
             max_tokens: MODEL_MAX_TOKENS.VISION,
           });
 
-          const apiUrl = new URL(`${MODEL_API_ENDPOINTS.zhipuCoding}/chat/completions`);
+          const apiUrl = new URL(`${resolveZhipuVisionFallbackBaseUrl()}/chat/completions`);
+          // 跟随用户填的 base URL：http 基址（本地捕获/内网中转）必须走 http.request，
+          // 否则 TLS 握手打在明文端口上静默失败。
+          const isHttp = apiUrl.protocol === 'http:';
+          const transport = isHttp ? http : https;
           return new Promise<string>((resolve, reject) => {
-            const req = https.request(
+            const req = transport.request(
               {
                 hostname: apiUrl.hostname,
-                port: 443,
-                path: apiUrl.pathname,
+                port: apiUrl.port || (isHttp ? 80 : 443),
+                path: apiUrl.pathname + apiUrl.search,
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
