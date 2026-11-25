@@ -13,13 +13,14 @@ import type {
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
 import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
+import { getHostConnectorCopy } from '../../shared/i18n/hostConnectorCopy';
 import { getDelegateSessionPreviewMessages } from '../../shared/i18n/delegateSessionPreview';
 import { getSpawnAgentPreviewMessages } from '../../shared/i18n/spawnAgentPreview';
 import { getToolParamLabel, isHiddenParamEntry, isPathLikeParamKey } from '../../shared/i18n/toolParamLabels';
 import { humanizeToolPath } from '../../shared/utils/humanizeToolPath';
 import { classifyToolPath } from '../tools/utils/toolPathKind';
 import { buildMemoryDraftPreview } from './memoryDraftPreview';
-import { getHostUiLocale } from '../config/hostUiLocale';
+import { getHostUiLocale, type HostUiLocale } from '../config/hostUiLocale';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
 import { isBashToolName } from '../tools/toolNames';
@@ -87,11 +88,11 @@ function normalizeStringList(value: unknown): string[] {
   return [];
 }
 
-function formatTimestamp(value: unknown): string | null {
+function formatTimestamp(value: unknown, locale: HostUiLocale): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return null;
   }
-  return new Date(value).toLocaleString('zh-CN');
+  return new Date(value).toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN');
 }
 
 function pushDetail(lines: string[], label: string, value: string | null | undefined): void {
@@ -220,10 +221,11 @@ export class ConfirmationGate {
         const cc = normalizeStringList(params.cc).join(', ');
         const bcc = normalizeStringList(params.bcc).join(', ');
         const attachments = normalizeStringList(params.attachments).join(', ');
+        const copy = getHostConnectorCopy(getHostUiLocale());
         const summary = [
-          toolName === 'mail_send' ? '发送邮件' : '创建邮件草稿',
-          normalizeString(params.subject) || '(无主题)',
-        ].join('：');
+          copy.approvals[toolName],
+          normalizeString(params.subject) || copy.noSubject,
+        ].join(copy.separator);
         const details = [summary];
         pushDetail(details, 'To', to);
         pushDetail(details, 'CC', cc);
@@ -239,18 +241,17 @@ export class ConfirmationGate {
       case 'calendar_create_event':
       case 'calendar_update_event':
       case 'calendar_delete_event': {
-        const summaryMap: Record<string, string> = {
-          calendar_create_event: '创建日历事件',
-          calendar_update_event: '更新日历事件',
-          calendar_delete_event: '删除日历事件',
-        };
-        const summary = summaryMap[toolName];
+        const locale = getHostUiLocale();
+        const summary = getHostConnectorCopy(locale).approvals[toolName];
         const details = [summary];
         pushDetail(details, 'Calendar', normalizeString(params.calendar));
-        pushDetail(details, 'Title', normalizeString(params.title));
-        pushDetail(details, 'UID', normalizeString(params.event_uid));
-        pushDetail(details, 'Start', formatTimestamp(params.start_ms));
-        pushDetail(details, 'End', formatTimestamp(params.end_ms));
+        const title = normalizeString(params.title);
+        pushDetail(details, 'Title', title);
+        if (!title && toolName !== 'calendar_create_event') {
+          pushDetail(details, 'UID', normalizeString(params.event_uid));
+        }
+        pushDetail(details, 'Start', formatTimestamp(params.start_ms, locale));
+        pushDetail(details, 'End', formatTimestamp(params.end_ms, locale));
         pushDetail(details, 'Location', normalizeString(params.location));
         pushDetail(details, 'Notes', normalizeString(params.notes));
         return {
@@ -263,19 +264,15 @@ export class ConfirmationGate {
       case 'reminders_create':
       case 'reminders_update':
       case 'reminders_delete': {
-        const summaryMap: Record<string, string> = {
-          reminders_create: '创建提醒',
-          reminders_update: '更新提醒',
-          reminders_delete: '删除提醒',
-        };
-        const summary = summaryMap[toolName];
+        const locale = getHostUiLocale();
+        const summary = getHostConnectorCopy(locale).approvals[toolName];
         const details = [summary];
         pushDetail(details, 'List', normalizeString(params.list));
         if (toolName !== 'reminders_delete') pushDetail(details, 'Title', normalizeString(params.title));
         if (typeof params.completed === 'boolean') {
           pushDetail(details, 'Completed', params.completed ? 'true' : 'false');
         }
-        if (toolName !== 'reminders_delete') pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms));
+        if (toolName !== 'reminders_delete') pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms, locale));
         return {
           type: 'generic',
           summary,

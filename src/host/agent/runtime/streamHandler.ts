@@ -3,6 +3,8 @@
 // Extracted from ConversationRuntime
 // ============================================================================
 
+import { getHostTurnProgress } from '../../../shared/i18n/hostTurnProgress';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import type {
   ToolCall,
 } from '../../../shared/contract';
@@ -140,9 +142,9 @@ export class StreamHandler {
 
     if (this.ctx.turn.researchModeActive) {
       const researchRound = this.ctx.turn.incrementResearchIteration();
-      this.runFinalizer.emitTaskProgress('thinking', `正在搜索 (第${researchRound}轮)`);
+      this.runFinalizer.emitTaskProgress('thinking', getHostTurnProgress(getHostUiLocale()).searching(researchRound));
     } else {
-      this.runFinalizer.emitTaskProgress('thinking', '分析请求中...');
+      this.runFinalizer.emitTaskProgress('thinking', getHostTurnProgress(getHostUiLocale()).thinking);
     }
 
     this.runFinalizer.emitTaskStats(iterations);

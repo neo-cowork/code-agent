@@ -7,7 +7,7 @@ import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
 import { recordApprovedRmSettlementTargets } from '../../session/approvedRmSettlementTargets';
-import { rememberApprovedRmTargets } from './approvedRmVerifyProbe';
+import { rememberApprovedRmTargets, PRINTF_STATE_WRITE_WORD } from './approvedRmVerifyProbe';
 import { createLogger } from '../../services/infra/logger';
 
 const approvedRmLogger = createLogger('ApprovedRmGrant');
@@ -191,7 +191,14 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
       if (redirected.has(current) && ['true', ':'].includes(program)) return refuse('command_shape:redirect_non_dup');
       if (program === '[' && current.words.at(-1) !== ']') return refuse('command_shape');
       if (current.words.slice(1).some((word) => /[$`]/.test(substitute(word).replaceAll('${?}', '')))) return refuse('expansion');
-      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(substitute(word)))) return refuse('command_shape');
+      if (program === 'printf') {
+        const printfArgs = current.words.slice(1);
+        if (printfArgs.some((word) => PRINTF_STATE_WRITE_WORD.test(substitute(word)))) return refuse('command_shape');
+        // The approved suffix shape is `printf <format> "${?}"`: more than two words, or a "${?}"
+        // anywhere but the one extra word, is refused. A plain `printf <format> <text>` predates
+        // the arity rule and stays mintable.
+        if (printfArgs.length > 2 || (printfArgs.includes('${?}') && printfArgs[1] !== '${?}')) return refuse('command_shape');
+      }
     }
     if (current.terminator !== null && ![';', '\n', '&&', '||'].includes(current.terminator)) return refuse('command_shape');
   }
