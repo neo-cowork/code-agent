@@ -682,7 +682,7 @@ export const enSettingsWork = {
           summary: 'Summary',
           content: 'Body',
           projectPath: 'Bound project path',
-          projectPathPlaceholder: 'This memory takes effect once you confirm the project folder',
+          projectPathPlaceholder: 'Confirm the project folder to activate',
         },
         save: 'Save',
         activate: 'Activate',
