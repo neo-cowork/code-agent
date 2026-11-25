@@ -74,7 +74,7 @@ afterEach(() => {
   useAppStore.setState({ language: 'zh' });
 });
 
-it('names To review as the default result destination in English', async () => {
+it('names Run history as the default result destination in English', async () => {
   useAppStore.setState({ language: 'en' });
   mockCatalog([feishuAccount]);
   render(
@@ -86,10 +86,10 @@ it('names To review as the default result destination in English', async () => {
 
   const select = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Push result to (optional)' });
   await waitFor(() => expect(select.options).toHaveLength(2));
-  expect(select.options[0]?.text).toBe('Keep in To review only (default)');
+  expect(select.options[0]?.text).toBe('Keep in Run history only (default)');
   expect(select.selectedIndex).toBe(0);
   const summary = within(screen.getByTestId('cron-result-channel-summary'));
-  expect(summary.getByText('Keep in To review only')).toBeTruthy();
+  expect(summary.getByText('Keep in Run history only')).toBeTruthy();
 });
 
 describe('CronResultChannelField', () => {
