@@ -1,4 +1,5 @@
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { ScheduleDraftAck, ScheduleDraftRef, ScheduleDraftRequest } from '@shared/ipc/schemas/cron';
 import type { CronEventActionMode, CronEventDecision, CronEventStats, CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
@@ -70,8 +71,8 @@ export const cronClient = {
     return invokeCron<CronJobDefinition[]>('listJobs', { filter });
   },
 
-  createJob(input: CreateCronJobInput) {
-    return invokeCron<CronJobDefinition>('createJob', input);
+  createJob(input: CreateCronJobInput, scheduleDraftRequest?: ScheduleDraftRef) {
+    return invokeCron<CronJobDefinition>('createJob', scheduleDraftRequest ? { ...input, scheduleDraftRequest } : input);
   },
 
   updateJob(jobId: string, updates: UpdateCronJobInput) {
@@ -141,6 +142,14 @@ export const cronClient = {
   /** 「新邮件」触发源的账号/邮箱目录（含可用性 reason 分类；编辑器与 /schedule 确认卡共用）。 */
   listMailSources() {
     return invokeCron<CronMailSourcesResult>('listMailSources');
+  },
+
+  getScheduleDraftRequest(sessionId: string) {
+    return invokeCron<ScheduleDraftRequest | null>('getScheduleDraftRequest', { sessionId });
+  },
+
+  ackScheduleDraft(ack: ScheduleDraftAck) {
+    return invokeCron<boolean>('ackScheduleDraft', ack);
   },
 
   generateFromPrompt(prompt: string, language?: 'zh' | 'en') {

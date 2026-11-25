@@ -744,3 +744,6 @@ export const ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS = {
   IMAGE: 15_000,
   RESPONSE: 30_000,
 } as const;
+
+/** Wait for the renderer to prepare and display an attended schedule draft. */
+export const SCHEDULE_DRAFT_ACK_TIMEOUT_MS = 90_000;

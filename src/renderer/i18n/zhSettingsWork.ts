@@ -105,7 +105,7 @@ export const zhSettingsWork = {
       },
       recentDirectories: {
         title: '最近目录',
-        description: '过去打开过的工作区，点击直接切换；保留行为由 settings.workspace 决定。',
+        description: '过去打开过的工作区，点击直接切换。',
         columns: {
           directory: '目录',
           status: '状态',
@@ -439,7 +439,7 @@ export const zhSettingsWork = {
           },
           daily: {
             label: '每日简报',
-            hint: '每天 09:00 醒来巡检产物，有进展时生成简报会话',
+            hint: '每天 {time} 醒来巡检产物，有进展时生成简报会话',
           },
           realtime: {
             label: '实时介入',
@@ -683,7 +683,7 @@ export const zhSettingsWork = {
           summary: '摘要',
           content: '正文',
           projectPath: '绑定项目路径',
-          projectPathPlaceholder: '确认规范 workspace 路径后才能转正',
+          projectPathPlaceholder: '确认项目所在文件夹后，这条记忆才会生效',
         },
         save: '保存',
         activate: '激活',
@@ -726,7 +726,7 @@ export const zhSettingsWork = {
           selection: '选择',
           selectVisible: '选择当前可见候选（{count}）',
           selectEntry: '选择 {title}',
-          approve: '转正 {count}',
+          approve: '确认 {count}',
           reject: '拒绝 {count}',
           result: '已处理 {updated} 条，跳过 {skipped} 条',
           skippedDetailPrefix: '。跳过明细：',
@@ -736,7 +736,7 @@ export const zhSettingsWork = {
             'directive-requires-explicit-confirmation': '是指令类条目，需逐条确认',
             'project-binding-required': '需先绑定项目路径',
           },
-          directiveNeedsConfirmation: '指令类条目需逐条确认，不能批量转正',
+          directiveNeedsConfirmation: '指令类条目要逐条确认，不能一起确认',
           failed: '批量审阅失败',
         },
       },
