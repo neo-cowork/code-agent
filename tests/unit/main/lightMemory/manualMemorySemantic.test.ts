@@ -119,14 +119,17 @@ describe.each([
   });
 
   it.each([
-    ['model error', () => memoryTask.mockRejectedValue(new Error('boom'))],
-    ['unsuccessful result', () => memoryTask.mockResolvedValue({ success: false, error: 'down' })],
-    ['garbage reply', () => memoryTask.mockResolvedValue({ success: true, content: 'sure thing!' })],
-    ['unknown label', () => memoryTask.mockResolvedValue({ success: true, content: '{"label":"maybe"}' })],
-  ])('%s → candidate without supersedes', async (_name, arrange) => {
+    ['model error', 'error', () => memoryTask.mockRejectedValue(new Error('boom'))],
+    ['unsuccessful result', 'model-failed', () => memoryTask.mockResolvedValue({ success: false, error: 'down' })],
+    ['garbage reply', 'unparsable', () => memoryTask.mockResolvedValue({ success: true, content: 'sure thing!' })],
+    ['unknown label', 'unparsable', () => memoryTask.mockResolvedValue({ success: true, content: '{"label":"maybe"}' })],
+  ])('%s → candidate without supersedes', async (_name, reason, arrange) => {
     await createManual();
     arrange();
+    const warn = vi.spyOn(Object.getPrototypeOf(createLogger('probe')), 'warn');
     await write(wednesday);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('treating as conflict'), expect.objectContaining({ reason }));
+    warn.mockRestore();
     const [pending] = await pendingFiles();
     const candidate = await readMemoryFile(pending);
     expect(candidate).toMatchObject({ status: 'candidate', content: wednesday });
