@@ -4,10 +4,12 @@
 import { CRON_LOGIN_WALL_STOP } from '@shared/utils/browserLoginWall';
 import {
   CRON_FAILURE_CODE,
+  type CronFailureClassification,
   type CronFailurePresentationKind,
 } from '@shared/utils/cronFailureClassification';
 import { parseScheduledJobName } from '@shared/i18n/cronNotificationTitle';
 import type { NotificationShowEvent } from '@shared/ipc';
+import { cronTrustFailureSentence } from '../../../i18n/cronTrustFailure';
 
 interface CronFailureCopy {
   loginWallNotificationTitle: string;
@@ -56,11 +58,12 @@ function formatCronResetAt(
 
 export function cronFailureSentence(
   kind: CronFailurePresentationKind,
-  extra: { limitText?: string; resetAt?: string },
+  extra: Pick<CronFailureClassification, 'limitText' | 'resetAt' | 'trustKind' | 'folderName'>,
   copy: CronFailureCopy,
   language: 'zh' | 'en',
   now = new Date(),
 ): string {
+  if (kind === 'project_trust') return cronTrustFailureSentence(language, extra.trustKind, extra.folderName);
   if (kind === 'quota') {
     const when = extra.resetAt ? formatCronResetAt(extra.resetAt, language, now) : undefined;
     if (when && extra.limitText) {

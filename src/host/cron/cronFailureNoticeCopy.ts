@@ -11,6 +11,7 @@ const failureSentences = {
     auth: '模型账号没通过授权（密钥错误或已过期）',
     network: '暂时连不上模型服务',
     runtime_starting: 'Neo 刚启动还没准备好，这次运行没能开始。',
+    project_trust: '项目文件夹需要重新确认。',
     other: '运行失败',
   },
   en: {
@@ -20,6 +21,7 @@ const failureSentences = {
     auth: 'The model account was not authorized (the key is wrong or expired).',
     network: "The model service can't be reached right now.",
     runtime_starting: "Neo was still starting up, so this run couldn't start.",
+    project_trust: 'The project folder needs to be re-confirmed.',
     other: 'The run failed.',
   },
 } satisfies Record<CronNotificationLocale, Record<FailureSentenceKind, string>>;

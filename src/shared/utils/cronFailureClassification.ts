@@ -12,6 +12,7 @@ import { parseCronLoginWallStop } from './browserLoginWall';
 import { classifyAgentError } from './agentErrorClassification';
 import { isCronCloudUnavailableError } from './cronCloudUnavailable';
 import { isCronRuntimeNotReadyError } from './cronRuntimeNotReady';
+import type { ProjectSourceTrustFailureKind } from '../contract/project';
 
 export const CRON_FAILURE_CODE = 'CRON_FAILURE' as const;
 
@@ -24,6 +25,7 @@ export type CronFailurePresentationKind =
   | 'login_wall'
   | 'cloud_unavailable'
   | 'runtime_starting'
+  | 'project_trust'
   | 'other';
 
 export interface CronFailureClassification {
@@ -32,6 +34,73 @@ export interface CronFailureClassification {
   limitText?: string;
   /** ISO-8601。只有报文写明了重置时间才填。 */
   resetAt?: string;
+  /** project_trust 专用：项目文件夹信任失败的具体类型。 */
+  trustKind?: ProjectSourceTrustFailureKind;
+  /** project_trust 专用：文件夹名（单段，绝不含路径分隔符）。拿不到安全的名字就不填。 */
+  folderName?: string;
+}
+
+// 项目文件夹信任失败落库成稳定标记 PROJECT_SOURCE_TRUST:<kind>[:<folderName>]，
+// 不落 ProjectSourceTrustError.message（英文句 + 本机绝对路径）。显示时再翻译。
+const PROJECT_TRUST_MARKER_PREFIX = 'PROJECT_SOURCE_TRUST';
+const PROJECT_TRUST_KINDS: readonly ProjectSourceTrustFailureKind[] = ['source_missing', 'identity_changed', 'not_trusted'];
+// 存量行：messageFor 的三句英文前缀，路径取最后一段当文件夹名。
+const LEGACY_PROJECT_TRUST_TEXT = /Project Source (is missing|trust identity changed|is not trusted): ([^\n]*)/;
+const LEGACY_PROJECT_TRUST_KIND: Record<string, ProjectSourceTrustFailureKind> = {
+  'is missing': 'source_missing',
+  'trust identity changed': 'identity_changed',
+  'is not trusted': 'not_trusted',
+};
+
+function isProjectTrustKind(value: unknown): value is ProjectSourceTrustFailureKind {
+  return typeof value === 'string' && (PROJECT_TRUST_KINDS as readonly string[]).includes(value);
+}
+
+/** 与 ProjectSourceTrustError.toHttpBody 同一条规则：单段、非 . / ..、不含分隔符。 */
+function safeFolderSegment(value: string | undefined): string | undefined {
+  const name = value?.trim();
+  if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) return undefined;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f]/.test(name)) return undefined;
+  return name;
+}
+
+function lastPathSegment(path: string): string | undefined {
+  const segments = path.trim().split(/[\\/]+/).filter(Boolean);
+  return safeFolderSegment(segments[segments.length - 1]);
+}
+
+function projectTrustMarker(error: unknown): string | undefined {
+  const seen = new Set<unknown>();
+  let cursor: unknown = error;
+  for (let depth = 0; depth < 6 && cursor != null && typeof cursor === 'object' && !seen.has(cursor); depth += 1) {
+    seen.add(cursor);
+    const record = cursor as { code?: unknown; kind?: unknown; sourcePath?: unknown; cause?: unknown };
+    if (record.code === PROJECT_TRUST_MARKER_PREFIX && isProjectTrustKind(record.kind)) {
+      const folderName = typeof record.sourcePath === 'string' ? lastPathSegment(record.sourcePath) : undefined;
+      return [PROJECT_TRUST_MARKER_PREFIX, record.kind, ...(folderName ? [folderName] : [])].join(':');
+    }
+    cursor = record.cause;
+  }
+  return undefined;
+}
+
+function parseProjectTrustFailure(text: string): CronFailureClassification | undefined {
+  if (text.startsWith(`${PROJECT_TRUST_MARKER_PREFIX}:`)) {
+    const rest = text.slice(PROJECT_TRUST_MARKER_PREFIX.length + 1);
+    const separator = rest.indexOf(':');
+    const kind = separator === -1 ? rest : rest.slice(0, separator);
+    if (isProjectTrustKind(kind)) {
+      const folderName = separator === -1 ? undefined : safeFolderSegment(rest.slice(separator + 1));
+      return { kind: 'project_trust', trustKind: kind, ...(folderName ? { folderName } : {}) };
+    }
+  }
+  const legacy = text.match(LEGACY_PROJECT_TRUST_TEXT);
+  if (legacy) {
+    const folderName = lastPathSegment(legacy[2]);
+    return { kind: 'project_trust', trustKind: LEGACY_PROJECT_TRUST_KIND[legacy[1]], ...(folderName ? { folderName } : {}) };
+  }
+  return undefined;
 }
 
 const CRON_TIME_LIMIT_TEXT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -96,6 +165,8 @@ function parseResetAt(text: string): string | undefined {
 export function classifyCronFailure(error?: string): CronFailureClassification {
   const text = error?.trim() ?? '';
   if (!text) return { kind: 'other' };
+  const projectTrust = parseProjectTrustFailure(text);
+  if (projectTrust) return projectTrust;
   if (parseCronLoginWallStop(text)) return { kind: 'login_wall' };
   // 云端调度器不可用的固定句先于额度/鉴权/网络：executeJob 落库时会把 cause 报文
   // （fetch failed / 401 等）追加在句子后面，先认固定句才不会被底因冲掉。
@@ -128,6 +199,9 @@ export function classifyCronFailure(error?: string): CronFailureClassification {
 export function cronFailureSourceText(error: unknown): string {
   if (typeof error === 'string') return error;
   if (!(error instanceof Error) && (typeof error !== 'object' || error === null)) return String(error);
+  // 项目文件夹信任失败：只落稳定标记，英文句和本机绝对路径不进库。
+  const trustMarker = projectTrustMarker(error);
+  if (trustMarker) return trustMarker;
 
   const parts: string[] = [];
   const seen = new Set<unknown>();
