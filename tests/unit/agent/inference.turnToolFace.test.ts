@@ -26,7 +26,8 @@ import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessi
 import { resolveWakeRunToolScope } from '../../../src/host/services/roleAssets/roleProactivity';
 import { isToolDeniedForRun } from '../../../src/host/agent/runtime/toolRunPolicy';
 import { writeRolePersonalization } from '../../../src/host/services/roleAssets/rolePersonalization';
-import type { ToolDefinition } from '../../../src/shared/contract';
+import type { MessageAttachment, ToolDefinition } from '../../../src/shared/contract';
+import { buildMultimodalContent } from '../../../src/host/agent/messageHandling/converter';
 
 const { mockGetApiKey, mockRecordUsage, mockCheckBudget } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -369,6 +370,80 @@ describe('ordered tool faces through production inference', () => {
     expect(allowedToolNames).toContain('image_analyze');
     expect(await finalNames(turn(prompt, { allowedToolNames }, 'reader'))).toContain('image_analyze');
   });
+
+  it.each(['success', 'failure', 'native vision', 'annotate'] as const)(
+    'builds the image request for %s',
+    async (branch) => {
+      const prompt = branch === 'annotate' ? 'Annotate the total on this invoice' : 'What is the invoice total?';
+      const attachments: MessageAttachment[] = [{
+        id: 'invoice', type: 'image', category: 'image', name: 'invoice.png',
+        path: '/tmp/invoice.png', size: 1, mimeType: 'image/png', data: 'AA==',
+      }];
+      const nativeVision = branch === 'native vision';
+      const imageTurn = {
+        attachments,
+        model: { provider: 'xiaomi' as const, model: nativeVision ? 'mimo-v2.6-flash' : 'mimo-v2.5-pro' },
+      };
+      const ctx = turn(prompt, { allowedToolNames: getTextForegroundToolNamesForPrompt(prompt, undefined, imageTurn) });
+      const content = buildMultimodalContent(prompt, attachments);
+      vi.mocked(ctx.buildModelMessages).mockResolvedValue(Object.assign(
+        [{ role: 'user' as const, content }],
+        { modelMessageSourceIds: ['invoice-message'] },
+      ));
+      Object.assign(ctx, { generateId: () => 'vision-notice', recordContextEventsForMessage: vi.fn() });
+      Object.assign(ctx.runtime, { foregroundToolFace: true, persistMessage: vi.fn() });
+      const router = ctx.runtime.modelRouter;
+      vi.mocked(router.getModelInfo).mockReturnValue({
+        id: 'test-model', name: 'Test model', capabilities: [], maxTokens: 4096,
+        supportsVision: nativeVision, supportsTool: true, supportsStreaming: true,
+      });
+      vi.mocked(router.detectRequiredCapabilities).mockReturnValue(['vision']);
+      vi.mocked(router.getVisionPreflightCandidates).mockReturnValue([
+        { ...ctx.runtime.modelConfig, model: 'vision-candidate' },
+      ]);
+      if (branch === 'success') {
+        vi.mocked(router.inference).mockResolvedValueOnce({ type: 'text', content: 'Total is USD 124.68', finishReason: 'stop' });
+      } else if (branch === 'failure') {
+        vi.mocked(router.inference).mockRejectedValueOnce(new Error('vision request rejected'));
+      }
+
+      await inference(ctx);
+
+      const requests = vi.mocked(router.inference).mock.calls;
+      expect(requests.map(([, , config]) => config.model)).toEqual(
+        branch === 'success' || branch === 'failure' ? ['vision-candidate', 'test-model'] : ['test-model'],
+      );
+      const [messages, tools] = requests.at(-1)!;
+      const userContent = messages.find((message) => message.role === 'user')?.content;
+      const serialized = JSON.stringify(userContent);
+      const keepsHint = branch === 'failure' || branch === 'annotate';
+      expect(tools?.some((tool) => tool.name === 'image_analyze')).toBe(keepsHint);
+      expect(serialized).toContain('🖼️ 用户上传了图片');
+      expect(serialized).toContain('路径: /tmp/invoice.png');
+      expect(serialized).toContain(prompt);
+      if (keepsHint) {
+        expect(serialized).toContain('先调用 image_analyze 读取这个路径');
+        expect(serialized).toContain('select:image_analyze');
+      } else {
+        expect(serialized).not.toMatch(/image_analyze|ToolSearch/);
+      }
+      expect(Array.isArray(userContent) && userContent.some((part) => part.type === 'image')).toBe(nativeVision);
+      if (branch === 'success') {
+        expect(serialized).toContain('Total is USD 124.68');
+        vi.mocked(ctx.buildModelMessages).mockResolvedValue(Object.assign(
+          [{ role: 'user' as const, content }, { role: 'tool' as const, content: 'Approval limit is USD 100' }],
+          { modelMessageSourceIds: ['invoice-message', 'tool-result'] },
+        ));
+        await inference(ctx);
+        expect(requests.map(([, , config]) => config.model)).toEqual(['vision-candidate', 'test-model', 'test-model']);
+        const [nextMessages, nextTools] = requests.at(-1)!;
+        expect(nextMessages).toContainEqual({ role: 'tool', content: 'Approval limit is USD 100' });
+        expect(JSON.stringify(nextMessages.find((message) => message.role === 'user')?.content)).toBe(serialized);
+        expect(nextTools?.some((tool) => tool.name === 'image_analyze')).toBe(false);
+        expect(ctx.runtime.persistMessage).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
 
   it('role chat keeps the proactivity setting tool when the user asks to change it', async () => {
     const declared = ['Read'];
