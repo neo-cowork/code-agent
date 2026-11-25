@@ -139,11 +139,17 @@ ${recentMessages}
       logger.debug('Dropped suggestions containing user-banned terms', { dropped: scriptMatched.length - allowed.length });
     }
 
-    return allowed.slice(0, 3).map((text, i) => ({
+    const suggestions = allowed.slice(0, 3).map((text, i) => ({
       id: `ctx-${i}`,
       text,
       source: 'context' as const,
     }));
+    logger.debug('Context suggestions ready', {
+      language,
+      count: suggestions.length,
+      texts: suggestions.map(s => s.text),
+    });
+    return suggestions;
   } catch (error) {
     logger.debug('Failed to generate context suggestions', { error });
     return [];
