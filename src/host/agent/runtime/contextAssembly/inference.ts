@@ -22,6 +22,7 @@ import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { filterToolsByRunPolicyObserved } from '../toolRunPolicy';
 import {
+  stripImageAnalyzeHintFromLastUserMessage,
   stripImagesFromMessages,
   extractUserRequestText,
 } from '../../../agent/messageHandling/converter';
@@ -455,12 +456,18 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   try {
     // Capability detection and model fallback
     effectiveConfig = ctx.runtime.modelConfig;
-    const lastUserMessage = modelMessages.filter(m => m.role === 'user').pop();
+    const lastUserIndex = modelMessages.findLastIndex((message) => message.role === 'user');
+    const lastUserMessage = modelMessages[lastUserIndex];
     const currentTurnMessages = lastUserMessage ? [lastUserMessage] : [];
     const requiredCapabilities = ctx.runtime.modelRouter.detectRequiredCapabilities(currentTurnMessages);
     const allowCapabilityFallback = ctx.runtime.modelConfig.adaptive === true;
     let needsVisionFallback = false;
     let visionFallbackSucceeded = false;
+    let visionPreflightSucceeded = false;
+    const mainModelInfo = ctx.runtime.modelRouter.getModelInfo(
+      ctx.runtime.modelConfig.provider,
+      ctx.runtime.modelConfig.model
+    );
     // T7：识图预处理逐候选失败明细，用于全失败时的用户 toast（日志已在 runVisionPreflightCandidates 内落）
     let visionPreflightAttempts: VisionPreflightAttempt[] = [];
     let visionPreflightHadCandidates = false;
@@ -479,14 +486,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     }
 
     if (requiredCapabilities.length > 0) {
-      const currentModelInfo = ctx.runtime.modelRouter.getModelInfo(
-        ctx.runtime.modelConfig.provider,
-        ctx.runtime.modelConfig.model
-      );
-
       for (const capability of requiredCapabilities) {
-        const hasCapability = currentModelInfo?.capabilities?.includes(capability) ||
-          (capability === 'vision' && currentModelInfo?.supportsVision);
+        const hasCapability = mainModelInfo?.capabilities?.includes(capability) ||
+          (capability === 'vision' && mainModelInfo?.supportsVision);
 
         if (!hasCapability) {
           if (capability === 'vision') {
@@ -503,11 +505,13 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             const visionCandidates = ctx.runtime.modelRouter.getVisionPreflightCandidates(ctx.runtime.modelConfig);
             const preflightResult = await runVisionPreflightCandidates(
               ctx, modelMessages, visionCandidates, userRequestText, runEngineInference,
+              builtModelMessages.modelMessageSourceIds?.[lastUserIndex],
             );
             modelMessages = preflightResult.modelMessages;
             visionPreflightHadCandidates = preflightResult.hadCandidates;
             visionPreflightAttempts = preflightResult.attempts;
             if (preflightResult.succeeded) {
+              visionPreflightSucceeded = true;
               visionFallbackSucceeded = true;
               continue;
             }
@@ -586,21 +590,20 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       });
     }
 
-    if (effectiveConfig === ctx.runtime.modelConfig) {
-      const mainModelInfo = ctx.runtime.modelRouter.getModelInfo(
-        ctx.runtime.modelConfig.provider,
-        ctx.runtime.modelConfig.model
-      );
-      if (!mainModelInfo?.supportsVision) {
-        const hasImages = modelMessages.some((msg) => contentHasImageParts(msg.content));
-        if (hasImages) {
-          logger.warn('[AgentLoop] 主模型不支持视觉，但历史消息中包含图片，移除图片避免 API 错误');
-          modelMessages = stripImagesFromMessages(modelMessages);
-        }
-      }
+    const hasUnprocessedImages = effectiveConfig === ctx.runtime.modelConfig
+      && !mainModelInfo?.supportsVision && modelMessages.some((msg) => contentHasImageParts(msg.content));
+    if (hasUnprocessedImages) {
+      logger.warn('[AgentLoop] 主模型不支持视觉，但历史消息中包含图片，移除图片避免 API 错误');
+      modelMessages = stripImagesFromMessages(modelMessages);
     }
 
-    effectiveTools = tools;
+    if (!needsToolForImage && (visionPreflightSucceeded || mainModelInfo?.supportsVision)) {
+      modelMessages = stripImageAnalyzeHintFromLastUserMessage(modelMessages);
+    }
+    // A successful summary covers the latest user message. Older images can still need the tool.
+    effectiveTools = visionPreflightSucceeded && !hasUnprocessedImages
+      ? tools.filter((tool) => tool.name !== 'image_analyze')
+      : tools;
     if (ctx.runtime.control.forceFinalResponseReason) {
       effectiveTools = [];
       logger.warn('[AgentLoop] Force-final-response active; tool list disabled', {

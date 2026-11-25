@@ -11,6 +11,7 @@ import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import {
   buildCronJobInput,
@@ -180,7 +181,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         runsOn: copySource.runsOn === 'local' ? 'cloud' : 'local',
         enabled: false,
         // 副本只带走工作文件夹；artifactRefresh 等绑定原文件路径的 metadata 不继承（云端副本保存时剥文件夹）。
-        metadata: copiedWorkingDirectoryMetadata(copySource.metadata),
+        metadata: copiedWorkingDirectoryMetadata(copySource, useSessionStore.getState().sessions),
       });
       setStep('manual');
     } else {

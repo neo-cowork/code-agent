@@ -92,7 +92,9 @@ function resolveBaseUrlRaw(config: ModelConfig): string {
       return config.baseUrl || getSettingsProviderBaseUrl(provider) || MODEL_API_ENDPOINTS.zhipuOfficial;
     }
     if (model?.useCodingEndpoint && reg?.codingBaseUrl) {
-      return reg.codingBaseUrl; // coding 端点固定，不被 config.baseUrl 覆盖（对齐旧实现）
+      // 用户在设置里填了智谱 base URL 就跟随（官方 coding 套餐地址填了却被改走第三方中转会 401）；
+      // 留空才用默认 coding 端点。顺序与相邻分支一致。
+      return config.baseUrl || getSettingsProviderBaseUrl(provider) || reg.codingBaseUrl;
     }
     return config.baseUrl || getSettingsProviderBaseUrl(provider) || reg?.baseUrl || MODEL_API_ENDPOINTS.zhipu;
   }

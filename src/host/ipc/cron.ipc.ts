@@ -7,8 +7,10 @@ import { loadCronEventStats } from '../cron/cronEventStats';
 import { ipcHost } from '../platform';
 import type { IPCResponse } from '../../shared/ipc';
 import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
-import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
+import { CronSchemas, ScheduleDraftAckSchema, ScheduleDraftRefSchema, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
+import { acknowledgeScheduleDraft, confirmScheduleDraftRequest, getScheduleDraftRequest } from '../cron/scheduleDraftRequests';
+import { getSessionManager } from '../services/infra/sessionManager';
 import { getCronService } from '../cron/cronService';
 import { parkedSiblingsCoveredByGrant } from '../cron/cronWriteGrant';
 import { buildScheduleGenerationClock } from '../cron/scheduleGenerationClock';
@@ -59,7 +61,7 @@ function getCronJobFilter(source: unknown): CronJobFilterPayload | undefined {
 function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
   // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
-  const { runCount: _droppedRunCount, ...payload } = source;
+  const { runCount: _droppedRunCount, scheduleDraftRequest: _draftRef, ...payload } = source;
   if (isRecord(payload.action) && payload.action.type === 'agent') {
     payload.action = { ...payload.action, allowedPersonalSkillIds: normalizePersonalSkillIds(payload.action.allowedPersonalSkillIds) };
   }
@@ -276,9 +278,32 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     // 「现在能不能选账号」陈述，不是 IPC 层错误；渲染层按 reason 给可区分提示。
     return { success: true, data: await listMailSources() } satisfies IPCResponse;
   },
+  getScheduleDraftRequest: async (_ctx, payload) => {
+    const sessionId = getStringField(payload, 'sessionId');
+    const request = sessionId ? getScheduleDraftRequest(sessionId) : null;
+    const session = request && await getSessionManager().getSession(request.sessionId, 1);
+    return { success: true, data: session ? getScheduleDraftRequest(request.sessionId) : null } satisfies IPCResponse;
+  },
+  ackScheduleDraft: async (_ctx, payload) => {
+    const ack = ScheduleDraftAckSchema.parse(payload);
+    const request = getScheduleDraftRequest(ack.sessionId);
+    const accepted = request?.requestId === ack.requestId
+      && Boolean(await getSessionManager().getSession(ack.sessionId, 1))
+      && acknowledgeScheduleDraft(ack);
+    return { success: true, data: accepted } satisfies IPCResponse;
+  },
   createJob: async (_ctx, payload) => {
-    const cronService = getCronService();
-    const job = await cronService.createJob(getCreateCronJobPayload(payload));
+    const input = getCreateCronJobPayload(payload);
+    const createJob = () => getCronService().createJob(input);
+    let job: CronJobDefinition | null;
+    if (isRecord(payload) && 'scheduleDraftRequest' in payload) {
+      const { sessionId, requestId } = ScheduleDraftRefSchema.parse(payload.scheduleDraftRequest);
+      const session = await getSessionManager().getSession(sessionId, 1);
+      job = session ? await confirmScheduleDraftRequest(sessionId, requestId, createJob) : null;
+      if (!job) return { success: false, error: { code: 'SCHEDULE_DRAFT_UNAVAILABLE', message: 'This draft is no longer available.' } } satisfies IPCResponse;
+    } else {
+      job = await createJob();
+    }
     return { success: true, data: job } satisfies IPCResponse;
   },
   updateJob: async (_ctx, payload) => {
