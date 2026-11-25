@@ -1,5 +1,6 @@
 // Same-turn handoff when the foreground face refuses an execution tool.
 // messageProcessor stays a caller: the denial block lives here so that file does not grow.
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import type { Message, ToolCall } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
@@ -259,7 +260,7 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   }
 
   guard.toolCallRetryCount++;
-  const requested = userRequestedExecution(verbatimUserRequest(ctx));
+  const requested = userRequestedExecution(inabilityGatePrompt(ctx) || verbatimUserRequest(ctx));
   const shellDenial = describeDeniedShellCalls(ctx, deniedToolCalls);
   contextAssembly.injectSystemMessage(
     [

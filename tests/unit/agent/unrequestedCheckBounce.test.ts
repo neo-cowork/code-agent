@@ -28,6 +28,17 @@ const NO_CUE = { zh: '帮我把这 10 笔报销金额加起来，告诉我总数
 const CUE = { zh: '用命令核对一下这 10 笔报销金额', en: 'double-check these amounts with a command' };
 const CUE_MUTATE = { zh: '帮我整理下载文件夹', en: 'delete the old files' };
 
+const WAKE = '后台任务 交接 已完成，结果摘要：总计 619.5。没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言；用户自己写过的命令可以点名。';
+
+function makeWakeCtx(original: string): RuntimeContext {
+  const ctx = makeCtx(WAKE) as unknown as { messages: unknown[] };
+  ctx.messages = [
+    { id: 'u1', role: 'user', content: original },
+    { id: 'u2', role: 'user', content: WAKE },
+  ];
+  return ctx as unknown as RuntimeContext;
+}
+
 function makeCtx(prompt: string): RuntimeContext {
   const turn = new TurnState();
   turn.beginRun(prompt);
@@ -86,5 +97,33 @@ describe.each(['zh', 'en'] as const)('unrequested check bounce (%s)', (locale) =
     const text = await handoffText(prompt);
     expect(text).toContain(full);
     expect(text).toContain('The previous call was NOT run.');
+  });
+});
+
+describe('background-result wake turn gates on the original user request', () => {
+  beforeEach(() => { getProtocolRegistry(); });
+
+  it.each([
+    ['帮我把这 10 笔报销金额加起来，告诉我总数', false],
+    ['add these 10 reimbursement amounts up and tell me the total', false],
+    ['用命令核对一下这 10 笔报销金额', true],
+    ['double-check these amounts with a command', true],
+  ])('original request %s -> full contract: %s', async (original, full) => {
+    const fullText = (loc: 'zh' | 'en') => INABILITY_REPLY_CONTRACT[loc].guidance;
+    const loc = /[\u4e00-\u9fff]/.test(original) ? 'zh' : 'en';
+    const texts = [
+      describeDeniedShellCalls(makeWakeCtx(original), [{ name: 'Bash' }])?.guidance ?? '',
+      deniedToolRetryGuidance(makeWakeCtx(original)),
+    ];
+    const wakeCtx = makeWakeCtx(original);
+    const persisted: Message[] = [];
+    const contextAssembly = { generateId: () => 'm', addAndPersistMessage: vi.fn(async (m: Message) => { persisted.push(m); }) } as unknown as ContextAssembly;
+    await sealBouncedToolCalls({ ctx: wakeCtx, contextAssembly }, { content: '' } as ModelResponse,
+      [{ id: 'c1', name: 'Bash', arguments: {} }, { id: 'c2', name: 'Read', arguments: {} }] as ToolCall[], 'denied', new Set(['c1']));
+    texts.push(String(persisted.find((m) => m.role === 'tool')!.toolResults![1].error));
+    for (const text of texts) {
+      if (full) expect(text).toContain(fullText(loc));
+      else { expect(text).not.toMatch(NARRATION); expect(text).not.toContain(fullText(loc)); }
+    }
   });
 });
