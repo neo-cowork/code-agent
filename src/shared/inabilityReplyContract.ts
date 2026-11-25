@@ -23,9 +23,33 @@ export const INABILITY_REPLY_CONTRACT = {
   },
 } as const;
 
+const SHORT_GUIDANCE = {
+  zh: `你自己多加的一步被略过了，用户并没有要求执行命令或核对。请遵守：
+1. 直接依据对话和附件回答，完全不要提被略过的那一步。只有不做那一步就无法回答时，才用一句大白话说明这部分没有完成、相关内容没有改动，并说可以先只读查看或交给后台任务。
+2. 绝不解释或猜测原因，不要说权限、被拦下、不允许、受限、禁用、当前回合或用户设置了什么。
+3. 不要提工具名、模式或终端。保持简短。
+4. 用户没有明确索要命令时，绝不给原始命令，不要让用户打开终端、复制或粘贴执行。`,
+  en: `An extra step you added yourself was skipped, and the user never asked for any command or check. Follow these rules:
+1. Answer directly from the conversation and attachments, and do not mention the skipped step. Only if the answer cannot be given without it, say in one plain sentence that this part was not done and nothing was changed, and offer to inspect read-only first or hand it to a background task.
+2. Never state or invent a cause. Never say permission, blocked, not allowed, restricted, disabled, or this turn; never imply the user configured anything.
+3. Never name tools, modes, or the terminal. Keep the reply brief.
+4. Never give a raw command, or tell the user to open Terminal, copy, or paste, unless they explicitly asked for one.`,
+} as const;
+
+const EXECUTION_CUE_EN = /\b(run|ran|execut|command|terminal|script|shell|verif|check|delet|remov|mov(e|ing)|renam|creat|writ|install|download|send|sav(e|ing)|export|generat|clean|back ?up|compress|zip|copy|edit|modif|updat|upload|open|replac|merg)/i;
+const EXECUTION_CUE_ZH = /运行|执行|命令|终端|脚本|核对|核实|验证|检查|跑|删|移动|改名|创建|写入|安装|下载|发送|保存|导出|生成|整理|清理|备份|压缩|解压|复制|拷贝|修改|编辑|更新|上传|打开|替换|合并/;
+
+/** Conservative gate: any execution/check/mutation cue in the user's own request means the full contract applies. */
+export function userRequestedExecution(userPrompt: string): boolean {
+  const request = extractUserRequest(userPrompt).trim();
+  if (!request) return true;
+  return EXECUTION_CUE_EN.test(request) || EXECUTION_CUE_ZH.test(request);
+}
+
 /** Select the actual user's language, not the surrounding model-only scaffolding. */
 export function getInabilityReplyGuidance(userPrompt: string, fallbackLocale: 'zh' | 'en' = 'en'): string {
   const locale = detectMessageLanguage(extractUserRequest(userPrompt)) ?? fallbackLocale;
   const language = locale === 'en' ? 'Reply in English.' : '用中文回复。';
-  return `${INABILITY_REPLY_CONTRACT[locale].guidance}\n${language}`;
+  const guidance = userRequestedExecution(userPrompt) ? INABILITY_REPLY_CONTRACT[locale].guidance : SHORT_GUIDANCE[locale];
+  return `${guidance}\n${language}`;
 }
