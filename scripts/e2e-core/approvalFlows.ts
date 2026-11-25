@@ -1,6 +1,6 @@
 import { describeRows, expectDb, family, inSessions, lastAssistantText } from './db';
 import type { AttemptEnv, FlowDef } from './types';
-import { approveCard, clickCardButton, driveTurn, openNewSession, sendMessage } from './ui';
+import { approveCard, clickCardButton, driveTurn, openNewSession, sendMessage, settleBackground } from './ui';
 
 // 用户会说的话：让 Neo 用 curl 抓网页。命令走网络、需要审批（实测会弹「允许执行这条命令？」）。
 const PROMPT_ONCE = '用 curl 帮我把 https://example.com 的网页抓下来，存成 example.html';
@@ -47,12 +47,12 @@ export const f05: FlowDef = {
       text: '点「允许一次」。',
       run: async (env) => {
         await clickCardButton(env.page, '允许一次');
-        await driveTurn(env.page, {
-          onPermissionCard: async (page) => {
-            if ((await cardPreview(env)) === env.scratch.preview) throw new Error('同一条命令点了允许后又问了第二次');
-            await approveCard(page);
-          },
-        }, TURN_TIMEOUT_MS);
+        const onSecondCard = async (page: typeof env.page) => {
+          if ((await cardPreview(env)) === env.scratch.preview) throw new Error('同一条命令点了允许后又问了第二次');
+          await approveCard(page);
+        };
+        await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: onSecondCard }, TURN_TIMEOUT_MS);
+        await settleBackground(env.page, onSecondCard, TURN_TIMEOUT_MS);
         if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「允许一次」后审批卡还在');
       },
     },
