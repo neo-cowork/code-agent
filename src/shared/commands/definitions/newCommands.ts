@@ -7,6 +7,7 @@ import { MODEL_PRICING_PER_1M } from '../../constants';
 import type { ExtensionInfo, ExtensionValidationResult } from '../../contract/extension';
 import type { SkillCautionConfirmationRequired } from '../../contract/skillInstallCaution';
 import { loadCommandPort } from '../loadCommandPort';
+import { formatPermissionDecision } from '../formatPermissionDecision';
 
 interface ExtensionOpsCommandService {
   list(): Promise<ExtensionInfo[]>;
@@ -645,12 +646,13 @@ export const permissionsCommand: CommandDefinition = {
       if (recent.length === 0) {
         lines.push('    (no decisions yet)');
       } else {
+        const language = ctx.language === 'zh' ? 'zh' : 'en';
         for (const entry of recent) {
           const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
           const trace = entry.decisionTrace
             ? `, trace=${entry.decisionTrace.finalOutcome}/${entry.decisionTrace.steps.length}`
             : '';
-          lines.push(`    ${time} ${entry.toolName}(${entry.summary.substring(0, 40)}) → ${entry.outcome}  (${entry.reason}, ${entry.durationMs}ms${trace})`);
+          lines.push(`    ${time} ${formatPermissionDecision(entry, language, trace)}`);
         }
       }
     } catch {

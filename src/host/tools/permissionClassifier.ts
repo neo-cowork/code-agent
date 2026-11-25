@@ -149,6 +149,11 @@ const READ_ONLY_REASON = '自动放行：只读操作';
 const NETWORK_READ_REASON = '自动放行：联网查看';
 const DELEGATION_REASON = '自动放行：派后台助手';
 const MCP_CONFIRMATION_REASON = '外部工具可能有副作用，需要确认';
+const READ_PERMISSION_REASON = '自动放行：只读权限';
+const MCP_STATUS_REASON = '自动放行：查看外部工具状态';
+const BACKGROUND_TASK_VIEW_REASON = '自动放行：查看后台任务';
+const BACKGROUND_TASK_CONTROL_REASON = '控制后台任务需要确认';
+const UNKNOWN_BACKGROUND_TASK_ACTION_REASON = '无法识别后台任务操作，需要确认';
 
 // 只读工具 — 无副作用，始终自动批准
 export const READ_ONLY_TOOLS = new Set([
@@ -357,7 +362,7 @@ export class PermissionClassifier {
     if (context.permissionLevel === 'read') {
       return {
         decision: 'approve',
-        reason: `工具权限级别为 read`,
+        reason: READ_PERMISSION_REASON,
         confidence: 1.0,
         cached: false,
       };
@@ -401,7 +406,7 @@ export class PermissionClassifier {
       if (toolName === 'MCPUnified' && MCPUNIFIED_READ_ONLY_ACTIONS.has(String(args.action ?? ''))) {
         return {
           decision: 'approve',
-          reason: `MCPUnified 只读动作: ${String(args.action)}`,
+          reason: MCP_STATUS_REASON,
           confidence: 0.95,
           cached: false,
         };
@@ -430,14 +435,14 @@ export class PermissionClassifier {
     if (PROCESS_OBSERVATION_ACTIONS.has(action)) {
       return {
         decision: 'approve',
-        reason: `Process 观察类动作: ${action}`,
+        reason: BACKGROUND_TASK_VIEW_REASON,
         confidence: 1.0,
         cached: false,
       };
     }
 
     if (PROCESS_CONTROL_ACTIONS.has(action)) {
-      const reason = `Process 控制类动作需要确认: ${action}`;
+      const reason = BACKGROUND_TASK_CONTROL_REASON;
       return {
         decision: 'ask',
         reason,
@@ -447,7 +452,7 @@ export class PermissionClassifier {
       };
     }
 
-    const reason = 'Process action 缺失或未知，需用户确认';
+    const reason = UNKNOWN_BACKGROUND_TASK_ACTION_REASON;
     return {
       decision: 'ask',
       reason,

@@ -27,4 +27,24 @@ describe('PermissionClassifier reason copy', () => {
     expect(result.hostReason?.modelText).toBe(reason);
     expect(result.hostReason?.metadata?.toolName).toBe(toolName);
   });
+
+  it.each([
+    ['MCPUnified', { action: 'status' }, undefined, 'approve', '自动放行：查看外部工具状态'],
+    ['MCPUnified', { action: 'list_tools' }, undefined, 'approve', '自动放行：查看外部工具状态'],
+    ['MCPUnified', { action: 'list_resources' }, undefined, 'approve', '自动放行：查看外部工具状态'],
+    ['MCPUnified', { action: 'read_resource' }, undefined, 'approve', '自动放行：查看外部工具状态'],
+    ['Process', { action: 'poll' }, undefined, 'approve', '自动放行：查看后台任务'],
+    ['Process', { action: 'kill' }, undefined, 'ask', '控制后台任务需要确认'],
+    ['Process', { action: 'unexpected_action' }, undefined, 'ask', '无法识别后台任务操作，需要确认'],
+    ['Process', {}, undefined, 'ask', '无法识别后台任务操作，需要确认'],
+    ['ReadOnlyExample', {}, 'read', 'approve', '自动放行：只读权限'],
+  ] as const)('%s with %j uses human-readable reason copy', async (toolName, args, permissionLevel, decision, reason) => {
+    const result = await classifyPermission(toolName, args, { workingDirectory: '/tmp', permissionLevel });
+
+    expect(result.decision).toBe(decision);
+    expect(result.reason).toBe(reason);
+    expect(result.reason).not.toMatch(/[a-z]/i);
+    expect(result.hostReason?.modelText).toBe(reason);
+    expect(result.hostReason?.metadata?.toolName).toBe(toolName);
+  });
 });

@@ -43,7 +43,7 @@ export function recordDecision(
   sessionId?: string, origin: ToolLedgerOrigin = 'desktop', waitMs?: number,
 ): void {
   const now = Date.now();
-  const summary = String(params.command || params.file_path || params.path || params.pattern || toolName).substring(0, 80);
+  const summary = String(params.command || params.file_path || params.path || params.pattern || '').substring(0, 80);
   const decisionTrace = trace ?? buildHistoryDecisionTrace(toolName, outcome, reason, startTime);
   const durationMs = now - startTime;
   getDecisionHistory().record({
