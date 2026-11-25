@@ -201,10 +201,10 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('keeps a summary-only digest as unwrapped push text', async () => {
+  it('removes the urgency line from a summary-only push while keeping the artifact line', async () => {
     const result = await deliver(
       job('feishu:oc_group1'),
-      '<cron_summary>已生成日报。\nartifact: /tmp/report.md</cron_summary>',
+      '<cron_summary>\nurgency: can_wait\n已生成日报。\nartifact: /tmp/report.md</cron_summary>',
     ).outcome;
 
     expect(result).toEqual({ delivered: true, pushedBody: '已生成日报。\nartifact: /tmp/report.md', note: 'pushed' });
@@ -213,6 +213,12 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
       'oc_group1',
       '已生成日报。\nartifact: /tmp/report.md',
     );
+  });
+
+  it('stays quiet when a summary has only an urgency line', async () => {
+    const { outcome } = deliver(job('feishu:oc_group1'), '<cron_summary>\n  URGENCY : fyi\n</cron_summary>');
+    await expect(outcome).resolves.toEqual({ delivered: false, note: 'empty-body' });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('strips a snapshot when the only remaining text is a summary', async () => {

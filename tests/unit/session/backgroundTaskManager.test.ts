@@ -14,6 +14,7 @@ import type { BackgroundTaskUpdateEvent } from '../../../src/shared/contract/ses
 
 const sessionManagerState = vi.hoisted(() => ({
   getSession: vi.fn(),
+  getSessionTitle: () => undefined,
 }));
 
 const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));

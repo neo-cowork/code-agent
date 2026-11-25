@@ -6,6 +6,8 @@ import type { CronJobDefinition, CronJobExecution } from '@shared/contract/cron'
 import { ScheduleConfirmCard } from '../../../src/renderer/components/features/chat/ChatInput/ScheduleConfirmCard';
 import { buildScheduleConfirmRows } from '../../../src/renderer/components/features/chat/ChatInput/scheduleConfirm';
 import type { PendingScheduleDraft } from '../../../src/renderer/components/features/chat/ChatInput/useScheduleDraft';
+import { CronScheduleFields } from '../../../src/renderer/components/features/cron/CronScheduleFields';
+import { createDefaultCronJobDraft, type CronJobDraft } from '../../../src/renderer/components/features/cron/types';
 import { PendingRoutineRestate } from '../../../src/renderer/components/features/cron/PendingRoutineRestate';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -21,6 +23,7 @@ vi.mock('../../../src/renderer/components/features/cron/useChannelCatalog', () =
 }));
 
 const twoMinutes = { type: 'every', interval: 2, unit: 'minutes' } as const;
+const twoMinuteCron = { type: 'cron', expression: '*/2 * * * *' } as const;
 const hourly = { type: 'every', interval: 1, unit: 'hours' } as const;
 const daily = { type: 'cron', expression: '0 9 * * *', timezone: 'UTC' } as const;
 const irregular = { type: 'cron', expression: '0,5 9 * * *' } as const;
@@ -71,20 +74,21 @@ const settledFailureHistory = [
 ];
 
 const cases = [
-  { name: 'highlights 720 local runs and shows the first-run cost message', draft: draft(twoMinutes), history: [], value: 'About 720 runs/day · cost visible after the first run', highlight: true },
+  { name: 'highlights 720 local runs and explains usage-based billing without history', draft: draft(twoMinutes), history: [], value: 'About 720 runs/day · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
+  { name: 'highlights 720 local runs from a custom cron expression', draft: draft(twoMinuteCron), history: [], value: 'About 720 runs/day · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
   { name: 'uses the median positive local session cost', draft: draft(twoMinutes), history: paidHistory, value: 'About 720 runs/day · about $144.0000/day', highlight: true },
-  { name: 'keeps cost unknown with only partial runs', draft: draft(twoMinutes), history: partialHistory, value: 'About 720 runs/day · cost visible after the first run', highlight: true },
+  { name: 'keeps cost unknown with only partial runs', draft: draft(twoMinutes), history: partialHistory, value: 'About 720 runs/day · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
   { name: 'excludes partial runs from the cost median', draft: draft(twoMinutes), history: [...partialHistory, ...paidHistory], value: 'About 720 runs/day · about $144.0000/day', highlight: true },
   { name: 'counts failed and cancelled runs that persisted a cost over completed flat-fee history', draft: draft(twoMinutes), history: [...settledFailureHistory, ...flatFeeHistory], value: 'About 720 runs/day · about $432.0000/day', highlight: true },
   { name: 'uses failed run cost when there is no completed run', draft: draft(twoMinutes), history: [settledFailureHistory[0]], value: 'About 720 runs/day · about $360.0000/day', highlight: true },
   { name: 'keeps completed flat-fee history with partial costs', draft: draft(twoMinutes), history: [...partialHistory, ...flatFeeHistory], value: 'About 720 runs/day · not billed in USD', highlight: true },
   { name: 'shows a flat-fee history without a dollar figure', draft: draft(twoMinutes), history: flatFeeHistory, value: 'About 720 runs/day · not billed in USD', highlight: true },
-  { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost visible after the first run' },
-  { name: 'shows less than one run per day for weekly cron', draft: draft({ type: 'cron', expression: '0 9 * * 1', timezone: 'UTC' }), history: [], value: 'Less than one run/day · cost visible after the first run' },
-  { name: 'shows less than one run per day for monthly cron', draft: draft({ type: 'cron', expression: '0 9 1 * *', timezone: 'UTC' }), history: [], value: 'Less than one run/day, based on the shortest gap between runs · cost visible after the first run' },
+  { name: 'shows about one run per day for regular daily cron', draft: draft(daily), history: [], value: 'About 1 run/day · cost cannot be estimated up front. Any charges are based on actual usage' },
+  { name: 'shows less than one run per day for weekly cron', draft: draft({ type: 'cron', expression: '0 9 * * 1', timezone: 'UTC' }), history: [], value: 'Less than one run/day · cost cannot be estimated up front. Any charges are based on actual usage' },
+  { name: 'shows less than one run per day for monthly cron', draft: draft({ type: 'cron', expression: '0 9 1 * *', timezone: 'UTC' }), history: [], value: 'Less than one run/day, based on the shortest gap between runs · cost cannot be estimated up front. Any charges are based on actual usage' },
   { name: 'keeps a nonzero daily cost for every three days', draft: draft({ type: 'every', interval: 3, unit: 'days' }), history: [execution('paid', { cost: 0.3 })], value: 'Less than one run/day · about $0.1000/day' },
-  { name: 'leaves hourly jobs unhighlighted', draft: draft(hourly), history: [], value: 'About 24 runs/day · cost visible after the first run' },
-  { name: 'explains the shortest interval of an irregular schedule', draft: draft(irregular), history: [], value: 'At most about 288 runs/day, based on the shortest gap between runs · cost visible after the first run', highlight: true },
+  { name: 'leaves hourly jobs unhighlighted', draft: draft(hourly), history: [], value: 'About 24 runs/day · cost cannot be estimated up front. Any charges are based on actual usage' },
+  { name: 'explains the shortest interval of an irregular schedule', draft: draft(irregular), history: [], value: 'At most about 288 runs/day, based on the shortest gap between runs · cost cannot be estimated up front. Any charges are based on actual usage', highlight: true },
   { name: 'omits money and highlight for cloud jobs', draft: draft(twoMinutes, { runsOn: 'cloud' }), history: paidHistory, value: 'About 720 runs/day' },
   { name: 'omits money for shell actions', draft: draft(hourly, { action: shell }), history: paidHistory, value: 'About 24 runs/day' },
   { name: 'omits the row for a one-time job', draft: draft(at), history: paidHistory },
@@ -106,7 +110,7 @@ describe('buildScheduleConfirmRows schedule estimate', () => {
     const estimate = buildScheduleConfirmRows(pending, en.scheduleConfirm, 'en', undefined, history)
       .find((row) => row.key === 'estimate');
     expect(estimate?.value).toBe(value);
-    expect(estimate?.hint).toBe(highlight ? 'Shorter intervals use up your quota faster.' : undefined);
+    expect(estimate?.hint).toBe(highlight ? 'Each run calls your model and uses your model quota. Shorter intervals use it faster.' : undefined);
   });
 
   it('uses Chinese copy and averages the two middle positive costs for a role wake', () => {
@@ -140,7 +144,7 @@ describe.each([
     const content = within(row!);
     expect(await content.findByText(value)).toBeTruthy();
     expect(row!.classList.contains('bg-amber-500/10')).toBe(Boolean(highlight));
-    expect(Boolean(content.queryByText('Shorter intervals use up your quota faster.'))).toBe(Boolean(highlight));
+    expect(Boolean(content.queryByText('Each run calls your model and uses your model quota. Shorter intervals use it faster.'))).toBe(Boolean(highlight));
     if (pending.input.runsOn === 'cloud' || pending.input.action.type === 'shell') {
       expect(getRecentExecutions).not.toHaveBeenCalled();
     }
@@ -156,7 +160,46 @@ it('updates the estimate when the chat time edit is applied without refetching h
   const editor = view.container.querySelector<HTMLElement>('[data-schedule-when-editor]')!;
   fireEvent.change(within(editor).getByRole('combobox'), { target: { value: 'hourly' } });
   fireEvent.click(editor.querySelector('[data-schedule-when-apply]')!);
-  expect(await view.findByText('About 24 runs/day · cost visible after the first run')).toBeTruthy();
+  expect(await view.findByText('About 24 runs/day · cost cannot be estimated up front. Any charges are based on actual usage')).toBeTruthy();
   expect(row?.classList.contains('bg-amber-500/10')).toBe(false);
   expect(getRecentExecutions).toHaveBeenCalledTimes(1);
+});
+
+function EditableCronFields({ runsOn }: { runsOn: CronJobDraft['runsOn'] }) {
+  const [fields, setFields] = useState<CronJobDraft>({
+    ...createDefaultCronJobDraft(),
+    scheduleType: 'cron',
+    cronExpression: twoMinuteCron.expression,
+    cronTimezone: 'UTC',
+    runsOn,
+    actionType: 'agent',
+  });
+  const setField = <K extends keyof CronJobDraft,>(key: K, value: CronJobDraft[K]) => {
+    setFields((current) => ({ ...current, [key]: value }));
+  };
+  return <CronScheduleFields draft={fields} setField={setField} errors={{}} />;
+}
+
+it.each(['local', 'cloud'] as const)('updates the custom cron preview while typing on %s', (runsOn) => {
+  const view = render(<EditableCronFields runsOn={runsOn} />);
+  const expression = view.getByDisplayValue(twoMinuteCron.expression);
+  const preview = view.getByTestId('cron-custom-preview');
+  expect(within(preview).getByText('About 720 runs/day')).toBeTruthy();
+
+  fireEvent.change(expression, { target: { value: daily.expression } });
+  expect(within(preview).getByText('About 1 run/day')).toBeTruthy();
+
+  fireEvent.change(expression, { target: { value: 'invalid' } });
+  expect(within(preview).queryByText(/runs?\/day/)).toBeNull();
+});
+
+it('preserves the high-frequency highlight for shell actions without claiming model usage', () => {
+  const pending = draft(twoMinuteCron, { action: shell });
+  const rows = buildScheduleConfirmRows(pending, en.scheduleConfirm, 'en', undefined, []);
+  expect(rows.find((row) => row.key === 'estimate')).toEqual({
+    key: 'estimate',
+    label: 'Run estimate',
+    value: 'About 720 runs/day',
+    hint: 'Shorter intervals make this task run more often.',
+  });
 });

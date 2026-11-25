@@ -14,6 +14,7 @@ const CRON_MACHINE_BLOCK_SOURCE =
   '<cron_(snapshot|alert|summary)\\s*>([\\s\\S]*?)<\\/cron_\\1\\s*>|<cron_(snapshot|alert|summary)\\b[^>]*>[\\s\\S]*$';
 
 const ARTIFACT_LINE = /^\s*artifact:\s*(\S.*)?\s*$/i;
+const ARTIFACT_HEADER = /^\s*artifact:\s*/i;
 const URGENCY_LINE = /^\s*urgency\s*:/i;
 
 function pushText(segments: CronRunMessageSegment[], raw: string): void {
@@ -74,6 +75,17 @@ export function splitCronRunMessage(source: string): CronRunMessageSegment[] {
   }
   if (cursor < source.length) pushText(segments, source.slice(cursor));
   return segments;
+}
+
+/** Flatten a cron reply into user-facing prose without machine metadata. */
+export function readableCronRunText(source: string): string {
+  return splitCronRunMessage(source).map((segment) => (
+    segment.text
+      .split(/\r?\n/)
+      .filter((line) => !URGENCY_LINE.test(line) && !ARTIFACT_HEADER.test(line))
+      .join('\n')
+      .trim()
+  )).filter(Boolean).join('\n\n');
 }
 
 // buildCronAgentPrompt（src/host/cron/cronAgentPrompt.ts）在用户任务后面追加的
