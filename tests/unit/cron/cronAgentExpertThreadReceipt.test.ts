@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobAction, CronJobDefinition, Message } from '../../../src/shared/contract';
+import { parseCronRunDigest } from '../../../src/shared/cronRunDigest';
+import { parseUrgencyHeader } from '../../../src/shared/cronUrgency';
 
 const state = vi.hoisted(() => ({
   expertThreadId: null as string | null,
@@ -245,7 +247,7 @@ describe('named cron agent expert-thread receipt', () => {
     const conclusion = '结'.repeat(3_000);
     const content = await writeReceipt(conclusion, 'execution-3000');
     expect(receiptSummary(content)).toBe(conclusion);
-    expect(content).toContain('[查看这次运行的全过程（会话 cron-session）](neo://thread/cron-session)');
+    expect(content).toContain('[查看这次运行的全过程](neo://thread/cron-session)');
   });
 
   it('appendCronAgentExpertThreadReceipt cuts a 5000-char conclusion at 4000 and keeps the full-run link', async () => {
@@ -254,7 +256,34 @@ describe('named cron agent expert-thread receipt', () => {
     expect(Array.from(summary)).toHaveLength(4_001);
     expect(summary).toMatch(/结…$/);
     expect(summary).not.toContain('尾部不应保留');
-    expect(content).toContain('[查看这次运行的全过程（会话 cron-session）](neo://thread/cron-session)');
+    expect(content).toContain('[查看这次运行的全过程](neo://thread/cron-session)');
+  });
+
+  it('saves only readable prose and a labelled run link while the raw reply still parses', async () => {
+    const raw = [
+      '巡检完成。',
+      '<cron_summary>',
+      'urgency: can_wait',
+      '今天没有发现异常。',
+      'artifact: reports/daily.md',
+      '</cron_summary>',
+    ].join('\n');
+    const content = await writeReceipt(raw, 'execution-summary');
+    expect(receiptSummary(content)).toBe('巡检完成。\n\n今天没有发现异常。');
+    expect(content).toContain('[查看这次运行的全过程](neo://thread/cron-session)');
+    expect(content.replace('neo://thread/cron-session', '')).not.toContain('cron-session');
+
+    const digest = parseCronRunDigest(raw);
+    expect(digest).toEqual({
+      summary: 'urgency: can_wait\n今天没有发现异常。',
+      artifacts: ['reports/daily.md'],
+    });
+    expect(parseUrgencyHeader(digest.summary ?? '')).toMatchObject({ urgency: 'can_wait' });
+  });
+
+  it('uses the existing fallback when the summary contains only machine metadata', async () => {
+    const content = await writeReceipt('<cron_summary>\nurgency: can_wait\n</cron_summary>', 'execution-metadata');
+    expect(receiptSummary(content)).toBe('这次运行没有生成可读结论。');
   });
 
   it('does not query, create, or write an expert thread for an agent cron without roleId', async () => {
