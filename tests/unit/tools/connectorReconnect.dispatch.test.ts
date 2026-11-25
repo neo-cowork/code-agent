@@ -74,13 +74,13 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
   it.each(['resolver', 'adapter'])('%s adds the exit to a disconnected status without inventing authorization', async (path) => {
     const result = await execute(path, 'get_status');
     expect(result.success).toBe(true);
-    expect(result.output).toContain('Capability Hub > Connectors');
-    expect(result.output).not.toContain('设置 > 连接器');
-    expect(result.output).not.toContain('Settings > Connectors');
-    expect(result.output).toContain('complete user-facing answer is exactly this single everyday sentence');
-    expect(result.output).not.toMatch(/not configured|Capabilities: none/i);
-    expect(result.output).toContain('日历还没有连接，所以这次看不到你的日程，请在能力中心 > 连接器打开后再试。');
-    expect(result.output).toContain('never state that there are no events');
+    expect(result.metadata?.modelGuidance).toContain('Capability Hub > Connectors');
+    expect(result.metadata?.modelGuidance).not.toContain('设置 > 连接器');
+    expect(result.metadata?.modelGuidance).not.toContain('Settings > Connectors');
+    expect(result.metadata?.modelGuidance).toContain('complete user-facing answer is exactly this single everyday sentence');
+    expect(result.metadata?.modelGuidance).not.toMatch(/not configured|Capabilities: none/i);
+    expect(result.metadata?.modelGuidance).toContain('日历还没有连接，所以这次看不到你的日程，请在能力中心 > 连接器打开后再试。');
+    expect(result.metadata?.modelGuidance).toContain('never state that there are no events');
     expect(result.metadata?.status).toMatchObject({ connected: false, unavailable: true });
     expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', expect.objectContaining({
       connectorId: 'calendar', reason: 'status-not-connected',
@@ -97,9 +97,9 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
 
       expect(result.success).toBe(true);
       expect(result.metadata?.status).toEqual(unchecked);
-      expect(result.output).toContain('还没检查提醒事项的访问权限，请在能力中心 > 连接器点‘检查’并按提示授权。');
-      expect(result.output).toContain('Translate only that sentence for another user language (navigation: Capability Hub > Connectors, action: Check and authorize when prompted).');
-      expect(result.output).not.toMatch(/reconnect|重新连接/i);
+      expect(result.metadata?.modelGuidance).toContain('还没检查提醒事项的访问权限，请在能力中心 > 连接器点‘检查’并按提示授权。');
+      expect(result.metadata?.modelGuidance).toContain('Translate only that sentence for another user language (navigation: Capability Hub > Connectors, action: Check and authorize when prompted).');
+      expect(result.metadata?.modelGuidance).not.toMatch(/reconnect|重新连接/i);
       expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', {
         connectorId: 'reminders', toolName: 'reminders', reason: 'status-unchecked',
       });
@@ -207,7 +207,7 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
       const result = await execute(path, 'get_status', 'reminders');
 
       expect(result.success).toBe(true);
-      expect(result.output).toContain(sentence);
+      expect(result.metadata?.modelGuidance).toContain(sentence);
       expect(exec.mock.calls).toEqual([['get_status', { action: 'get_status' }]]);
       expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', {
         connectorId: 'reminders', toolName: 'reminders', reason: 'status-not-connected',
