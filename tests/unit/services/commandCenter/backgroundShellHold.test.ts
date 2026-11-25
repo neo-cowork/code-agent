@@ -11,7 +11,7 @@ import {
 } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
 import { createForegroundWake } from '../../../../src/host/services/commandCenter/foregroundWake';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/services/commandCenter/sessionTaskSlotLedger';
-import { resetBackgroundTaskLedgerForTest } from '../../../../src/host/task/backgroundTaskLedger';
+import { getBackgroundTaskLedger, resetBackgroundTaskLedgerForTest } from '../../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 import {
   getBackgroundTask,
@@ -255,8 +255,19 @@ describe('SessionCommandCenter holds settle while the child own background shell
     await waitFor(() => h.woken.length === 1);
     expect(h.woken[0].status).toBe('completed');
     expect(h.status()).toBe('completed');
-    expect(h.woken[0].resultText).toContain('退出码 3');
+    expect(h.woken[0].resultText).not.toContain('退出码');
+    expect(h.woken[0].resultText).toContain('没有成功完成');
     expect(h.woken[0].resultText).toContain('oops');
+    expect(h.woken[0].resultText).not.toContain('只供你判断原因');
+    expect(h.woken[0].resultText).not.toContain('不要写进给用户的回复');
+    // 同一条笔记写入账本 summary 和成员页 resultMarkdown，不能带写给模型的指令。
+    const ledgerTask = getBackgroundTaskLedger().getTask(h.task.id);
+    const shown = `${ledgerTask?.summary ?? ''}\n${String(ledgerTask?.metadata?.resultMarkdown ?? '')}`;
+    expect(shown).toContain('没有成功完成');
+    expect(shown).toContain('oops');
+    expect(shown).not.toContain('只供你判断原因');
+    expect(shown).not.toContain('不要写进给用户的回复');
+    expect(shown).not.toContain('退出码');
   });
 
   it('keeps status completed when the shell is killed', async () => {
