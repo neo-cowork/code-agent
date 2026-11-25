@@ -57,7 +57,7 @@ class ProposeTeamRecipeHandler implements ToolHandler<Record<string, unknown>, s
     ctx.emit({ type: 'team_recipe_draft_pending', data: { sessionId: ctx.sessionId, drafts: [draft] } });
     ctx.logger.info('propose_team_recipe drafted', { name, draftId: draft.id });
     onProgress?.({ stage: 'completing', percent: 100 });
-    return { ok: true, output: `已生成「${name}」${lead ? '专家团' : '专家小组'}草稿，确认卡已弹出。用户确认前不会入库；需要修改时请带完整新定义重新起草。`, meta: { draftId: draft.id } };
+    return { ok: true, output: `已将「${name}」${lead ? '专家团' : '专家小组'}草稿加入待确认队列，需用户确认，用户确认前不会入库；需要修改时请带完整新定义重新起草。请告诉用户草稿已准备好、确认后才会保存，如需修改或未看到确认卡可直接说明，不要断言确认卡可见。`, meta: { draftId: draft.id } };
   }
 }
 

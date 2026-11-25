@@ -165,6 +165,8 @@ export const decisionCardZh = {
       optionRunDesc: '这轮任务里同类操作不再询问，任务结束恢复询问',
       option24h: '24 小时内允许',
       option24hDesc: '24 小时内同类操作不再询问，到期自动恢复询问',
+      option24hExactCommandDesc: '24 小时内，只在输入完全相同时免确认',
+      option24hUnavailableDesc: '此次批准仅生效一次',
       optionDeny: '拒绝',
       optionDenyDesc: '不允许执行',
       computerApp: {
@@ -519,6 +521,8 @@ export const decisionCardEn: typeof decisionCardZh = {
       optionRunDesc: 'Similar operations won’t ask again until this task finishes',
       option24h: 'Allow for 24 hours',
       option24hDesc: 'Similar operations won’t ask again for the next 24 hours',
+      option24hExactCommandDesc: 'Only this exact input skips approval for the next 24 hours',
+      option24hUnavailableDesc: 'This approval applies once',
       optionDeny: 'Deny',
       optionDenyDesc: 'Do not run this operation',
       computerApp: {
