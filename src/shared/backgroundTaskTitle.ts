@@ -12,13 +12,21 @@ const FILE_ACTION_TITLE = {
 };
 
 export function formatBackgroundFileActionTitle(
-  action: 'cp' | 'mv', source: string, destination: string, language: 'zh' | 'en',
+  action: 'cp' | 'mv', source: string, destination: string, language: 'zh' | 'en', maxLength: number,
 ): string {
-  const copy = FILE_ACTION_TITLE[language];
-  return `${copy[action]} ${source} ${copy.to} ${destination}`;
+  const words = FILE_ACTION_TITLE[language];
+  const prefix = `${words[action]} `;
+  const connector = ` ${words.to} `;
+  const basenameBudget = maxLength - prefix.length - connector.length;
+  const sourceBudget = Math.max(Math.floor(basenameBudget / 2), basenameBudget - destination.length);
+  const shortSource = source.slice(0, sourceBudget);
+  const shortDestination = destination.slice(0, basenameBudget - shortSource.length);
+  return `${prefix}${shortSource}${connector}${shortDestination}`;
 }
 
 export function isForeignBackgroundTaskTitle(title: string, language: 'zh' | 'en'): boolean {
+  // File names can contain CJK even when the action and connector are in English.
+  if (/^(?:Copy|Move) [^\r\n]+ to [^\r\n]+$/.test(title)) return language === 'zh';
   const hasCjk = containsCjk(title);
   return language === 'en' ? hasCjk : !hasCjk && /[A-Za-z]{2,}\s+[A-Za-z]/.test(title);
 }

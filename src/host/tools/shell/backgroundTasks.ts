@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
 import { BASH } from '../../../shared/constants';
 import { quote } from 'shell-quote';
-import { parseShellCommand } from '../../security/commandParse';
+import { getLiteralCopyMoveOperands, parseShellCommand } from '../../security/commandParse';
 import { getBackgroundTaskUiLanguage } from '../../config/backgroundTaskLocale';
 import type { HostUiLocale } from '../../config/hostUiLocale';
 import {
@@ -372,29 +372,6 @@ function sandboxCommand(args: string[]): string {
   return quote(args.slice(index));
 }
 
-function fileActionOperands(args: string[]): string[] {
-  const operands: string[] = [];
-  let options = true;
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-    if (!options || !arg.startsWith('-') || arg === '-') {
-      operands.push(arg);
-    } else if (arg === '--') {
-      options = false;
-    } else if (arg.startsWith('--')) {
-      const option = arg.split('=', 1)[0];
-      if (option === '--target-directory') return [];
-      if ((option === '--suffix' || option === '--sparse') && !arg.includes('=')) index++;
-    } else {
-      // The parser already validated option arity. Stop at the first option that takes a value.
-      const valueOption = /[bSt]/.exec(arg);
-      if (valueOption?.[0] === 't') return [];
-      if (valueOption?.[0] === 'S' && valueOption.index === arg.length - 1) index++;
-    }
-  }
-  return operands;
-}
-
 function fileActionTitle(command: string, language: HostUiLocale, depth = 0): string {
   if (depth > 4) return '';
   const parsed = parseShellCommand(command);
@@ -404,11 +381,10 @@ function fileActionTitle(command: string, language: HostUiLocale, depth = 0): st
   const verb = path.posix.basename(action.program.replaceAll('\\', '/'));
   if (verb === 'sandbox-exec') return fileActionTitle(sandboxCommand(action.args), language, depth + 1);
   if (verb !== 'cp' && verb !== 'mv') return '';
-  const operands = fileActionOperands(action.args);
-  if (operands.length !== 2 || operands.some((operand) => /[$`*?{}\r\n]/.test(operand))) return '';
+  const operands = getLiteralCopyMoveOperands(verb, action.args);
   const [source, destination] = operands.map((operand) => path.posix.basename(operand.replaceAll('\\', '/')));
   if (!source || !destination) return '';
-  return formatBackgroundFileActionTitle(verb, source, destination, language).slice(0, NAME_MAX);
+  return formatBackgroundFileActionTitle(verb, source, destination, language, NAME_MAX);
 }
 
 function shortTarget(command: string, depth = 0): string {

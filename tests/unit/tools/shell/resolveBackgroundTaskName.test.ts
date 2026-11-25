@@ -58,7 +58,7 @@ describe('resolveBackgroundTaskName', () => {
 
   it('caps a long purpose title at 40 characters', () => {
     expect(resolveBackgroundTaskName(undefined, `cp ${'a'.repeat(41)} archive/`, 'en'))
-      .toBe(`Copy ${'a'.repeat(35)}`);
+      .toBe(`Copy ${'a'.repeat(24)} to archive`);
   });
 
 });

@@ -122,9 +122,12 @@ describe('Bash tool background branch ledger titles', () => {
     ['en', copy, undefined, 'Copy missing-report.txt to archive'],
     ['zh', 'mv missing-report.txt archive/', undefined, '移动 missing-report.txt 到 archive'],
     ['en', 'mv missing-report.txt archive/', undefined, 'Move missing-report.txt to archive'],
+    ['en', 'cp 报告.txt archive/', undefined, 'Copy 报告.txt to archive'],
+    ['en', 'mv missing-report.txt 归档/', undefined, 'Move missing-report.txt to 归档'],
     ['zh', 'echo done', undefined, '后台命令'],
     ['en', 'echo done', undefined, 'Background command'],
     ['zh', copy, 'Copy the report', '复制 missing-report.txt 到 archive'],
+    ['zh', 'cp 报告.txt archive/', 'Copy 报告.txt to archive', '复制 报告.txt 到 archive'],
     ['en', copy, '复制报告', 'Copy missing-report.txt to archive'],
     ['zh', 'echo done', 'Print the result', '后台命令'],
     ['en', 'echo done', '打印结果', 'Background command'],
@@ -159,6 +162,7 @@ describe('Bash tool background branch ledger titles', () => {
       console.info(JSON.stringify({ language, displayName, title: ledgerTitle, status: terminalStatus }));
       expect(displayName).toBe(title);
       expect(ledgerTitle).toBe(title);
+      expect(ledger.drainNotifications('background-title')[0]?.message.startsWith(`${title} `)).toBe(true);
     } finally {
       detach();
       mocks.background.mockReset();
