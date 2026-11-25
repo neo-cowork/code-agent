@@ -262,6 +262,22 @@ describe('CronFeaturedTemplates · morning-triage 保存前复述确认卡', () 
     });
     expect(mocks.createJob).toHaveBeenCalledTimes(0);
     expect(screen.queryByTestId('cron-pending-routine-restate')).toBeNull();
+
+    // 其他推荐模板（每日前瞻）仍一键直建：不弹复述卡
+    const dailyLookahead = CRON_TEMPLATES.find((t) => t.id === 'daily-lookahead')!;
+    mocks.createJob.mockImplementation(async (input) => ({
+      ...(input as object),
+      id: 'job-daily-lookahead',
+      createdAt: 3,
+      updatedAt: 3,
+    } as CronJobDefinition));
+    fireEvent.click(screen.getByTestId('cron-featured-daily-lookahead'));
+
+    await waitFor(() => {
+      expect(mocks.createJob).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId('cron-pending-routine-restate')).toBeNull();
+    expect((mocks.createJob.mock.calls[0][0] as CronJobDefinition).name).toBe(dailyLookahead.generate({}, 'zh').name);
   });
 
   it('英文 UI 下复述卡四行与弹窗标题均展示英文', async () => {
