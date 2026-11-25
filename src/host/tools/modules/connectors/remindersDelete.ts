@@ -2,6 +2,9 @@
 // RemindersDelete (P0-6.3 Batch 5 — connectors: native ToolModule rewrite)
 // ============================================================================
 
+import { stripReminderRowIds } from '../../../../shared/utils/connectorReceiptText';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type {
   ToolHandler,
   ToolModule,
@@ -13,7 +16,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersDeleteSchema as schema } from './remindersDelete.schema';
 import { captureReminderBefore } from './undoMetadata';
 
@@ -45,6 +48,8 @@ async function executeRemindersDelete(
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'change'), code: 'NOT_INITIALIZED' };
   }
 
+  const locale = getHostUiLocale();
+  const { separator, reminders: copy, appleScriptFailure } = getHostConnectorCopy(locale);
   try {
     const undoMetadata = await captureReminderBefore(connector, args);
     const result = await connector.execute('delete_reminder', args);
@@ -55,7 +60,7 @@ async function executeRemindersDelete(
       deleted: boolean;
     };
     ctx.logger.debug('reminders_delete', { id: reminder.id, list: reminder.list });
-    const output = `已删除提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}`;
+    const output = `${copy.deleted}${separator.trimEnd()}\n- #${reminder.id} [${reminder.list}] ${reminder.title}`;
 
     return {
       ok: true,
@@ -73,10 +78,10 @@ async function executeRemindersDelete(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已删除提醒：${reminder.title}`,
+          name: `${copy.deleted}${separator}${reminder.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
-          preview: output.slice(0, 500),
+          preview: stripReminderRowIds(output).slice(0, 500),
           metadata: {
             connector: 'reminders',
             action: 'delete_reminder',
@@ -95,9 +100,12 @@ async function executeRemindersDelete(
       ctx.logger,
       schema.name,
     );
+    const failureName = copy.deleteFailed;
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure) : undefined;
     return {
       ok: false,
       error: failure,
+      ...(userMessage ? { userMessage } : {}),
       meta: {
         action: 'delete_reminder',
         connector: 'reminders',
@@ -108,7 +116,8 @@ async function executeRemindersDelete(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'delete_reminder',
-          name: `删除提醒失败：${String(args.reminder_id)}`,
+          name: failureName,
+          ...(userMessage ? { preview: `${failureName}${separator}${userMessage}` } : {}),
           error: failure,
           metadata: { connector: 'reminders', id: args.reminder_id, list: args.list },
         }),
