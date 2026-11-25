@@ -45,6 +45,15 @@ describe('formatPathForDisplay', () => {
     expect(formatPathForDisplay('~/Documents/secrets/a.txt')).toBe('~/Documents/secrets/a.txt');
   });
 
+  it('Shared / Public 等共享目录不当成家目录折成 ~', () => {
+    expect(formatPathForDisplay('/Users/Shared/report.md')).toBe('Shared/report.md');
+    expect(formatPathForDisplay('/Users/Shared/Docs/report.md')).toBe('Docs/report.md');
+    expect(formatPathForDisplay('C:\\Users\\Public\\Documents\\a.txt')).toBe('Documents/a.txt');
+    expect(formatPathForDisplay('/Users/Shared')).toBe('/Users/Shared');
+    expect(formatPathForDisplay('C:\\Users\\Deleted Users\\x\\a.txt')).not.toMatch(/^~/);
+    expect(formatPathForDisplay('/Users/alice/Shared/a.txt')).toBe('~/Shared/a.txt');
+  });
+
   it('单段与空串原样', () => {
     expect(formatPathForDisplay('notes.txt')).toBe('notes.txt');
     expect(formatPathForDisplay('/etc')).toBe('/etc');

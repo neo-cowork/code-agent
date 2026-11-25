@@ -7,16 +7,20 @@
 
 /**
  * 把家目录前缀折成 `~`。认 `/Users/<name>`、`/home/<name>`、`<盘>:\Users\<name>`；
- * 恰好是家目录本身时折成 `~`。渲染端拿不到真实家目录，另一账户的家目录也会被折掉。
+ * 恰好是家目录本身时折成 `~`。Shared / Public / Default 等共享目录不折。渲染端拿不到真实家目录，另一账户的家目录也会被折掉。
  */
 export function foldHomePrefixForDisplay(path: string): string {
-  const unixHome = /^(?:\/Users|\/home)\/(?!\.{1,2}\/)[^/]+\/(.*)$/.exec(path);
-  if (unixHome) return `~/${unixHome[1]}`;
-  if (/^(?:\/Users|\/home)\/(?!\.{1,2}$)[^/]+$/.test(path)) return '~';
-  const windowsHome = /^[A-Za-z]:\\Users\\(?!\.{1,2}\\)[^\\]+\\(.*)$/.exec(path);
-  if (windowsHome) return `~\\${windowsHome[1]}`;
-  if (/^[A-Za-z]:\\Users\\(?!\.{1,2}$)[^\\]+$/.test(path)) return '~';
+  const unixHome = /^(?:\/Users|\/home)\/([^/]+)(?:\/(.*))?$/.exec(path);
+  if (unixHome && isPersonalHomeName(unixHome[1])) return unixHome[2] === undefined ? '~' : `~/${unixHome[2]}`;
+  const windowsHome = /^[A-Za-z]:\\Users\\([^\\]+)(?:\\(.*))?$/.exec(path);
+  if (windowsHome && isPersonalHomeName(windowsHome[1])) return windowsHome[2] === undefined ? '~' : `~\\${windowsHome[2]}`;
   return path;
+}
+
+// 全机共享 / 系统占位目录不是某个人的家目录，折成 ~ 会让用户误以为写的是自己的目录。
+const NON_HOME_NAMES = /^(?:shared|guest|public|default|default user|all users|deleted users)$/i;
+function isPersonalHomeName(name: string): boolean {
+  return name !== '.' && name !== '..' && !NON_HOME_NAMES.test(name);
 }
 
 function trimTrailingSeparators(path: string): string {
