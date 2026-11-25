@@ -273,8 +273,10 @@ describe('mail, reminders and Calendar read receipts', () => {
     expectEnglishDisplay(dispatched.output);
     const artifact = dispatched.meta?.artifact as ToolArtifact | undefined;
     const shown = cleanToolResultDisplayText('calendar', dispatched.output, en.rendererHumanPipe.toolDetails);
-    expect(shown).toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
+    expect(shown).toBe('Calendar is not connected right now, so calendar events cannot be read. Calendar access is only available in the desktop app, not in this runtime.');
     expect(artifact?.preview).toBe(shown);
+    expect(cleanToolResultDisplayText('calendar', String(dispatched.meta?.modelGuidance), en.rendererHumanPipe.toolDetails))
+      .toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
   });
 
   const reads = [
