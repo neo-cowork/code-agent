@@ -13,8 +13,11 @@ import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
 import type { MessageAttachment } from '@shared/contract';
 import type { ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { isImageAttachmentMissingData } from '@shared/utils/messageAttachments';
 import ipcService from '../services/ipcService';
+import { useAppStore } from './appStore';
 import { useSessionStore } from './sessionStore';
+import { languages } from '../i18n';
 import { toast } from '../hooks/useToast';
 
 /**
@@ -35,7 +38,7 @@ type SendContext = Pick<ConversationEnvelopeContext, 'localityAnchor'> & {
 type RestoreComposerDraft = {
   content: string;
   attachments?: MessageAttachment[];
-  clientMessageId: string;
+  clientMessageId?: string;
 };
 
 type SendFn = (content: string, context?: SendContext) => void | Promise<void>;
@@ -60,8 +63,8 @@ interface MessageActionState {
   /** Send a plain prompt through the registered chat sender. */
   sendPrompt: (content: string, context?: SendContext) => Promise<void>;
 
-  /** Regenerate an assistant message: re-send the preceding user message */
-  regenerateMessage: (messageId: string) => void;
+  /** Regenerate an assistant message: re-send the preceding user message. Returns true if a send was dispatched. */
+  regenerateMessage: (messageId: string) => boolean;
   /** 失败用户气泡：把原文和附件取回 composer，发出时复用同一个 clientMessageId。 */
   editAndResendMessage: (messageId: string) => void;
   /** Regenerate the most recent assistant message (keyboard shortcut entry, no hover needed). Returns true if one was found. */
@@ -96,8 +99,8 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
   },
 
   regenerateMessage: (messageId: string) => {
-    const { _send, _getMessages } = get();
-    if (!_send || !_getMessages) return;
+    const { _send, _getMessages, _restoreComposer } = get();
+    if (!_send || !_getMessages) return false;
 
     const messages = _getMessages();
     const sessionId = useSessionStore.getState().currentSessionId;
@@ -106,7 +109,22 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     );
     // Find the assistant message, then look backward for the preceding user message
     const idx = messages.findIndex((m) => m.id === messageId);
-    if (idx < 0) return;
+    if (idx < 0) return false;
+
+    const blockMissingImageResend = (
+      content: string,
+      attachments: MessageAttachment[],
+      clientMessageId?: string,
+    ): false => {
+      const intact = attachments.filter((attachment) => !isImageAttachmentMissingData(attachment));
+      _restoreComposer?.({
+        content,
+        attachments: intact,
+        ...(clientMessageId ? { clientMessageId } : {}),
+      });
+      toast.error(languages[useAppStore.getState().language].turnCard.failedImageDataLost);
+      return false;
+    };
 
     // 失败用户气泡留在时间线上；错误消息仍可挂 retryPrompt / retryClientMessageId。
     // 有锚点就用锚点——否则往回找会命中**上一轮**的提问，把已经答完的问题重发一遍。
@@ -137,40 +155,51 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
         (message) => message.id === retryClientMessageId && message.role === 'user',
       );
       if (liveUser && (liveUser.content?.trim() || liveUser.attachments?.length)) {
+        if (liveUser.attachments?.some(isImageAttachmentMissingData)) {
+          return blockMissingImageResend(liveUser.content ?? '', liveUser.attachments, retryClientMessageId);
+        }
         const retryContext = {
           ...(liveUser.attachments?.length ? { attachments: liveUser.attachments } : {}),
           clientMessageId: retryClientMessageId,
         };
         _send(liveUser.content ?? '', retryContext);
-        return;
+        return true;
       }
     }
     // 纯附件消息的 retryPrompt 是空串——有附件就照样能重试，别按文本判。
     // 没有同 id 用户气泡时才退回锚点化石（旧路径：乐观气泡曾被删掉）。
     if (anchorUsable && typeof retryPrompt === 'string' && (retryPrompt.trim() || retryAttachments?.length)) {
+      if (retryAttachments?.some(isImageAttachmentMissingData)) {
+        return blockMissingImageResend(retryPrompt, retryAttachments, retryClientMessageId);
+      }
       const retryContext = {
         ...(retryAttachments?.length ? { attachments: retryAttachments } : {}),
         ...(retryClientMessageId ? { clientMessageId: retryClientMessageId } : {}),
       };
       if (Object.keys(retryContext).length > 0) _send(retryPrompt, retryContext);
       else _send(retryPrompt);
-      return;
+      return true;
     }
 
     for (let i = idx - 1; i >= 0; i--) {
       if (messages[i].role === 'user' && !messages[i].isMeta && (messages[i].content?.trim() || messages[i].attachments?.length)) {
         const failed = messages[i].metadata?.sendFailed === true;
-        if (running && !failed) return;
+        if (running && !failed) return false;
+        const userAttachments = messages[i].attachments;
+        if (failed && userAttachments?.some(isImageAttachmentMissingData)) {
+          return blockMissingImageResend(messages[i].content ?? '', userAttachments, messages[i].id);
+        }
         const retryContext = {
-          ...(messages[i].attachments?.length ? { attachments: messages[i].attachments } : {}),
+          ...(userAttachments?.length ? { attachments: userAttachments } : {}),
           ...(failed && messages[i].id ? { clientMessageId: messages[i].id } : {}),
         };
         const prompt = messages[i].content ?? '';
         if (Object.keys(retryContext).length > 0) _send(prompt, retryContext);
         else _send(prompt);
-        return;
+        return true;
       }
     }
+    return false;
   },
 
   editAndResendMessage: (messageId) => {

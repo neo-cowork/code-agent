@@ -5,6 +5,7 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
+import { failedSendAttachmentTurnCardEn, failedSendAttachmentTurnCardZh } from './failedSendAttachment';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 export const chatTranscriptZh = {
@@ -377,6 +378,7 @@ turnCard: {
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
   ...projectTrustTurnCardZh,
+  ...failedSendAttachmentTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -872,6 +874,7 @@ turnCard: {
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
   ...projectTrustTurnCardEn,
+  ...failedSendAttachmentTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',

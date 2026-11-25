@@ -9,14 +9,16 @@ import { useAgentIPC } from '../../../src/renderer/hooks/agent/useAgentIPC';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { TurnBasedTraceView } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { clearFailedSend } from '../../../src/renderer/stores/failedSendOutbox';
+import { clearFailedSend, mergeFailedSendOutbox, recordFailedSend } from '../../../src/renderer/stores/failedSendOutbox';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 import { httpFailureMessage } from '../../../src/renderer/utils/httpFailureMessage';
-import { type Language } from '../../../src/renderer/i18n';
+import { languages, type Language } from '../../../src/renderer/i18n';
 import { sessionConflictLabels } from '../../../src/renderer/i18n/projectTrust';
+import type { Message, MessageAttachment } from '../../../src/shared/contract';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const invokeDomainMock = vi.hoisted(() => vi.fn());
@@ -191,5 +193,56 @@ describe('RUN_SESSION_CONFLICT failure note actions', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
     expect(screen.getByRole('status').textContent).toContain('旧任务还在收尾');
     expect(sendCalls()).toHaveLength(1);
+  });
+
+  it('keeps SessionConflictCard mounted, button usable, and outbox intact when resend is blocked by a data-lost image', async () => {
+    useAppStore.setState({ language: 'zh' });
+    useToastStore.setState({ toasts: [] });
+    const bigDataUrl = `data:image/png;base64,${'A'.repeat(6 * 1024 * 1024)}`;
+    const bigImg: MessageAttachment = {
+      id: 'big-conflict', type: 'image', category: 'image', name: 'screenshot.png',
+      size: 6_000_000, mimeType: 'image/png', data: bigDataUrl, thumbnail: bigDataUrl,
+    };
+    const userMsg: Message = { id: 'u-conflict-big', role: 'user', content: '看下这张截图', timestamp: 10, attachments: [bigImg] };
+    const errMsg: Message = {
+      id: 'e-conflict-big', role: 'assistant',
+      content: httpFailureMessage({ status: 409, code: 'RUN_SESSION_CONFLICT', language: 'zh' }),
+      timestamp: 11,
+      metadata: {
+        retryPrompt: userMsg.content, retryClientMessageId: 'u-conflict-big', retrySessionId: SESSION_ID,
+        retryAttachments: [bigImg], sendFailureCode: 'RUN_SESSION_CONFLICT',
+      },
+    };
+    recordFailedSend(SESSION_ID, userMsg, errMsg);
+    const rawStored = localStorage.getItem(`neo-failed-send-outbox:${SESSION_ID}`)!;
+    clearFailedSend(SESSION_ID);
+    localStorage.setItem(`neo-failed-send-outbox:${SESSION_ID}`, rawStored);
+    const restored = mergeFailedSendOutbox(SESSION_ID, [], []);
+    useSessionStore.setState({ currentSessionId: SESSION_ID, messages: restored });
+
+    const send = vi.fn();
+    const restoreComposer = vi.fn();
+    useMessageActionStore.getState().register(send, () => useSessionStore.getState().messages, restoreComposer);
+    invokeMock.mockResolvedValueOnce({ message: 'Cancelled', runId: 'r1' });
+
+    view();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(restoreComposer).toHaveBeenCalledExactlyOnceWith({
+      content: '看下这张截图',
+      attachments: [],
+      clientMessageId: 'u-conflict-big',
+    });
+    expect(useToastStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ type: 'error', message: languages.zh.turnCard.failedImageDataLost }),
+    );
+    expect(screen.getByTestId('session-conflict-actions')).toBeTruthy();
+    const retryBtn = screen.getByRole('button', { name: '重试' }) as HTMLButtonElement;
+    expect(retryBtn.disabled).toBe(false);
+    expect(document.querySelectorAll('[data-testid="session-conflict-actions"] .animate-spin')).toHaveLength(0);
+    expect(useSessionStore.getState().messages.some((m) => m.id === 'e-conflict-big')).toBe(true);
+    expect(localStorage.getItem(`neo-failed-send-outbox:${SESSION_ID}`)).not.toBeNull();
+    expect(mergeFailedSendOutbox(SESSION_ID, [], []).map((m) => m.id)).toEqual(['u-conflict-big', 'e-conflict-big']);
   });
 });
