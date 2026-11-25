@@ -653,13 +653,25 @@ function teeTargets(args: string[]): WriteTargetExtraction {
   };
 }
 
-function copyMoveTargets(program: 'cp' | 'mv', args: string[]): WriteTargetExtraction {
-  const scan = scanArgv(
+function scanCopyMoveArgs(program: 'cp' | 'mv', args: string[]): ReturnType<typeof scanArgv> {
+  return scanArgv(
     args,
     program === 'cp' ? CP_VALUE_OPTIONS : MV_VALUE_OPTIONS,
     program === 'cp' ? CP_BOOLEAN_OPTIONS : MV_BOOLEAN_OPTIONS,
     program === 'cp' ? CP_OPTIONAL_ATTACHED_OPTIONS : MV_OPTIONAL_ATTACHED_OPTIONS,
   );
+}
+
+export function getLiteralCopyMoveOperands(program: 'cp' | 'mv', args: string[]): string[] {
+  const { entries, failed } = scanCopyMoveArgs(program, args);
+  if (failed || entries.some((entry) => entry.kind === 'value'
+    && (entry.option === '-t' || entry.option === '--target-directory'))) return [];
+  const operands = entries.flatMap((entry) => entry.kind === 'operand' ? [entry.word] : []);
+  return operands.length === 2 && operands.every((operand) => !/[$`*?{}\r\n]/.test(operand)) ? operands : [];
+}
+
+function copyMoveTargets(program: 'cp' | 'mv', args: string[]): WriteTargetExtraction {
+  const scan = scanCopyMoveArgs(program, args);
   if (scan.failed) return { targets: [], failed: `${program} ${scan.failed}` };
   let directory: string | undefined;
   const operands: string[] = [];

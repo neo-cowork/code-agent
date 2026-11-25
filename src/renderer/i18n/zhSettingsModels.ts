@@ -131,6 +131,7 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         unverifiedGroup: '高级：未验证的模型',
         unverifiedHint: '这些模型没验证过工具调用。选了之后，让 Neo 干活可能中途失败或什么都不做——自担风险。',
         contextLabel: '上下文',
+        maxOutputLabel: '最大输出',
         effortSectionLabel: '思考深度',
         thinkingSectionLabel: '思考',
         thinkingExternalHint: '此引擎自行决定推理档位',

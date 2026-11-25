@@ -9,7 +9,7 @@ const logger = createLogger('RoleWakeLedger');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const writes = new Map<string, Promise<boolean>>();
 
-interface WakeLedgerRow {
+export interface WakeLedgerStoredRow {
   id: string;
   at: number;
   trigger: RoleWakeTrigger;
@@ -47,7 +47,7 @@ function parseBasisIds(output: string): string[] {
   return [...new Set(ids)];
 }
 
-async function readRows(file: string): Promise<WakeLedgerRow[]> {
+async function readRows(file: string): Promise<WakeLedgerStoredRow[]> {
   let content: string;
   try {
     content = await fs.readFile(file, 'utf8');
@@ -55,14 +55,18 @@ async function readRows(file: string): Promise<WakeLedgerRow[]> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
-  return content.split('\n').filter(Boolean).map((line) => JSON.parse(line) as WakeLedgerRow);
+  return content.split('\n').filter(Boolean).map((line) => JSON.parse(line) as WakeLedgerStoredRow);
 }
 
-function firstReportCoveringBasis(rows: WakeLedgerRow[], row: WakeLedgerRow): WakeLedgerRow | undefined {
+export async function readWakeLedgerRows(roleId: string): Promise<WakeLedgerStoredRow[]> {
+  return readRows(getRoleWakeLedgerPath(roleId));
+}
+
+function firstReportCoveringBasis(rows: WakeLedgerStoredRow[], row: WakeLedgerStoredRow): WakeLedgerStoredRow | undefined {
   const cutoff = row.at - ROLE_PROACTIVITY.WAKE_LEDGER_DEDUP_DAYS * DAY_MS;
   const covered = new Set<string>();
   const basisIds = new Set(row.basisIds);
-  let first: WakeLedgerRow | undefined;
+  let first: WakeLedgerStoredRow | undefined;
   for (const previous of rows) {
     if (previous.decision !== 'report' || previous.workspaceKey !== row.workspaceKey || previous.at < cutoff) continue;
     for (const id of previous.basisIds) {
@@ -85,7 +89,7 @@ export async function recordWakeDecision(
   const file = getRoleWakeLedgerPath(roleId);
   const fallbackDecision = input.finalOutput !== undefined && !ROLE_PROACTIVITY.DECISION_TAG_PATTERN.test(input.finalOutput);
   const reason = (input.rationale || input.summary)?.replace(/\s+/g, ' ').trim();
-  const row: WakeLedgerRow = {
+  const row: WakeLedgerStoredRow = {
     id: randomUUID(),
     at,
     trigger,
