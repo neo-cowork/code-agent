@@ -38,6 +38,7 @@ import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
 import { recordCronConnectorLost, refreshLostCoreCliConnectors, scanLostMcpConnectors } from './cronConnectorLost';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
+import { readableCronRunText } from '../../shared/cronRunMessage';
 import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
 
 const logger = createLogger('CronAgentAction');
@@ -265,11 +266,12 @@ export async function executeCronAgentAction(
       if (action.libraryProjectId) {
         try {
           const { getLibraryService } = await import('../services/library/libraryService');
-          if (finalAssistantText) {
+          const readableText = readableCronRunText(finalAssistantText);
+          if (readableText) {
             getLibraryService().archiveText({
               projectId: action.libraryProjectId,
               title: definition.name,
-              text: finalAssistantText,
+              text: readableText,
               tags: ['定稿'],
               sourceSessionId: cronSession.id,
               sourceRoleId: action.roleId,
@@ -321,7 +323,7 @@ export async function executeCronAgentAction(
 
   if (action.roleId) {
     try {
-      await appendCronAgentExpertThreadReceipt({
+      const { expertThreadSessionId } = await appendCronAgentExpertThreadReceipt({
         definition,
         roleId: action.roleId,
         cronSessionId: cronSession.id,
@@ -333,6 +335,7 @@ export async function executeCronAgentAction(
         automationType: getCronAutomationType(definition),
         workingDirectory: cronSession.workingDirectory,
       });
+      logger.info('Named-agent cron receipt saved', { executionId, cronSessionId: cronSession.id, expertThreadSessionId });
     } catch (receiptError) {
       console.warn(
         `[CronService] Failed to append named-agent cron receipt; cron result preserved `
