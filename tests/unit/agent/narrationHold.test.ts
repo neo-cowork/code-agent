@@ -39,4 +39,14 @@ describe('userFacingMessage', () => {
     const message = { id: 'm', role: 'assistant' as const, content: 'x', timestamp: 1 };
     expect(userFacingMessage(message)).toBe(message);
   });
+
+  it('blanks text parts of a suppressed message and keeps the tool_call part (emitted event copy)', () => {
+    const copy = userFacingMessage({
+      id: 'm', role: 'assistant', content: SENTENCE, timestamp: 1, metadata: { narrationSuppressed: true },
+      contentParts: [{ type: 'text', text: SENTENCE }, { type: 'tool_call', toolCallId: 'c1' }],
+    });
+    expect(copy.contentParts).toEqual([{ type: 'text', text: '' }, { type: 'tool_call', toolCallId: 'c1' }]);
+    expect(JSON.stringify({ ...copy, metadata: undefined })).not.toContain('pull your mail');
+    expect(copy.metadata?.suppressedNarration).toBe(SENTENCE);
+  });
 });

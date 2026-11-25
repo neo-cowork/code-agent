@@ -16,6 +16,9 @@ export function userFacingMessage(message: Message): Message {
   return {
     ...message,
     content: '',
+    ...(message.contentParts
+      ? { contentParts: message.contentParts.map((part) => (part.type === 'text' ? { ...part, text: '' } : part)) }
+      : {}),
     metadata: { ...message.metadata, suppressedNarration: message.content },
   };
 }

@@ -228,12 +228,16 @@ describe('ContextAssembly.addAndPersistMessage ReplyEgress probe', () => {
       const { ctx, assembly, persisted } = createRealContextAssembly('请汇总我昨晚到现在的未读邮件和日历变动');
       await assembly.addAndPersistMessage({
         id: 'msg-narr', role: 'assistant', content: SENTENCE, toolCalls, timestamp: 1_700_000_000_020,
+        contentParts: [{ type: 'text', text: SENTENCE }, { type: 'tool_call', toolCallId: 'call-1' }],
       });
+      expect(persisted[0].contentParts).toEqual([{ type: 'text', text: '' }, { type: 'tool_call', toolCallId: 'call-1' }]);
+      expect(ctx.messages[0].contentParts?.[0]).toEqual({ type: 'text', text: SENTENCE });
 
       expect(persisted).toHaveLength(1);
       expect(persisted[0].content).toBe('');
       expect(persisted[0].toolCalls).toHaveLength(1);
       expect(persisted[0].metadata).toMatchObject({ narrationSuppressed: true, suppressedNarration: SENTENCE });
+      expect(JSON.stringify({ ...persisted[0], metadata: undefined })).not.toContain('pull your mail');
       expect(ctx.messages[0].content).toBe(SENTENCE);
 
       const calls = replyEgressCalls();
