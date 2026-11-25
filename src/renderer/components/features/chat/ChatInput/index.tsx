@@ -966,13 +966,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       return;
     }
     setShowSlashPopover(false);
-    if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
+    if (isLeadingAgentMentionInput(newValue, swarmAgents, agentEntries)) {
       atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
     atMention.search(newValue, caret);
-  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents, agentEntries]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -1007,8 +1007,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setValue,
     setShowSlashPopover,
     setSlashFilter,
-    setPendingAgentSelection,
-    setActiveAgentId,
+    setPendingAgentSelection, setActiveAgentId,
+    dismissAtMention: atMention.dismiss,
     onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
@@ -1041,9 +1041,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 历史命令功能
   const { addToInputHistory, getPreviousInput, getNextInput, resetInputHistoryIndex } = useSessionUIStore();
 
-  // 键盘导航分发：@ 面板与 agent 自动补全互斥打开，先问 @ 面板再交 agent 链路
+  // 键盘分发：agent 行（swarm/专家）已显示时先于 @ 引用搜索消费按键，否则搜索计时器/加载态吞 Enter
   const handleComposerAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => (
-    atMention.handleKeyDown(e) || handleAutocompleteKeyDown(e)
+    handleAutocompleteKeyDown(e) || atMention.handleKeyDown(e)
   ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
   const questionCardPlaceholder = useQuestionCardPlaceholder(currentSessionId);

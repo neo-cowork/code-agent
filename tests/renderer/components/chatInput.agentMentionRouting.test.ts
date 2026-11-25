@@ -287,3 +287,17 @@ describe('neo topic mention candidates (ADR-035)', () => {
     expect(matches.some((m) => m.id.startsWith(NEO_TOPIC_MENTION_PREFIX))).toBe(false);
   });
 });
+
+describe('getLeadingAgentMentionAutocomplete · 已保存专家', () => {
+  const expert = {
+    id: 'weekly-reporter', name: '周报整理员', description: '', source: 'user' as const,
+    modelTier: 'balanced', readonly: false, tools: [],
+  };
+  it('汉字全名/前缀命中；swarm 同名时 swarm 在前、专家在后', () => {
+    const swarm = [{ id: 'sw1', name: '周报整理员' }];
+    for (const q of ['@周报整理员', '@周报']) {
+      const rows = getLeadingAgentMentionAutocomplete(q, swarm, undefined, undefined, [expert])?.matches ?? [];
+      expect(rows.map((r) => r.kind)).toEqual([undefined, 'expert']);
+    }
+  });
+});
