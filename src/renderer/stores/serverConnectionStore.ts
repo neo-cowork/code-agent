@@ -18,6 +18,8 @@ type ServerConnectionStatus = 'ok' | 'recovering' | 'unavailable';
 
 interface ServerConnectionState {
   status: ServerConnectionStatus;
+  eventStreamRevision: number;
+  markEventStreamConnected: () => void;
   retryState: 'idle' | 'checking' | 'failed';
   setRetryState: (retryState: ServerConnectionState['retryState']) => void;
   setStatus: (status: ServerConnectionStatus) => void;
@@ -25,6 +27,8 @@ interface ServerConnectionState {
 
 export const useServerConnectionStore = create<ServerConnectionState>()((set) => ({
   status: 'ok',
+  eventStreamRevision: 0,
+  markEventStreamConnected: () => set((state) => ({ eventStreamRevision: state.eventStreamRevision + 1 })),
   retryState: 'idle',
   setRetryState: (retryState) => set({ retryState }),
   setStatus: (status) =>

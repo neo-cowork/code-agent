@@ -438,7 +438,7 @@ export const enSettingsWork = {
           },
           daily: {
             label: 'Daily brief',
-            hint: 'Wakes at 09:00 every day to inspect artifacts and creates a brief when there is progress',
+            hint: 'Wakes at {time} every day to inspect artifacts and creates a brief when there is progress',
           },
           realtime: {
             label: 'Real-time involvement',

@@ -439,7 +439,7 @@ export const zhSettingsWork = {
           },
           daily: {
             label: '每日简报',
-            hint: '每天 09:00 醒来巡检产物，有进展时生成简报会话',
+            hint: '每天 {time} 醒来巡检产物，有进展时生成简报会话',
           },
           realtime: {
             label: '实时介入',
