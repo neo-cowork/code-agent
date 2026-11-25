@@ -17,6 +17,8 @@ const BT = '`';
 const AX_PATH = 'ax' + 'Path';
 const TOOL_CALL = 'Tool' + ' Call';
 const LOWER_TOOL_CALL = 'tool' + ' call';
+const PROMOTE = '转' + '正';
+const WORKSPACE = 'work' + 'space';
 
 type ScanResult = {
   violations: { 'pressure-word': string[]; ellipsis: string[]; jargon: string[] };
@@ -157,7 +159,7 @@ describe('copy gate（check-copy.mjs）', () => {
     return spawnSync(process.execPath, ['scripts/check-copy.mjs', cliDir], { encoding: 'utf8' });
   }
 
-  it.each([JARGON, LOWER_TOOL_CALL])('CLI：零上限黑话 %s 新增命中必须退出 1', (word) => {
+  it.each([JARGON, LOWER_TOOL_CALL, PROMOTE, WORKSPACE])('CLI：零上限黑话 %s 新增命中必须退出 1', (word) => {
     const result = runCli([word]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(word);
