@@ -273,7 +273,7 @@
     "src/host/tools/modules/skill/skill.ts": 3,
     "src/host/tools/modules/skill/skillCreate.ts": 4,
     "src/host/tools/modules/vision/visualEdit.ts": 15,
-    "src/host/tools/permissionClassifier.ts": 18,
+    "src/host/tools/permissionClassifier.ts": 12,
     "src/host/tools/toolExecutor.ts": 10,
     "src/host/tools/utils/pythonBridge.ts": 5,
     "src/host/tools/vision/browserActionSurfaceInteractions.ts": 3,

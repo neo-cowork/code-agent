@@ -50,12 +50,18 @@ function getActionSuggestion(code: ActionDiagnosticCode, locale: ModelErrorLocal
 }
 
 /** 模型服务回了 HTTP 200 但内容不完整（截断/空/网页），已自动重试一次仍失败。 */
-export const INCOMPLETE_RESPONSE_DIAGNOSTIC: ModelErrorDiagnostic = {
-  code: 'incomplete_response',
-  message: '模型服务返回的内容不完整，已自动重试一次仍然失败。',
-  suggestion: '请稍后再试一次；持续失败就在输入框右下角换一个模型。',
-  retryable: true,
-};
+export function incompleteResponseDiagnostic(locale: ModelErrorLocale = 'zh'): ModelErrorDiagnostic {
+  return {
+    code: 'incomplete_response',
+    message: locale === 'en'
+      ? 'The model service returned an incomplete response, and it still failed after one automatic retry.'
+      : '模型服务返回的内容不完整，已自动重试一次仍然失败。',
+    suggestion: locale === 'en'
+      ? 'Try again later; if it keeps failing, switch to a different model.'
+      : '请稍后再试一次；持续失败就在输入框右下角换一个模型。',
+    retryable: true,
+  };
+}
 
 function normalizeMessage(message: string): string {
   return message.trim().replace(/\s+/g, ' ');
@@ -78,7 +84,13 @@ export function classifyModelErrorMessage(
   const normalized = normalizeMessage(message);
   const lower = normalized.toLowerCase();
 
-  if (normalized.includes(INCOMPLETE_RESPONSE_DIAGNOSTIC.message)) return INCOMPLETE_RESPONSE_DIAGNOSTIC;
+  // 已包装的终态文案（含历史落库的中文句与英文句）要认回来，但按调用方 locale 重新出文案。
+  if (
+    normalized.includes(incompleteResponseDiagnostic('zh').message)
+    || normalized.includes(incompleteResponseDiagnostic('en').message)
+  ) {
+    return incompleteResponseDiagnostic(locale);
+  }
 
   // 鉴权失败：401/403 或 key/认证类文案（含中文）。不可重试，必须换 key 或换模型。
   const authFailed =
@@ -137,12 +149,20 @@ export function classifyModelErrorMessage(
   if (unsupportedTemperature) {
     return {
       code: 'unsupported_temperature',
-      message: fallbackNotConfigured
-        ? '模型参数不兼容：当前模型只支持默认温度 1；同时中转没有为当前模型配置可用降级。'
-        : '模型参数不兼容：当前模型只支持默认温度 1。',
-      suggestion: fallbackNotConfigured
-        ? '重试会使用默认温度 1；如果仍失败，请切换模型，或在中转侧补上当前模型的 fallback 映射。'
-        : '重试会使用默认温度 1；如果仍失败，请切换到支持自定义温度的模型。',
+      message: locale === 'en'
+        ? (fallbackNotConfigured
+          ? 'Model parameter not supported: this model only accepts the default temperature of 1, and the gateway has no usable fallback configured for it.'
+          : 'Model parameter not supported: this model only accepts the default temperature of 1.')
+        : (fallbackNotConfigured
+          ? '模型参数不兼容：当前模型只支持默认温度 1；同时中转没有为当前模型配置可用降级。'
+          : '模型参数不兼容：当前模型只支持默认温度 1。'),
+      suggestion: locale === 'en'
+        ? (fallbackNotConfigured
+          ? 'Retrying will use the default temperature of 1; if it still fails, switch models, or add a fallback mapping for this model on the gateway side.'
+          : 'Retrying will use the default temperature of 1; if it still fails, switch to a model that supports a custom temperature.')
+        : (fallbackNotConfigured
+          ? '重试会使用默认温度 1；如果仍失败，请切换模型，或在中转侧补上当前模型的 fallback 映射。'
+          : '重试会使用默认温度 1；如果仍失败，请切换到支持自定义温度的模型。'),
       retryable: true,
       ...(fallbackNotConfigured ? { hasFallbackConfigurationIssue: true } : {}),
     };
@@ -161,8 +181,12 @@ export function classifyModelErrorMessage(
   if (upstreamUnavailable) {
     return {
       code: 'upstream_unavailable',
-      message: '模型服务暂时不可用：上游网关没能把请求转过去（通常是服务方在抖动或限流）。',
-      suggestion: '稍等几秒重试；持续失败就在输入框右下角换一个模型。',
+      message: locale === 'en'
+        ? 'The model service is temporarily unavailable: the upstream gateway could not forward the request (usually the provider is unstable or rate-limiting).'
+        : '模型服务暂时不可用：上游网关没能把请求转过去（通常是服务方在抖动或限流）。',
+      suggestion: locale === 'en'
+        ? 'Wait a few seconds and retry; if it keeps failing, switch to a different model.'
+        : '稍等几秒重试；持续失败就在输入框右下角换一个模型。',
       retryable: true,
     };
   }
@@ -170,8 +194,12 @@ export function classifyModelErrorMessage(
   if (fallbackNotConfigured) {
     return {
       code: 'fallback_not_configured',
-      message: '模型降级未配置：中转没有为当前模型配置可用 fallback。',
-      suggestion: '请切换到已配置的模型，或在中转侧补上当前模型的 fallback 映射后重试。',
+      message: locale === 'en'
+        ? 'Model fallback not configured: the gateway has no usable fallback for this model.'
+        : '模型降级未配置：中转没有为当前模型配置可用 fallback。',
+      suggestion: locale === 'en'
+        ? 'Switch to a configured model, or add a fallback mapping for this model on the gateway side, then retry.'
+        : '请切换到已配置的模型，或在中转侧补上当前模型的 fallback 映射后重试。',
       retryable: false,
       hasFallbackConfigurationIssue: true,
     };
@@ -188,9 +216,7 @@ export function summarizeModelErrorForUser(
 ): string {
   const diagnostic = classifyModelErrorMessage(message, statusCode, locale, surface);
   if (diagnostic) {
-    const prefix = locale === 'en' && (diagnostic.code === 'auth_failed' || diagnostic.code === 'quota_exhausted')
-      ? 'Suggestion: '
-      : '建议：';
+    const prefix = locale === 'en' ? 'Suggestion: ' : '建议：';
     return `${diagnostic.message}\n${prefix}${diagnostic.suggestion}`;
   }
 

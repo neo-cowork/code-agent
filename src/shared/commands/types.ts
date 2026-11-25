@@ -21,6 +21,7 @@ export interface CommandOutput {
 export interface CommandContext {
   surface: CommandSurface;
   output: CommandOutput;
+  getLocale?: () => 'zh' | 'en';
   // Surface-specific deps injected at call site
   [key: string]: unknown;
 }
