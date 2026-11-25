@@ -180,7 +180,7 @@ export async function executeLoadSessions(
   const { get, set } = deps;
   // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
   const silent = options?.silent ?? false;
-  const { filter } = useSessionUIStore.getState();
+  const { filter, pendingDelete } = useSessionUIStore.getState();
   const requestVersion = ++listRequestVersion;
   const readiness = useSessionListLoadStore.getState();
   useSessionListLoadStore.setState({ loading: !silent || !readiness.settled || readiness.loading, error: false, errorCode: null });
@@ -191,7 +191,12 @@ export async function executeLoadSessions(
     // 静默刷新保持已加载窗口：用户已翻到 N 条就按 N 条重取同一窗口，
     // 否则每次云端同步广播都会把列表收回第一页，翻出来的历史会话瞬间消失。
     const loadedCount = silent ? windowSessionCount(get().sessions) : 0;
-    const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount);
+    // The host page can still contain pending rows and a replacement that has
+    // yet to be inserted locally. Leave room for them so the loaded tail stays visible.
+    const reservedSlots = silent && pendingDelete
+      ? pendingDelete.ids.length + Number(Boolean(pendingDelete.replacement))
+      : 0;
+    const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount + reservedSlots);
     const sessions = await invokeSession<Session[]>('list', buildSessionListQuery(filter, 0, limit));
 
     if (requestVersion !== listRequestVersion) return;

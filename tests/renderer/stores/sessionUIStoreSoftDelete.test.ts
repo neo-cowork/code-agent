@@ -130,17 +130,30 @@ describe('sessionUIStore.softDelete project landing', () => {
     expect(useSessionStore.getState().sessions.map((row) => row.id)).toEqual([otherProject.id, previous.id, oldest.id]);
   });
 
-  it('keeps a pending row hidden when creating the replacement refreshes the list', async () => {
-    useSessionStore.setState({ sessions: [otherProject, current], currentSessionId: current.id });
+  it('hides the pending row and keeps the loaded tail on a replacement refresh', async () => {
+    const older = Array.from({ length: 51 }, (_, index) => session(`older-${index}`, -index - 1, 'holidays'));
+    const before = [otherProject, current, ...older];
+    useSessionStore.setState({ sessions: before, currentSessionId: current.id });
+    const draft = session('draft', 6);
+    let finishReplacement!: (value: SessionWithMeta) => void;
+    const creation = new Promise<SessionWithMeta>((resolve) => { finishReplacement = resolve; });
+    vi.mocked(useSessionStore.getState().createSession).mockReturnValueOnce(creation);
     useSessionUIStore.getState().softDelete([current.id]);
-    const draft = useSessionStore.getState().sessions.find((row) => row.id === 'draft');
     vi.stubGlobal('window', {
-      domainAPI: { invoke: vi.fn().mockResolvedValue({ success: true, data: [draft, otherProject, current] }) },
+      domainAPI: {
+        invoke: vi.fn(async (_domain: string, _action: string, { limit }: { limit: number }) => ({
+          success: true,
+          data: [draft, ...before].slice(0, limit),
+        })),
+      },
     });
 
     await executeLoadSessions({ get: useSessionStore.getState, set: useSessionStore.setState }, { silent: true });
 
-    expect(useSessionStore.getState().sessions.map((row) => row.id)).toEqual(['draft', otherProject.id]);
+    expect(useSessionStore.getState().sessions.map((row) => row.id)).toEqual([draft.id, otherProject.id, ...older.map((row) => row.id)]);
+    useSessionStore.setState({ currentSessionId: draft.id });
+    finishReplacement(draft);
+    await useSessionUIStore.getState().pendingDelete?.replacement;
     expectLanding('draft');
   });
 
