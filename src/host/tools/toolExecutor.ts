@@ -11,6 +11,7 @@ import { getLocale } from '../platform/appPaths';
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import { permissionRequestTypeForLevel } from './permissionRequestType';
+import { buildTerminalApprovalPreview } from './modules/terminal/terminalApprovalPreview';
 import * as nodePath from 'path';
 import * as nodeOs from 'node:os';
 import * as nodeFs from 'node:fs/promises';
@@ -867,6 +868,9 @@ export class ToolExecutor {
         error: formatToolSchemaValidationError(executionToolName, blockingIssues),
         metadata: { code: 'ARG_VALIDATION_FAILED' },
       };
+    }
+    if (executionToolName === 'terminal_write' && params.input === '') {
+      return { success: false, error: 'input is required', metadata: { code: 'INVALID_ARGS' } };
     }
     // 未声明字段不硬拒：剥离后放行 + 上报（生产档），开发档额外 fail-loud。
     if (schemaIssues.length > 0) {
@@ -2439,7 +2443,8 @@ export class ToolExecutor {
       permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
-      if (confirmationPreview) {
+      // Terminal requests carry a display-only preview built from the actual input.
+      if (confirmationPreview && executionToolName !== 'terminal_write') {
         permissionRequest.details.preview = confirmationPreview;
         if (executionToolName === 'delegate_session') permissionRequest.reason = confirmationPreview.summary;
       }
@@ -2563,7 +2568,9 @@ export class ToolExecutor {
       }
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
-        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, runId: effectiveRunId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
+        if (executionToolName !== 'terminal_write' || userApproved) {
+          context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, runId: effectiveRunId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
+        }
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2764,11 +2771,14 @@ export class ToolExecutor {
         };
       }, this.executionCwd);
       // Execute the tool via protocol resolver
-      context.approvedToolCall = {
-        toolName: executionToolName,
-        args: params,
-        ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
-      };
+      // Terminal input may bypass its inner ask only after an explicit outer user approval.
+      if (executionToolName !== 'terminal_write') {
+        context.approvedToolCall = {
+          toolName: executionToolName,
+          args: params,
+          ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
+        };
+      }
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       executionLedger.begin();
       const durableCheckpoint = await prepareNativeToolCheckpoint({
@@ -3090,7 +3100,12 @@ export class ToolExecutor {
         return {
           type: requestType,
           tool: tool.name,
-          details: { ...params },
+          details: {
+            ...params,
+            ...(tool.name === 'terminal_write' && typeof params.input === 'string'
+              ? { preview: buildTerminalApprovalPreview(params.input) }
+              : {}),
+          },
           reasonCode: PermissionRequestReason.Unknown,
           boundary: {
             id: boundaryIdForRequestType(requestType),

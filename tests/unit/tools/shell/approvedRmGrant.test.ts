@@ -55,6 +55,32 @@ describe('approved rm production approval boundary', () => {
   });
 
   it.each([
+    `rm -v -- F0 F1; printf 'exit=%s\\n' "$?"`,
+    `rm -v -- F0 F1; printf 'exit=%s\\\\n' "$?"`,
+    `rm -v -- F0 F1; printf 'rm_exit=%s' "$?"`,
+  ])('mints both files with the printf exit-status suffix %#', (command) => {
+    input.params.command = command.replace('F0', `'${files[0]}'`).replace('F1', `'${files[1]}'`);
+    expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+    expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_GRANT_MINTED'));
+    expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('"conditions":[]'));
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [`rm -v -- F0 F1; printf 'exit=%s\\n' "$?" > report.txt`, 'redirect_non_dup'],
+    [`rm -v -- F0 F1; printf "$(date) exit=%s" "$?"`, 'expansion'],
+    [`rm -v -- F0 F1; printf 'exit=%s\\n' "$?" stale`, 'command_shape'],
+    [`rm -v -- F0 F1; printf 'exit=%s\\n' "$?" "${'${?}'}"`, 'command_shape'],
+    [`rm -v -- F0 F1; printf -v state 'exit=%s\\n'`, 'command_shape'],
+    [`rm -v -- F0 F1; printf '%n'`, 'command_shape'],
+    [`rm -v -- F0 F1; printf '%5n'`, 'command_shape'],
+    [`rm -v -- F0 F1; printf '%ln'`, 'command_shape'],
+  ])('refuses the unsafe printf suffix %#', (command, reason) => {
+    input.params.command = command.replace('F0', `'${files[0]}'`).replace('F1', `'${files[1]}'`);
+    refused(reason);
+  });
+
+  it.each([
     ['rm -v cache-0.tmp', 1],
     ['rm --verbose -- cache-0.tmp', 1],
     ['rm -f -v cache-0.tmp cache-1.tmp', 2],
@@ -305,6 +331,23 @@ describe('approved rm production approval boundary', () => {
       approveDelete();
       expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(true);
       expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_VERIFY_EXEMPTION'));
+    });
+
+    it('answers the literal-path for loop without a card after the printf-suffix mint', () => {
+      approveDelete(`rm -v -- '${files[0]}' '${files[1]}'; printf 'exit=%s\\n' "$?"`);
+      const probe = `for p in '${files[0]}' '${files[1]}'; do\n  if [ -e "$p" ]; then echo "STILL: $p"; ls -l "$p"; else echo "GONE: $p"; fi\ndone`;
+      expect(isApprovedRmVerifyProbe(probe, cwd, SESSION)).toBe(true);
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_VERIFY_EXEMPTION'));
+    });
+
+    it.each([
+      (f: string[]) => `for p in ${f[0]} ${f[2]}; do test -e "$p"; done`,
+      (_f: string[]) => `for p in ${join(cwd, '*.tmp')}; do test -e "$p"; done`,
+      (_f: string[]) => 'for p in "$x"; do test -e "$p"; done',
+      (f: string[]) => `for p in ${f[0]} ${f[1]}; do rm "$p"; done`,
+    ])('keeps asking %#: unapproved path, glob, expansion, non-read-only body', (build) => {
+      approveDelete(`rm -v -- '${files[0]}' '${files[1]}'; printf 'exit=%s\\n' "$?"`);
+      expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(false);
     });
 
     it.each([

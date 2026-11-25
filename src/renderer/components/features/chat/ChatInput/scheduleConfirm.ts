@@ -7,6 +7,7 @@ import type { CronJobExecution } from '@shared/contract/cron';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
 import { formatCronScheduleLabelWithZone } from '../../../../utils/formatCronJobTime';
 import { languages } from '../../../../i18n';
+import { formatScheduleRunCount } from '../../../../i18n/cronScheduleEstimate';
 import { formatRunCostUsd, redactCronDisplayText } from '../../cron/types';
 
 interface ScheduleConfirmLabels {
@@ -313,11 +314,7 @@ export function buildScheduleConfirmRows(
   ];
   if (estimate) {
     const copy = languages[lang].cronScheduleEstimate;
-    const { runsPerDay, exact } = estimate;
-    const count = runsPerDay < 1
-      ? copy.lessThanDaily
-      : exact ? copy.about(runsPerDay) : copy.atMost(runsPerDay);
-    const cadence = exact ? count : copy.shortestGap(count);
+    const cadence = formatScheduleRunCount(copy, estimate);
     const { cost } = estimate;
     const costText = {
       usd: cost.kind === 'usd' ? copy.usd(formatRunCostUsd(cost.perDayUsd)) : '',
@@ -329,7 +326,9 @@ export function buildScheduleConfirmRows(
       key: 'estimate',
       label: copy.label,
       value: costText ? `${cadence} · ${costText}` : cadence,
-      hint: estimate.highlight ? copy.frequent : undefined,
+      hint: estimate.highlight
+        ? (cost.kind === 'none' ? copy.frequentWithoutModel : copy.frequent)
+        : undefined,
     });
   }
   if (isAgentAction) rows.push({ key: 'notifyWhen', label: labels.notifyWhen, value: notifyWhen });

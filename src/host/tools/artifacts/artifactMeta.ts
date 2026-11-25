@@ -193,8 +193,9 @@ export function createFailedReceiptArtifact(input: {
   error: string;
   metadata?: Record<string, unknown>;
   detailLines?: string[];
+  preview?: string;
 }): ToolArtifact {
-  const preview = [
+  const preview = input.preview ?? [
     `${input.name}：${input.error}`,
     ...(input.detailLines ?? []),
   ].join('\n');
