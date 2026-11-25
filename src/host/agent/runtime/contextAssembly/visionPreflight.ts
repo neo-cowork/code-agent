@@ -140,7 +140,8 @@ export async function runVisionPreflightCandidates(
   const lastUserIndex = modelMessages.findLastIndex((message) => message.role === 'user');
   const traceId = ctx.runtime.stats?.traceId;
   const cached = successfulPreflights.get(ctx.runtime);
-  if (sourceMessageId && traceId && cached?.sourceMessageId === sourceMessageId && cached.traceId === traceId) {
+  if (sourceMessageId && traceId && cached?.sourceMessageId === sourceMessageId && cached.traceId === traceId
+    && contentHasImageParts(modelMessages[lastUserIndex]?.content ?? '')) {
     modelMessages = replaceImagesWithVisionSummary(modelMessages, lastUserIndex, cached.summary);
     return { modelMessages, succeeded: true, hadCandidates, attempts };
   }

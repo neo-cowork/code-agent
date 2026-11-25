@@ -371,7 +371,7 @@ describe('ordered tool faces through production inference', () => {
     expect(await finalNames(turn(prompt, { allowedToolNames }, 'reader'))).toContain('image_analyze');
   });
 
-  it.each(['success', 'failure', 'native vision', 'annotate'] as const)(
+  it.each(['success', 'failure', 'native vision', 'annotate', 'historical image'] as const)(
     'builds the image request for %s',
     async (branch) => {
       const prompt = branch === 'annotate' ? 'Annotate the total on this invoice' : 'What is the invoice total?';
@@ -380,15 +380,23 @@ describe('ordered tool faces through production inference', () => {
         path: '/tmp/invoice.png', size: 1, mimeType: 'image/png', data: 'AA==',
       }];
       const nativeVision = branch === 'native vision';
+      const historicalImage = branch === 'historical image';
+      const preflightSucceeds = branch === 'success' || historicalImage;
       const imageTurn = {
         attachments,
         model: { provider: 'xiaomi' as const, model: nativeVision ? 'mimo-v2.6-flash' : 'mimo-v2.5-pro' },
       };
       const ctx = turn(prompt, { allowedToolNames: getTextForegroundToolNamesForPrompt(prompt, undefined, imageTurn) });
       const content = buildMultimodalContent(prompt, attachments);
+      const history = historicalImage ? [{
+        role: 'user' as const,
+        content: buildMultimodalContent('Here is an earlier receipt', [{
+          ...attachments[0], id: 'earlier', name: 'earlier.png', path: '/tmp/earlier.png',
+        }]),
+      }] : [];
       vi.mocked(ctx.buildModelMessages).mockResolvedValue(Object.assign(
-        [{ role: 'user' as const, content }],
-        { modelMessageSourceIds: ['invoice-message'] },
+        [...history, { role: 'user' as const, content }],
+        { modelMessageSourceIds: historicalImage ? ['earlier-message', 'invoice-message'] : ['invoice-message'] },
       ));
       Object.assign(ctx, { generateId: () => 'vision-notice', recordContextEventsForMessage: vi.fn() });
       Object.assign(ctx.runtime, { foregroundToolFace: true, persistMessage: vi.fn() });
@@ -401,7 +409,7 @@ describe('ordered tool faces through production inference', () => {
       vi.mocked(router.getVisionPreflightCandidates).mockReturnValue([
         { ...ctx.runtime.modelConfig, model: 'vision-candidate' },
       ]);
-      if (branch === 'success') {
+      if (preflightSucceeds) {
         vi.mocked(router.inference).mockResolvedValueOnce({ type: 'text', content: 'Total is USD 124.68', finishReason: 'stop' });
       } else if (branch === 'failure') {
         vi.mocked(router.inference).mockRejectedValueOnce(new Error('vision request rejected'));
@@ -411,13 +419,13 @@ describe('ordered tool faces through production inference', () => {
 
       const requests = vi.mocked(router.inference).mock.calls;
       expect(requests.map(([, , config]) => config.model)).toEqual(
-        branch === 'success' || branch === 'failure' ? ['vision-candidate', 'test-model'] : ['test-model'],
+        preflightSucceeds || branch === 'failure' ? ['vision-candidate', 'test-model'] : ['test-model'],
       );
       const [messages, tools] = requests.at(-1)!;
-      const userContent = messages.find((message) => message.role === 'user')?.content;
+      const userContent = messages.findLast((message) => message.role === 'user')?.content;
       const serialized = JSON.stringify(userContent);
       const keepsHint = branch === 'failure' || branch === 'annotate';
-      expect(tools?.some((tool) => tool.name === 'image_analyze')).toBe(keepsHint);
+      expect(tools?.some((tool) => tool.name === 'image_analyze')).toBe(keepsHint || historicalImage);
       expect(serialized).toContain('🖼️ 用户上传了图片');
       expect(serialized).toContain('路径: /tmp/invoice.png');
       expect(serialized).toContain(prompt);
@@ -428,8 +436,11 @@ describe('ordered tool faces through production inference', () => {
         expect(serialized).not.toMatch(/image_analyze|ToolSearch/);
       }
       expect(Array.isArray(userContent) && userContent.some((part) => part.type === 'image')).toBe(nativeVision);
+      if (preflightSucceeds) expect(serialized).toContain('Total is USD 124.68');
+      if (historicalImage) {
+        expect(JSON.stringify(messages[0].content)).toContain('请用 image_analyze 读取上下文里的图片路径');
+      }
       if (branch === 'success') {
-        expect(serialized).toContain('Total is USD 124.68');
         vi.mocked(ctx.buildModelMessages).mockResolvedValue(Object.assign(
           [{ role: 'user' as const, content }, { role: 'tool' as const, content: 'Approval limit is USD 100' }],
           { modelMessageSourceIds: ['invoice-message', 'tool-result'] },
@@ -441,6 +452,16 @@ describe('ordered tool faces through production inference', () => {
         expect(JSON.stringify(nextMessages.find((message) => message.role === 'user')?.content)).toBe(serialized);
         expect(nextTools?.some((tool) => tool.name === 'image_analyze')).toBe(false);
         expect(ctx.runtime.persistMessage).toHaveBeenCalledTimes(1);
+
+        vi.mocked(ctx.buildModelMessages).mockResolvedValue(Object.assign(
+          [{ role: 'user' as const, content: content.filter((part) => part.type !== 'image') }],
+          { modelMessageSourceIds: ['invoice-message'] },
+        ));
+        await inference(ctx);
+        expect(requests.map(([, , config]) => config.model)).toEqual(
+          ['vision-candidate', 'test-model', 'test-model', 'test-model'],
+        );
+        expect(requests.at(-1)?.[1]?.some((tool) => tool.name === 'image_analyze')).toBe(true);
       }
     },
   );

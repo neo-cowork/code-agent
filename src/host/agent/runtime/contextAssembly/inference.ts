@@ -590,20 +590,20 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       });
     }
 
-    if (effectiveConfig === ctx.runtime.modelConfig) {
-      if (!mainModelInfo?.supportsVision) {
-        const hasImages = modelMessages.some((msg) => contentHasImageParts(msg.content));
-        if (hasImages) {
-          logger.warn('[AgentLoop] 主模型不支持视觉，但历史消息中包含图片，移除图片避免 API 错误');
-          modelMessages = stripImagesFromMessages(modelMessages);
-        }
-      }
+    const hasUnprocessedImages = effectiveConfig === ctx.runtime.modelConfig
+      && !mainModelInfo?.supportsVision && modelMessages.some((msg) => contentHasImageParts(msg.content));
+    if (hasUnprocessedImages) {
+      logger.warn('[AgentLoop] 主模型不支持视觉，但历史消息中包含图片，移除图片避免 API 错误');
+      modelMessages = stripImagesFromMessages(modelMessages);
     }
 
     if (!needsToolForImage && (visionPreflightSucceeded || mainModelInfo?.supportsVision)) {
       modelMessages = stripImageAnalyzeHintFromLastUserMessage(modelMessages);
     }
-    effectiveTools = visionPreflightSucceeded ? tools.filter((tool) => tool.name !== 'image_analyze') : tools;
+    // A successful summary covers the latest user message. Older images can still need the tool.
+    effectiveTools = visionPreflightSucceeded && !hasUnprocessedImages
+      ? tools.filter((tool) => tool.name !== 'image_analyze')
+      : tools;
     if (ctx.runtime.control.forceFinalResponseReason) {
       effectiveTools = [];
       logger.warn('[AgentLoop] Force-final-response active; tool list disabled', {
