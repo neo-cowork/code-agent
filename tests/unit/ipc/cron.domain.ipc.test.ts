@@ -12,6 +12,7 @@ import type { Connector } from '../../../src/host/connectors/base';
 
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, request: IPCRequest) => Promise<IPCResponse>>(),
+  getSession: vi.fn(async (_sessionId: string) => ({} as object | null)),
   logError: vi.fn(),
   logWarn: vi.fn(),
   chat: vi.fn(async (..._a: unknown[]) => ({ content: '{"name":"日报"}' as string | undefined })),
@@ -38,6 +39,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../../../src/host/platform', () => ({
   ipcHost: { handle: (ch: string, fn: (event: unknown, request: IPCRequest) => Promise<IPCResponse>) => h.handlers.set(ch, fn) },
 }));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => ({ getSession: h.getSession }) }));
 vi.mock('../../../src/host/cron/cronService', () => ({ getCronService: () => h.service }));
 vi.mock('../../../src/host/model/modelRouter', () => ({
   ModelRouter: class {
@@ -57,6 +59,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
+import { clearScheduleDraftRequest, registerScheduleDraftRequest } from '../../../src/host/cron/scheduleDraftRequests';
 import { registerCronHandlers } from '../../../src/host/ipc/cron.ipc';
 
 const call = (action: string, payload?: unknown) =>
@@ -69,6 +72,48 @@ beforeEach(() => {
   h.settings.models.default = '';
   h.settings.models.providers = {};
   registerCronHandlers();
+});
+
+describe('attended schedule drafts through the cron IPC route', () => {
+  const sessionId = 'schedule-draft-session';
+  const input = { name: 'Inventory review' };
+  function register() {
+    const { request, result } = registerScheduleDraftRequest(sessionId, 'Review inventory every two minutes', new AbortController().signal);
+    return { ref: { sessionId, requestId: request.requestId }, result };
+  }
+
+  afterEach(() => clearScheduleDraftRequest(sessionId));
+
+  it('keeps the shown draft out of the job list until explicit confirmation and creates it only once', async () => {
+    const { ref, result } = register();
+    expect(await call('getScheduleDraftRequest', { sessionId })).toMatchObject({ success: true, data: { ...ref, state: 'requested' } });
+    expect(await call('ackScheduleDraft', { ...ref, status: 'prepared', draft: input })).toEqual({ success: true, data: true });
+    expect(await call('ackScheduleDraft', { ...ref, status: 'shown' })).toEqual({ success: true, data: true });
+    expect(await result).toBe('shown');
+    expect(h.service.createJob).not.toHaveBeenCalled();
+
+    const confirmations = await Promise.all([
+      call('createJob', { ...input, scheduleDraftRequest: ref }),
+      call('createJob', { ...input, scheduleDraftRequest: ref }),
+    ]);
+    expect(confirmations.filter(({ success }) => success)).toHaveLength(1);
+    expect(h.service.createJob).toHaveBeenCalledExactlyOnceWith(input);
+    expect(await call('getScheduleDraftRequest', { sessionId })).toEqual({ success: true, data: null });
+  });
+
+  it('rejects a missing or inaccessible session and invalidates a discarded draft', async () => {
+    const { ref, result } = register();
+    h.getSession.mockResolvedValueOnce(null);
+    expect(await call('getScheduleDraftRequest', { sessionId })).toEqual({ success: true, data: null });
+    h.getSession.mockResolvedValueOnce(null);
+    expect(await call('ackScheduleDraft', { ...ref, status: 'prepared', draft: input })).toEqual({ success: true, data: false });
+    expect(await call('ackScheduleDraft', { ...ref, status: 'discarded' })).toEqual({ success: true, data: true });
+    expect(await result).toBe('not_shown');
+    expect(await call('createJob', { ...input, scheduleDraftRequest: ref })).toMatchObject({
+      success: false, error: { code: 'SCHEDULE_DRAFT_UNAVAILABLE' },
+    });
+    expect(h.service.createJob).not.toHaveBeenCalled();
+  });
 });
 
 describe('任务管理委派', () => {
