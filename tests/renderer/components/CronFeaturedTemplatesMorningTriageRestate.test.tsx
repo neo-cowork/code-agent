@@ -187,7 +187,7 @@ describe('CronFeaturedTemplates · morning-triage 保存前复述确认卡', () 
     expect(mocks.createJob).toHaveBeenCalledTimes(0);
   });
 
-  it('确认保存失败时在复述卡内展示错误信息且保留卡片', async () => {
+  it('确认保存失败时在复述卡内展示错误信息且保留卡片；返回修改后清空且不落库', async () => {
     const failureReason = '定时任务创建失败，请稍后重试';
     mocks.createJob.mockRejectedValueOnce(new Error(failureReason));
 
@@ -202,6 +202,16 @@ describe('CronFeaturedTemplates · morning-triage 保存前复述确认卡', () 
     });
     const card = screen.getByTestId('cron-pending-routine-restate');
     expect(card.textContent).toContain(failureReason);
+
+    // 失败后「返回修改」：卡片关闭、错误文案清空，仍然只有那一次失败的 createJob，不落库
+    fireEvent.click(screen.getByTestId('cron-pending-routine-back'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('cron-pending-routine-restate')).toBeNull();
+    });
+    expect(screen.queryByText(failureReason)).toBeNull();
+    expect(mocks.createJob).toHaveBeenCalledTimes(1);
+    expect(useCronStore.getState().jobs).toHaveLength(0);
+    expect((screen.getByTestId('cron-featured-morning-triage') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('云端未配置时展示通知，点「改在本机运行」直接以 runsOn: local 创建且不再弹第二张确认卡', async () => {
