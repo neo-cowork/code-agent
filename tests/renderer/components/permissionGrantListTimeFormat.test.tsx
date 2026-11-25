@@ -233,6 +233,43 @@ describe('PermissionGrantList localized fallback titles', () => {
 });
 
 
+describe('PermissionGrantList terminal grant titles', () => {
+  const terminalGrants = [
+    { id: 'terminal-write', label: 'terminal_write', zh: '向终端输入', en: 'Type into terminal' },
+    { id: 'process-write', label: 'process_write', zh: '向终端输入', en: 'Type into terminal' },
+    { id: 'process-submit', label: 'process_submit', zh: '向终端输入', en: 'Type into terminal' },
+    { id: 'process', label: 'Process', zh: '管理终端进程', en: 'Manage terminal processes' },
+    { id: 'terminal-write-case', label: 'Terminal_Write', zh: '向终端输入', en: 'Type into terminal' },
+    { id: 'terminal-write-hyphen', label: 'terminal-write', zh: '向终端输入', en: 'Type into terminal' },
+  ];
+  const rawNames = ['terminal_write', 'process_write', 'process_submit', 'Process', 'Terminal_Write', 'terminal-write'];
+
+  it.each(['zh', 'en'] as const)('%s row titles are the shared terminal copy, never the raw name or 操作/Action', async (language) => {
+    useAppStore.setState({ language });
+    invokeDomain.mockResolvedValue(terminalGrants.map((grant) => ({
+      id: grant.id,
+      kind: 'tool-timed' as const,
+      label: grant.label,
+      source: '24h',
+      grantedAt: GRANTED_AT,
+      expiresAt: GRANTED_AT + 24 * 60 * 60 * 1000,
+    })));
+    const view = render(<PermissionGrantList />);
+    const rows = await view.findAllByTestId('permission-grant-row');
+    expect(rows).toHaveLength(terminalGrants.length);
+    const rendered = view.container.textContent ?? '';
+    for (const raw of rawNames) expect(rendered).not.toContain(raw);
+    for (const [index, grant] of terminalGrants.entries()) {
+      const title = rows[index].querySelector('.text-sm')?.textContent;
+      expect(title).toBe(language === 'zh' ? grant.zh : grant.en);
+      expect(title).not.toBe('操作');
+      expect(title).not.toBe('Action');
+    }
+    expect(rows[0].textContent).toContain(language === 'zh' ? '限时放行 · 24 小时内' : 'Temporary allow · 24 hours');
+    expect(view.getAllByTestId('permission-grant-revoke')).toHaveLength(terminalGrants.length);
+  });
+});
+
 describe('PermissionGrantList connector read grants', () => {
   it.each([
     ['zh', 'run', '只读 · 本次任务 · 授权于'],
