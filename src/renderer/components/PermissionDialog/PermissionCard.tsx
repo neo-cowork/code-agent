@@ -488,7 +488,7 @@ export function PermissionCard({
     ...(!hideStandingGrants
       ? [
           { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : [connectorScope, p.optionRunDesc].filter(Boolean).join(' · '), shortcut: 's' },
-          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, sourceRequest?.details.commandGrantTarget ? p.option24hExactCommandDesc : p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -715,7 +715,7 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      showActionDescriptions={Boolean(connector)}
+      showActionDescriptions={Boolean(connector || sourceRequest?.details.commandGrantTarget)}
       primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {

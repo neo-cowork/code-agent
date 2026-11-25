@@ -18,6 +18,7 @@ export function resolvePreAskGrant(input: {
   runId?: string;
   turnOrigin?: ReadonlyArray<{ runId?: string }>;
   standingGrantTarget: string | null;
+  commandGrantTarget?: string | null;
   computerApp: ComputerTargetApp | null;
   browserSessionTarget?: string | null;
   blocked: boolean;
@@ -50,7 +51,7 @@ export function resolvePreAskGrant(input: {
   if (input.browserSessionTarget === null) return null;
   const identity = connectorToolGrantIdentity(input.toolName, input.browserSessionTarget ?? input.standingGrantTarget);
   if (!identity) return null;
-  const toolGrantTier = matchToolGrant(input.sessionId, identity.tool, identity.target);
+  const toolGrantTier = matchToolGrant(input.sessionId, identity.tool, identity.target, undefined, input.commandGrantTarget);
   if (toolGrantTier) {
     return {
       ledgerReason: `tool_grant:${toolGrantTier}`,

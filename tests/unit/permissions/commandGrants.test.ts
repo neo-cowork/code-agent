@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { listGrants, revokeGrant } from '../../../src/host/permissions/grantLedger';
 import { bindToolGrantDatabase, listToolGrants, mintTool24hGrant } from '../../../src/host/permissions/toolGrantStore';
 import { applyToolGrantsSchema } from '../../../src/host/services/core/database/schemaToolGrants';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
@@ -74,20 +75,85 @@ describe('24h command grants through ToolExecutor', () => {
   const terminal = (input: string) => executor.execute('terminal_write', { input }, { sessionId });
   const process = (args: Record<string, unknown>) => executor.execute('Process', args, { sessionId });
 
-  it('asks inside terminal_write despite a minted unscoped grant', async () => {
-    expect((await terminal('echo hello')).success).toBe(true);
-    expect(listToolGrants()).toMatchObject([{ tool: 'terminal_write', target: null }]);
-    expect((await terminal('echo hello')).success).toBe(true);
+
+  it('skips only the exact approved terminal input and asks again after revocation', async () => {
+    const input = "echo '你好 🌿: " + 'x'.repeat(5000) + "'";
+    expect((await terminal(input)).success).toBe(true);
+    expect(cards[0].details).toMatchObject({ commandGrantTarget: input, preview: { summary: input } });
+    const rows = listGrants();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ label: 'terminal_write', detail: input, source: '24h' });
+
+    expect((await terminal(input)).success).toBe(true);
+    expect(cards).toHaveLength(1);
+    response = 'allow';
+    expect((await terminal(input + ' ')).success).toBe(true);
     expect(cards).toHaveLength(2);
-    expect(cards[1].details.grantEligible).toBe(false);
-    expect(pty.terminalWrite).toHaveBeenCalledTimes(2);
+    expect(revokeGrant(rows[0].id)).toBe(true);
+    expect(listGrants()).toHaveLength(0);
+    expect((await terminal(input)).success).toBe(true);
+    expect(cards).toHaveLength(3);
+    expect(pty.terminalWrite).toHaveBeenCalledTimes(4);
   });
 
-  it('uses a minted unscoped Process grant for a subsequent kill', async () => {
-    mintTool24hGrant('Process');
-    response = 'deny';
-    await process({ action: 'kill', session_id: 'pty-one' });
-    expect(cards).toHaveLength(0);
+  it.each([
+    { action: 'write', data: 'echo hello' },
+    { action: 'submit', input: 'echo hello' },
+  ])('scopes Process $action to action, session ID and payload', async (args) => {
+    const original = { ...args, session_id: 'pty-one' };
+    expect((await process(original)).success).toBe(true);
+    expect(listToolGrants()).toMatchObject([{
+      tool: 'Process', target: `${args.action}:"pty-one":echo hello`,
+    }]);
+    expect((await process(original)).success).toBe(true);
+    expect(cards).toHaveLength(1);
+
+    response = 'allow';
+    for (const other of [
+      { action: 'kill', session_id: 'pty-one' },
+      { ...original, session_id: 'pty-two' },
+      args.action === 'write'
+        ? { action: 'submit', session_id: 'pty-one', input: 'echo hello' }
+        : { action: 'write', session_id: 'pty-one', data: 'echo hello' },
+      args.action === 'write' ? { ...original, data: 'echo bye' } : { ...original, input: 'echo bye' },
+    ]) {
+      expect((await process(other)).success).toBe(true);
+    }
+    expect(cards).toHaveLength(5);
     expect(pty.processKill).toHaveBeenCalledWith('pty-one');
+  });
+
+  it('lists legacy null-target rows for revocation but asks for both tools', async () => {
+    mintTool24hGrant('terminal_write');
+    mintTool24hGrant('Process');
+    response = 'allow';
+    expect((await terminal('echo hello')).success).toBe(true);
+    expect((await process({ action: 'kill', session_id: 'pty-one' })).success).toBe(true);
+    expect(cards).toHaveLength(2);
+    const rows = listGrants();
+    expect(rows.map((row) => row.detail)).toEqual([undefined, undefined]);
+    for (const row of rows) expect(revokeGrant(row.id)).toBe(true);
+    expect(listGrants()).toHaveLength(0);
+  });
+
+  it('treats a redacted Process payload as allow once, even with a spoofed target', async () => {
+    const args = {
+      action: 'submit', session_id: 'pty-one', input: 'echo password=fixture-value',
+      commandGrantTarget: 'spoof',
+    };
+    const stderr = vi.spyOn(console, 'error');
+    try {
+      expect((await process(args)).success).toBe(true);
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining('WARN [HumanGrantPolicy] 24h command grant treated as allow once'),
+        expect.objectContaining({ reason: 'command_redaction_or_invalid_text' }),
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+    expect(cards[0].details.commandGrantTarget).toBeNull();
+    expect(listToolGrants()).toHaveLength(0);
+    expect((await process(args)).success).toBe(true);
+    expect(cards).toHaveLength(2);
   });
 });

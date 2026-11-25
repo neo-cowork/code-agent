@@ -8,6 +8,7 @@ import type { PermissionRequest, PermissionResponse } from '../../shared/contrac
 import type { ToolApprovalPayload } from '../../shared/contract/pendingApproval';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
 import { cuaToolNeedsAppGrant } from '../permissions/cuaAppTarget';
+import { commandGrantTarget } from '../permissions/commandGrantTarget';
 import { recordHumanGrant } from '../permissions/humanGrantPolicy';
 import { createLogger } from '../services/infra/logger';
 
@@ -45,6 +46,7 @@ export function applyGrantAfterRestartClaim(input: {
     details: {
       action: typeof ledgerArgs.action === 'string' ? ledgerArgs.action : undefined,
       standingGrantTarget: payload.standingGrantTarget ?? undefined,
+      commandGrantTarget: commandGrantTarget(payload.tool, ledgerArgs),
       sensitiveStep: payload.sensitiveStep,
       browserSessionGrant: payload.browserSessionGrant,
       targetApp: targetApp ?? undefined,
