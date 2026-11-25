@@ -28,6 +28,8 @@ vi.mock('../../../../../src/host/services/infra/logger', () => ({
 }));
 
 import { readModule } from '../../../../../src/host/tools/modules/file/read';
+import { imageAnalyzeSchema } from '../../../../../src/host/tools/modules/network/imageAnalyze.schema';
+import type { ToolDefinition } from '../../../../../src/shared/contract';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -413,11 +415,16 @@ describe('readModule (native)', () => {
       const body = Buffer.alloc(320 * 1024);
       for (let i = 0; i < body.length; i++) body[i] = (i * 131 + 7) & 0xff;
       await fs.writeFile(file, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), body]));
+      const requestTools: ToolDefinition[] = [
+        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
+        { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
+      ];
+      const requestToolNames = requestTools.map((tool) => tool.name);
       const handler = await readModule.createHandler();
       for (const name of ['screenshot.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp']) {
         const target = path.join(tmpDir, name);
         if (name !== 'screenshot.png') await fs.copyFile(file, target);
-        const result = await handler.execute({ file_path: target }, makeCtx(), allowAll);
+        const result = await handler.execute({ file_path: target }, makeCtx({ requestToolNames }), allowAll);
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
@@ -425,6 +432,42 @@ describe('readModule (native)', () => {
           expect(result.error).toContain('image_analyze');
           expect(result.error).toContain('get_content');
           expect(result.error).toContain(target);
+        }
+      }
+    });
+
+    it('omits removed tool names from image refusal when image_analyze is filtered out of requestToolNames or unknown', async () => {
+      const pngBytes = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.alloc(256, 0xfe),
+      ]);
+      const fullTools: ToolDefinition[] = [
+        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
+        { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
+      ];
+      const postPreflightTools = fullTools.filter((tool) => tool.name !== 'image_analyze');
+      const handler = await readModule.createHandler();
+
+      for (const name of ['dialog.png', 'dialog-noext', 'dialog-renamed.txt']) {
+        const target = path.join(tmpDir, name);
+        await fs.writeFile(target, pngBytes);
+        for (const ctxOverrides of [
+          // Post-preflight request list lacks image_analyze even though foreground allowedToolNames still includes it.
+          { allowedToolNames: fullTools.map((t) => t.name), requestToolNames: postPreflightTools.map((t) => t.name) },
+          // Unknown request tool list (omitted).
+          {},
+        ]) {
+          const result = await handler.execute({ file_path: target }, makeCtx(ctxOverrides), allowAll);
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+            expect(result.error).toContain('This is an image, not text.');
+            expect(result.error).toContain('already in the conversation');
+            expect(result.error).toContain(target);
+            for (const forbidden of ['image_analyze', 'ToolSearch', 'select:image_analyze', 'browser_action', 'get_content', 'get_dom_snapshot']) {
+              expect(result.error).not.toContain(forbidden);
+            }
+          }
         }
       }
     });
