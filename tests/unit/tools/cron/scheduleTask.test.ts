@@ -51,10 +51,11 @@ describe('registered schedule_task module', () => {
     const { requestId } = await run.emitted;
     const ref = { sessionId, requestId };
     expect(run.emit).toHaveBeenCalledExactlyOnceWith({ type: 'schedule_draft_requested', data: { ...ref, description } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(settled).not.toHaveBeenCalled();
     expect(acknowledgeScheduleDraft({ ...ref, status: 'shown' })).toBe(false);
     expect(acknowledgeScheduleDraft({ ...ref, status: 'prepared', draft: { name: 'Sales summary' } })).toBe(true);
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(settled).not.toHaveBeenCalled();
     expect(acknowledgeScheduleDraft({ ...ref, status: 'shown' })).toBe(true);
     expect(await run.result).toMatchObject({ ok: true, output: expect.stringContaining('was displayed above the conversation input') });
