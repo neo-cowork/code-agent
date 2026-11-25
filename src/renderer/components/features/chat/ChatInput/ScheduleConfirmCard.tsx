@@ -46,6 +46,14 @@ interface WhenEditState {
 }
 
 /** epoch/ISO → datetime-local 输入值（yyyy-MM-ddTHH:mm，本地时区）。解析不了给空串。 */
+// 键序无关的序列化：编辑器编出来的 schedule 与模型草案键序可能不同，不能因此判成「改了时间」。
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+      : v);
+}
+
 function toLocalDateTimeValue(datetime: string | number): string {
   const date = typeof datetime === 'number' ? new Date(datetime) : new Date(datetime);
   if (Number.isNaN(date.getTime())) return '';
@@ -306,9 +314,14 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
 
   const applyWhenEdit = () => {
     if (!compiledWhen || !onDraftChange) return;
+    // 时间真的变了：模型写的 what 句可能还带着旧间隔，清掉让 What 行走兜底链；notifyWhen 是通知门规则，保留。
+    const scheduleChanged = stableJson(compiledWhen) !== stableJson(draft.input.schedule);
     onDraftChange({
       ...draft,
       input: { ...draft.input, schedule: compiledWhen, scheduleType: compiledWhen.type },
+      ...(scheduleChanged && draft.restatement
+        ? { restatement: { what: '', notifyWhen: draft.restatement.notifyWhen } }
+        : {}),
     });
     setEditingWhen(false);
   };
