@@ -20,6 +20,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { getConfigService } from '../../../../src/host/services/core/configService';
 import { SHELL_KILL } from '../../../../src/shared/constants/tools';
 
 // 这台机器**真的能起 PTY 吗**：判据锚能力本身（真 spawn 一次 + pid > 0），
@@ -349,6 +350,12 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
     { name: 'failed(timeout)', tail: 'exec sleep 300', maxRuntime: 400, type: 'task_failed' },
     { name: 'cancelled', tail: 'exec sleep 300', maxRuntime: undefined, type: 'task_cancelled' },
   ])('PTY 任务名是人话 displayName，$name 通知正文不含路径/沙箱包装', async ({ tail, maxRuntime, type }) => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    using _getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language: 'en' },
+    });
     const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
     const ledger = new BackgroundTaskLedger();
     const detach = installBackgroundTaskEventAdapters(ledger);
@@ -371,8 +378,7 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       expect(notifications.map((n) => n.type)).toEqual([type]);
       expect(ledger.getTask(id)?.title).toBe('Start local file server');
       const message = notifications[0]!.message;
-      expect(message).toMatch(/^后台命令 /);
-      expect(message).not.toContain('Start local file server');
+      expect(message).toMatch(/^Start local file server /);
       expect(message).not.toMatch(/sandbox-exec|\/var\/folders|\/bin\/sh -c|\.log|neo-npm-/);
       expect(notifications[0]!.payload).toMatchObject({ outputFile: created.outputFile });
     } finally {

@@ -1,6 +1,7 @@
 import type { ToolResult } from '../../protocol/tools';
 import { findConnectorIdForToolName } from '../../../shared/contract/workbenchTools';
-import { CONNECTOR_EXIT_PREFIX, getConnectorReconnectCopy } from '../../../shared/i18n/connectorReconnect';
+import { CONNECTOR_EXIT_PREFIX, getConnectorReconnectCopy, getSpecificConnectorStatusCopy } from '../../../shared/i18n/connectorReconnect';
+import type { NativeConnectorDetailCode } from '../../../shared/ipc/types';
 import { getHostUiLocale } from '../../config/hostUiLocale';
 import { createLogger } from '../../services/infra/logger';
 
@@ -55,7 +56,12 @@ function notConnectedExit(connectorId: string, copy: ReconnectCopy): ConnectorEx
 export function withConnectorReconnectGuidance<T>(toolName: string, result: ToolResult<T>): ToolResult<T> {
   const connectorId = findConnectorIdForToolName(toolName);
   if (!connectorId) return result;
-  const status = result.meta?.status as { connected?: boolean; unavailable?: boolean; readiness?: string } | undefined;
+  const status = result.meta?.status as { connected?: boolean; unavailable?: boolean; readiness?: string; detailCode?: NativeConnectorDetailCode } | undefined;
+  const existing = result.meta?.modelGuidance;
+  // The status formatter already supplies the appropriate output, preview and model guidance.
+  if (result.ok && status?.connected === false && typeof existing === 'string' && getSpecificConnectorStatusCopy(status.detailCode)) {
+    return result;
+  }
   const remindersRead = toolName === 'reminders';
   const reason = !result.ok && result.code === 'NOT_INITIALIZED' ? 'not-enabled-or-registered'
     : remindersRead && !result.ok && result.code === 'not_authorized' && result.meta?.accessProbeDenied === true ? 'access-probe-denied'
@@ -69,12 +75,14 @@ export function withConnectorReconnectGuidance<T>(toolName: string, result: Tool
   const exit = reason === 'status-unchecked' || reason === 'access-probe-denied' ? remindersAccessExit(reason, copy)
     : notConnected ? notConnectedExit(connectorId, copy) : reconnectExit(copy.reconnect);
   if (result.ok) {
-    if (typeof result.output !== 'string' || hasEntry(result.output)) return result;
+    // 输出只留事实；给模型的指引放 meta.modelGuidance（经 serializeToolResultsForModel 仍进模型 JSON）。
+    if (typeof result.output !== 'string' || (typeof existing === 'string' && hasEntry(existing))) return result;
+    // exit.error 自称「完整答复」：模型侧用它代替事实句（与旧行为一致），界面侧 output 仍只有事实。
     const artifact = result.meta?.artifact;
-    const meta = artifact && typeof artifact === 'object' && 'preview' in artifact
-      ? { ...result.meta, artifact: { ...artifact, preview: exit.userMessage } }
-      : result.meta;
-    return { ...result, output: exit.error as T, ...(meta ? { meta } : {}) };
+    const updatedArtifact = artifact && typeof artifact === 'object' && 'preview' in artifact
+      ? { ...artifact, preview: exit.userMessage, contentLength: exit.userMessage.length }
+      : artifact;
+    return { ...result, output: exit.userMessage as T, meta: { ...result.meta, ...(updatedArtifact ? { artifact: updatedArtifact } : {}), modelGuidance: exit.error, modelGuidanceReplacesOutput: true } };
   }
   return hasEntry(result.error) ? result : { ...result, ...exit };
 }
