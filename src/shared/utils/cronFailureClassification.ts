@@ -85,22 +85,34 @@ function projectTrustMarker(error: unknown): string | undefined {
   return undefined;
 }
 
-function parseProjectTrustFailure(text: string): CronFailureClassification | undefined {
-  if (text.startsWith(`${PROJECT_TRUST_MARKER_PREFIX}:`)) {
-    const rest = text.slice(PROJECT_TRUST_MARKER_PREFIX.length + 1);
-    const separator = rest.indexOf(':');
-    const kind = separator === -1 ? rest : rest.slice(0, separator);
-    if (isProjectTrustKind(kind)) {
-      const folderName = separator === -1 ? undefined : safeFolderSegment(rest.slice(separator + 1));
-      return { kind: 'project_trust', trustKind: kind, ...(folderName ? { folderName } : {}) };
-    }
+// 标记不一定在开头：事件决策台账把 execution.error 原样拼进「run <status>: <原因>」
+// （cronEventDecisions），所以按词边界认标记本身，文件夹名取到文本末尾，与落库格式一致。
+const PROJECT_TRUST_MARKER_TEXT = /\bPROJECT_SOURCE_TRUST:(source_missing|identity_changed|not_trusted)(?::([\s\S]*))?/;
+
+interface ProjectTrustFailureMatch {
+  classification: CronFailureClassification;
+  /** 命中的那一段原文（标记或存量英文句）：显示方据此把它整段换成人话。 */
+  text: string;
+}
+
+/** 文本里的项目文件夹信任失败：稳定标记或存量英文句。没有返回 undefined。 */
+export function matchProjectTrustFailure(text: string): ProjectTrustFailureMatch | undefined {
+  const marker = text.match(PROJECT_TRUST_MARKER_TEXT);
+  const markerKind = marker?.[1];
+  if (marker && isProjectTrustKind(markerKind)) {
+    const folderName = safeFolderSegment(marker[2]);
+    return {
+      classification: { kind: 'project_trust', trustKind: markerKind, ...(folderName ? { folderName } : {}) },
+      text: marker[0],
+    };
   }
   const legacy = text.match(LEGACY_PROJECT_TRUST_TEXT);
-  if (legacy) {
-    const folderName = lastPathSegment(legacy[2]);
-    return { kind: 'project_trust', trustKind: LEGACY_PROJECT_TRUST_KIND[legacy[1]], ...(folderName ? { folderName } : {}) };
-  }
-  return undefined;
+  if (!legacy) return undefined;
+  const folderName = lastPathSegment(legacy[2]);
+  return {
+    classification: { kind: 'project_trust', trustKind: LEGACY_PROJECT_TRUST_KIND[legacy[1]], ...(folderName ? { folderName } : {}) },
+    text: legacy[0],
+  };
 }
 
 const CRON_TIME_LIMIT_TEXT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -165,8 +177,8 @@ function parseResetAt(text: string): string | undefined {
 export function classifyCronFailure(error?: string): CronFailureClassification {
   const text = error?.trim() ?? '';
   if (!text) return { kind: 'other' };
-  const projectTrust = parseProjectTrustFailure(text);
-  if (projectTrust) return projectTrust;
+  const projectTrust = matchProjectTrustFailure(text);
+  if (projectTrust) return projectTrust.classification;
   if (parseCronLoginWallStop(text)) return { kind: 'login_wall' };
   // 云端调度器不可用的固定句先于额度/鉴权/网络：executeJob 落库时会把 cause 报文
   // （fetch failed / 401 等）追加在句子后面，先认固定句才不会被底因冲掉。

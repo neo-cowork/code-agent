@@ -6,7 +6,9 @@ import {
   CRON_FAILURE_CODE,
   type CronFailureClassification,
   type CronFailurePresentationKind,
+  matchProjectTrustFailure,
 } from '@shared/utils/cronFailureClassification';
+import { localizeDecisionText } from '@shared/cronEventDecisionText';
 import { parseScheduledJobName } from '@shared/i18n/cronNotificationTitle';
 import type { NotificationShowEvent } from '@shared/ipc';
 import { cronTrustFailureSentence } from '../../../i18n/cronTrustFailure';
@@ -80,6 +82,21 @@ export function cronFailureSentence(
   if (kind === 'cloud_unavailable') return copy.failureCloudUnavailable;
   if (kind === 'runtime_starting') return copy.failureRuntimeStarting;
   return copy.failureOther;
+}
+
+/**
+ * 事件决策台账的失败原因（host 存「run <status>: <execution.error>」）。项目文件夹信任失败
+ * 的原因——稳定标记，或存量英文句 + 本机绝对路径——换成与运行记录同一句人话（文件夹名 + 下一步）；
+ * 其余原因照旧走决策文案表。
+ */
+export function cronDecisionFailureReason(stored: string, language: 'zh' | 'en'): string {
+  const trust = matchProjectTrustFailure(stored);
+  if (!trust) return localizeDecisionText(stored, language);
+  const { trustKind, folderName } = trust.classification;
+  return localizeDecisionText(
+    stored.replace(trust.text, () => cronTrustFailureSentence(language, trustKind, folderName)),
+    language,
+  );
 }
 
 function jobNameFromHostTitle(title: string): string | undefined {
