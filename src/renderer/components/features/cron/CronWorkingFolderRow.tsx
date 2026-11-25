@@ -24,15 +24,17 @@ export function cronFolderDisplayName(folder: string): string {
 }
 
 /**
- * 仅用于 web 输入框未聚焦时的展示：把家目录前缀折成 `~`。
- * 认 `/Users/<name>/`、`/home/<name>/`、`<盘>:\Users\<name>\`。
- * 不改 metadata；另一账户的家目录也会被折掉（账号名仍然不露出）。
+ * 展示用：把家目录前缀折成 `~`（web 输入框未聚焦时的值，以及状态行悬停）。
+ * 认 `/Users/<name>`、`/home/<name>`、`<盘>:\Users\<name>`；后面还有路径时保留。
+ * 恰好是家目录本身时折成 `~`。不改 metadata；另一账户的家目录也会被折掉。
  */
-function foldHomePrefixForDisplay(path: string): string {
+export function foldHomePrefixForDisplay(path: string): string {
   const unixHome = /^(?:\/Users|\/home)\/[^/]+\/(.*)$/.exec(path);
   if (unixHome) return `~/${unixHome[1]}`;
+  if (/^(?:\/Users|\/home)\/[^/]+$/.test(path)) return '~';
   const windowsHome = /^[A-Za-z]:\\Users\\[^\\]+\\(.*)$/.exec(path);
   if (windowsHome) return `~\\${windowsHome[1]}`;
+  if (/^[A-Za-z]:\\Users\\[^\\]+$/.test(path)) return '~';
   return path;
 }
 

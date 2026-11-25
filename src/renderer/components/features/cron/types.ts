@@ -1,4 +1,4 @@
-import { CRON_WORKING_DIRECTORY_METADATA_KEY, cronWorkingDirectoryFromMetadata } from '@shared/cronWriteScope';
+import { CRON_WORKING_DIRECTORY_METADATA_KEY, cronSourceSessionIdFromDefinition, cronWorkingDirectoryFromMetadata } from '@shared/cronWriteScope';
 import { normalizePersonalSkillIds } from '@shared/cronPersonalSkills';
 import type {
   AgentAction,
@@ -311,11 +311,19 @@ function metadataForRunsOn(
   return rest;
 }
 
-/** 复制任务时只带走工作文件夹，其余 metadata 不继承。 */
+/**
+ * 复制任务时只带走工作文件夹，其余 metadata 不继承。文件夹取原任务实际用的那个：
+ * metadata.workingDirectory（绝对路径）优先，否则来源会话的工作目录（同样要求绝对路径）。
+ * 写进副本自己的 metadata，副本不再依赖来源会话是否还在。
+ */
 export function copiedWorkingDirectoryMetadata(
-  metadata: Record<string, unknown> | undefined,
+  source: Pick<CronJobDefinition, 'metadata' | 'action'>,
+  sessions: ReadonlyArray<{ id: string; workingDirectory?: string | null }>,
 ): Record<string, unknown> | undefined {
-  const folder = cronWorkingDirectoryFromMetadata(metadata);
+  const sourceSessionId = cronSourceSessionIdFromDefinition(source);
+  const sessionFolder = sourceSessionId ? sessions.find((session) => session.id === sourceSessionId)?.workingDirectory : undefined;
+  const folder = cronWorkingDirectoryFromMetadata(source.metadata)
+    ?? cronWorkingDirectoryFromMetadata({ [CRON_WORKING_DIRECTORY_METADATA_KEY]: sessionFolder });
   return folder ? { [CRON_WORKING_DIRECTORY_METADATA_KEY]: folder } : undefined;
 }
 
