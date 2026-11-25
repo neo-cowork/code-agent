@@ -66,6 +66,35 @@ describe('PermissionCard grant tiers', () => {
   });
 
   it.each([
+    ['zh', '24 小时内，只在输入完全相同时免确认', '对象：'],
+    ['en', 'Only this exact input skips approval for the next 24 hours', 'Target: '],
+  ] as const)('shows the exact terminal command scope on the %s card and grant row', async (language, scope, targetLabel) => {
+    const command = "echo '$& : 你好 🌿'";
+    state.language = language;
+    state.request = { ...request, tool: 'terminal_write', type: 'command', details: {
+      commandGrantTarget: command, preview: { type: 'command', summary: command },
+    } };
+    invokeDomain.mockResolvedValue([{
+      id: 'terminal-grant', kind: 'tool-timed', label: 'terminal_write', source: '24h',
+      detail: command, grantedAt: Date.now(), expiresAt: Date.now() + 86_400_000,
+    }]);
+    render(<><PermissionCard /><PermissionGrantList /></>);
+    expect(screen.getByText(scope)).toBeTruthy();
+    const row = await screen.findByTestId('permission-grant-row');
+    expect(row.textContent).toContain(targetLabel + command);
+  });
+
+  it.each([
+    ['zh', '此次批准仅生效一次'],
+    ['en', 'This approval applies once'],
+  ] as const)('explains the one-time response for a redacted scope in %s', (language, scope) => {
+    state.language = language;
+    state.request = { ...request, tool: 'terminal_write', type: 'command', details: { commandGrantTarget: null } };
+    render(<PermissionCard />);
+    expect(screen.getByText(scope)).toBeTruthy();
+  });
+
+  it.each([
     ['zh', 'run', '本次任务内允许', '本次任务', '限时放行'],
     ['zh', '24h', '24 小时内允许', '24 小时内', '限时放行'],
     ['en', 'run', 'Allow for this task', 'This task', 'Temporary allow'],

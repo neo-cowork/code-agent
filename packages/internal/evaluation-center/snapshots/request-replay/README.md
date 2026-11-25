@@ -60,6 +60,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 - 2026-11-24 / N-INVEST-IMAGE-VISION-PATHS-AND-ZHIPU-ENDPOINT-FU1: `npm run acceptance:snapshot-replay:record` re-recorded and self-verified 7 sessions / 16 turns. The committed corpus is byte-identical because its cases have no image turns. The production inference test and web-run request manifests cover the request changes after vision preflight and with a vision-capable main model.
+- 2026-11-25 / N-FIX-READ-IMAGE-HINT-STALE-IMAGE-ANALYZE（分支 mq/fix-read-image-hint-stale-image-analyze，未开 PR）/ 敏感变更：src/host/agent/runtime/contextAssembly/requestManifest.ts（仅把本次请求的工具名记到 TurnState，供 Read/Blob 读图拒绝文案按工具表选句；请求字节不变）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮自验通过，快照目录零差异。
 
 （行为不可见改动在此追加：日期 / PR / 说明）
 - 2026-11-24 / N-FIX-ROLE-CREATE-DAILY-9AM-DEFAULT-SILENT-REDESIGN / 敏感变更：src/host/tools/modules/roleAuthoring/proposeRole.schema.ts（propose_role 新增可选字段 dailyBriefTime）。propose_role 仅在「建角色」流程的严格工具集内暴露，录制语料 7 会话 16 轮均不含该流程；`npm run acceptance:snapshot-replay:record` 重录并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。

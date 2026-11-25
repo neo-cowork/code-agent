@@ -99,6 +99,13 @@ describe('AcpClientHostBridge — 读文件闸', () => {
       expect(err).toBeInstanceOf(Error);
       expect((err as Error).message.length).toBeLessThan(1024);
       expect((err as Error).message).toContain(target);
+      if (data === png) {
+        expect((err as Error).message).toContain('This is an image, not text.');
+        expect((err as Error).message).toContain('already in the conversation');
+        for (const forbidden of ['image_analyze', 'ToolSearch', 'select:image_analyze', 'browser_action', 'get_content', 'get_dom_snapshot']) {
+          expect((err as Error).message).not.toContain(forbidden);
+        }
+      }
     }
   });
 
