@@ -503,11 +503,10 @@ export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): str
   // 被自动收口、从未执行的步骤：用「请求…」词表加「未执行 ·」前缀，不走任何 failed 词表。
   const notRun = args[4] === 'failed' && args[6]?.notRun === true;
   const skippedBash = args[6]?.skipped === true && classifyToolName(args[0]) === 'bash';
-  const skippedDescription = skippedBash ? usableBashDescription(args[0], args[1], t) : undefined;
   const step = args[6]?.handedOff === true
     ? t.toolStepHumanize.handedOffStep
     : skippedBash
-    ? (skippedDescription ? `${t.toolStepHumanize.notRunPrefix} · ${skippedDescription}` : t.toolStepHumanize.skippedCommands.one)
+    ? t.toolStepHumanize.skippedCommands.one
     : notRun
     ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
     : buildToolStep(...args);
@@ -523,6 +522,8 @@ function buildToolStep(
   stepLabel?: ToolStepLabelKey,
   renderContext: { notRun?: boolean; skipped?: boolean; handedOff?: boolean; helperOutcomes?: HelperOutcome[]; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
+  // Both an observed reply and a sent reply can complete this step.
+  if (name === 'reply_to_event') return t.toolStepHumanize.eventReply[status];
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
   // 「按字符类排查」的搜索（控制字符、零宽空格）时，换成一张 pattern → 文案的小表。

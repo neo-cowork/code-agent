@@ -120,13 +120,14 @@ import { classifyToolReplaySafety } from './toolReplaySafety';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
+import { eventReplyPermissionRequest } from './eventReplySession';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine, isUserDenyRule } from '../permissions/policyEngine';
 import { resolveUserRuleOutcomeForTool, handbackDoneModelText } from '../permissions/userRuleOutcome';
 import { builtInRulesDeny } from './nlPreapproveBuiltInDeny';
-import { tryReadOnlyProbe } from './readOnlyProbeHook';
 import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
+import { noteReadOnlyProbeSkipped, tryReadOnlyProbeBehindGates } from './readOnlyProbeGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -1822,6 +1823,26 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
     }
 
+    // 只读探测闸门（2b）：全部为假才跑 tryReadOnlyProbe；被挡时 readonly_probe_plan_miss 带上变量名。
+    const readOnlyProbeGates = {
+      forcePermissionHandler: Boolean(this.forcePermissionHandler), readArgumentForcesClassification, protectedWriteForcesConfirmation,
+      policyForcesConfirmation, readOnlyForcesConfirmation, boundaryViolation: Boolean(boundaryViolation), unresolvedWriteTargetForcesAsk,
+      writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification,
+      peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
+    };
+    const readOnlyProbeDetail = boundaryViolation ? { skillName: boundaryViolation.skillName } : undefined;
+    const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments };
+    // 拓扑 ask（async_agent 后台 Bash）使下面的 P0 块整体跳过：只读探测在此单独放行，其余捷径仍被拓扑 ask 挡住。
+    if (isBashToolName(policyToolName) && params.command && !isPreApproved && guardFabricForcesApproval && !guardFabricAskRuleOnly) {
+      // 无人值守（cron）会话的只读授权只来自定时任务的文件夹授权，不认用户提示词里的路径：留给下游原有处理。
+      const probe = await tryReadOnlyProbeBehindGates({ ...readOnlyProbeGates, unattendedSession: getPermissionModeManager().isUnattendedSession(effectiveSessionId) }, readOnlyProbeInput, readOnlyProbeDetail);
+      if (probe) {
+        logger.info('readonly_probe_plan_hit', { programs: probe.programs, topology: executionTopology });
+        recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+        return { success: true, output: probe.output, metadata: { readonlyProbePlan: true } };
+      }
+    }
+
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批。
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
     // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
@@ -1865,13 +1886,15 @@ export class ToolExecutor {
 
       // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
       // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
-      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification) {
-        const probe = await tryReadOnlyProbe({ command: cmd, workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments });
+      if (!isSafeCommand) {
+        const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput, readOnlyProbeDetail);
         if (probe) {
           logger.info('readonly_probe_plan_hit', { programs: probe.programs });
           recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return { success: true, output: probe.output, metadata: { readonlyProbePlan: true } };
         }
+      } else {
+        noteReadOnlyProbeSkipped(readOnlyProbeGates, readOnlyProbeInput, { ...readOnlyProbeDetail, shortCircuit: 'safe-command' });
       }
 
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
@@ -1890,6 +1913,8 @@ export class ToolExecutor {
           recordDecision(executionToolName, params, 'auto-approve', 'lenient-mode', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
         }
       }
+    } else if (isBashToolName(policyToolName) && params.command && !(guardFabricForcesApproval && !guardFabricAskRuleOnly)) {
+      noteReadOnlyProbeSkipped({ ...readOnlyProbeGates, isPreApproved }, readOnlyProbeInput, { ...readOnlyProbeDetail, shortCircuit: 'p0-block-skipped' });
     }
     if (deferredRepeatedAnalysisDenial) return deferredRepeatedAnalysisDenial();
     // N-ROLE-WAKE-OWN-MEMORY-NO-APPROVAL：无人值守醒来写「自己的」角色层记忆的窄
@@ -2238,6 +2263,7 @@ export class ToolExecutor {
         params,
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
+        effectiveSessionId,
       );
       // 上传 / 临时路径的位置词只由 host 按真实根判定；details 含整份模型参数，先清掉同名键防伪造。
       delete permissionRequest.details.pathDisplay;
@@ -2918,6 +2944,7 @@ export class ToolExecutor {
     params: Record<string, unknown>,
     commandValidation?: ValidationResult,
     commandRiskOverride?: ValidationResult['riskLevel'] | 'unknown',
+    sessionId?: string,
   ): PermissionRequestData {
     const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
       const workspaceScope = this.runContext?.workspaceScope;
@@ -3068,6 +3095,9 @@ export class ToolExecutor {
         // 连接器写回与 http_request 令牌写共用 connector.external_write 边界（构造见 connectorTokenWrite.ts）。
         const connectorRequest = connectorWritePermissionRequest(tool, params);
         if (connectorRequest) return connectorRequest;
+        // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的目的地与回复正文（构造见 eventReplySession.ts）。
+        const eventReplyRequest = eventReplyPermissionRequest(tool, params, sessionId);
+        if (eventReplyRequest) return eventReplyRequest;
         // Map permission level to permission request type
         const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
         return {

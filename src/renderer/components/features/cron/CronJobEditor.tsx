@@ -15,6 +15,7 @@ import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import {
   buildCronJobInput,
   buildDraftFromJob,
+  copiedWorkingDirectoryMetadata,
   createDefaultCronJobDraft,
   type CronJobDraft,
 } from './types';
@@ -178,9 +179,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         name: `${copySource.name} (${copySource.runsOn === 'local' ? cc.locationCloud : cc.locationLocal})`,
         runsOn: copySource.runsOn === 'local' ? 'cloud' : 'local',
         enabled: false,
-        // 副本是新任务：不继承原任务的 metadata（artifactRefresh 等绑定指向原文件路径，
-        // 复制过去会让副本在别的 runsOn 上顶着同一份刷新绑定）。
-        metadata: undefined,
+        // 副本只带走工作文件夹；artifactRefresh 等绑定原文件路径的 metadata 不继承（云端副本保存时剥文件夹）。
+        metadata: copiedWorkingDirectoryMetadata(copySource.metadata),
       });
       setStep('manual');
     } else {
@@ -361,7 +361,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           return;
         }
       }
-      const input = buildCronJobInput(draft, cc.editorChrome.validation);
+      const input = buildCronJobInput(draft, cc.editorChrome.validation, Boolean(job));
       await gateOrPersist(input, job ? 'update' : 'create');
     } catch (error) {
       setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
@@ -884,7 +884,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           )}
 
           {draft.actionType === 'agent' && (
-            <CronAgentActionFields draft={draft} setField={setField} errors={errors} />
+            <CronAgentActionFields draft={draft} setField={setField} errors={errors} isEditing={Boolean(job)} />
           )}
 
           {draft.actionType === 'webhook' && (

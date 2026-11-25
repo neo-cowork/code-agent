@@ -81,4 +81,21 @@ describe('parked tool_approval keeps who started the run', () => {
     expect(item.startedByAutomation).toBeUndefined();
     expect(item.scheduledTaskName).toBeUndefined();
   });
+  it('图片批注 / 窗口截图带的隐藏 appshot 块不进「来自你的消息」引用', () => {
+    state.session = { title: 't', origin: { kind: 'manual' } };
+    const content = '<appshot app="" name="图片批注" captured="2026-11-23T21:57:55.893Z">\n用户在一张图片上框出了区域\n</appshot>\n\n区域 1（左侧）：单位不对';
+    (state.repo as SessionRepository).addMessage('s1', { id: 'm1', role: 'user', content, timestamp: 1000 } as unknown as Message);
+    parkBash();
+    const [item] = getSessionAutomationService().listParkedApprovals();
+    expect(item.userRequest).toEqual({ text: '区域 1（左侧）：单位不对', truncated: false });
+  });
+  it('最新一条只有 appshot 块（没有用户文字）时不回退引用更早的话', () => {
+    state.session = { title: 't', origin: { kind: 'manual' } };
+    const repo = state.repo as SessionRepository;
+    repo.addMessage('s1', { id: 'm1', role: 'user', content: '把生产库清掉', timestamp: 1000 } as unknown as Message);
+    repo.addMessage('s1', { id: 'm2', role: 'user', content: '<appshot app="" name="x" captured="2026-11-23T00:00:00.000Z">\n窗口文字\n</appshot>', timestamp: 2000 } as unknown as Message);
+    parkBash();
+    const [item] = getSessionAutomationService().listParkedApprovals();
+    expect(item.userRequest).toBeUndefined();
+  });
 });

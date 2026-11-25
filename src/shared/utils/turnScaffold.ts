@@ -7,6 +7,8 @@
 // 整块落到展示层时，展示侧用 extractUserRequest 还原，见 UX round2 20f）。
 // ============================================================================
 
+import { stripAppshotBlocks } from '../contract/appshot';
+
 const USER_REQUEST_OPEN = '<user_request>';
 const USER_REQUEST_CLOSE = '</user_request>';
 
@@ -60,6 +62,14 @@ export function mergeTurnSystemContext(blocks: string[], content: string): strin
  * 取中间那段，才不会把他的话截断——这条被测试钉住。
  */
 export function extractUserRequest(message: string): string {
+  const request = extractScaffoldedRequest(message);
+  // 截图/图片批注带的隐藏 <appshot> 块是给模型的上下文，不是用户原话：目标、任务名、成员条标签
+  // 都从这里取字，不剥会把原始块露在任务面板上。剥空（纯截图消息）就保持原样。
+  if (!request.includes('<appshot')) return request;
+  return stripAppshotBlocks(request) || request;
+}
+
+function extractScaffoldedRequest(message: string): string {
   const trimmed = message.trimEnd();
   if (!trimmed.endsWith(USER_REQUEST_CLOSE)) return message;
   const open = findLineStartOpenTag(trimmed);

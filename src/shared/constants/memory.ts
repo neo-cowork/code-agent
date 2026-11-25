@@ -44,9 +44,13 @@ export const MEMORY_OFF_NOTICE =
 /** session 收尾 LLM 判断（runFinalizer → conversationJudge） */
 export const SESSION_JUDGE = {
   /** quick model max_tokens：需要容纳判断结果与少量长期事实正文 */
-  MAX_TOKENS: 768,
-  /** quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口 */
-  TIMEOUT_MS: 8000,
+  MAX_TOKENS: 1024,
+  /**
+   * quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口。
+   * 8000→20000：dogfood 模型关思考后判官典型 4–5s，但实测会有 14s 的尾延迟，8s 线上会整段降级成
+   * 「一条长期记忆也写不出」；仍须小于 SKILL_REVIEW.TIMEOUT_MS（conversationReview 单测钉着）。
+   */
+  TIMEOUT_MS: 20000,
   /** 参与判断的最近用户轮数（多轮会话取最近 N 轮即可锁定当前主题） */
   RECENT_USER_TURNS: 8,
   /** 单轮最多沉淀的长期事实条数 */
@@ -210,6 +214,7 @@ export const ROLE_ASSETS = {
   FIRST_WAKE_FILENAME: 'first-wake.json',
   /** 每日醒来外部增量提议：roles/<roleId>/wake-proposals.json */
   WAKE_PROPOSALS_FILENAME: 'wake-proposals.json',
+  WAKE_LEDGER_FILENAME: 'wake-ledger.jsonl',
   /** 首次醒来的工具调用轮数预算（独立于巡检醒来：提示词要求 ≤3 次只读探查后作答，
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
@@ -277,6 +282,10 @@ export const ROLE_PROACTIVITY = {
   RATIONALE_MAX_CHARS: 240,
   /** 提取不到决策标记时的保守兜底决策 */
   FALLBACK_DECISION: 'report',
+  BASIS_TAG_PATTERN: /<basis>\s*([^<>]*?)\s*<\/basis>/i,
+  WAKE_LEDGER_MAX_ROWS: 256,
+  WAKE_LEDGER_DEDUP_DAYS: 30,
+  WAKE_LEDGER_FUNNEL_DAYS: 7,
   /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
   /** 醒来 run 返回后等待 task_complete 收口链排空的上限（防泄漏兜底，非时序依赖） */
