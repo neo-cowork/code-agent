@@ -78,7 +78,7 @@ function isNaturalLanguageCreateRoleRequest(userText: string): boolean {
 }
 
 const EN_CREATE_ROLE =
-  /^(?:(?:please|kindly|just|go ahead and)\s+)*(?:(?:i|we)\s*(?:need|want|would like|['’]d like)\s+|(?:create|make|build|set up|new)\s+(?:me\s+|us\s+)?)(?:an?\s+|the\s+|new\s+)?((?:(?!(?:that|who|which|to|for|and|with|in|of|on|at|by|from)\b)[\w-]+\s+){0,3}?)(expert|assistant|agent|role)\b/i;
+  /^(?:(?:please|kindly|just|go ahead and)\s+)*(?:(?:i|we)\s*(?:need|want|would like|['’]d like)\s+(?:an?|new)\s+|(?:create|make|build|set up|new)\s+(?:me\s+|us\s+)?(?:(?:an?|new)\s+)?)((?:(?!(?:that|who|which|to|for|and|with|in|of|on|at|by|from|the|my|our|your|this|these|those|his|her|their|its)\b)[\w-]+\s+){0,3}?)(expert|assistant|agent|role)\b/i;
 const EN_AFTER_OK = /^(?:$|[,.;:!]|(?:that|who|which|to|for|and|with|named|called|whose|so)\b)/i;
 const EN_NON_EXPERT_ROLE_CONTEXT = /\b(?:database|db|read-?only|permission|access|policy|trust|postgres(?:ql)?|mysql|sqlite|sql|oracle|aws|iam|lambda|rbac|game|novel|story|script|character|website|web ?page|page|demo)\b/i;
 const EN_NEGATION = /\b(?:don['’]?t|do not|no need|never|not|without|stop)\b/i;

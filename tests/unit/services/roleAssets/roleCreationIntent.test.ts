@@ -141,6 +141,11 @@ describe('matchRoleAuthoringSeed English create-expert phrasing', () => {
     'create an expert introduction page',
     'build an assistant website',
     'Create experts',
+    'I need the agent to fix the tests',
+    'I need my agent to continue',
+    'I want our assistant to summarize this',
+    'make the agent faster',
+    'create my agent',
   ])('not a create request → null: %s', (text) => {
     expect(matchRoleAuthoringSeed(text)).toBeNull();
   });
