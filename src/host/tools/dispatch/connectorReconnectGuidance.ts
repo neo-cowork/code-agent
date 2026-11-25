@@ -75,7 +75,11 @@ export function withConnectorReconnectGuidance<T>(toolName: string, result: Tool
     // 系统限制（用户无从自助）的指引明确禁止指向连接器页，不能被通用重连句覆盖。
     if (typeof existing === 'string' && status?.detailCode === 'calendar_restricted') return result;
     // exit.error 自称「完整答复」：模型侧用它代替事实句（与旧行为一致），界面侧 output 仍只有事实。
-    return { ...result, meta: { ...result.meta, modelGuidance: exit.error, modelGuidanceReplacesOutput: true } };
+    const artifact = result.meta?.artifact;
+    const updatedArtifact = artifact && typeof artifact === 'object' && 'preview' in artifact
+      ? { ...artifact, preview: exit.userMessage, contentLength: exit.userMessage.length }
+      : artifact;
+    return { ...result, output: exit.userMessage as T, meta: { ...result.meta, ...(updatedArtifact ? { artifact: updatedArtifact } : {}), modelGuidance: exit.error, modelGuidanceReplacesOutput: true } };
   }
   return hasEntry(result.error) ? result : { ...result, ...exit };
 }

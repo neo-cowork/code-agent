@@ -273,10 +273,17 @@ describe('mail, reminders and Calendar read receipts', () => {
     expectEnglishDisplay(dispatched.output);
     const artifact = dispatched.meta?.artifact as ToolArtifact | undefined;
     const shown = cleanToolResultDisplayText('calendar', dispatched.output, en.rendererHumanPipe.toolDetails);
-    expect(shown).toBe('Calendar is not connected right now, so calendar events cannot be read. Calendar access is only available in the desktop app, not in this runtime.');
+    expect(shown).toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
     expect(artifact?.preview).toBe(shown);
     expect(cleanToolResultDisplayText('calendar', String(dispatched.meta?.modelGuidance), en.rendererHumanPipe.toolDetails))
       .toBe('I could not retrieve the data. Reconnect in Capability Hub > Connectors and try again.');
+    vi.mocked(getHostUiLocale).mockReturnValue('zh');
+    const zhResult = withConnectorReconnectGuidance('calendar', result);
+    expect(zhResult.ok).toBe(true);
+    if (!zhResult.ok) throw new Error(zhResult.error);
+    expect(zhResult.output).toBe('这次还没读到所需数据，请在能力中心 > 连接器重新连接后再试。');
+    expect(zhResult.output).not.toMatch(/[a-z]/i);
+    expect((zhResult.meta?.artifact as ToolArtifact | undefined)?.preview).toBe(zhResult.output);
   });
 
   const reads = [
