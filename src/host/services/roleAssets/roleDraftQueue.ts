@@ -205,7 +205,9 @@ export async function prepareRoleDraft(input: RoleDraftInput): Promise<PrepareRo
   if (!editingRoleId && dailyBriefTime !== undefined && !DAILY_BRIEF_TIME_PATTERN.test(dailyBriefTime)) {
     return {
       draft: null,
-      reason: `dailyBriefTime 格式不对："${input.dailyBriefTime}"，请用 24 小时制 HH:mm（如 09:00、08:30）；用户没明确说钟点就不要填这个字段`,
+      reason:
+        `dailyBriefTime "${input.dailyBriefTime}" is not a valid time. Use 24-hour HH:mm (e.g. 09:00, 08:30), ` +
+        'or omit the field entirely if the user did not state a clock time. No draft was created.',
     };
   }
 
