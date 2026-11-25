@@ -39,10 +39,6 @@
     "count": 1,
     "reason": "外部会话导入源的目录，不在本单范围；后续单"
   },
-  "src/renderer/components/features/settings/tabs/SkillsInstalledTab.tsx": {
-    "count": 1,
-    "reason": "Skill 被官方版本压住时的来源文件路径，skillsInstalled.projectOverride 测试钉住完整路径用于区分来源；后续单"
-  },
   "src/renderer/components/features/voice/VoiceAuditDialog.tsx": {
     "count": 1,
     "reason": "语音审计录音目录，不在本单范围；后续单"
