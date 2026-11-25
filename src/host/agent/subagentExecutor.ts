@@ -3,6 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { modelVisibleToolOutput } from '../tools/toolResultMessageContent';
 import { appendBashStep, bashStepFromToolCall, markBashStepNotRun } from './bashStepOutcome';
 import type { BashStep } from '../../shared/contract/backgroundTask';
 import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
@@ -933,7 +934,7 @@ export class SubagentExecutor {
               if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
-                `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
+                `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${modelVisibleToolOutput(result)}`
               );
               // 持久化角色履历：从工具结果里收集产物引用
               if (config.roleId && result.success && result.metadata && typeof result.metadata === 'object') {
