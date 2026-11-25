@@ -14,6 +14,7 @@ const requests = new Map<string, Entry>();
 const logger = createLogger('ScheduleDraftRequests');
 
 export function registerScheduleDraftRequest(sessionId: string, description: string, signal: AbortSignal) {
+  const replacedShownCard = requests.get(sessionId)?.request.state === 'shown';
   clearScheduleDraftRequest(sessionId);
   const request: ScheduleDraftRequest = { sessionId, requestId: randomUUID(), description, state: 'requested' };
   let resolve!: (result: Result) => void;
@@ -34,7 +35,7 @@ export function registerScheduleDraftRequest(sessionId: string, description: str
   signal.addEventListener('abort', abort, { once: true });
   if (signal.aborted) abort();
   logger.info('Awaiting scheduled-task card acknowledgement', { sessionId, requestId: request.requestId });
-  return { request, result, cancel: abort };
+  return { request, result, cancel: abort, replacedShownCard };
 }
 
 export function getScheduleDraftRequest(sessionId: string): ScheduleDraftRequest | null {

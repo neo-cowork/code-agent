@@ -66,8 +66,25 @@ describe('registered schedule_task module', () => {
     const run = start('weekly summary');
     const { requestId } = await run.emitted;
     expect(acknowledgeScheduleDraft({ sessionId, requestId, status: 'generation_failed' })).toBe(true);
-    expect(await run.result).toMatchObject({ ok: false, code: 'SCHEDULE_DRAFT_GENERATION_FAILED', error: expect.stringContaining('no task was created') });
+    const result = await run.result;
+    expect(result).toMatchObject({ ok: false, code: 'SCHEDULE_DRAFT_GENERATION_FAILED', error: expect.stringContaining('no task was created') });
+    expect(result.ok ? '' : result.error).not.toMatch(/earlier card|previous draft/i);
     expect(getScheduleDraftRequest(sessionId)).toBeNull();
+  });
+
+  it('mentions an earlier card only if the failed request replaced a shown draft', async () => {
+    const first = start('weekly summary');
+    show(await first.emitted);
+    expect(await first.result).toMatchObject({ ok: true });
+
+    const second = start('monthly summary');
+    const { requestId } = await second.emitted;
+    expect(acknowledgeScheduleDraft({ sessionId, requestId, status: 'generation_failed' })).toBe(true);
+    expect(await second.result).toMatchObject({
+      ok: false,
+      code: 'SCHEDULE_DRAFT_GENERATION_FAILED',
+      error: expect.stringContaining('The previous draft in this conversation was replaced by this request.'),
+    });
   });
 
   it('times out an unshown card and rejects a late renderer ACK', async () => {

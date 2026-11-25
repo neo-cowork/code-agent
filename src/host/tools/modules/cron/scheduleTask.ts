@@ -26,7 +26,7 @@ export const scheduleTaskModule: ToolModule<Record<string, unknown>, string> = {
         return { ok: false, code: 'INVALID_ARGS', error: 'description must include the user’s request: when to run and what to do.' };
       }
       if (ctx.abortSignal.aborted) return { ok: false, code: 'ABORTED', error: 'Draft request cancelled.' };
-      const { request, result, cancel } = registerScheduleDraftRequest(ctx.sessionId, args.description, ctx.abortSignal);
+      const { request, result, cancel, replacedShownCard } = registerScheduleDraftRequest(ctx.sessionId, args.description, ctx.abortSignal);
       try {
         const { sessionId, requestId, description } = request;
         ctx.emit({ type: 'schedule_draft_requested', data: { sessionId, requestId, description } });
@@ -34,6 +34,7 @@ export const scheduleTaskModule: ToolModule<Record<string, unknown>, string> = {
         cancel();
         throw error;
       }
+      const replaced = replacedShownCard ? ' The previous draft in this conversation was replaced by this request.' : '';
       switch (await result) {
         case 'shown':
           return {
@@ -43,12 +44,12 @@ export const scheduleTaskModule: ToolModule<Record<string, unknown>, string> = {
         case 'generation_failed':
           return {
             ok: false, code: SCHEDULE_DRAFT_FAILURE.GENERATION, userMessage: SCHEDULE_DRAFT_FAILURE.GENERATION,
-            error: 'The scheduled-task draft could not be prepared. Tell the user in plain language that no task was created and there is no confirmation card for this request. Earlier cards do not apply to this request. Report these facts without guessing why it failed.',
+            error: `The scheduled-task draft could not be prepared. Tell the user in plain language that no task was created and there is no confirmation card for this request.${replaced} Keep the reply to these facts without guessing why it failed.`,
           };
         case 'not_shown':
           return {
             ok: false, code: SCHEDULE_DRAFT_FAILURE.NOT_SHOWN, userMessage: SCHEDULE_DRAFT_FAILURE.NOT_SHOWN,
-            error: 'The scheduled-task confirmation card could not be shown. Tell the user in plain language that the card could not be displayed and no task was created. Earlier cards do not apply to this request. Report these facts without guessing why it failed.',
+            error: `The scheduled-task confirmation card could not be shown. Tell the user in plain language that the card could not be displayed and no task was created.${replaced} Keep the reply to these facts without guessing why it failed.`,
           };
         case 'aborted':
           return { ok: false, code: 'ABORTED', error: 'The draft request was cancelled. No task was created.' };
