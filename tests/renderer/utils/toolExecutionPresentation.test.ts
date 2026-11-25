@@ -555,6 +555,26 @@ describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一�
       .toBe(en.toolStepHumanize.rawFailureCodeFallback);
   });
 
+  it('日历 unavailable 的折叠行走已登记人话，不暴露小写连接器码', () => {
+    const call = makeToolCall({
+      name: 'calendar_list_events',
+      result: {
+        toolCallId: 'tool-calendar-unavailable',
+        success: false,
+        error: 'Calendar is only available in the Agent Neo desktop app on macOS. （日历只能在 macOS 的 Agent Neo 桌面版里使用。）',
+        metadata: { code: 'unavailable' },
+      },
+    });
+    const reason = humanizeToolFailureReason(call, zh);
+    expect(reason).toBe(zh.toolStepHumanize.rawFailureCodeFallback);
+    expect(reason).not.toContain('错误码');
+    expect(reason).not.toContain('unavailable');
+    const reasonEn = humanizeToolFailureReason(call, en);
+    expect(reasonEn).toBe(en.toolStepHumanize.rawFailureCodeFallback);
+    expect(reasonEn).not.toContain('Error code');
+    expect(reasonEn).not.toContain('unavailable');
+  });
+
   it('数字退出码与 HTTP nnn 保持「错误码 …」原样', () => {
     expect(humanizeToolFailureReason(codeFailedCall('HTTP 404'), zh))
       .toBe(zh.toolStepHumanize.failureCode.replace('{code}', 'HTTP 404'));

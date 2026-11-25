@@ -1657,10 +1657,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         runController.emitSSE('message', { ...userMsg, sessionId });
       }
 
-      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_user_message_sync');
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
+          if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cloud_session_row_sync');
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
@@ -1668,6 +1668,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
+          if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cloud_user_message_insert');
           await sb.supabase.from('messages').insert({
             id: msgId,
             session_id: sessionId,
@@ -1678,6 +1679,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             updated_at: Date.now(),
             source_device_id: 'web',
           });
+          if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cloud_user_message_done');
           userMsgPrePersistedSupabase = true;
         }
       } catch (err) {
