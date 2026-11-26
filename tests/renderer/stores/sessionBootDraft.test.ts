@@ -259,3 +259,85 @@ describe('cold boot through the production entries (initializeSessionStore / rel
     }
   });
 });
+
+describe('boot session pick keeps a secondary page the user already opened (F15)', () => {
+  const list = [wireSession('busy', '其他任务', 3, 20), wireSession('older', '更早的任务', 2, 10)];
+
+  // The user clicks Automation while boot still waits for the session list (slow start).
+  async function bootWithPageOpenedDuringList(openPage: boolean) {
+    const { useAppStore } = await import('../../../src/renderer/stores/appStore');
+    mockDomainInvoke.mockImplementation(async (_d: string, action: string, payload?: { sessionId?: string }) => {
+      if (action === 'list') {
+        if (openPage) useAppStore.getState().setShowCronCenter(true);
+        return { success: true, data: list };
+      }
+      if (action === 'load') {
+        const found = list.find((s) => s.id === payload?.sessionId);
+        return { success: true, data: found ? { ...found, messages: [], todos: [] } : null };
+      }
+      if (action === 'create') return { success: true, data: { ...wireSession('created', '新对话', 0, 99) } };
+      return { success: true, data: [] };
+    });
+    const { initializeSessionStore, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    await initializeSessionStore();
+    return { useAppStore, useSessionStore };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    localStorage.clear();
+    (globalThis as Record<string, unknown>).window = Object.assign(window, {
+      domainAPI: { invoke: mockDomainInvoke },
+    });
+  });
+
+  it('create branch: Automation stays open and the new blank session is still current', async () => {
+    const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(true);
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+    expect(useSessionStore.getState().currentSessionId).toBe('created');
+  });
+
+  it('switch branch (remembered chat): Automation stays open and the remembered chat is current', async () => {
+    localStorage.setItem('neo:last-viewed-session', 'older');
+    const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(true);
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+    expect(useSessionStore.getState().currentSessionId).toBe('older');
+  });
+
+  it('switch branch (reused blank session): Automation stays open and the blank session is current', async () => {
+    list.push(wireSession('blank', '新对话', 0, 5));
+    try {
+      const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(true);
+      expect(useAppStore.getState().showCronCenter).toBe(true);
+      expect(useSessionStore.getState().currentSessionId).toBe('blank');
+    } finally {
+      list.pop();
+    }
+  });
+
+  it('no secondary page open: boot lands on the chat area as before', async () => {
+    const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(false);
+    expect(useAppStore.getState().showCronCenter).toBe(false);
+    expect(useSessionStore.getState().currentSessionId).toBe('created');
+  });
+
+  it('after boot, a user switch or new chat still closes the secondary page', async () => {
+    const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(true);
+    await useSessionStore.getState().switchSession('busy');
+    expect(useAppStore.getState().showCronCenter).toBe(false);
+    useAppStore.getState().setShowCronCenter(true);
+    await useSessionStore.getState().createSession('新对话', { workingDirectory: null });
+    expect(useAppStore.getState().showCronCenter).toBe(false);
+  });
+
+  it('a page-preserving new chat that reuses an existing blank draft keeps the page too', async () => {
+    const { useAppStore, useSessionStore } = await bootWithPageOpenedDuringList(false);
+    await useSessionStore.getState().switchSession('busy');
+    useAppStore.getState().setShowCronCenter(true);
+    await useSessionStore.getState().createSession('新对话', { workingDirectory: null, preserveSecondaryPages: true });
+    expect(useSessionStore.getState().currentSessionId).toBe('created');
+    expect(mockDomainInvoke.mock.calls.filter(([, action]) => action === 'create')).toHaveLength(1);
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+});

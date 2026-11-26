@@ -8,6 +8,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { ToolResult } from '@shared/contract';
+import { toolUserLabel } from '../../../shared/utils/toolUserLabel';
 import { getSkillsDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 
@@ -253,19 +254,9 @@ function generateSkillName(toolNames: string[], turns: ComboTurn[]): string {
 
 function generateSkillDescription(turns: ComboTurn[]): string {
   const steps = turns.flatMap(t => t.steps);
-  const uniqueTools = [...new Set(steps.map(s => s.toolName))];
-  const actions = uniqueTools.map(t => {
-    switch (t) {
-      case 'bash': return '执行命令';
-      case 'read_file': return '读取文件';
-      case 'edit_file': return '编辑文件';
-      case 'write_file': return '写入文件';
-      case 'glob': return '搜索文件';
-      case 'grep': return '搜索内容';
-      case 'web_fetch': return '获取网页';
-      default: return t;
-    }
-  });
+  // 动作词只取共享表 toolUserLabel（与审批卡、步骤摘要同一说法），未登记工具不再露出原名。
+  // 去重放在映射之后：read 与 read_file 同为「读取文件」，按工具名去重会写出「读取文件 → 读取文件」。
+  const actions = [...new Set(steps.map(s => toolUserLabel(s.toolName)))];
   return `自动录制的工作流：${actions.join(' → ')}（${steps.length} 步）`;
 }
 
