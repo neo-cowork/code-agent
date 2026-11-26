@@ -176,6 +176,7 @@ test('PoC: 空白新会话是当前会话但无侧栏行，有消息后才出现
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
+  // 拿到 active session id
   const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
   const sessionId = await activeSession.getAttribute('data-current-session-id');
