@@ -172,6 +172,9 @@ async function sweepOnboarding(page, visit, lang) {
   await visit('onboarding-api-key', page.getByTestId('onboarding-api-source'));
   await clickRequired(subscription, 'return to subscription route');
   const selectable = page.locator('[data-onboarding-engine]');
+  // Local engine detection is asynchronous: under load a subscription client installed on this machine can become
+  // selectable a few seconds after the cards render, which would silently skip the default-model / connectors / voice steps.
+  await selectable.first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
   if (await selectable.count() > 0) {
     await clickRequired(selectable, 'subscription source to default-model step');
     await visit('onboarding-default-model', page.getByTestId('onboarding-model-step'));
