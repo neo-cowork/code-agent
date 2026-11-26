@@ -400,6 +400,23 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
 export const QUICK_LANE_LOW_REASONING_EFFORT_MODELS: readonly string[] = ['glm-5.3'];
 
 /**
+ * 实际会思考、但 MODEL_FEATURES 没标 reasoning 的 quick 车道模型：同样发 thinking:{type:'disabled'}。
+ * 不去改 MODEL_FEATURES：那会牵动模型切换器的力度选项与能力矩阵。
+ * neohorse-1.5-flash-preview 不关思考时，会话判官（768 token / 8s）实测 1500 个 token 全是推理、
+ * 正文为空且耗时 16s+；关掉后同一提示词约 4.5s、441 token、JSON 完整。
+ */
+export const QUICK_LANE_THINKING_OFF_MODELS: readonly string[] = ['neohorse-1.5-flash-preview'];
+
+/**
+ * 默认引擎（buildVendorCompatSettings）对「不能关思考」的模型发 reasoning_effort:'low'。
+ * 精确 id 匹配，只含 glm-5.3；glm-5.3-flash 不在此列，请求体保持原样。
+ * 该模型只接受 max/high/low，省略该字段时推理会吃光输出预算
+ * （平台游戏提示实测 omit 0/4 写完文件，low 4/4）。effort 滑块不转发，固定 low。
+ * quick 车道用上面那份名单，这里不复用，两条车道各自维护。
+ */
+export const DEFAULT_ENGINE_LOW_REASONING_EFFORT_MODELS: readonly string[] = ['glm-5.3'];
+
+/**
  * 模型缩写 — 状态栏 ModelIndicator 显示用。
  * 2026-04-28 audit 前散落于 ModelIndicator.tsx，已迁移至此并清理 EOL 条目。
  */

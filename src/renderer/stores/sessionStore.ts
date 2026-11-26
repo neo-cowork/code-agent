@@ -40,8 +40,16 @@ import { composerDraftStorageKey, removeComposerDraft } from '../components/feat
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
+import { findSessionAfterRemoval } from '../utils/workspaceGrouping';
 
 const logger = createLogger('SessionStore');
+
+function clearOpenSession(set: (partial: Partial<SessionState>) => void, sessions?: SessionWithMeta[]): void {
+  invalidatePendingSessionSwitches();
+  useAppStore.getState().syncActiveAgentForSession(null);
+  useAppStore.getState().syncWorkbenchForSession(null);
+  set({ ...(sessions ? { sessions } : {}), currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null, isLoading: false, isHydratingSession: false });
+}
 
 async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
@@ -264,7 +272,7 @@ interface SessionActions {
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   /** In-flight createSession promise, if any — send path awaits this to rebind to the new session. */
   getPendingSessionCreate: () => Promise<Session | null> | null;
-  switchSession: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
+  switchSession: (sessionId: string, options?: { force?: boolean; preserveSecondaryPages?: boolean }) => Promise<void>;
   refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
   deleteSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
@@ -371,7 +379,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
       const { currentSessionId, unreadSessionIds } = get();
       // 落到某个会话 = 回到会话区：二级页（能力中心/资料库/自动化…）让位。
       // 放在早退之前——从二级页点当前会话也要回得来。
-      if (!options?.force) useAppStore.getState().closeSecondaryPages();
+      if (!options?.force && !options?.preserveSecondaryPages) useAppStore.getState().closeSecondaryPages();
       if (currentSessionId === sessionId && !options?.force) return;
 
       useSessionLoadRecoveryStore.setState({ sessionId: null, errorCode: null });
@@ -549,19 +557,13 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
-
         bumpSessionsLocalVersion();
-        if (currentSessionId === sessionId) {
-          if (newSessions.length > 0) {
-            set({ sessions: newSessions });
-            await get().switchSession(newSessions[0].id);
-          } else {
-            useAppStore.getState().syncActiveAgentForSession(null);
-            useAppStore.getState().syncWorkbenchForSession(null);
-            set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
-          }
-        } else {
+        const neighbour = currentSessionId === sessionId ? findSessionAfterRemoval(sessions, sessionId) : undefined;
+        if (currentSessionId !== sessionId || neighbour) {
           set({ sessions: newSessions });
+          if (neighbour) await get().switchSession(neighbour.id);
+        } else {
+          clearOpenSession(set, newSessions);
         }
       } catch (error) {
         logger.error('Failed to delete session', error);
@@ -571,7 +573,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
     archiveSession: async (sessionId: string) => {
       const { filter } = useSessionUIStore.getState();
-      const { currentSessionId, sessions } = get();
+      const { sessions } = get();
       const previousSessions = sessions;
       // 乐观更新（2026-08-01 归档连点）：行先消失/置标，失败回滚；版本号 +1 让在途 loadSessions 丢弃陈旧快照。
       bumpSessionsLocalVersion();
@@ -592,16 +594,13 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
 
-        // 归档的是当前会话：IPC 落定后再切到下一条（切会话重，不进乐观路径）。
-        if (filter === 'active' && currentSessionId === sessionId) {
-          const remaining = get().sessions;
-          if (remaining.length > 0) {
-            await get().switchSession(remaining[0].id);
-          } else {
-            useAppStore.getState().syncActiveAgentForSession(null);
-            useAppStore.getState().syncWorkbenchForSession(null);
-            set({ currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
-          }
+        // 归档的是当前会话：IPC 落定后再切到同项目下一条（切会话重，不进乐观路径）。
+        if (filter === 'active' && get().currentSessionId === sessionId) {
+          const liveIds = new Set(get().sessions.map((s) => s.id));
+          const removedIds = new Set(previousSessions.filter((s) => s.id === sessionId || !liveIds.has(s.id)).map((s) => s.id));
+          const neighbour = findSessionAfterRemoval(previousSessions, sessionId, removedIds);
+          if (neighbour) await get().switchSession(neighbour.id);
+          else clearOpenSession(set);
         }
 
         logger.info('Session archived', { sessionId });
@@ -1142,8 +1141,8 @@ function openBootSession(store: SessionStore, sessions: SessionWithMeta[]): Prom
   return openInitialSession({
     sessions,
     isBlank: isBlankNewSession,
-    switchSession: store.switchSession,
-    createSession: () => store.createSession('新对话', { workingDirectory: null }),
+    switchSession: (id) => store.switchSession(id, { preserveSecondaryPages: true }),
+    createSession: () => store.createSession('新对话', { workingDirectory: null, preserveSecondaryPages: true }),
   });
 }
 

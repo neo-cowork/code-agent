@@ -13,7 +13,6 @@ import {
   buildNeoTopicMentionCandidates,
   NEO_TAG_MENTION_AGENT,
   NEO_TOPIC_MENTION_PREFIX,
-  parseLeadingNeoTagInvocation,
 } from '../../../src/renderer/components/features/chat/ChatInput/neoMentionRouting';
 
 const agents = [
@@ -142,6 +141,106 @@ describe('agent mention routing', () => {
   });
 });
 
+describe('agent mention routing · 中文角色名', () => {
+  const cjkAgents = [
+    { id: 'designer', name: '设计师' },
+    { id: 'agent-builder', name: 'builder' },
+    { id: 'neo-agent', name: 'neo' },
+  ];
+  const mixedCjkAgents = [
+    { id: 'designer-a', name: '设计师A' },
+    { id: 'designer-b', name: '设计师B' },
+  ];
+
+  it('routes "@设计师 改一下配色" to the agent named 设计师', () => {
+    expect(
+      parseLeadingAgentMentions('@设计师 改一下配色', cjkAgents),
+    ).toEqual({
+      content: '改一下配色',
+      targetAgentIds: ['designer'],
+    });
+  });
+
+  it('lists 设计师 for the Chinese prefix "@设计"', () => {
+    expect(
+      getLeadingAgentMentionAutocomplete('@设计', cjkAgents),
+    ).toEqual({
+      query: '设计',
+      matches: [{ id: 'designer', name: '设计师' }],
+    });
+    expect(isLeadingAgentMentionInput('@设计', cjkAgents)).toBe(true);
+  });
+
+  it('inserts the Chinese name verbatim on apply-suggestion', () => {
+    expect(
+      applyAgentMentionSuggestion('@设计', cjkAgents[0]!),
+    ).toBe('@设计师 ');
+    expect(getPreferredAgentMentionToken(cjkAgents[0]!)).toBe('设计师');
+  });
+
+  it('keeps mixed CJK+ASCII names distinct (设计师A vs 设计师B)', () => {
+    expect(getPreferredAgentMentionToken(mixedCjkAgents[0]!)).toBe('设计师a');
+    expect(getPreferredAgentMentionToken(mixedCjkAgents[1]!)).toBe('设计师b');
+    expect(
+      parseLeadingAgentMentions('@设计师A 帮我看', mixedCjkAgents),
+    ).toEqual({ content: '帮我看', targetAgentIds: ['designer-a'] });
+    expect(
+      parseLeadingAgentMentions('@设计师B 帮我看', mixedCjkAgents),
+    ).toEqual({ content: '帮我看', targetAgentIds: ['designer-b'] });
+    expect(
+      getLeadingAgentMentionAutocomplete('@设计师A', mixedCjkAgents)?.matches,
+    ).toEqual([{ id: 'designer-a', name: '设计师A' }]);
+  });
+
+  it('delivers once when the same role is named by Chinese name and ASCII id', () => {
+    expect(
+      parseLeadingAgentMentions('@designer @设计师 配色', cjkAgents),
+    ).toEqual({ content: '配色', targetAgentIds: ['designer'] });
+  });
+
+  it('resolves a bare Chinese token followed by space or end of input', () => {
+    expect(
+      parseLeadingAgentMentions('@设计师 ', cjkAgents),
+    ).toEqual({ content: '', targetAgentIds: ['designer'] });
+    expect(
+      parseLeadingAgentMentions('@设计师', cjkAgents),
+    ).toEqual({ content: '', targetAgentIds: ['designer'] });
+    // 已补全的 mention + 尾随空格 = 输入完成，不再弹补全面板
+    expect(getLeadingAgentMentionAutocomplete('@设计师 ', cjkAgents)).toBeNull();
+    expect(getLeadingAgentMentionAutocomplete('@设计师', cjkAgents)?.matches).toEqual([
+      { id: 'designer', name: '设计师' },
+    ]);
+  });
+
+  it('still routes ASCII ids/names unchanged', () => {
+    expect(
+      parseLeadingAgentMentions('@designer 改配色', cjkAgents),
+    ).toEqual({ content: '改配色', targetAgentIds: ['designer'] });
+    expect(
+      parseLeadingAgentMentions('@builder @设计师 看一下', cjkAgents),
+    ).toEqual({ content: '看一下', targetAgentIds: ['agent-builder', 'designer'] });
+  });
+
+  it('returns null for an unknown Chinese mention so text goes out plain', () => {
+    expect(parseLeadingAgentMentions('@不存在 你好', cjkAgents)).toBeNull();
+  });
+
+  it('does not treat a mid-sentence Chinese mention as a routing directive', () => {
+    expect(parseLeadingAgentMentions('先让 @设计师 看看', cjkAgents)).toBeNull();
+  });
+
+  it('keeps @neo excluded for Chinese-capable parsing', () => {
+    expect(parseLeadingAgentMentions('@neo 配色', cjkAgents)).toBeNull();
+    expect(getLeadingAgentMentionAutocomplete('@neo', cjkAgents)).toBeNull();
+  });
+
+  it('known limit: punctuation-adjacent Chinese mention stays plain text', () => {
+    // 「@设计师，改配色」的全角逗号不在 token 字符类里，mention 后无 \s/$ 边界，
+    // 整条按普通文本发出——记录为已知限制，不在本单范围。
+    expect(parseLeadingAgentMentions('@设计师，改配色', cjkAgents)).toBeNull();
+  });
+});
+
 describe('neo topic mention candidates (ADR-035)', () => {
   const topics = [
     { workCardId: 'nwc_1', title: '整理竞品报告', status: 'completed', updatedAt: 30 },
@@ -186,5 +285,19 @@ describe('neo topic mention candidates (ADR-035)', () => {
   it('keeps topic candidates out when query does not summon Neo', () => {
     const matches = getLeadingAgentMentionAutocomplete('@src', agents, buildNeoTopicMentionCandidates(topics))?.matches ?? [];
     expect(matches.some((m) => m.id.startsWith(NEO_TOPIC_MENTION_PREFIX))).toBe(false);
+  });
+});
+
+describe('getLeadingAgentMentionAutocomplete · 已保存专家', () => {
+  const expert = {
+    id: 'weekly-reporter', name: '周报整理员', description: '', source: 'user' as const,
+    modelTier: 'balanced', readonly: false, tools: [],
+  };
+  it('汉字全名/前缀命中；swarm 同名时 swarm 在前、专家在后', () => {
+    const swarm = [{ id: 'sw1', name: '周报整理员' }];
+    for (const q of ['@周报整理员', '@周报']) {
+      const rows = getLeadingAgentMentionAutocomplete(q, swarm, undefined, undefined, [expert])?.matches ?? [];
+      expect(rows.map((r) => r.kind)).toEqual([undefined, 'expert']);
+    }
   });
 });

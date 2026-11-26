@@ -54,7 +54,7 @@ function isNaturalLanguageCreateRoleRequest(userText: string): boolean {
   const text = userText.trim();
   if (!text || text.length > NL_MAX_LENGTH || text.startsWith('/')) return false;
   const match = NL_CREATE_ROLE.exec(text);
-  if (!match) return false;
+  if (!match) return isEnglishCreateRoleRequest(text);
   const [, name, kind] = match;
   if (/(?:游戏|小说|故事|剧本)(?:中|里)(?:的)?/.test(name)) return false;
   const after = text.slice(match[0].length).trimStart();
@@ -75,6 +75,29 @@ function isNaturalLanguageCreateRoleRequest(userText: string): boolean {
   const clauseEnd = text.slice(match.index).search(/[。；;\n]/);
   const clause = clauseEnd < 0 ? text.slice(Math.max(0, match.index - 4)) : text.slice(Math.max(0, match.index - 4), match.index + clauseEnd);
   return !NL_QUESTION.test(clause);
+}
+
+const EN_CREATE_ROLE =
+  /^(?:(?:please|kindly|just|go ahead and)\s+)*(?:(?:i|we)\s*(?:need|want|would like|['’]d like)\s+(?:an?|new)\s+|(?:create|make|build|set up|new)\s+(?:me\s+|us\s+)?(?:(?:an?|new)\s+)?)((?:(?!(?:that|who|which|to|for|and|with|in|of|on|at|by|from|the|my|our|your|this|these|those|his|her|their|its)\b)[\w-]+\s+){0,3}?)(expert|assistant|agent|role)\b/i;
+const EN_AFTER_OK = /^(?:$|[,.;:!]|(?:that|who|which|to|for|and|with|named|called|whose|so)\b)/i;
+const EN_NON_EXPERT_ROLE_CONTEXT = /\b(?:database|db|read-?only|permission|access|policy|trust|postgres(?:ql)?|mysql|sqlite|sql|oracle|aws|iam|lambda|rbac|game|novel|story|script|character|website|web ?page|page|demo)\b/i;
+const EN_NEGATION = /\b(?:don['’]?t|do not|no need|never|not|without|stop)\b/i;
+const EN_QUESTION = /\?\s*$/;
+const EN_EXISTING_ROLE_VERB = /\b(?:list|show|view|delete|remove|edit|rename|update|disable|enable|existing|my experts|already)\b/i;
+
+function isEnglishCreateRoleRequest(text: string): boolean {
+  const match = EN_CREATE_ROLE.exec(text);
+  if (!match) return false;
+  const kind = match[2];
+  const after = text.slice(match[0].length).trimStart();
+  // The expert must be the requested object, not a modifier of an artifact
+  // ("an expert introduction page", "assistant website").
+  if (!EN_AFTER_OK.test(after)) return false;
+  if (kind.toLowerCase() === 'role' && EN_NON_EXPERT_ROLE_CONTEXT.test(text)) return false;
+  const lead = text.slice(0, match.index + match[0].length);
+  if (EN_NEGATION.test(lead) || EN_EXISTING_ROLE_VERB.test(lead)) return false;
+  if (EN_QUESTION.test(text)) return false;
+  return true;
 }
 
 type RoleAuthoringSeed =

@@ -2,14 +2,17 @@ import type { TraceNode, TraceProjection } from '@shared/contract/trace';
 import type { CrossSessionSearchResultItem } from '@shared/ipc/types';
 import type { SearchMatch } from '../components/features/chat/ChatSearchBar';
 import type { PendingSessionSearchJump } from '../stores/sessionUIStore';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 
 /**
  * 会话内搜索/命中跳转能看到的节点文本：工具调用节点的 content 常为空，
  * 用户记得的内容（命令输出、读到的文件）在 toolCall.result 里。
+ * 用户节点先剥掉旧组队配方前缀（legacyTeamRecipeDisplay.ts），与气泡展示同一口径。
  */
 export function getTraceNodeSearchText(node: TraceNode): string {
+  const content = node.type === 'user' ? stripLegacyTeamRecipeSeed(node.content) : node.content;
   const result = node.toolCall?.result;
-  return typeof result === 'string' && result ? `${node.content}\n${result}` : node.content;
+  return typeof result === 'string' && result ? `${content}\n${result}` : content;
 }
 
 export function createPendingSearchJumpFromCrossSessionResult(

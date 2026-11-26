@@ -72,6 +72,7 @@ const toolResultSchema = typed<ToolResult>(z.object({
   success: z.boolean(),
   output: z.string().optional(),
   error: z.string().optional(),
+  userMessage: z.string().optional(),
   outputPath: z.string().optional(),
   duration: z.number().optional(),
   metadata: unknownRecordSchema.optional(),
@@ -190,6 +191,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     purpose: z.string().optional(),
     userRequest: z.object({ text: z.string(), truncated: z.boolean() }).optional(),
     startedByAutomation: z.boolean().optional(),
+    startedByFirstWake: z.boolean().optional(),
     scheduledTaskName: z.string().optional(),
     commandRiskLevel: z.enum(['safe', 'unknown', 'low', 'medium', 'high', 'critical']).optional(),
     commandSecurityFlags: z.array(z.string()).optional(),
@@ -197,6 +199,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     affectedFileCount: z.number().int().nonnegative().optional(),
     targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
+    commandGrantTarget: z.string().nullable().optional(),
     browserSessionGrant: z.object({ target: z.string().nullable(), previousOrigins: z.array(z.string()) }).optional(),
     targetApp: z.object({
       bundleId: z.string().optional(),
@@ -697,7 +700,7 @@ const TaskCompleteEventSchema = event('task_complete', typed<TaskCompleteData & 
 const BackgroundTaskLedgerChangedEventSchema = event('background_task_ledger_changed', typed<BackgroundTaskLedgerChangedData>(z.object({ taskId: z.string(), sessionId: z.string().optional() })));
 const MemoryLearnedEventSchema = event('memory_learned', typed<MemoryLearnedData>(z.object({ sessionId: z.string(), knowledgeExtracted: z.number(), codeStylesLearned: z.number(), toolPreferencesUpdated: z.number() })));
 const SkillDraftPendingEventSchema = event('skill_draft_pending', typed<SkillDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), toolSequence: stringArraySchema, occurrences: z.number(), origin: z.enum(['telemetry-distilled', 'llm-review']) })) })));
-const ScheduleDraftRequestedEventSchema = event('schedule_draft_requested', z.object({ sessionId: z.string(), description: z.string() }));
+const ScheduleDraftRequestedEventSchema = event('schedule_draft_requested', z.object({ sessionId: z.string(), requestId: z.string(), description: z.string() }));
 const RoleDraftPendingEventSchema = event('role_draft_pending', typed<RoleDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), roleId: z.string(), description: z.string(), category: z.string().optional(), tools: stringArraySchema, editingRoleId: z.string().optional() })) })));
 const RoleCreatedDirectEventSchema = event('role_created_direct', typed<RoleCreatedDirectData>(z.object({ sessionId: z.string(), roleId: z.string(), displayName: z.string(), canDo: z.string(), willNotDo: z.string() })));
 const TeamRecipeDraftPendingEventSchema = event('team_recipe_draft_pending', typed<TeamRecipeDraftPendingData>(z.object({ sessionId: z.string(), drafts: z.array(z.object({ id: z.string(), name: z.string(), description: z.string(), lead: z.object({ roleId: z.string(), briefTemplate: z.string() }).optional(), members: z.array(z.object({ id: z.string().optional(), roleId: z.string(), taskTemplate: z.string() })), unknownRoleNames: stringArraySchema.optional() })) })));

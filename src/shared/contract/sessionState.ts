@@ -73,6 +73,7 @@ export interface BackgroundSessionInfo {
   progress?: number;
   /** 完成信息 */
   completionMessage?: string;
+  leftoverPaths?: string[];
 }
 
 /**

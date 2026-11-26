@@ -27,6 +27,16 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const FOLDER = '/Users/worker/notes';
 
+/** 可见文案只含文件夹名；完整路径只在 title。不出现以 / 开头的路径片段。 */
+function expectVisibleFolderName(element: HTMLElement, fullPath: string): void {
+  const text = element.textContent ?? '';
+  expect(text).toContain('notes');
+  expect(text).not.toContain(fullPath);
+  expect(text).not.toContain('/Users');
+  expect(text).not.toMatch(/(^|\s)\//);
+  expect(element.getAttribute('title')).toBe(fullPath);
+}
+
 function makeJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
   return {
     id: 'job-1',
@@ -70,18 +80,19 @@ describe('CronWriteScopePanel 三态', () => {
     const grantedJob = { ...job, metadata: { writeGrantRoot: FOLDER } };
     vi.mocked(cronClient.grantWriteScope).mockResolvedValue(grantedJob);
 
-    render(<CronWriteScopePanel job={job} />);
+    const { rerender } = render(<CronWriteScopePanel job={job} />);
     expect(screen.getByTestId('cron-write-scope-denied').textContent).toContain('需要保存文件时会停下来等你确认');
     const allow = screen.getByTestId('cron-write-scope-allow');
-    expect(allow.textContent).toContain(FOLDER);
+    expectVisibleFolderName(allow, FOLDER);
+    expect(screen.queryByTestId('cron-write-scope-granted')).toBeNull();
 
-    const { rerender } = render(<CronWriteScopePanel job={job} />);
     await act(async () => { fireEvent.click(allow); });
     expect(cronClient.grantWriteScope).toHaveBeenCalledWith('job-1');
     expect(useCronStore.getState().jobs[0].metadata?.writeGrantRoot).toBe(FOLDER);
     // 真实链路里 CronCenterPanel 从 store 重取 selectedJob 再喂回面板；单测里用 rerender 等价复刻
     rerender(<CronWriteScopePanel job={grantedJob} />);
-    expect(screen.getByTestId('cron-write-scope-granted').textContent).toContain(FOLDER);
+    expectVisibleFolderName(screen.getByTestId('cron-write-scope-granted'), FOLDER);
+    expect(screen.queryByTestId('cron-write-scope-allow')).toBeNull();
   });
 
   it('常设刷新任务：无来源会话也按产物目录给允许按钮（与 host 授权解析同源）', () => {
@@ -90,7 +101,7 @@ describe('CronWriteScopePanel 三态', () => {
       metadata: { artifactRefresh: { path: `${FOLDER}/report.md`, instruction: '刷新', cadence: 'daily' } },
     });
     render(<CronWriteScopePanel job={job} />);
-    expect(screen.getByTestId('cron-write-scope-allow').textContent).toContain(FOLDER);
+    expectVisibleFolderName(screen.getByTestId('cron-write-scope-allow'), FOLDER);
   });
 
   it('已授权：显示授权根 + 撤销按钮；点击撤销后回到未授权态', async () => {
@@ -99,7 +110,8 @@ describe('CronWriteScopePanel 三态', () => {
     vi.mocked(cronClient.revokeWriteScope).mockResolvedValue({ ...job, metadata: undefined });
 
     render(<CronWriteScopePanel job={job} />);
-    expect(screen.getByTestId('cron-write-scope-granted').textContent).toContain(FOLDER);
+    expect(screen.getByTestId('cron-write-scope-granted')).toBeTruthy();
+    expectVisibleFolderName(screen.getByTestId('cron-write-scope-granted'), FOLDER);
     expect(screen.queryByTestId('cron-write-scope-allow')).toBeNull();
 
     await act(async () => { fireEvent.click(screen.getByTestId('cron-write-scope-revoke')); });
@@ -140,6 +152,12 @@ describe('CronWriteScopePanel 三态', () => {
         sessions: [{ id: 'src-sess', title: '来源', workingDirectory: FOLDER } as never],
       });
     });
-    expect(screen.getByTestId('cron-write-scope-allow').textContent).toContain(FOLDER);
+    expectVisibleFolderName(screen.getByTestId('cron-write-scope-allow'), FOLDER);
+  });
+
+  it('Windows 风格授权根只显示文件夹名', () => {
+    const job = makeJob({ metadata: { writeGrantRoot: 'C:\\Users\\worker\\notes' } });
+    render(<CronWriteScopePanel job={job} />);
+    expect(screen.getByTestId('cron-write-scope-granted').textContent).toBe('已允许在 notes 里保存文件');
   });
 });

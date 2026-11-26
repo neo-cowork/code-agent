@@ -153,12 +153,21 @@ export function resolveShellBridgeClientFromEnv(
       }
 
       if (!response.ok) {
-        const reason = response.status === 401 || response.status === 403
+        const authRejected = response.status === 401 || response.status === 403;
+        const reason = authRejected
           ? 'env_assist_bridge:bridge_auth_rejected'
           : `env_assist_bridge:bridge_http_${response.status}`;
-        logger.warn(reason);
         // The bridge's own machine code (e.g. calendar_not_authorized, event_not_found), never its detail text.
         const code = await response.json().then((json: { error?: unknown }) => json?.error, () => undefined);
+        logger.warn(reason);
+        if (authRejected) {
+          // Same fixed line as above stays first; this adds status + machine code so a device log tells
+          // "user pressed Don't Allow" (403 calendar_not_authorized) from stale token (401) / wrong host.
+          logger.warn('env_assist_bridge:bridge_auth_rejected_detail', {
+            status: response.status,
+            code: typeof code === 'string' ? code : undefined,
+          });
+        }
         throw Object.assign(new Error(reason), typeof code === 'string' ? { bridgeError: code } : {});
       }
 

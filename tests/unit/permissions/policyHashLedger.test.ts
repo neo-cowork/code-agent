@@ -102,6 +102,7 @@ describe('permission_decisions.policy_hash', () => {
       const sessionId = 'ledger-session';
       recordDecision('Bash', { command: 'echo hi' }, 'ask-denied', 'user', 1_000, undefined, sessionId, 'desktop', 5);
       const row = repo.getBySession(sessionId)[0];
+      expect(row?.summary).toBe('echo hi');
       expect(row?.policyHash).toBe(computePolicyHash(sessionId));
       expect(row?.policyHash).toMatch(/^[a-f0-9]{64}$/);
     } finally {
@@ -127,6 +128,29 @@ describe('permission_decisions.policy_hash', () => {
       };
       expect(row.policy_hash).toBe('cli-hash');
     } finally {
+      db.close();
+    }
+  });
+
+  it('stores a delegation tool ID in the ledger and trace without using it as the summary', () => {
+    const db = new Database(':memory:');
+    const previous = getToolLedgerSink();
+    try {
+      applySchema(db, createLogger() as never);
+      const repo = new PermissionDecisionRepository(db);
+      setToolLedgerSink({
+        appendPermissionDecision: (input) => repo.append(input),
+        appendToolExecutionBegin: () => {},
+        appendToolExecutionComplete: () => {},
+      });
+      recordDecision('spawn_agent', {}, 'auto-approve', '自动放行：派后台助手', Date.now());
+      expect(repo.getRecent()[0]).toMatchObject({
+        toolName: 'spawn_agent',
+        summary: '',
+        trace: { toolName: 'spawn_agent' },
+      });
+    } finally {
+      setToolLedgerSink(previous);
       db.close();
     }
   });

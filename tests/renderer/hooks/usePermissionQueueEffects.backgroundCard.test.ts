@@ -405,7 +405,7 @@ describe('three sibling approvals share their parent runId', () => {
       expect(liveIds()).toContain(id);
       // DecisionSlot renders queued cards via requestOverride as well as the pending card.
       const view = render(createElement<PermissionCardProps>(PermissionCard, { requestOverride: request, sessionIdOverride: 'session-main' }));
-      fireEvent.click(screen.getByRole('button', { name: decision === 'deny' ? /^拒绝/ : /允许一次/ }));
+      fireEvent.click(screen.getByRole('button', { name: decision === 'deny' ? /^暂不$/ : /^允许$/ }));
       await waitFor(() => {
         expect(useAppStore.getState().resolvedPermissionRequests['session-main']?.map(r => [r.id, r.decision]))
           .toEqual(order.slice(0, index + 1).map((requestId, n) => [requestId, decisions[n]]));
@@ -424,7 +424,7 @@ describe('three sibling approvals share their parent runId', () => {
     const { requests } = enqueueSiblings();
     invoke.mockResolvedValueOnce({ outcome: 'unknown_request' });
     render(createElement<PermissionCardProps>(PermissionCard, { requestOverride: requests[0], sessionIdOverride: 'session-main' }));
-    fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^允许$/ }));
     await waitFor(() => {
       expect(liveIds()).toEqual(['B', 'C']);
       expect(toastError).toHaveBeenCalledWith(zh.decisionCard.permission.settledElsewhere);

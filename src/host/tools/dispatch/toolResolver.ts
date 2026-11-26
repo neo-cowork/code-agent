@@ -209,6 +209,7 @@ class ProtocolToolResolver implements ToolResolver {
       return {
         success: false,
         error: protoResult.error,
+        ...(protoResult.userMessage !== undefined ? { userMessage: protoResult.userMessage } : {}),
         metadata: { code: protoResult.code, ...(protoResult.meta ?? {}) },
       };
     } catch (err) {

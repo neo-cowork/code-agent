@@ -22,6 +22,7 @@ import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
 import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
 import { openCloudCronSettings } from '../../../../utils/cronCloudSettingsNavigation';
 import { CronCloudCreateNotice } from '../../cron/CronCloudCreateNotice';
+import { useScheduleEstimateHistory } from '../../cron/useScheduleEstimateHistory';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
 
 interface ScheduleConfirmCardProps {
@@ -45,6 +46,14 @@ interface WhenEditState {
 }
 
 /** epoch/ISO → datetime-local 输入值（yyyy-MM-ddTHH:mm，本地时区）。解析不了给空串。 */
+// 键序无关的序列化：编辑器编出来的 schedule 与模型草案键序可能不同，不能因此判成「改了时间」。
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+      : v);
+}
+
 function toLocalDateTimeValue(datetime: string | number): string {
   const date = typeof datetime === 'number' ? new Date(datetime) : new Date(datetime);
   if (Number.isNaN(date.getTime())) return '';
@@ -111,6 +120,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   const { t, language } = useI18n();
   const labels = t.scheduleConfirm;
   const cc = t.cronCenter;
+  const estimateHistory = useScheduleEstimateHistory(draft.input);
   const rows = useMemo(
     () => buildScheduleConfirmRows(draft, labels, language, {
       group: cc.eventConfirmGroup,
@@ -120,8 +130,8 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       mail: cc.eventConfirmMail,
       mailFallback: cc.eventConfirmMailFallback,
       mailTrigger: cc.eventMailTriggerPrefix,
-    }),
-    [draft, labels, language, cc],
+    }, estimateHistory),
+    [draft, labels, language, cc, estimateHistory],
   );
 
   // event 草案（N-CRON-EVENT-CREATE-CHAT）：没有「什么时候」行/时间编辑器，
@@ -304,9 +314,14 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
 
   const applyWhenEdit = () => {
     if (!compiledWhen || !onDraftChange) return;
+    // 时间真的变了：模型写的 what 句可能还带着旧间隔，清掉让 What 行走兜底链；notifyWhen 是通知门规则，保留。
+    const scheduleChanged = stableJson(compiledWhen) !== stableJson(draft.input.schedule);
     onDraftChange({
       ...draft,
       input: { ...draft.input, schedule: compiledWhen, scheduleType: compiledWhen.type },
+      ...(scheduleChanged && draft.restatement
+        ? { restatement: { what: '', notifyWhen: draft.restatement.notifyWhen } }
+        : {}),
     });
     setEditingWhen(false);
   };
@@ -325,12 +340,15 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     setEditingNotify(false);
   };
 
-  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail') => {
+  const renderRowValue = (key: (typeof rows)[number]['key']) => {
     const row = rows.find((candidate) => candidate.key === key);
     const value = row?.value ?? '';
     return (
       <>
-        <span className="flex-1 min-w-0 text-[11px] leading-relaxed text-zinc-200">{value}</span>
+        <span className="flex-1 min-w-0 text-[11px] leading-relaxed text-zinc-200">
+          {value}
+          {row?.hint && <span className="block text-badge-warning">{row.hint}</span>}
+        </span>
         {(key === 'when' || key === 'notifyWhen') && onDraftChange && !confirming && (
           <Button
             type="button"
@@ -374,7 +392,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
         {rows.map((row) => (
           <div
             key={row.key}
-            className="grid grid-cols-[auto_1fr] gap-3 rounded-md bg-indigo-500/5 px-2.5 py-1.5"
+            className={`grid grid-cols-[auto_1fr] gap-3 rounded-md px-2.5 py-1.5 ${row.hint ? 'bg-amber-500/10' : 'bg-indigo-500/5'}`}
             data-schedule-row={row.key}
           >
             <span className="text-[10px] text-badge-accent/55">{row.label}</span>

@@ -47,7 +47,11 @@ export function SessionConflictCard({ node, sessionId }: {
     : undefined;
 
   const resend = useCallback(() => {
-    useMessageActionStore.getState().regenerateMessage(messageId);
+    const resent = useMessageActionStore.getState().regenerateMessage(messageId);
+    if (!resent) {
+      if (mountedRef.current) setState('idle');
+      return;
+    }
     // 旧说明到此过时：从时间线和失败发件箱摘掉，再被拒时由新说明替换。
     const sessions = useSessionStore.getState();
     if (anchorSessionId && retryClientMessageId) clearFailedSend(anchorSessionId, retryClientMessageId);

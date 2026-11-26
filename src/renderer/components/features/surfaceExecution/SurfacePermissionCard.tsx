@@ -2,6 +2,7 @@ import React from 'react';
 import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
 import type { SurfaceExecutionTranslationsV1 } from '../../../i18n/surfaceExecution';
 import { formatSurfaceExecutionCopy } from '../../../i18n/surfaceExecution';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatSurfaceTimestamp } from './surfaceExecutionPresentation';
 
 interface SurfacePermissionCardProps {
@@ -59,8 +60,8 @@ export function SurfacePermissionCard({ session, copy, language }: SurfacePermis
       )}
 
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
-        <span>{formatSurfaceExecutionCopy(copy.permission.actionScope, { count: grant.actionClasses.length })}</span>
-        <span>{formatSurfaceExecutionCopy(copy.permission.dataScope, { count: grant.dataScopes.length })}</span>
+        <span>{interpolatePlural(copy.permission.actionScope, grant.actionClasses.length)}</span>
+        <span>{interpolatePlural(copy.permission.dataScope, grant.dataScopes.length)}</span>
         {grant.expiresAt && (
           <span>{formatSurfaceExecutionCopy(copy.permission.expires, {
             time: formatSurfaceTimestamp(grant.expiresAt, language),

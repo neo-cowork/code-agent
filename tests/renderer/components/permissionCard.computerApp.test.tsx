@@ -78,7 +78,7 @@ describe('PermissionCard computer app grant', () => {
       '本次对话允许s',
       '拒绝n',
     ]);
-    expect(screen.queryByRole('button', { name: /允许一次/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^允许$/ })).toBeNull();
     expect(checkMemory).not.toHaveBeenCalled();
     expect(saveMemory).not.toHaveBeenCalled();
   });
@@ -117,7 +117,7 @@ describe('PermissionCard computer app grant', () => {
     expect(unknown.container.textContent).not.toContain('命令');
   });
 
-  it('keeps the command consequence line for dangerous and forceConfirm requests', () => {
+  it('keeps deletion consequences but omits plain forceConfirm command consequences', () => {
     state.request = {
       ...computerRequest(),
       id: 'permission-app-dangerous-consequence',
@@ -130,7 +130,7 @@ describe('PermissionCard computer app grant', () => {
     cleanup();
     state.request = computerRequest(true);
     render(<PermissionCard />);
-    expect(screen.getByTestId('permission-consequence')).toBeTruthy();
+    expect(screen.queryByTestId('permission-consequence')).toBeNull();
   });
 
   it('keeps the dangerous command wording when the app request itself is dangerous', () => {
@@ -191,10 +191,10 @@ describe('PermissionCard computer app grant', () => {
     state.request = computerRequest(true);
     render(<PermissionCard />);
     expect(screen.queryByText('允许 Neo 操作 Notes？')).toBeNull();
-    expect(screen.getByRole('button', { name: /允许一次/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^允许$/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /本次对话允许/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /始终允许/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^允许$/ }));
     expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
       'permission-forced',

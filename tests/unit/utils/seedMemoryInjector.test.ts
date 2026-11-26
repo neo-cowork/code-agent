@@ -167,7 +167,7 @@ describe('seedMemoryInjector', () => {
       projectPath: '/repo/code-agent',
       sessionId: 'session-1',
       statuses: ['active'],
-      kinds: ['user', 'feedback', 'project', 'reference', 'session', 'pattern'],
+      kinds: ['user', 'feedback', 'project', 'people', 'reference', 'session', 'pattern'],
     }), mocks.db);
   });
 

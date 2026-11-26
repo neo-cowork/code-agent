@@ -1,6 +1,8 @@
-import { reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
+import { isStandaloneSpawnTrace, reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
+import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
-import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
+import { agentFailureCopy, backgroundTaskFailureCopy, deleteIncompleteFileNames } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
@@ -50,7 +52,7 @@ export interface MemberRowSource {
   error?: string | null;
   failureCategory?: string | null;
   agent?: { error?: string | null };
-  record?: { error?: string | null; failureCategory?: string | null };
+  record?: { runId?: string; error?: string | null; failureCategory?: string | null };
 }
 
 export interface AgentRow {
@@ -205,7 +207,10 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = candidate;
         row.outcomeKey = outcome;
-        if (node.background && t === languages.en) {
+        const traceId = member.record?.runId;
+        const legacyUnnamed = t === languages.en && member.name === member.roleId
+          && !parseSwarmTraceStorageId(traceId ?? '');
+        if (node.background && (isStandaloneSpawnTrace(member.key, traceId) || legacyUnnamed)) {
           row.name = agentNodeLabel(node, t.agentRoleLabels);
           row.displayName = undefined;
         }
@@ -245,20 +250,32 @@ export function buildAgentRows(input: {
 
   for (const task of tasks) {
     const status = agentRowStatus(task.status);
+    const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
     const linkedNodeId = taskLinkedNodeId(task, nodeIds);
     if (linkedNodeId) {
       // 同一个代理在 agentTree 与 Task 两边都有：只留节点行，把 Task 挂上去供成员视图取产出
       const row = rows.find((candidate) => candidate.key === linkedNodeId);
-      if (row) row.task = task;
+      if (row) {
+        row.task = task;
+        if (incomplete) {
+          row.displayName = deleteIncompleteFileNames(task.leftoverPaths) ?? row.displayName;
+          row.status = 'failed';
+          row.outcomeKey = 'delete-incomplete';
+          row.failureReason = backgroundTaskFailureCopy(task, t) ?? undefined;
+          row.stoppable = false;
+        }
+      }
       continue;
     }
     rows.push({
       key: task.id,
       kind: 'task',
-      name: taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
+      name: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
+        ?? taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
+      outcomeKey: incomplete ? 'delete-incomplete' : undefined,
       stoppable: status === 'working',
       task,
     });

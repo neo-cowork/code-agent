@@ -252,6 +252,9 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             : cancelled.length > 0
               ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].displayName ?? cancelled[0].name}`
               : interpolatePlural(text.collapsedDone, rows.length);
+  const visibleSummary = outcome === 'delete-incomplete' && outcomeRow?.failureReason
+    ? t.chat.delegationReceipt.failureDetail.replace('{status}', outcomeSummary ?? summary).replace('{reason}', outcomeRow.failureReason)
+    : summary;
   const failureTitle = [...failed, ...cancelled].map((row) => row.failureReason
     ? t.chat.delegationReceipt.failureDetail.replace('{status}', row.displayName ?? row.name).replace('{reason}', row.failureReason)
     : row.displayName ?? row.name).join('\n') || undefined;
@@ -260,7 +263,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     : mergeState === 'reported'
       ? text.mergeState.chipReported
       : mergeState === 'conflict'
-        ? text.mergeState.chipConflict.replace('{count}', String(conflicts.length))
+        ? interpolatePlural(text.mergeState.chipConflict, conflicts.length)
         : mergeState === 'waiting'
           ? text.mergeState.chipWaiting
           : null;
@@ -276,7 +279,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
       <span className="flex -space-x-1.5">
         {rows.slice(0, 4).map((row) => <ChipAvatar key={row.key} row={row} />)}
       </span>
-      <span className="truncate">{summary}</span>
+      <span className={outcome === 'delete-incomplete' ? undefined : 'truncate'}>{visibleSummary}</span>
       {mergeLabel && (
         <span data-testid="member-bar-merge-state" className="ml-auto shrink-0 pl-2 text-zinc-400">
           {mergeLabel}

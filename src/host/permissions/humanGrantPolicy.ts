@@ -13,14 +13,15 @@ import { createLogger } from '../services/infra/logger';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { mintAppGrantSession, mintAppGrantStanding } from './appGrantStore';
 import { recordBrowserSessionGrant } from './browserSessionGrant';
+import { commandGrantKey, usesCommand24hGrant } from './commandGrantTarget';
 import { connectorToolGrantIdentity } from './connectorToolAccess';
 import { mintTool24hGrant, mintToolRunGrant } from './toolGrantStore';
 
 const logger = createLogger('HumanGrantPolicy');
 
 /** 真人点的会话/始终/两档工具授权。带 targetApp 时只记该应用，不记工具级放行。
- * plain allow 不记。allow_run/allow_24h 铸进 toolGrantStore（target 取透传的
- * standingGrantTarget，无 target 的工具级授权不放大到任何去向）。
+ * plain allow 不记。allow_run/allow_24h 铸进 toolGrantStore。终端和进程的 24h 档
+ * 只取 commandGrantTarget，其余档位沿用 standingGrantTarget。
  * 带 updatedArgs 的非 allow 应答会被 toAskResult 整体 fail-closed 拒——那种应答
  * 不铸造任何记忆：用户审的是改后内容，拒绝它不能换算成对原稿的任何档位授权。
  * `now`：24h 档的 grantedAt（重启恢复路径传注入时钟；在线路径缺省走 store 默认）。 */
@@ -90,7 +91,20 @@ export function recordHumanGrant(
       mintToolRunGrant(request.sessionId, identity.tool, identity.target);
     }
   } else if (response === 'allow_24h' && !app?.name) {
-    mintTool24hGrant(identity.tool, identity.target, now);
+    const scoped = usesCommand24hGrant(request.tool);
+    const commandTarget = request.details?.commandGrantTarget;
+    const target = scoped
+      ? commandGrantKey(request.tool, commandTarget, request.sessionId, request.details)
+      : identity.target;
+    if (scoped && !target) {
+      logger.warn('24h command grant treated as allow once', {
+        tool: request.tool,
+        requestId: request.id,
+        reason: commandTarget === null ? 'command_redaction_or_invalid_text' : 'exact_command_scope_unavailable',
+      });
+      return;
+    }
+    mintTool24hGrant(identity.tool, target ?? null, now);
   } else if (response === 'allow_24h') {
     logger.warn('24h tier grant not minted for computer-use app target: treated as allow once', {
       tool: request.tool,

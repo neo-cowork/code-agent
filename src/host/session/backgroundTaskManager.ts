@@ -8,10 +8,12 @@ import { AppWindow, broadcastToRenderer } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
 import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
+import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
+import { buildSessionTitle, isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 
 const logger = createLogger('BackgroundTaskManager');
+const UNNAMED_SESSION_TITLE = '未命名会话';
 
 /**
  * 后台任务管理器
@@ -60,7 +62,7 @@ class BackgroundTaskManager extends EventEmitter {
 
     const sessionInfo: BackgroundSessionInfo = {
       sessionId,
-      title: session.title || '未命名会话',
+      title: session.title || UNNAMED_SESSION_TITLE,
       startedAt: Date.now(),
       backgroundedAt: Date.now(),
       status: 'running',
@@ -149,6 +151,7 @@ class BackgroundTaskManager extends EventEmitter {
     // 发送系统通知。force：后台完成提醒绕过焦点门——用户可能正停在 app 里聊别的会话
     // （与 loop/定时任务同一档「默默长跑、完成才冒头」）。通知摘要不吃裸 code
     // （USER_CANCELLED 由 renderer 翻译面板行；系统通知这头就地给人话）。
+    logger.info('notifyTaskComplete', { sessionId });
     notificationService.notifyTaskComplete({
       sessionId,
       sessionTitle: task.title,
@@ -167,11 +170,12 @@ class BackgroundTaskManager extends EventEmitter {
    * 失败与完成同一档「默默长跑、终态才冒头」——焦点门不该吞掉失败提醒
    * （2026-10-11 验收：撞 max-step 上限的失败轮无任何提示）。
    */
-  async markFailed(sessionId: string, error?: string, duration?: number): Promise<void> {
+  async markFailed(sessionId: string, error?: string, duration?: number, leftoverPaths?: string[]): Promise<void> {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
     task.status = 'failed';
+    if (leftoverPaths) task.leftoverPaths = leftoverPaths;
     task.completionMessage = error || (readUiLanguage() === 'en' ? 'Task failed' : '任务执行失败');
 
     logger.warn('Background task failed', { sessionId, error });
@@ -187,6 +191,7 @@ class BackgroundTaskManager extends EventEmitter {
     notificationService.notifyTaskComplete({
       sessionId,
       sessionTitle: task.title,
+      ...(error === BACKGROUND_TASK_DELETE_INCOMPLETE ? { code: error } : {}),
       summary: error === RUN_ERROR_CODE_MAX_ITERATIONS
         ? '已达最大执行轮次，任务停止（部分结果已保留）'
         : `任务失败: ${error || '未知错误'}`,
@@ -197,15 +202,25 @@ class BackgroundTaskManager extends EventEmitter {
   }
 
   /**
-   * 终态后按实时会话标题刷新条目标题（改名/智能标题后快照已过期），取不到回落快照。
+   * 终态标题优先读持久化标题；早期会话可能只有首条消息或移入后台时的草稿。
    * 返回 false = 读取期间条目已被移出/替换，调用方不应再通知。
    */
   private async refreshLiveTitle(sessionId: string, task: BackgroundSessionInfo): Promise<boolean> {
     try {
-      const session = await getSessionManager().getSession(sessionId);
-      const live = session?.title?.trim();
+      const sessionManager = getSessionManager();
+      const session = await sessionManager.getSession(sessionId);
       if (this.backgroundSessions.get(sessionId) !== task) return false;
-      if (live) task.title = live;
+      // Web 标题写入可能早于宿主会话缓存刷新，直接读取已持久化的标题。
+      const live = (sessionManager.getSessionTitle(sessionId) ?? session?.title)?.trim();
+      if (live && !isPlaceholderSessionTitle(live)) {
+        task.title = live;
+      } else if (task.title === UNNAMED_SESSION_TITLE || isPlaceholderSessionTitle(task.title)) {
+        const messages = await sessionManager.getMessages(sessionId);
+        if (this.backgroundSessions.get(sessionId) !== task) return false;
+        const firstUser = messages.find(message => message.role === 'user' && !message.isMeta);
+        const draft = firstUser && buildSessionTitle(firstUser.content, firstUser.attachments?.[0]?.name);
+        task.title = draft?.trim() ? draft : session?.title?.trim() || task.title;
+      }
       return true;
     } catch {
       return this.backgroundSessions.get(sessionId) === task;

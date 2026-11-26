@@ -98,7 +98,7 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     notificationService.notifyNeedsInput({ sessionId: 's-en', title: 'raw', body: 'raw', tool: 'excel_generate' });
     await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
     expect(nativeSender).toHaveBeenCalledExactlyOnceWith({
-      id: expect.any(String), sessionId: 's-en', title: 'Sales workbook', body: 'Waiting for your OK: Export spreadsheet',
+      id: expect.any(String), sessionId: 's-en', title: 'Sales workbook', body: 'Needs your approval: Export spreadsheet',
     });
   });
 
@@ -239,7 +239,7 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
     expect(nativeSender).toHaveBeenCalledTimes(3);
     nativeSender.mock.calls.forEach(([payload], i) => {
-      expect(payload).toEqual({ id: expect.any(String), sessionId: `session-${i}`, title: titles[i], body: language === 'en' ? `Waiting for your OK: ${actions[i]}` : `等你确认：${actions[i]}` });
+      expect(payload).toEqual({ id: expect.any(String), sessionId: `session-${i}`, title: titles[i], body: language === 'en' ? `Needs your approval: ${actions[i]}` : `等你确认：${actions[i]}` });
       for (const forbidden of ['mcp__', 'approval-', '/raw/', 'Bash', 'Write"', 'Edit"']) expect(JSON.stringify({ title: payload.title, body: payload.body })).not.toContain(forbidden);
     });
     console.info(`ASSERT ${language} payloads:`, JSON.stringify(nativeSender.mock.calls));
@@ -292,7 +292,7 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     notificationService.setNotificationSessionTitleResolver(async () => { throw new Error('lookup failed'); });
     notificationService.notifyNeedsInput({ sessionId: 'secret-id', title: 'mcp__internal', body: '/private/args', tool: 'unknown_internal_tool' });
     await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
-    expect(nativeSender).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: language === 'en' ? 'Untitled task' : '未命名任务', body: language === 'en' ? 'Waiting for your OK: Action' : '等你确认：操作' }));
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: language === 'en' ? 'Untitled task' : '未命名任务', body: language === 'en' ? 'Needs your approval: Action' : '等你确认：操作' }));
   });
 
   it('clear and retract-all cancel timers and title lookups in flight', async () => {
