@@ -16,6 +16,7 @@ import { stripAppshotBlocks } from '@shared/contract/appshot';
 import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { normalizeSpokenFileName } from '@shared/utils/normalizeSpokenFileName';
+import { isImageAttachmentMissingData } from '@shared/utils/messageAttachments';
 import { isTelemetryRecoveredMessage, stripTelemetryRecoveryNotice } from '@shared/telemetryRecovery';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { restoreNeoTagTokenForDisplay } from './MessageBubble/triggerTokenHighlight';
@@ -111,6 +112,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           attachments={attachments}
           sourceType={node.metadata?.source}
           sendFailed={node.metadata?.sendFailed === true && !suppressSendFailedBadge}
+          imageDataLost={node.metadata?.sendFailed === true && Boolean(attachments?.some(isImageAttachmentMissingData))}
           telemetryRecovered={isTelemetryRecoveredMessage({ role: 'user', content: node.content, metadata: node.metadata })}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
@@ -194,6 +196,8 @@ const UserNode: React.FC<{
   sourceType?: 'voice' | 'dictation' | 'typed';
   /** 发送失败后留在时间线上的乐观用户气泡 */
   sendFailed?: boolean;
+  /** 超配额持久化导致失败轮次的图片附件丢失字节（无 data 且无 path） */
+  imageDataLost?: boolean;
   /** 由运行记录还原的消息（新标记或旧前缀行）：气泡旁加一句说明 */
   telemetryRecovered?: boolean;
   /** X5.5-D4：语音任务卡内抑制节点级「语音」小标（轮头已显示一次） */
@@ -202,7 +206,7 @@ const UserNode: React.FC<{
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
   streaming?: boolean;
-}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
+}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, imageDataLost, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
   const roleLabels = useRoleLabels();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
@@ -217,7 +221,7 @@ const UserNode: React.FC<{
     ? normalizeSpokenFileName(rawDisplayContent)
     : rawDisplayContent;
   const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt, roleLabels);
-  const showUserChrome = Boolean(shownContent) || sendFailed;
+  const showUserChrome = Boolean(shownContent) || sendFailed || imageDataLost;
 
   return (
     <div>
@@ -243,10 +247,13 @@ const UserNode: React.FC<{
             {sendFailed && (
               <div
                 data-testid="user-message-send-failed"
-                className="mb-1 flex items-center justify-end gap-2 text-2xs text-badge-danger/90"
+                className="mb-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-2xs text-badge-danger/90"
               >
-                <AlertTriangle className="h-3 w-3" />
+                <AlertTriangle className="h-3 w-3 shrink-0" />
                 <span>{t.turnCard.sendFailed}</span>
+                {imageDataLost && (
+                  <span data-testid="user-message-image-data-lost">{t.turnCard.failedImageDataLost}</span>
+                )}
                 <button
                   type="button"
                   data-testid="user-message-edit-resend"
@@ -255,6 +262,15 @@ const UserNode: React.FC<{
                 >
                   {t.turnCard.editAndResend}
                 </button>
+              </div>
+            )}
+            {!sendFailed && imageDataLost && (
+              <div
+                data-testid="user-message-image-data-lost"
+                className="mb-1 flex items-center justify-end gap-1.5 text-2xs text-badge-danger/90"
+              >
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                <span>{t.turnCard.failedImageDataLost}</span>
               </div>
             )}
             {telemetryRecovered && shownContent && (

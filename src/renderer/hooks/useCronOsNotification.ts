@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
+import { CRON_CONNECTOR_LOST } from '@shared/constants/cronErrors';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -50,6 +51,10 @@ export function useCronOsNotification(
   useEffect(() => {
     // 原生点击读「最近一条」事件；toast 动作必须绑定自己那条，否则连续两条失败时点 A 会开 B。
     const openForEvent = (event: NotificationShowEvent | null) => {
+      if (event?.code === CRON_CONNECTOR_LOST) {
+        useAppStore.getState().openCapabilityHub('connectors');
+        return;
+      }
       // The native notification is a consent boundary only for login-wall stops;
       // other cron notifications must never grant browser pass-through.
       const siteOrigin = event && cronLoginWallSiteOriginFromNotification(event);
