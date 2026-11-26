@@ -481,7 +481,7 @@ export async function wakeRole(
         notificationService.notifyRoleWakeOutput({
           sessionId: session.id,
           title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-          body: summary || `角色 ${roleId} 醒来产出了新内容`,
+          body: summary, roleId,
         });
       }
       logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });

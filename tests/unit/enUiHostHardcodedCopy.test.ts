@@ -1,5 +1,5 @@
 // English UI must show no Han in the three host-side copies fixed here; stored values and history filters stay Chinese.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BUILTIN_ROLES, RETIRED_BUILTIN_ROLE_VISUALS } from '../../src/host/services/roleAssets/builtinRoles';
 import { localizeBuiltinRoleCopy } from '../../src/shared/localizeBuiltinRoleCopy';
 import { localizeCronSessionTitle, localizeRoleWakeTitle } from '../../src/shared/cronSessionTitle';
@@ -18,6 +18,7 @@ vi.mock('../../src/host/services', () => ({
   getSessionManager: () => sessionManager,
   notificationService: { notifyTaskComplete },
 }));
+vi.mock('../../src/host/services/infra/notificationHeldStore', () => ({ readHeldFile: () => [], writeHeldFile: () => undefined }));
 vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: settings.language } }) }),
 }));
@@ -105,5 +106,31 @@ describe('background task failure notification body', () => {
     expect(await fail(undefined)).toBe('任务失败: 未知错误');
     notifyTaskComplete.mockClear();
     expect(await fail(RUN_ERROR_CODE_MAX_ITERATIONS)).toContain('最大执行轮次');
+  });
+});
+
+describe('realtime role wake desktop notification (production notificationService)', () => {
+  beforeEach(() => { vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1'); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  async function wake(lang: 'en' | 'zh', roleId: string, body: string) {
+    settings.language = lang;
+    vi.resetModules();
+    const { notificationService: service } = await import('../../src/host/services/infra/notificationService');
+    service.notifyRoleWakeOutput({ sessionId: 'wake-1', title: `${roleId} · ${WAKE}`, body, roleId });
+    return service.getRecentNotifications().at(-1)!;
+  }
+
+  it('en title and fallback body have no Han', async () => {
+    const entry = await wake('en', '牧之', '');
+    expect(entry.title).toBe('Muzhi · Proactive check');
+    expect(entry.body).toBe('Muzhi produced new output');
+    expect(`${entry.title}${entry.body}`).not.toMatch(HAN);
+  });
+
+  it('zh title and fallback body stay Chinese', async () => {
+    const entry = await wake('zh', '牧之', '');
+    expect(entry.title).toBe(`牧之 · ${WAKE}`);
+    expect(entry.body).toBe('角色 牧之 醒来产出了新内容');
   });
 });
