@@ -8,6 +8,11 @@ export const LIBREOFFICE_RUNTIME_LABEL = 'LibreOffice document renderer';
 export const LIBREOFFICE_ROOT_NAME = 'libreoffice';
 export const LIBREOFFICE_PROBE_TIMEOUT_MS = PROBE_TIMEOUT_MS;
 export const LIBREOFFICE_PROBE_SLOW_TTFB_MS = PROBE_SLOW_TTFB_MS;
+/**
+ * Dev-machine seam (N-ENV-ASSIST-S5-RUNTIME): `1` = only the managed copy exists for every lookup, so a fresh data dir on a
+ * machine that has /Applications or Homebrew LibreOffice behaves like one without any.
+ */
+export const LIBREOFFICE_MANAGED_ONLY_ENV = 'CODE_AGENT_LIBREOFFICE_MANAGED_ONLY';
 
 export interface LibreOfficeBuild {
   arch: 'arm64' | 'x86_64';

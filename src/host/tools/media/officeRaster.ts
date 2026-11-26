@@ -11,6 +11,7 @@ import { execFile, execFileSync } from 'child_process';
 import { resolveHelperBinary } from '../../runtime/runtimeAssetResolver';
 import { CONVERT_TIMEOUTS, PDF_RENDER } from './ppt/constants';
 import { ensureLibreOffice } from '../../runtime/libreOffice/ensure';
+import { LibreOfficeNotReadyError } from '../../runtime/libreOffice/errors';
 import { findLibreOfficePath, getLibreOfficeCandidates } from '../../runtime/libreOffice/lookup';
 
 function execFileAsync(
@@ -56,7 +57,7 @@ function triggerLibreOfficeInstallOnce(): void {
 function getLibreOfficePath(): string {
   const resolved = findLibreOfficePath({ which: whichSync });
   if (resolved) return resolved;
-  throw new Error('LibreOffice preview is being prepared in the background. Retry in a moment.');
+  throw new LibreOfficeNotReadyError();
 }
 
 /** 从页图文件名尾部抽页码：`deck-7.jpg` → 7、`deck-07.jpg` → 7。抽不到的排到末尾。 */

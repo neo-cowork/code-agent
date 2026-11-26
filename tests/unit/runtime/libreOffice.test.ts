@@ -145,6 +145,20 @@ describe('managed LibreOffice runtime', () => {
     expect(candidates).toContain('/which/soffice');
   });
 
+  it('managed-only seam: system locations disappear, only the managed copy answers (N-ENV-ASSIST-S5-RUNTIME ⑦)', () => {
+    const dataDir = tempRoot();
+    const managedPath = path.join(dataDir, 'runtimes/libreoffice/LibreOffice.app/Contents/MacOS/soffice');
+    const system = new Set([path.join(dataDir, 'explicit-soffice'), '/Applications/LibreOffice.app/Contents/MacOS/soffice', '/usr/local/bin/libreoffice']);
+    const lookup = (managedInstalled: boolean) => getLibreOfficeCandidates({
+      dataDir,
+      env: { LIBREOFFICE_PATH: path.join(dataDir, 'explicit-soffice'), CODE_AGENT_LIBREOFFICE_MANAGED_ONLY: '1' },
+      existsSync: (candidate) => system.has(candidate) || (managedInstalled && candidate === managedPath),
+      which: (binary) => (binary === 'soffice' ? '/which/soffice' : '/which/libreoffice'),
+    });
+    expect(lookup(false)).toEqual([]);
+    expect(lookup(true)).toEqual([managedPath]);
+  });
+
   describe('shared preparation merge (installing beats failed)', () => {
     function baseStatus(preparation: RuntimeAssetsStatus['preparation']): RuntimeAssetsStatus {
       return {
