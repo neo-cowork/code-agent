@@ -12,7 +12,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     getMessages: async () => mocks.messages,
-    addMessageToSession: async (_s: string, m: Message) => { mocks.messages.push(m); },
+    addMessageToSession: async (_s: string, m: Message) => {
+      const index = mocks.messages.findIndex((existing) => existing.id === m.id);
+      if (index === -1) mocks.messages.push(m);
+      else mocks.messages[index] = m;
+    },
   }),
 }));
 vi.mock('../../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn() }));
@@ -35,6 +39,7 @@ import { publishEnvAssistToolNotice } from '../../../../../src/host/permissions/
 import { registerEnvAssistHandlers } from '../../../../../src/host/ipc/envAssist.ipc';
 import { ipcHost, type HandlerFn } from '../../../../../src/host/platform';
 import type { PassiveBridge, PromptingBridge } from '../../../../../src/host/permissions/envAssist/probes/types';
+import { ENV_ASSIST_CLICK_TTL_MS } from '../../../../../src/shared/constants/envAssist';
 
 /** Real mapping: MCPToolRegistry.callExternalTool (SDK result -> ToolResult) then the resolver's ensureFailedToolResultError. */
 async function deniedCuaResult(tool: string, text: string): Promise<ToolResult> {
@@ -103,18 +108,26 @@ describe('② act on a cua notice uses the helper bridge only', () => {
   const grantBridge = new Proxy({}, { get: () => async () => { shell.prompting++; } }) as unknown as PromptingBridge;
 
   let runSeq = 0;
-  async function setup(screenAfterGrant: boolean) {
+  async function setup(screenAfterGrant: boolean, pane: 'screenCapture' | 'accessibility' = 'screenCapture', now?: () => number) {
     shell.passive = 0; shell.prompting = 0;
     vi.spyOn(ipcHost, 'handle').mockImplementation((_c, fn) => { handler = fn; });
-    const [notice] = await publish('mcp__cua-driver__get_window_state', await deniedCuaResult('get_window_state', 'Screen Recording permission not granted'), `run-${++runSeq}`);
-    const helperGrant = vi.fn(async () => { mocks.structured = { accessibility: true, screen_recording: screenAfterGrant }; });
+    const screen = pane === 'screenCapture';
+    mocks.structured = { accessibility: screen, screen_recording: !screen };
+    const tool = screen ? 'get_window_state' : 'click';
+    const denial = screen ? 'Screen Recording permission not granted' : 'Accessibility permission not granted';
+    const republish = async () => publish(`mcp__cua-driver__${tool}`, await deniedCuaResult(tool, denial), `run-${++runSeq}`);
+    const [notice] = await republish();
+    const helperGrant = vi.fn(async () => {
+      mocks.structured = { accessibility: screen, screen_recording: !screen || screenAfterGrant };
+    });
     const open = vi.fn(async () => true);
     registerEnvAssistHandlers({
-      available: () => true, open, findNotice: async (id) => id === notice.id ? notice : undefined,
+      available: () => true, open, now,
+      findNotice: async (id) => mocks.messages.find((message) => message.id === `env-assist:${id}`)?.metadata?.envAssist,
       passiveBridge, grantBridge, cuaHelperGrantBridge: { requestHelperGrant: helperGrant },
     });
-    const act = () => handler!({} as never, { action: 'act', payload: { noticeId: notice.id, actionKind: 'request_grant', payload: { pane: 'screenCapture' } } });
-    return { act, helperGrant, open };
+    const act = () => handler!({} as never, { action: 'act', payload: { noticeId: notice.id, actionKind: 'request_grant', payload: { pane } } });
+    return { act, helperGrant, open, notice, republish };
   }
 
   it('granted: one helper call, zero shell calls, re-check reads the helper, second click rejected', async () => {
@@ -133,6 +146,33 @@ describe('② act on a cua notice uses the helper bridge only', () => {
     expect(await act()).toMatchObject({ data: { status: 'opened', outcome: { status: 'denied' } } });
     expect(helperGrant).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledExactlyOnceWith('screenCapture');
+    expect(shell).toEqual({ passive: 0, prompting: 0 });
+  });
+
+  it.each([
+    { pane: 'screenCapture', expired: false },
+    { pane: 'accessibility', expired: true },
+  ] as const)('re-arms the reused $pane card for a new run and still rejects duplicate clicks', async ({ pane, expired }) => {
+    const now = vi.fn(() => 0);
+    if (expired) now.mockReturnValueOnce(0).mockReturnValueOnce(ENV_ASSIST_CLICK_TTL_MS);
+    const { act, helperGrant, open, notice, republish } = await setup(false, pane, now);
+    const firstGrants = expired ? 0 : 1;
+    expect(await act()).toMatchObject({ data: { status: 'opened', outcome: { status: 'denied' } } });
+    expect(helperGrant).toHaveBeenCalledTimes(firstGrants);
+    expect(await act()).toMatchObject({ data: { status: 'rejected' } });
+    expect(open).toHaveBeenCalledExactlyOnceWith(pane);
+
+    const [reused] = await republish();
+    expect(reused.id).toBe(notice.id);
+    expect(reused.runId).not.toBe(notice.runId);
+    expect(mocks.messages).toHaveLength(1);
+    expect(helperGrant).toHaveBeenCalledTimes(firstGrants);
+    expect(open).toHaveBeenCalledTimes(1);
+
+    expect(await act()).toMatchObject({ data: { status: 'opened', outcome: { status: 'denied' } } });
+    expect(await act()).toMatchObject({ data: { status: 'rejected' } });
+    expect(helperGrant).toHaveBeenCalledTimes(firstGrants + 1);
+    expect(open.mock.calls).toEqual([[pane], [pane]]);
     expect(shell).toEqual({ passive: 0, prompting: 0 });
   });
 });

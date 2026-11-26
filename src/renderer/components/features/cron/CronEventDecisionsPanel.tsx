@@ -8,7 +8,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Copy, Eye, Zap } from 'lucide-react';
 import type { CronEventDecision, CronEventStats, CronJobDefinition } from '@shared/contract';
 import { resolveCronEventActionMode } from '@shared/cronEventActionMode';
-import { localizeDecisionText } from '@shared/cronEventDecisionText';
+import { localizeDecisionText, scrubInternalIdentifiers } from '@shared/cronEventDecisionText';
 import { cronClient } from '../../../services/cronClient';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -16,6 +16,7 @@ import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { Button } from '../../primitives/Button';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { copyPathToClipboard } from '../../../utils/platform';
+import { cronDecisionFailureReason } from './cronFailureNotice';
 
 /** 决策行底色：「本会执行」是观察期要用户过目的，高亮。 */
 function decisionRowClass(decision: CronEventDecision['decision']): string {
@@ -93,7 +94,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   };
 
   const renderRow = (row: CronEventDecision, testId: string) => {
-    const reason = localizeDecisionText(row.reason, language);
+    const reason = cronDecisionFailureReason(row.reason, language);
     const rule = row.matchedRule ? localizeDecisionText(row.matchedRule, language) : undefined;
     const time = formatDateTime(row.createdAt, language);
     const copyButton = (value: string, valueTestId: string) => (
@@ -134,7 +135,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
               {copy.ruleLabel.replace('{rule}', rule)}
             </div>
           )}
-          {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
+          {row.summary && <div className="mt-1 truncate text-zinc-300">{scrubInternalIdentifiers(row.summary, language)}</div>}
         </div>
         <details className="mt-2 border-t border-zinc-800/80 pt-2" data-testid="cron-event-decision-details">
           <summary className="cursor-pointer select-none text-zinc-500 hover:text-zinc-300">{copy.details}</summary>

@@ -5,8 +5,13 @@ import type { SessionTaskDeliveryFailure } from '../../shared/constants/sessionC
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import { isBashToolName } from '../tools/toolNames';
+import { shortenDisplayPaths } from '../agent/workspacePathDisplay';
+import { formatSessionTaskCommandFailed } from '../../shared/constants/sessionCommandCenter';
 
-export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed' | 'user_denied';
+export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed' | 'user_denied' | 'command_failed';
+
+const FAILED_COMMAND_MAX_CHARS = 200;
+const FAILED_REASON_MAX_CHARS = 120;
 
 function terminalDeliveryFailure(messages: readonly Message[]): SessionTaskDeliveryFailure | undefined {
   let lastResult: ToolResult | undefined;
@@ -29,6 +34,11 @@ function bashExecuteSuccessCounts(command: unknown): boolean {
   return compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform }) === null;
 }
 
+/** 成功的执行类工具是否算「有进展」：证明得了只读的 Bash 不算。判决与失败文案共用这一条清零规则。 */
+function executeSuccessClearsFailure(toolName: string, command: unknown): boolean {
+  return !isBashToolName(toolName) || bashExecuteSuccessCounts(command);
+}
+
 export function getTaskDeliveryFailure(
   messages: readonly Message[],
   deliverableArtifactCount: number,
@@ -49,6 +59,7 @@ export function getTaskDeliveryFailure(
   let writeFailed = false;
   let writeDeniedByUser = false;
   let executeDeniedByUser = false;
+  let commandFailed = false;
   const resolver = getToolResolver();
   for (const message of messages) {
     for (const result of message.toolResults ?? []) {
@@ -60,7 +71,10 @@ export function getTaskDeliveryFailure(
       if (!isWrite && permissionLevel !== 'execute') continue;
       if (result.success) {
         if (isWrite) writeSucceeded = true;
-        else if (!isBashToolName(toolName) || bashExecuteSuccessCounts(call.arguments?.command)) executeSucceeded = true;
+        else if (executeSuccessClearsFailure(toolName, call.arguments?.command)) {
+          executeSucceeded = true;
+          commandFailed = false;
+        }
         continue;
       }
       const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
@@ -69,6 +83,7 @@ export function getTaskDeliveryFailure(
         writeFailed = true;
         if (deniedByUser) writeDeniedByUser = true;
       } else if (deniedByUser) executeDeniedByUser = true;
+      else if (isBashToolName(toolName) && result.metadata?.code === 'COMMAND_FAILED') commandFailed = true;
     }
   }
 
@@ -77,5 +92,53 @@ export function getTaskDeliveryFailure(
   if (writeFailed) return writeDeniedByUser ? 'user_denied' : 'write_failed';
   // 仅被拒的执行类工具：之后认不出只读的成功执行才算有进展。证明只读的 Bash 不救。
   if (executeDeniedByUser && !executeSucceeded) return 'user_denied';
+  // 最后一条会算进展的执行是失败的 Bash（COMMAND_FAILED），之后没有成功的执行也没有交付物。
+  if (commandFailed) return 'command_failed';
   return undefined;
+}
+
+/**
+ * 最后一条失败的 Bash（COMMAND_FAILED）→ 给用户看的白话句：命令行 + 原因首行。
+ * 绝对路径一律缩成 ./相对 或末两段，不外露家目录。
+ */
+export function describeFailedCommand(
+  messages: readonly Message[],
+  workspaceRoot: string | undefined,
+  locale: 'zh' | 'en',
+): string | undefined {
+  const callsById = new Map<string, { name: string; arguments: Record<string, unknown> }>();
+  const resolver = getToolResolver();
+  let failed: { command: string; result: ToolResult } | undefined;
+  for (const message of messages) {
+    for (const call of message.toolCalls ?? []) {
+      callsById.set(call.id, { name: call.name, arguments: call.arguments ?? {} });
+    }
+    for (const result of message.toolResults ?? []) {
+      const call = callsById.get(result.toolCallId);
+      if (!call) continue;
+      if (result.success) {
+        if (resolver.getDefinition(call.name)?.permissionLevel === 'execute'
+          && executeSuccessClearsFailure(call.name, call.arguments.command)) failed = undefined;
+      } else if (isBashToolName(call.name) && result.metadata?.code === 'COMMAND_FAILED' && typeof call.arguments.command === 'string') {
+        failed = { command: call.arguments.command, result };
+      }
+    }
+  }
+  if (!failed) return undefined;
+  const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+  // 会话没带工作目录时（web），退回 Bash 结果自带的写入根——那就是这条命令实际跑的工作区。
+  const isolation = failed.result.metadata?.writeIsolation as { targetPath?: unknown } | undefined;
+  const root = workspaceRoot ?? (typeof isolation?.targetPath === 'string' ? isolation.targetPath : undefined);
+  // 路径匹配会把紧贴的 ; & | 一起吞掉（`cd /ws;`），按词剥掉尾部分隔符再缩路径。
+  const show = (text: string) => text.split(/(\s+)/).map((token) => {
+    const [, body = token, tail = ''] = token.match(/^(.*?)([;&|]+)$/) ?? [];
+    return shortenDisplayPaths(body, root) + tail;
+  }).join('');
+  const output = typeof failed.result.metadata?.output === 'string' ? failed.result.metadata.output : '';
+  const reasonLine = output.split('\n').map((line) => line.trim()).find(Boolean);
+  return formatSessionTaskCommandFailed(
+    locale,
+    clip(show(failed.command.replace(/\s+/g, ' ').trim()), FAILED_COMMAND_MAX_CHARS),
+    reasonLine ? clip(show(reasonLine), FAILED_REASON_MAX_CHARS) : undefined,
+  );
 }

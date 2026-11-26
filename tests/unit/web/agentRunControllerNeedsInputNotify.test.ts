@@ -22,6 +22,17 @@ const platformMocks = vi.hoisted(() => ({
   broadcast: vi.fn(),
 }));
 
+const getSession = vi.hoisted(() => vi.fn((sessionId: string, options: { userId: string }) => {
+  if (sessionId !== 'session-fg-1' || options.userId !== 'test-user') return null;
+  return { title: platformMocks.language === 'en' ? 'Quarterly close' : '季度结算' };
+}));
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({ getCurrentUser: () => ({ id: 'test-user' }) }),
+}));
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ getSession, getRecentMessages: () => [] }),
+}));
+
 vi.mock('../../../src/host/platform', () => ({
   Notification: { isSupported: () => true },
   AppWindow: { getFocusedWindow: () => platformMocks.focusedWindow },
@@ -105,14 +116,14 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
   });
 
   it.each([
-    ['en', 'Approval needed', 'Export spreadsheet'],
-    ['zh', '需要授权', '导出表格'],
-  ])('excel_generate foreground approval banner follows ui.language=%s', (language, title, action) => {
+    ['en', 'Approval needed: Quarterly close', 'Needs your approval: Export spreadsheet'],
+    ['zh', '需要授权：季度结算', '等你确认：导出表格'],
+  ])('excel_generate foreground approval banner follows ui.language=%s', (language, title, body) => {
     platformMocks.language = language;
     const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
     createController().emitAgentEvent(permissionRequest({ tool: 'excel_generate' }));
     expect(notify).toHaveBeenCalledExactlyOnceWith({
-      sessionId: 'session-fg-1', title, body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'perm-req-1', tool: 'excel_generate',
+      sessionId: 'session-fg-1', title, body, dedupeKey: 'perm-req-1', tool: 'excel_generate',
     });
     const payload = notify.mock.calls[0][0];
     expect(payload.body).not.toContain('excel_generate');
@@ -126,13 +137,33 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith({
       sessionId: 'session-fg-1',
-      title: '需要授权',
-      body: '需要授权：运行命令',
+      title: '需要授权：季度结算',
+      body: '等你确认：运行命令',
       tool: 'bash',
       dedupeKey: 'perm-req-1',
     });
     // 事件本身照常进 SSE，横幅只是旁路。
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [undefined, '需要授权'],
+    ['   ', '需要授权'],
+    ['New Session', '需要授权'],
+    [' **季度结算** ', '需要授权：季度结算'],
+    ['账'.repeat(41), `需要授权：${'账'.repeat(39)}…`],
+  ])('uses the fallback or cleans the local task title %s', (title, expected) => {
+    getSession.mockReturnValueOnce(title === undefined ? null : { title });
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
+    createController().emitAgentEvent(permissionRequest());
+    expect(notify).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: expected }));
+  });
+
+  it('continues a foreground approval when reading the title throws', () => {
+    getSession.mockImplementationOnce(() => { throw new Error('local database unavailable'); });
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
+    expect(createController().emitAgentEvent(permissionRequest())).toBe(true);
+    expect(notify).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: '需要授权' }));
   });
 
   it('同一请求 id 两次到达 → 真通知服务同键去重只投一条；不同 id 各投一条', () => {

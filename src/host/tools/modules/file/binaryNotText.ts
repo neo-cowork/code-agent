@@ -20,9 +20,30 @@ const BINARY_REDIRECTS: Record<string, string> = {
 
 /** 图片按文本读会得到数十万字符乱码并永久留在历史里；改为短重定向。 */
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
-const IMAGE_READ_HINT =
-  'This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; ' +
-  'to understand a picture use image_analyze (a deferred tool: load it first with ToolSearch select:image_analyze).';
+const IMAGE_READ_HINT_NO_TOOL =
+  'This is an image, not text. If it was attached to the message its content is already in the conversation ' +
+  '(as the image itself or a text summary): answer from that. If you cannot see it, tell the user plainly.';
+
+function imageReadHint(requestToolNames?: readonly string[]): string {
+  if (requestToolNames?.includes('image_analyze')) {
+    if (requestToolNames.includes('browser_action')) {
+      return (
+        'This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; ' +
+        'to understand a picture use image_analyze.'
+      );
+    }
+    return 'This is an image, not text. To understand a picture use image_analyze.';
+  }
+  // image_analyze 是延迟工具：本请求没带它但带了 ToolSearch 时仍可加载，保留这条指路；
+  // 两者都不在（如识图预处理成功后被移除、ToolSearch 被收窄）就一个工具名都不提。
+  if (requestToolNames?.includes('ToolSearch')) {
+    return (
+      `${IMAGE_READ_HINT_NO_TOOL} If it is not in the conversation and you need to see it, ` +
+      'load image_analyze first with ToolSearch select:image_analyze.'
+    );
+  }
+  return IMAGE_READ_HINT_NO_TOOL;
+}
 
 /**
  * 其余二进制后缀按类拒绝：每类一句短提示，只指路（真实可用的替代工具），
@@ -82,11 +103,16 @@ function sniffExtension(head: Buffer): string | null {
  * imageExtraHint 只拼进图片分支：调用方（Blob）传的补充提示是图片语境，
  * 不能贴到压缩包/音视频等其它拒绝上。
  */
-export function binaryRefusalForExtension(filePath: string, ext: string = path.extname(filePath).toLowerCase(), imageExtraHint = ''): ToolResult<string> | null {
+export function binaryRefusalForExtension(
+  filePath: string,
+  ext: string = path.extname(filePath).toLowerCase(),
+  imageExtraHint = '',
+  requestToolNames?: readonly string[],
+): ToolResult<string> | null {
   if (IMAGE_EXTENSIONS.has(ext)) {
     return {
       ok: false,
-      error: `Cannot read ${ext} file as text. ${IMAGE_READ_HINT}${imageExtraHint}\nPath: ${filePath}`,
+      error: `Cannot read ${ext} file as text. ${imageReadHint(requestToolNames)}${imageExtraHint}\nPath: ${filePath}`,
       code: 'BINARY_FILE_NOT_TEXT',
     };
   }
@@ -110,8 +136,12 @@ export function binaryRefusalForExtension(filePath: string, ext: string = path.e
 }
 
 /** 后缀 + 魔数；只读前 16 字节。读不到（不存在等）一律放行，交给调用方的原有错误路径。 */
-export async function guardBinaryNotText(filePath: string, imageExtraHint = ''): Promise<ToolResult<string> | null> {
-  const byExt = binaryRefusalForExtension(filePath, undefined, imageExtraHint);
+export async function guardBinaryNotText(
+  filePath: string,
+  imageExtraHint = '',
+  requestToolNames?: readonly string[],
+): Promise<ToolResult<string> | null> {
+  const byExt = binaryRefusalForExtension(filePath, undefined, imageExtraHint, requestToolNames);
   if (byExt) return byExt;
   let head: Buffer;
   try {
@@ -127,5 +157,5 @@ export async function guardBinaryNotText(filePath: string, imageExtraHint = ''):
     return null;
   }
   const sniffed = sniffExtension(head);
-  return sniffed ? binaryRefusalForExtension(filePath, sniffed, imageExtraHint) : null;
+  return sniffed ? binaryRefusalForExtension(filePath, sniffed, imageExtraHint, requestToolNames) : null;
 }

@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_LANE_LOW_REASONING_EFFORT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_API_ENDPOINTS, MODEL_FEATURES, QUICK_LANE_LOW_REASONING_EFFORT_MODELS, QUICK_LANE_THINKING_OFF_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { normalizeApiKey } from '../services/core/configHelpers';
 import { getProviderLimiter } from './concurrencyLimiter';
@@ -175,7 +175,7 @@ async function parseQuickModelResponse(response: Response): Promise<QuickModelRe
 }
 
 function isThinkingModel(model: string): boolean {
-  return (MODEL_FEATURES[model] ?? []).includes('reasoning');
+  return (MODEL_FEATURES[model] ?? []).includes('reasoning') || QUICK_LANE_THINKING_OFF_MODELS.includes(model);
 }
 
 /**

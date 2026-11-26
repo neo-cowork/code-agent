@@ -154,6 +154,28 @@ describe('calendar connector over EventKit', () => {
     }
   });
 
+  it.each([
+    ['delete_event', { calendar: 'Work', event_uid: 'e1' }, { deleted: false }],
+    ['create_event', { title: 'Meeting', start_ms: 1 }, {}],
+    ['update_event', { calendar: 'Work', event_uid: 'e1', title: 'Meeting' }, {}],
+  ] as const)('treats a missing write confirmation from %s as an unknown outcome', async (action, args, reply) => {
+    const realPost = fake.client.post;
+    const post = vi.spyOn(fake.client, 'post').mockImplementation(async <T>(path: string, body?: Record<string, unknown>) => (
+      path === '/v1/write/calendar-event' ? reply as T : realPost<T>(path, body)
+    ));
+    try {
+      const error = await failureOf(calendarConnector.execute(action, args));
+      expect(error).toMatchObject({
+        code: 'read_failed',
+        copyKey: 'write_unconfirmed',
+        message: expect.stringContaining('Check the calendar before retrying; do not retry blindly.'),
+      });
+      expect(post.mock.calls.filter(([path]) => path === '/v1/write/calendar-event')).toHaveLength(1);
+    } finally {
+      post.mockRestore();
+    }
+  });
+
   it('keeps the old argument validation messages', async () => {
     await expect(calendarConnector.execute('create_event', { start_ms: 1 })).rejects.toThrow('title is required for create_event');
     await expect(calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e' })).rejects.toThrow('at least one field must be provided for update_event');

@@ -48,7 +48,7 @@ vi.mock('../../../src/renderer/stores/appStore', async (importOriginal) => {
   };
 });
 
-import { MemoryEntriesManager } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager';
+import { formatMemoryEntryUpdatedAt, MemoryEntriesManager } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager';
 
 const now = Date.parse('2026-10-31T08:00:00.000Z');
 
@@ -107,6 +107,39 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+it('shows the replacement hint only on a candidate row that supersedes a memory', async () => {
+  const target = entry({ title: '周会在周二' });
+  const candidate = entry({ id: 'proposal', title: '周会改到周三', status: 'candidate', supersedes: 'user.md', source: { ...target.source, filePath: 'proposal.md' } });
+  const active = entry({ id: 'active', title: '已采纳的周会安排', supersedes: 'user.md', source: { ...target.source, filePath: 'active.md' } });
+  const orphan = entry({ id: 'orphan', title: '新安排', status: 'candidate', supersedes: 'missing.md', source: { ...target.source, filePath: 'orphan.md' } });
+  mockBackend({ entries: [target, candidate, active, orphan] });
+  render(<MemoryEntriesManager />);
+
+  const rows = await screen.findAllByTestId('memory-entry-row');
+  const hint = '采纳后将替换你手写的记忆「周会在周二」。';
+  expect(screen.getAllByText(hint)).toHaveLength(1);
+  const rowFor = (item: MemoryEntry) => within(rows.find((row) => within(row).queryByText(item.title, { exact: true }))!);
+  expect(rowFor(candidate).queryByText(hint)).not.toBeNull();
+  expect(rowFor(active).queryByText(hint)).toBeNull();
+  expect(rowFor(orphan).queryByText('采纳后将替换你手写的记忆「missing.md」。')).not.toBeNull();
+});
+
+it('shows the directive one-by-one hint as a line under the title of a directive candidate only, checkbox stays disabled with the same label', async () => {
+  const directive = entry({ id: 'dir', title: '先给结论再讲原因', status: 'candidate', kind: 'directive', source: { kind: 'light_file', sourceOfTruth: 'light_file', filePath: 'dir.md' } });
+  const plain = entry({ id: 'plain', title: '周报用蓝色封面', status: 'candidate', kind: 'project', scope: 'project', source: { kind: 'light_file', sourceOfTruth: 'light_file', filePath: 'plain.md' } });
+  mockBackend({ entries: [directive, plain] });
+  render(<MemoryEntriesManager />);
+
+  const rows = await screen.findAllByTestId('memory-entry-row');
+  const rowFor = (item: MemoryEntry) => within(rows.find((row) => within(row).queryByText(item.title, { exact: true }))!);
+  const hint = '指令类条目要逐条确认，不能一起确认';
+  const directiveRow = rowFor(directive);
+  expect(directiveRow.getAllByText(hint)).toHaveLength(1);
+  const checkbox = directiveRow.getByLabelText(hint) as HTMLInputElement;
+  expect(checkbox.disabled).toBe(true);
+  expect(rowFor(plain).queryByText(hint)).toBeNull();
 });
 
 describe('MemoryEntriesManager — source session jump (②)', () => {
@@ -514,5 +547,116 @@ describe('MemoryEntriesManager — same-page refresh and dirty draft (rework r1)
     // 撤回确认弹窗已警告覆盖：编辑器必须切到恢复后内容，脏草稿不给保留
     backendEntries = [entry({ content: restored, updatedAt: now + 9_000 })];
     await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe(restored));
+  });
+});
+
+describe('MemoryEntriesManager — responsive 5-column table layout (N-FIX-MEMORY-ENTRIES-TABLE-960-UPDATED-HEADER-CLIPPED)', () => {
+  it('uses table-fixed without min-w-* and merges updated time with source in a 5-column table', async () => {
+    const manualEntry = entry({
+      id: 'mem_manual_1',
+      title: 'Manual weekly report rule',
+      source: { kind: 'manual', sourceOfTruth: 'light_file', filePath: 'manual.md' },
+      updatedAt: now,
+    });
+    const normalEntry = entry({
+      id: 'mem_normal_1',
+      title: 'Normal light file memory',
+      status: 'candidate',
+      kind: 'feedback',
+      source: { kind: 'light_file', sourceOfTruth: 'light_file', filePath: 'normal.md' },
+      updatedAt: now - 3_600_000,
+    });
+    const pausedDbEntry = entry({
+      id: 'mem_paused_1',
+      title: 'Paused in-app memory',
+      source: { kind: 'db_memory', sourceOfTruth: 'db_memory', memoryId: 'seed_paused' },
+      injectionPaused: { since: now - 86_400_000, reason: 'never_used' },
+      lastChange: { actor: 'eviction', operation: 'evict', timestamp: now - 1_000 },
+      updatedAt: now - 7_200_000,
+    });
+
+    mockBackend({
+      entries: [manualEntry, normalEntry, pausedDbEntry],
+      journal: [],
+    });
+    render(<MemoryEntriesManager />);
+
+    const rows = await screen.findAllByTestId('memory-entry-row');
+    expect(rows).toHaveLength(3);
+
+    const table = rows[0].closest('table');
+    expect(table).not.toBeNull();
+    const classTokens = table!.className.split(/\s+/);
+    expect(classTokens).toContain('table-fixed');
+    expect(table!.className).not.toMatch(/\bmin-w-/);
+
+    const headers = Array.from(table!.querySelectorAll('thead th'));
+    expect(headers).toHaveLength(5);
+    expect(headers.map((th) => th.textContent?.trim())).toEqual([
+      '',
+      '条目',
+      '状态',
+      '类型',
+      '更新 / 来源',
+    ]);
+
+    // 折叠规则（容器查询；jsdom 不求值，这里只钉住类名）：滚动容器是 @container；
+    // 「类型」列在容器 < 460px 时隐藏，「更新 / 来源」列在 < 420px 时隐藏；勾选、条目、状态三列永不隐藏
+    const wrapper = table!.closest('.overflow-auto');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper!.className.split(/\s+/)).toContain('@container');
+    const classList = (el: Element) => el.className.split(/\s+/);
+    expect(classList(headers[3]!)).toContain('@max-[460px]:hidden');
+    expect(classList(headers[4]!)).toContain('@max-[420px]:hidden');
+    for (const index of [0, 1, 2]) expect(headers[index]!.className).not.toMatch(/hidden/);
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td');
+      expect(classList(cells[3]!)).toContain('@max-[460px]:hidden');
+      expect(classList(cells[4]!)).toContain('@max-[420px]:hidden');
+      for (const index of [0, 1, 2]) expect(cells[index]!.className).not.toMatch(/hidden/);
+    }
+
+    const rowFor = (title: string) => rows.find((row) => within(row).queryByText(title, { exact: true }))!;
+
+    // Manual entry: merged 5th cell contains updated label + "手动添加", status cell keeps manual badge
+    // （更新时间按机器时区取本地日期，期望值用组件同一个格式化函数算，换时区不红）
+    const updatedLabelFor = (item: MemoryEntry) => formatMemoryEntryUpdatedAt(item.updatedAt);
+    const manualRow = rowFor('Manual weekly report rule');
+    const manualCells = manualRow.querySelectorAll('td');
+    expect(manualCells).toHaveLength(5);
+    expect(within(manualRow).getByTestId('memory-entry-manual-badge').textContent).toBe('手动添加');
+    const manualUpdatedDivs = manualCells[4].querySelectorAll('div');
+    expect(manualUpdatedDivs).toHaveLength(2);
+    expect(manualUpdatedDivs[0].textContent?.trim()).toBe(updatedLabelFor(manualEntry));
+    expect(manualUpdatedDivs[1].textContent?.trim()).toBe('手动添加');
+
+    // Normal light_file candidate entry: merged 5th cell contains updated label + "记忆文件", candidate checkbox works
+    const normalRow = rowFor('Normal light file memory');
+    const normalCells = normalRow.querySelectorAll('td');
+    expect(normalCells).toHaveLength(5);
+    const normalUpdatedDivs = normalCells[4].querySelectorAll('div');
+    expect(normalUpdatedDivs).toHaveLength(2);
+    expect(normalUpdatedDivs[0].textContent?.trim()).toBe(updatedLabelFor(normalEntry));
+    expect(normalUpdatedDivs[1].textContent?.trim()).toBe('记忆文件');
+    const candidateCheckbox = within(normalRow).getByRole('checkbox') as HTMLInputElement;
+    expect(candidateCheckbox.checked).toBe(false);
+    fireEvent.click(candidateCheckbox);
+    expect(candidateCheckbox.checked).toBe(true);
+
+    // Paused db_memory entry with background write: merged 5th cell shows "应用内记忆", badges remain intact, row click selects it
+    const pausedRow = rowFor('Paused in-app memory');
+    const pausedCells = pausedRow.querySelectorAll('td');
+    expect(pausedCells).toHaveLength(5);
+    expect(within(pausedRow).getByTestId('memory-entry-paused-badge')).toBeTruthy();
+    expect(within(pausedRow).getByTestId('memory-entry-background-badge')).toBeTruthy();
+    const pausedUpdatedDivs = pausedCells[4].querySelectorAll('div');
+    expect(pausedUpdatedDivs).toHaveLength(2);
+    expect(pausedUpdatedDivs[0].textContent?.trim()).toBe(updatedLabelFor(pausedDbEntry));
+    expect(pausedUpdatedDivs[1].textContent?.trim()).toBe('应用内记忆');
+
+    fireEvent.click(pausedRow);
+    await waitFor(() => expect(screen.getByTestId('memory-entry-paused-notice')).toBeTruthy());
+    // 列表里的「更新 / 来源」列窄窗口会收起，详情栏必须仍能看到所选条目的更新时间
+    expect(screen.getByTestId('memory-entry-detail-updated').textContent?.trim()).toBe(`更新: ${updatedLabelFor(pausedDbEntry)}`);
   });
 });

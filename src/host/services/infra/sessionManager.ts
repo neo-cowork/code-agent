@@ -30,6 +30,7 @@ import { stripLegacyForkClaims } from '../sessionFork/portability';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 import { getTelemetryCollector } from '../../telemetry';
+import { clearScheduleDraftRequest } from '../../cron/scheduleDraftRequests';
 import { clearSessionRuntimeCaches } from '../../session/sessionCacheLifecycle';
 import { removeToolScreenshotDir } from '../../tools/utils/toolScreenshotDir';
 
@@ -542,6 +543,7 @@ export class SessionManager implements Disposable {
               deletedAt: cloudSession.updated_at,
               syncOrigin: 'remote'
             });
+            clearScheduleDraftRequest(cloudSession.id);
             this.sessionCache.delete(cloudSession.id);
           }
           continue;
@@ -802,21 +804,16 @@ export class SessionManager implements Disposable {
     this.assertAccessibleSession(sessionId); clearSessionRuntimeCaches(sessionId);
     if (commit) {
       commit(() => db.deleteSession(sessionId));
-      this.sessionCache.delete(sessionId);
-      if (this.currentSessionId === sessionId) this.currentSessionId = null;
-      this.notifySessionListUpdated();
-      db.logAuditEvent('session_deleted', { sessionId });
-      return; // Companion retains a durable cleanup job after the tombstone.
+    } else {
+      await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
+      // A terminal frame deletion failure must leave the conversation visible.
+      await this.deleteTerminalFrames(sessionId);
+      db.deleteSession(sessionId);
     }
-    await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
-    // 先删帧再写会话 tombstone。帧删失败时会话仍可见，不能让用户得到“已删除”假象。
-    await this.deleteTerminalFrames(sessionId);
-    db.deleteSession(sessionId);
+    clearScheduleDraftRequest(sessionId);
+    // Companion retains its own durable cleanup job after committing the tombstone.
+    if (!commit) await removeToolScreenshotDir(sessionId);
 
-    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断删除）
-    await removeToolScreenshotDir(sessionId);
-
-    // 清除缓存
     this.sessionCache.delete(sessionId);
     if (this.currentSessionId === sessionId) {
       this.currentSessionId = null;
@@ -831,6 +828,7 @@ export class SessionManager implements Disposable {
 
   async cleanupDeletedSession(sessionId: string): Promise<void> {
     clearSessionRuntimeCaches(sessionId); if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
+    clearScheduleDraftRequest(sessionId);
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     await this.deleteTerminalFrames(sessionId);
     // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断）
@@ -1278,7 +1276,8 @@ export class SessionManager implements Disposable {
     if (!session) return;
 
     const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
-    if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
+    // titleSource 只剩恢复提示（含截断残留）时视为没有正文：不起标题也不落 Appshot 固定名，会话保留占位。
+    if (!titleSource.trim() || session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
     const title = await initMemorySessionTitle(titleSource, session.workingDirectory) ?? await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
 

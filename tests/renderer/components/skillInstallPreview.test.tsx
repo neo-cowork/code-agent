@@ -213,6 +213,12 @@ describe('自定义库 staged 装前预览', () => {
     render(<SkillsSettings />);
     await submitCustomUrl();
     await screen.findByText('foo-skills');
+    // Modal 的 Escape 监听和自动聚焦都在 passive useEffect 中注册；
+    // findByText 可能在 DOM commit 后、useEffect flush 前就 resolve，
+    // 等预览弹窗拿到焦点即可确定同批次的 Escape 监听已注册完成。
+    await waitFor(() => {
+      expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    });
 
     fireEvent.keyDown(document, { key: 'Escape' });
 

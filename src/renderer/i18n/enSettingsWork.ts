@@ -9,6 +9,9 @@ export const enSettingsWork = {
       saving: 'Saving...',
       actions: {
         chooseDirectory: 'Choose directory',
+        reselectWebHint: "A browser tab can't choose a folder on this computer. Re-select it in the desktop app.",
+        pickDirectoryNothingChosen: 'No folder was chosen. The workspace is unchanged.',
+        pickDirectoryFailed: 'Could not choose a folder. Please try again.',
         revealInFinder: 'Reveal in Finder',
         change: 'Change',
         clear: 'Clear',
@@ -104,7 +107,7 @@ export const enSettingsWork = {
       },
       recentDirectories: {
         title: 'Recent directories',
-        description: 'Workspaces opened in the past. Click one to switch directly; retention is controlled by settings.workspace.',
+        description: 'Workspaces opened in the past. Click one to switch directly.',
         columns: {
           directory: 'Directory',
           status: 'Status',
@@ -383,7 +386,7 @@ export const enSettingsWork = {
       },
     },
     roles: {
-      description: 'Persistent roles combine a role definition, role memory, and work history. Memory and history accumulate across instances and stay yours. Any custom agent becomes persistent by creating a matching directory under ~/.code-agent/roles/.',
+      description: 'Put <name>.md in ~/.code-agent/agents/ and the expert will appear under Mine.',
       listTitlePrefix: 'Persistent roles (',
       listTitleSuffix: ')',
       categoryCountPrefix: ' (',
@@ -438,7 +441,7 @@ export const enSettingsWork = {
           },
           daily: {
             label: 'Daily brief',
-            hint: 'Wakes at 09:00 every day to inspect artifacts and creates a brief when there is progress',
+            hint: 'Wakes at {time} every day to inspect artifacts and creates a brief when there is progress',
           },
           realtime: {
             label: 'Real-time involvement',
@@ -519,6 +522,7 @@ export const enSettingsWork = {
         user: 'User',
         feedback: 'Feedback',
         project: 'Project',
+        people: 'People & organizations',
         reference: 'Reference',
         unknown: 'Uncategorized',
       },
@@ -647,15 +651,7 @@ export const enSettingsWork = {
           stale: 'Stale',
           archived: 'Archived',
         },
-        kindLabels: {
-          directive: 'User directive',
-          user: 'User',
-          feedback: 'Feedback',
-          project: 'Project',
-          reference: 'Reference',
-          session: 'Session',
-          pattern: 'Pattern',
-        },
+        kindLabels: { directive: 'User directive', user: 'User', feedback: 'Feedback', project: 'Project', people: 'People & organizations', reference: 'Reference', session: 'Session', pattern: 'Pattern' },
         stats: {
           total: 'Total',
           currentMatched: 'Current matches',
@@ -689,7 +685,7 @@ export const enSettingsWork = {
           summary: 'Summary',
           content: 'Body',
           projectPath: 'Bound project path',
-          projectPathPlaceholder: 'Confirm the canonical workspace path before approval',
+          projectPathPlaceholder: 'Confirm the project folder to activate',
         },
         save: 'Save',
         activate: 'Activate',
@@ -700,7 +696,7 @@ export const enSettingsWork = {
         confirmDelete: 'Confirm delete',
         delete: 'Delete',
         evidence: 'Evidence',
-        noEvidence: 'No evidence records', evidenceCount: '{count} source record(s)',
+        noEvidence: 'No evidence records', evidenceCount: { one: '{count} source record', other: '{count} source records' },
         sourceSession: {
           open: 'Open source session',
           missing: 'Source session no longer exists',
@@ -731,7 +727,7 @@ export const enSettingsWork = {
           selection: 'Selection',
           selectVisible: 'Select visible candidates ({count})',
           selectEntry: 'Select {title}',
-          approve: 'Approve {count}',
+          approve: 'Confirm {count}',
           reject: 'Reject {count}',
           result: 'Updated {updated}; skipped {skipped}',
           skippedDetailPrefix: '. Skipped: ',
@@ -741,7 +737,7 @@ export const enSettingsWork = {
             'directive-requires-explicit-confirmation': 'directive entry, requires one-by-one confirmation',
             'project-binding-required': 'requires a bound project path first',
           },
-          directiveNeedsConfirmation: 'Directive entries require one-by-one confirmation and cannot be batch-approved',
+          directiveNeedsConfirmation: 'Directive entries must be confirmed one by one',
           failed: 'Batch review failed',
         },
       },

@@ -7,10 +7,10 @@
 export const turnRailZh = {
   turnRail: {
     label: '轮次导航',
-    allTurns: '全部 {count} 轮',
-    allTurnsWithMessages: '全部 {count} 轮 · 共 {messages} 条消息',
+    allTurns: { one: '全部 {count} 轮', other: '全部 {count} 轮' },
+    allTurnsWithMessages: { one: '全部 {count} 轮 · 共 {messages} 条消息', other: '全部 {count} 轮 · 共 {messages} 条消息' },
     added: '追加',
-    includesAdded: '含 {n} 条追加消息',
+    includesAdded: { one: '含 {n} 条追加消息', other: '含 {n} 条追加消息' },
     jumpTo: '回到第 {n} 轮',
     turnN: '第 {n} 轮',
     expand: '展开清单',
@@ -21,10 +21,10 @@ export const turnRailZh = {
 export const turnRailEn = {
   turnRail: {
     label: 'Turn rail',
-    allTurns: 'All {count} turns',
-    allTurnsWithMessages: 'All {count} turns · {messages} messages',
+    allTurns: { one: 'All {count} turn', other: 'All {count} turns' },
+    allTurnsWithMessages: { one: 'All {count} turn · {messages} messages', other: 'All {count} turns · {messages} messages' },
     added: 'Added',
-    includesAdded: 'Includes {n} added messages',
+    includesAdded: { one: 'Includes {n} added message', other: 'Includes {n} added messages' },
     jumpTo: 'Back to turn {n}',
     turnN: 'Turn {n}',
     expand: 'Expand list',

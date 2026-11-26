@@ -6,12 +6,13 @@ import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
-import { attachmentPreviewEn } from './attachmentPreview';
+import { attachmentPreviewEn } from './attachmentPreview'; import { chatImageAnnotateEn } from './chatImageAnnotate';
 import { chatInputEn } from './chatInput';
 import { backgroundPanelEn } from './backgroundPanel';
 import { voiceEn } from './voice'; import { cronWorkingFolderEn } from './cronWorkingFolder'; import { cronWakeCadenceEn } from './cronWakeCadence';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
+import { cronScheduleEstimateEn } from './cronScheduleEstimate';
 import { deliveryExperienceEn } from './deliveryExperience';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
@@ -184,7 +185,7 @@ export const en = {
     slidesAiOutline: 'AI-enhanced outline (topic-specific, higher quality)',
     slidesAiCostHint: 'paid, billed to your BYOK key',
     slidesIllustrate: 'AI illustrations (generate art for content slides, paid)',
-    slidesIllustrateCount: '~{n} images',
+    slidesIllustrateCount: { one: '~{n} image', other: '~{n} images' },
     slidesIllustrateEst: 'est.',
     slidesIllustrateSpent: 'illustration cost',
     slidesAiFellBack: 'No text-model key configured — fell back to the template outline (free). Configure a key in settings and retry.',
@@ -587,7 +588,7 @@ export const en = {
       // Engine rows
       remoteDefaultLabel: 'Remote default: ',
       localDefaultLabel: 'Local default selection',
-      modelSelectableSummary: '{enabled}/{total} models available',
+      modelSelectableSummary: { one: '{enabled}/{total} model available', other: '{enabled}/{total} models available' },
       loading: 'Loading model catalog...',
       // toast
       defaultUpdated: '{engine} default model updated',
@@ -711,7 +712,7 @@ export const en = {
       unknown: 'Hit an obstacle it could not work around',
     },
     taskDependencySummaryWaiting: '{count} waiting on dependencies',
-    taskDependencySummaryUnlocking: '{count} unlocking follow-ups',
+    taskDependencySummaryUnlocking: { one: '{count} unlocking follow-up', other: '{count} unlocking follow-ups' },
     taskDependencySummarySeparator: ' · ',
     showMore: 'Show {count} more',
     phaseThinking: 'Understanding request',
@@ -725,7 +726,7 @@ export const en = {
     phaseExecute: 'Running commands',
     phaseSearch: 'Searching',
     phaseMcp: 'Tool calls',
-    phaseOps: '{count} ops',
+    phaseOps: { one: '{count} op', other: '{count} ops' },
     taskProgressTool: 'Tool: {tool}',
     taskProgressToolPosition: 'tool {index}/{total}',
     toolActivity: 'Tool activity',
@@ -734,7 +735,7 @@ export const en = {
     toolActivityExecute: 'Command activity',
     toolActivitySearch: 'Search activity',
     toolActivityMcp: 'External tool activity',
-    toolActivityOps: '{count} tool ops',
+    toolActivityOps: { one: '{count} tool op', other: '{count} tool ops' },
     // StatusRail
     runtimeApprovalsBadge: 'Approvals',
     sectionContext: 'Context',
@@ -885,7 +886,7 @@ export const en = {
     roleTitle: 'Create role',
     teamPlaceholder: 'Describe in one sentence what the team should solve',
     rolePlaceholder: 'Describe in one sentence what the role should handle',
-    availableExpertsHint: '{count} local experts available',
+    availableExpertsHint: { one: '{count} local expert available', other: '{count} local experts available' },
     cancel: 'Cancel',
     start: 'Start',
   },
@@ -937,15 +938,14 @@ export const en = {
   ...expertEn,
 
   ...teamEn,
-  ...rolePackEn,
-  ...knowledgeMemoryEn,
+  ...rolePackEn, ...knowledgeMemoryEn,
   ...chatTranscriptEn,
-  ...attachmentPreviewEn,
+  ...attachmentPreviewEn, ...chatImageAnnotateEn,
   ...chatInputEn,
   ...backgroundPanelEn,
   ...voiceEn,
   ...sidebarEn,
-  ...cronCenterEn, ...cronWorkingFolderEn, ...cronWakeCadenceEn,
+  ...cronScheduleEstimateEn, ...cronCenterEn, ...cronWorkingFolderEn, ...cronWakeCadenceEn,
   ...previewWorkspaceEn,
   ...deliveryExperienceEn,
   ...modalPrimitivesEn,

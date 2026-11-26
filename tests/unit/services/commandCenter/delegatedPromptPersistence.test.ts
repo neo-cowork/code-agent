@@ -15,7 +15,7 @@ import { SessionRepository } from '../../../../src/host/services/core/repositori
 import { DEFAULT_SETTINGS } from '../../../../src/host/services/core/configDefaults';
 import { ModelRouter } from '../../../../src/host/model/modelRouter';
 import { resetTaskManager, getTaskManager } from '../../../../src/host/task/TaskManager';
-import { resetSessionCommandCenterForTest } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
+import { getSessionCommandCenter, resetSessionCommandCenterForTest } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import { resetBackgroundTaskLedgerForTest } from '../../../../src/host/task/backgroundTaskLedger';
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
@@ -70,11 +70,15 @@ vi.mock('../../../../src/host/agent/orchestrator/agentRoutingResolver', () => ({
 vi.mock('../../../../src/host/services/wake/userReturn', () => ({ cancelTimeWakesOnUserReturn: async () => {} }));
 
 const PLAN = 'Read the contract PDF in the workspace and summarize it.';
+const TERMINAL_TASK_STATUSES = new Set<string>(['completed', 'failed', 'cancelled']);
 
 describe('delegate_task persists only the drafted plan as the background run user row', () => {
   let root: string;
   let db: Database.Database;
   let requests: string[];
+  const builtOrchestrators: AgentOrchestrator[] = [];
+  const messageRowExists = (id: string): boolean =>
+    db.prepare('select 1 as present from messages where id = ?').get(id) !== undefined;
 
   beforeEach(() => {
     vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
@@ -110,8 +114,44 @@ describe('delegate_task persists only the drafted plan as the background run use
     getTaskManager().initialize({ configService: config, onAgentEvent: () => {} });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const manager = getTaskManager();
+    // Stop producers first: the delegated run sits in TaskManager.backgroundRuns.
+    await manager.cancelTask('chat-session');
+    // The settle chain (emitEvent -> handleTaskEvent -> settle -> projectTerminalResult,
+    // and the hidden wake turn a completed run fires on the session orchestrator) is
+    // floating listener work, not tracked by whenAgentEventsSettled — wait on its
+    // observable end states instead. Two consecutive quiet polls are required so the
+    // getOrCreate -> sendMessage gap (isProcessing() still false) cannot pass as settled.
+    let quietPolls = 0;
+    await vi.waitFor(async () => {
+      await vi.dynamicImportSettled();
+      const tasks = getSessionCommandCenter().list('chat-session');
+      const foreground = manager.getOrchestrator('chat-session');
+      const quiet = tasks.every((task) => {
+        if (!TERMINAL_TASK_STATUSES.has(task.status)) return false;
+        if (manager.getBackgroundTaskState(task.id) !== undefined) return false;
+        if (!messageRowExists(`session-task-result-${task.id}`)) return false;
+        return !(task.stopped || task.status === 'cancelled') || messageRowExists(`background-task-stopped-${task.id}`);
+      }) && (!foreground || !foreground.isProcessing());
+      quietPolls = quiet ? quietPolls + 1 : 0;
+      expect(quietPolls).toBeGreaterThanOrEqual(2);
+    }, { timeout: 15000, interval: 25 });
+    await vi.dynamicImportSettled();
+    await manager.whenAgentEventsSettled('chat-session');
+    const foreground = manager.getOrchestrator('chat-session');
+    const toDrain = builtOrchestrators.splice(0);
+    if (foreground) toDrain.push(foreground);
+    for (const orchestrator of toDrain) {
+      await orchestrator.drainWorkspaceServices();
+      await orchestrator.drainPostTerminalWork();
+    }
+    await vi.dynamicImportSettled();
+    // The remaining tails are microtask-only persistence chains; one macrotask turn
+    // lets them land before the managers are torn down and the DB is closed.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     resetSessionCommandCenterForTest();
+    resetSessionTaskConcurrencyPoolForTest();
     resetTaskManager();
     resetBackgroundTaskLedgerForTest();
     vi.restoreAllMocks(); vi.unstubAllEnvs();
@@ -155,6 +195,7 @@ describe('delegate_task persists only the drafted plan as the background run use
     settings.models = { ...settings.models, default: 'xiaomi', providers: { xiaomi: { enabled: true, apiKey: 'fixture-key', model: 'mimo-v2.6-flash' } } };
     const config = { getSettings: () => settings, getApiKey: () => 'fixture-key', getServiceApiKey: () => '', isDevModeAutoApproveEnabled: () => false } as unknown as ConfigService;
     const orchestrator = new AgentOrchestrator({ configService: config, hasApprovalUi: () => false, getHomeDir: () => root, onEvent: () => {} });
+    builtOrchestrators.push(orchestrator);
     orchestrator.setSessionId('chat-session');
     orchestrator.setWorkingDirectory(root, { syncWorkspaceServices: false });
     await orchestrator.interruptAndContinue('Only look at page 1.', undefined, { mode: 'normal', displayContent: PLAN, historyVisibility: 'meta', disableAutoAgent: true });
@@ -180,6 +221,7 @@ describe('delegate_task persists only the drafted plan as the background run use
       return { type: 'text', content: 'Done.', finishReason: 'stop' } as never;
     });
     const orchestrator = new AgentOrchestrator({ configService: config, hasApprovalUi: () => false, getHomeDir: () => root, onEvent: () => {} });
+    builtOrchestrators.push(orchestrator);
     orchestrator.setSessionId('chat-session');
     orchestrator.setWorkingDirectory(root, { syncWorkspaceServices: false });
     try {

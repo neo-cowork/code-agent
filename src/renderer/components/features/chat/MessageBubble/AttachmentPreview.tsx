@@ -33,6 +33,7 @@ import type {
 } from '@shared/contract';
 import type { AppshotCapture } from '@shared/contract/appshot';
 import { AppshotChip } from '../ChatInput/AppshotChip';
+import { getAttachmentDisplayName } from '../ChatInput/attachmentDisplayName';
 import type { ChannelAttachment, RetryChannelMediaAttachmentResult } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -58,6 +59,7 @@ import {
   MediaAssetActionBar,
   MediaAssetLightbox,
 } from './MediaAssetControls';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 // 附件卡用户可见文案的 i18n 小节（t.attachmentPreview）
 type AttachmentPreviewStrings = Translations['attachmentPreview'];
@@ -136,7 +138,7 @@ function getAttachmentMediaState(attachment: MessageAttachment): {
 }
 
 // 生命周期状态 → t.attachmentPreview 文案键
-const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, keyof AttachmentPreviewStrings> = {
+const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, 'stateWaiting' | 'stateDownloading' | 'stateEmbedded' | 'stateTranscribing' | 'stateReady' | 'stateFailed'> = {
   pending: 'stateWaiting',
   downloading: 'stateDownloading',
   embedded: 'stateEmbedded',
@@ -275,7 +277,9 @@ const AttachmentItem: React.FC<{
       .then((dataUrl) => {
         if (!cancelled) setLazyAppshotSrc(dataUrl);
       })
-      .catch(() => {});
+      .catch((error) => {
+        console.warn('[appshot] Failed to restore appshot image by id', error);
+      });
     return () => {
       cancelled = true;
     };
@@ -386,7 +390,7 @@ const AttachmentItem: React.FC<{
               src={previewRetryNonce > 0 && imageSrc.startsWith('/api/')
                 ? `${imageSrc}${imageSrc.includes('?') ? '&' : '?'}_r=${previewRetryNonce}`
                 : imageSrc}
-              alt={displayAttachment.name}
+              alt={getAttachmentDisplayName(displayAttachment.name)}
               className="max-h-[150px] w-full object-cover transition-colors group-hover:border-badge-accent/50"
               onError={() => setImageLoadFailed(true)}
             />
@@ -442,7 +446,7 @@ const AttachmentItem: React.FC<{
       <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
           <Music className="h-4 w-4 text-badge-accent" />
-          <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
+          <span className="truncate" title={getAttachmentDisplayName(displayAttachment.name)}>{getAttachmentDisplayName(displayAttachment.name)}</span>
           {stateBadge}
         </div>
         {mediaSrc ? (
@@ -484,7 +488,7 @@ const AttachmentItem: React.FC<{
         )}
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
           <Video className="h-4 w-4 shrink-0 text-badge-info" />
-          <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
+          <span className="truncate" title={getAttachmentDisplayName(displayAttachment.name)}>{getAttachmentDisplayName(displayAttachment.name)}</span>
           {stateBadge}
           {mediaAsset && (
             <div className="ml-auto">
@@ -532,25 +536,22 @@ const AttachmentItem: React.FC<{
       <div className="flex max-w-[240px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <Archive className="mt-0.5 h-5 w-5 shrink-0 text-badge-warning" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
-            {displayAttachment.name}
+          <div className="truncate text-sm text-zinc-200" title={getAttachmentDisplayName(displayAttachment.name)}>
+            {getAttachmentDisplayName(displayAttachment.name)}
           </div>
           <div className="text-xs text-zinc-500">
             {archiveManifest
-              ? `${archiveManifest.format} · ${t.attachmentPreview.archiveFilesCount.replace('{count}', String(archiveManifest.totalFiles))}`
+              ? `${archiveManifest.format} · ${interpolatePlural(t.attachmentPreview.archiveFilesCount, archiveManifest.totalFiles)}`
               : formatFileSize(displayAttachment.size)}
           </div>
           {stateBadge}
           {archiveManifest && (
             <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
-                ? t.attachmentPreview.archiveEntriesCount.replace(
-                  '{count}',
-                  `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}`,
-                )
+                ? interpolatePlural(t.attachmentPreview.archiveEntriesCount, archiveManifest.entries.length, { count: `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}` })
                 : archiveManifest.note}
               {dangerCount > 0
-                ? ` · ${t.attachmentPreview.dangerousPathsCount.replace('{count}', String(dangerCount))}`
+                ? ` · ${interpolatePlural(t.attachmentPreview.dangerousPathsCount, dangerCount)}`
                 : ''}
             </div>
           )}
@@ -562,20 +563,20 @@ const AttachmentItem: React.FC<{
   const { icon, color, label } = getAttachmentIconConfig(category, t.attachmentPreview);
   const displayName = displayAttachment.name.includes('/')
     ? displayAttachment.name.split('/').pop() || displayAttachment.name
-    : displayAttachment.name;
+    : getAttachmentDisplayName(displayAttachment.name);
 
   return (
     <div className="flex max-w-[200px] items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
       <span className={color}>{icon}</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
+        <div className="truncate text-sm text-zinc-200" title={displayName}>
           {displayName}
         </div>
         <div className="flex items-center gap-1 text-xs text-zinc-500">
           <span className={`${color} text-2xs`}>{label}</span>
           <span>·</span>
           {category === 'pdf' && displayAttachment.pageCount
-            ? <span>{t.attachmentPreview.pageCount.replace('{count}', String(displayAttachment.pageCount))}</span>
+            ? <span>{interpolatePlural(t.attachmentPreview.pageCount, displayAttachment.pageCount)}</span>
             : category === 'excel' && displayAttachment.sheetCount
               ? <span>{t.attachmentPreview.sheetsRowsCount
                 .replace('{sheets}', String(displayAttachment.sheetCount))
@@ -652,7 +653,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             <div className="text-sm font-medium text-zinc-200">
               {stats.folderName
                 ? `📁 ${stats.folderName}`
-                : t.attachmentPreview.folderFilesCount.replace('{count}', String(attachments.length))}
+                : interpolatePlural(t.attachmentPreview.folderFilesCount, attachments.length)}
             </div>
             <div className="text-xs text-zinc-500">
               {summaryParts} · {formatFileSize(stats.totalSize)}
@@ -673,7 +674,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
           >
             <ChevronDown className="h-3 w-3" />
-            {t.attachmentPreview.collapseFilesCount.replace('{count}', String(attachments.length))}
+            {interpolatePlural(t.attachmentPreview.collapseFilesCount, attachments.length)}
           </button>
         </div>
       )}

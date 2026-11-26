@@ -24,6 +24,7 @@ import {
   humanizeToolError,
   humanizeToolFailureReason,
   isEscalatedToolError,
+  localizeToolUserMessage,
 } from '../../../../../utils/toolExecutionPresentation';
 import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import type { Translations } from '../../../../../i18n';
@@ -50,6 +51,7 @@ import {
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 import { finalizeSessionTaskStatus } from '../../../../../utils/sessionTaskStatusFinalize';
 
 // ============================================================================
@@ -361,12 +363,12 @@ export function ToolCallDisplay({
         )}
         {statusCheckCount > 1 && (
           <span className="shrink-0 text-xs text-zinc-500" data-testid="task-status-check-count">
-            {t.sessionTaskPresentation.checkedTimes.replace('{count}', String(statusCheckCount))}
+            {interpolatePlural(t.sessionTaskPresentation.checkedTimes, statusCheckCount)}
           </span>
         )}
       </div>
 
-      {status === 'error' && !delegationPresentation && (
+      {status === 'error' && (toolCall.result?.userMessage === undefined || !expanded) && !delegationPresentation && (
         <div className="ml-6 mt-1 whitespace-normal break-words text-xs leading-5 text-zinc-400">
           {/* 直接用 humanizeToolFailureReason：它内部已经把顺序排好了（hostReason 登记表 →
               preflight → 其余结构化来源）。这里若先调 toolPreflightCopy 就等于把那个顺序绕过去，
@@ -462,7 +464,9 @@ function ToolReceiptMeta({ receipt }: { receipt: ToolReceiptPresentation }) {
 
 function ReceiptDetail({ receipt, toolCall }: { receipt: ToolReceiptPresentation; toolCall: ToolCall }) {
   const { t } = useI18n();
-  const raw = receipt.detail || toolCall.result?.output || toolCall.result?.error;
+  const raw = toolCall.result?.userMessage === undefined
+    ? receipt.detail || toolCall.result?.output || toolCall.result?.error
+    : localizeToolUserMessage(toolCall.result.userMessage, t);
   const hideCreatedFilePrefix = toolCall.name === 'Write'
     && toolCall.result?.success === true
     && hasCompletenessIssues(toolCall.result.metadata);
@@ -637,7 +641,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
       {showSummary && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className={failed > 0 ? 'text-badge-warning' : 'text-zinc-400'}>
-            {copy.agents.replace('{count}', String(total))}
+            {interpolatePlural(copy.agents, total)}
           </span>
           <span>{copy.completed.replace('{completed}', String(completed)).replace('{total}', String(total))}</span>
           {failed > 0 && (

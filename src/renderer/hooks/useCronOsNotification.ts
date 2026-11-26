@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
+import { CRON_CONNECTOR_LOST } from '@shared/constants/cronErrors';
+import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { isSecondaryPageActive } from '../utils/secondaryPageActive';
@@ -16,12 +18,18 @@ import {
   cronLoginWallSiteOriginFromNotification,
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
-import { postOsNotification, registerNotificationClick, reportNotificationHandled } from '../utils/osNotification';
+import {
+  postOsNotification,
+  registerNotificationClick,
+  reportNotificationHandled,
+  retractOsNotification,
+} from '../utils/osNotification';
 import { notificationToastText } from '../utils/notificationToastText';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
 import { deferRendererReadyUntil } from '../utils/rendererReady';
+import { interpolatePlural } from '../i18n/interpolate';
 
 const MISSED_ALERT_TOAST_MS = 10_000;
 const RECENT_EVENT_LIMIT = 50;
@@ -49,6 +57,10 @@ export function useCronOsNotification(
   useEffect(() => {
     // 原生点击读「最近一条」事件；toast 动作必须绑定自己那条，否则连续两条失败时点 A 会开 B。
     const openForEvent = (event: NotificationShowEvent | null) => {
+      if (event?.code === CRON_CONNECTOR_LOST) {
+        useAppStore.getState().openCapabilityHub('connectors');
+        return;
+      }
       // The native notification is a consent boundary only for login-wall stops;
       // other cron notifications must never grant browser pass-through.
       const siteOrigin = event && cronLoginWallSiteOriginFromNotification(event);
@@ -75,23 +87,23 @@ export function useCronOsNotification(
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
       if (needsInput && event.sessionId) {
-        // 用户自己发起的会话：run 断线转后台后审批虽停车落库，卡仍在聊天里原位可批，
-        // 点「查看」回该会话（11-17 真机：跳运行记录页，用户找不到授权）。
+        // 用户发起的会话和专家首次见面的审批都可在原对话处理，点击直接回该对话。
         const session = useSessionStore.getState().sessions?.find((s) => s.id === event.sessionId);
         const kind = session?.origin?.kind;
-        if (session && kind !== 'cron' && kind !== 'heartbeat') {
+        if (session && (session.origin?.metadata?.trigger === 'first_wake' || (kind !== 'cron' && kind !== 'heartbeat'))) {
           onOpenSessionRef.current(event.sessionId);
           return;
         }
         // 定时/后台运行的待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
-        let parked = false;
+        let parked: ParkedApprovalInboxItem | undefined;
         try {
           const items = await sessionAutomationClient.listParkedApprovals();
-          parked = (items ?? []).some((i) => i.sessionId === event.sessionId && i.status === 'pending');
+          parked = items?.find((i) => i.sessionId === event.sessionId && i.status === 'pending');
         } catch (err) {
           console.warn('[useCronOsNotification] listParkedApprovals failed, falling back to session', err);
         }
-        if (parked) useAppStore.getState().openCronCenterRuns();
+        // A cold notification click can arrive before the session list has loaded.
+        if (parked && !parked.startedByFirstWake) useAppStore.getState().openCronCenterRuns();
         else onOpenSessionRef.current(event.sessionId);
         return;
       }
@@ -123,11 +135,28 @@ export function useCronOsNotification(
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
-        // 审批已裁决的撤回：只把「离开期间的提醒」队列里那条 needs-input 移掉，
+        // 审批已裁决的撤回：从「离开期间的提醒」队列移掉对应条目，并通知桌面壳撤下已送达横幅；
         // 不弹 OS 通知、不作点击目标（retract 本身没有任何用户可见动作）。
         if (event.retract) {
           missedRef.current.remove(event.dedupeKey);
-          reportNotificationHandled({ mode: 'renderer-early-return', reason: 'retract', dispatched: false, dedupeKey: event.dedupeKey });
+          const matchedIds: string[] = [];
+          if (event.dedupeKey) {
+            for (const recentEvent of recentEventsRef.current.values()) {
+              if (recentEvent.dedupeKey === event.dedupeKey) {
+                matchedIds.push(recentEvent.id);
+              }
+            }
+          }
+          for (const id of matchedIds) {
+            void retractOsNotification(id);
+          }
+          reportNotificationHandled({
+            mode: 'renderer-early-return',
+            reason: 'retract',
+            dispatched: false,
+            dedupeKey: event.dedupeKey,
+            ...(matchedIds.length > 0 ? { retractedIds: matchedIds } : { retractIdNotFound: true }),
+          });
           return;
         }
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
@@ -171,7 +200,7 @@ export function useCronOsNotification(
       const c = copyRef.current;
       const notice = translateCronOsNotification(spec.latest, c, useAppStore.getState().language);
       const message = spec.count > 1
-        ? c.missedAlertsMerged.replace('{count}', String(spec.count))
+        ? interpolatePlural(c.missedAlertsMerged, spec.count)
         : notificationToastText(notice.title, notice.body);
       const action = { label: c.failureToastView, onClick: () => { void routeClick(spec.latest); } };
       if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);

@@ -20,7 +20,12 @@ vi.mock('../../../src/host/services/infra/logger', () => {
 });
 
 import { performCrossSessionSearch } from '../../../src/host/ipc/session.ipc';
+import type { TraceProjection } from '../../../src/shared/contract/trace';
 import { getDefaultCache, SessionLocalCache } from '../../../src/host/session/localCache';
+import {
+  createPendingSearchJumpFromCrossSessionResult,
+  findSearchMatchForPendingJump,
+} from '../../../src/renderer/utils/sessionSearchJump';
 import { searchSessions, type SessionSearchFtsSource } from '../../../src/host/session/search';
 import {
   runSessionMessagesFtsCount,
@@ -166,5 +171,68 @@ describe('tie-break', () => {
     const r = searchSessions(TOKEN, {}, new SessionLocalCache(), source);
     expect(r.results[0].relevance).toBe(r.results[1].relevance);
     expect(r.results.map((x) => x.message.role)).toEqual(['assistant', 'tool']);
+  });
+});
+
+// 旧组队配方行：用户消息以「【组队 · 配方名】」开头（气泡已剥掉前缀，legacyTeamRecipeDisplay.ts）。
+// IPC 结果的 snippet / matchOffset 由 session.ipc.ts 从搜索结果映射而来，必须同样只含用户原话。
+describe('legacy team-recipe prefix on user rows', () => {
+  const STRIPPED = '会员增长方案';
+  const RAW = `【组队 · 产品规格】${STRIPPED}`;
+
+  async function legacyHit(query: string) {
+    const item = (await performCrossSessionSearch(query, {})).results.find((x) => x.messageId === 's1-legacy');
+    if (!item) throw new Error(`s1-legacy not returned for query ${query}`);
+    return item;
+  }
+
+  beforeEach(() => {
+    seedMessage('s1-legacy', 's1', 'user', RAW, 1003);
+  });
+
+  it('maps a clean snippet and a stripped-text offset into the IPC result', async () => {
+    for (const query of ['增长方案', '增长']) {
+      expect(await legacyHit(query), query).toMatchObject({
+        sessionId: 's1',
+        role: 'user',
+        snippet: STRIPPED.replace(query, `**${query}**`),
+        matchOffset: STRIPPED.indexOf(query),
+        matchCount: 1,
+      });
+    }
+  });
+
+  it('does not return the legacy row when the query only appears in its prefix', async () => {
+    for (const query of ['组队', '产品规格']) {
+      const r = await performCrossSessionSearch(query, {});
+      expect(r.results.map((x) => x.messageId), query).toEqual([]);
+      expect(r.totalMatches, query).toBe(0);
+    }
+  });
+
+  it('host matchOffset and the renderer jump offset both index the stripped text', async () => {
+    for (const query of ['会员', '增长']) {
+      const item = await legacyHit(query);
+      const jump = createPendingSearchJumpFromCrossSessionResult(item, query);
+      const projection: TraceProjection = {
+        sessionId: 's1',
+        activeTurnIndex: -1,
+        turns: [{
+          turnNumber: 1,
+          turnId: 'turn-1',
+          status: 'completed',
+          startTime: 1000,
+          nodes: [
+            { id: 's1-u', type: 'user', content: 'read vendor_notes.txt for me', timestamp: 1000 },
+            { id: 's1-legacy', type: 'user', content: RAW, timestamp: 1003 },
+          ],
+        }],
+      };
+      const match = findSearchMatchForPendingJump(projection, jump);
+
+      expect(item.matchOffset, query).toBe(STRIPPED.indexOf(query));
+      expect(jump.matchOffset, query).toBe(STRIPPED.indexOf(query));
+      expect(match?.offset, query).toBe(STRIPPED.indexOf(query));
+    }
   });
 });

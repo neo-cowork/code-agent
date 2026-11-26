@@ -28,6 +28,7 @@ import { ProjectListView } from '../../../src/renderer/components/features/proje
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 const noop = () => {};
 const HOOKS = '.code-agent/hooks/hooks.json';
@@ -67,7 +68,7 @@ describe.each(LOCALES)('folder trust confirm copy ($language)', ({ language, dic
   it('dialog: collapsed shows one short line, no config path, no absolute prefix', () => {
     const body = renderDialog(SAME);
     const text = body.textContent ?? '';
-    expect(text).toContain(dict.folderTrust.items['project-hooks'].replace('{count}', '1'));
+    expect(text).toContain(interpolatePlural(dict.folderTrust.items['project-hooks'], 1));
     expect(text).toContain('…/work-abc/trust-folder');
     expect(text).not.toContain('/tmp/work-abc');
     expect(text).not.toContain('.code-agent/');
@@ -108,7 +109,7 @@ describe.each(LOCALES)('folder trust confirm copy ($language)', ({ language, dic
     fireEvent.click(screen.getByText(dict.projectSpace.createSubmit));
 
     const confirm = await screen.findByTestId('project-space-create-trust-confirm');
-    expect(confirm.textContent).toContain(dict.folderTrust.items['project-hooks'].replace('{count}', '1'));
+    expect(confirm.textContent).toContain(interpolatePlural(dict.folderTrust.items['project-hooks'], 1));
     expect(confirm.textContent).toContain('…/work-abc/trust-folder');
     expect(confirm.textContent).not.toContain('/tmp/work-abc');
     expect(confirm.textContent).not.toContain('.code-agent/');

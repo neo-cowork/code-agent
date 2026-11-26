@@ -1,3 +1,4 @@
+import { persistBackgroundSubagentFailure } from './subagentContextLifecycle';
 // ============================================================================
 // 后台 subagent 注册表 — 进程内后台执行 + 稳定 agent_id（Kimi 借鉴 #2 / ADR-025）
 // ============================================================================
@@ -105,11 +106,22 @@ export class BackgroundSubagentRegistry {
   private readonly pendingNotifications: SubagentCompletionRecord[] = [];
   private readonly queuedNotificationKeys = new Set<string>();
   private readonly liveProgressByAgent = new Map<string, BackgroundSubagentProgressSnapshot>();
+  /** 每个后台 run 内真人的审批决定计数（仅内存：应用重启则丢失，不做持久化）。 */
+  private readonly userApprovalsByAgent = new Map<string, { approved: number; denied: number }>();
   private readonly now: () => number;
 
   // now 注入便于测试；默认墙钟。本类非 DB 写路径，不受 repository Date.now 禁令约束。
   constructor(now: () => number = () => Date.now()) {
     this.now = now;
+  }
+
+  /** 记一次真人在审批卡上的决定；调用方只传真人的决定，机器放行/拒绝不要调。 */
+  recordUserApprovalDecision(agentId: string, decision: 'approved' | 'denied'): void {
+    // 前台子代理也会经过审批点；不是后台登记过的 run 不记，免得计数表只增不减。
+    if (!this.entries.has(agentId)) return;
+    const tally = this.userApprovalsByAgent.get(agentId) ?? { approved: 0, denied: 0 };
+    tally[decision] += 1;
+    this.userApprovalsByAgent.set(agentId, tally);
   }
 
   /** 后台跑 run，立即返回稳定 agentId，不阻塞调用方。 */
@@ -389,6 +401,11 @@ export class BackgroundSubagentRegistry {
 
   private async recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): Promise<void> {
     this.liveProgressByAgent.delete(entry.agentId);
+    const userApprovals = this.userApprovalsByAgent.get(entry.agentId);
+    this.userApprovalsByAgent.delete(entry.agentId);
+    if (entry.sessionId && entry.failureCode && entry.finishedAt !== undefined) {
+      persistBackgroundSubagentFailure(entry.sessionId, entry.agentId, entry.failureCode, entry.finishedAt);
+    }
     if (options.completionNotificationGate?.suppress) return;
     const record = buildSubagentCompletionRecord({
       agentId: entry.agentId,
@@ -405,6 +422,7 @@ export class BackgroundSubagentRegistry {
       toolsUsed: entry.result?.toolsUsed,
       iterations: entry.result?.iterations,
       cost: entry.result?.cost,
+      userApprovals,
       sessionId: entry.sessionId,
       runId: entry.runId,
       treeId: entry.treeId,

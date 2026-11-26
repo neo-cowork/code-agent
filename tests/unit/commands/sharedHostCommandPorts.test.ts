@@ -423,7 +423,7 @@ describe('shared command host ports', () => {
     const present = makeCtx({
       loadPermissionModes: async () => ({
         getPermissionModeManager: () => ({
-          getMode: () => 'strict',
+          getMode: () => 'acceptEdits',
           getModeConfig: () => ({ description: 'asks first' }),
         }),
       }),
@@ -448,16 +448,44 @@ describe('shared command host ports', () => {
     });
     expect((await permissionsCommand.handler(present.ctx, [])).success).toBe(true);
     const text = present.lines[0];
-    expect(text).toContain('Mode:     strict — asks first');
+    expect(text).toContain('当前档位：替我审批');
     expect(text).toContain('git status *');
-    expect(text).toContain('shell(list files)');
+    expect(text).toContain('操作(list files)');
 
     const missing = makeCtx();
     expect((await permissionsCommand.handler(missing.ctx, [])).success).toBe(true);
-    expect(missing.lines[0]).toContain('Mode:     default');
-    expect(missing.lines[0]).toContain('Exec Policy: (not initialized)');
-    expect(missing.lines[0]).toContain('Recent Decisions: (not available)');
+    expect(missing.lines[0]).toContain('当前档位：请求批准');
+    expect(missing.lines[0]).toContain('执行规则：暂不可用');
+    expect(missing.lines[0]).toContain('最近决定：暂不可用');
     expect(missing.lines.some((line) => line.startsWith('error:'))).toBe(false);
+  });
+
+  it.each([
+    ['zh', '启动协作助手', '网页抓取', '外部工具', '管理后台任务', '操作'],
+    ['en', 'Start helper', 'Web fetch', 'External tool', 'Manage background jobs', 'Action'],
+  ])('renders /permissions with %s labels and omits legacy tool-ID summaries', async (language, helper, web, external, background, unknown) => {
+    const toolNames = ['spawn_agent', 'Task', 'AgentSpawn', 'web_fetch', 'mcp__example__invoke', 'MCPUnified', 'Process', 'unknown_tool'];
+    const recent = toolNames.map((toolName) => ({
+      timestamp: 1_700_000_000_000,
+      toolName,
+      summary: toolName.toUpperCase(),
+      outcome: 'auto-approve',
+      reason: '已放行',
+      durationMs: 3,
+    }));
+    const present = makeCtx({
+      getLocale: () => language,
+      loadDecisionHistory: async () => ({ getDecisionHistory: () => ({ getRecent: () => recent, getAll: () => recent }) }),
+    });
+
+    expect((await permissionsCommand.handler(present.ctx, [])).success).toBe(true);
+    const rows = present.lines[0].split('\n').filter((line) => line.includes(language === 'zh' ? '→ 自动放行' : '→ Auto-approved'));
+    expect(rows.map((row) => row.trim().replace(/^\d{2}:\d{2}:\d{2} /, ''))).toEqual(
+      [helper, helper, helper, web, external, external, background, unknown].map((label) => (language === 'zh' ? `${label} → 自动放行  （已放行，3 毫秒）` : `${label} → Auto-approved  (system rule, 3 ms)`)),
+    );
+    for (const toolName of toolNames) {
+      expect(rows.join('\n').toLowerCase()).not.toContain(toolName.toLowerCase());
+    }
   });
 
   it('reports a missing background-task port from /ps and /stop, and still returns /stop usage first', async () => {

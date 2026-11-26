@@ -25,6 +25,7 @@ vi.mock('../../../src/renderer/hooks/useMcpServerStates', () => ({
 import { CronJobEditor } from '../../../src/renderer/components/features/cron/CronJobEditor';
 import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 function makeRefreshJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
   return {
@@ -124,5 +125,113 @@ describe('挂载编辑器（复制路径，基线护栏）', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
     const input = createJob.mock.calls[0][0];
     expect(input.metadata).toEqual({});
+  });
+});
+
+describe('复制任务与工作文件夹（N-FIX-CRON-COPY-DROPS-WORKDIR）', () => {
+  const folderMeta = {
+    workingDirectory: '/tmp/Notes',
+    artifactRefresh: { path: '/tmp/status.md', instruction: 'x', cadence: 'hourly' },
+  };
+
+  async function saveCopy() {
+    fireEvent.click(screen.getByText('创建任务'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    const createJob = useCronStore.getState().createJob as Mock;
+    await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
+    return createJob.mock.calls[0][0];
+  }
+
+  it('复制到云端（默认）：保存载荷不带 workingDirectory 与 artifactRefresh，并显示不带走的提示', async () => {
+    render(<CronJobEditor isOpen job={null} copySource={makeRefreshJob({ metadata: folderMeta })} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
+    fireEvent.click(screen.getByText('执行动作'));
+    expect(screen.getByTestId('cron-working-folder-cloud-notice').textContent).toContain('Notes');
+    expect(screen.getByTestId('cron-working-folder-cloud-notice').textContent).not.toContain('/tmp');
+    const input = await saveCopy();
+    expect(input.metadata).toEqual({});
+  });
+
+  it('复制后切回本机：保存载荷只带 workingDirectory，不带 artifactRefresh，文件夹行显示该文件夹', async () => {
+    render(<CronJobEditor isOpen job={null} copySource={makeRefreshJob({ metadata: folderMeta })} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
+    fireEvent.click(screen.getByTestId('cron-runs-on-local'));
+    fireEvent.click(screen.getByText('执行动作'));
+    await waitFor(() => expect((screen.getByTestId('cron-working-folder-input') as HTMLInputElement).value).toBe('/tmp/Notes'));
+    const input = await saveCopy();
+    expect(input.metadata).toEqual({ workingDirectory: '/tmp/Notes' });
+  });
+
+  it('云端任务复制到本机、原任务没有文件夹：行为不变（无提示、metadata 为空）', async () => {
+    const cloudSource = makeRefreshJob({ runsOn: 'cloud', metadata: undefined });
+    render(<CronJobEditor isOpen job={null} copySource={cloudSource} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
+    fireEvent.click(screen.getByText('执行动作'));
+    expect(screen.queryByTestId('cron-working-folder-cloud-notice')).toBeNull();
+    const input = await saveCopy();
+    expect(input.metadata).toEqual({});
+  });
+});
+
+describe('复制任务：文件夹只在来源会话上（N-FIX-CRON-COPY-LOCAL-DROPS-WORKDIR）', () => {
+  const sessionJob = () => makeRefreshJob({ metadata: { sourceSessionId: 'sess-1' } });
+  const setSessions = (workingDirectory: string | undefined) =>
+    useSessionStore.setState({ sessions: [{ id: 'sess-1', workingDirectory } as never] });
+
+  async function saveCopy() {
+    fireEvent.click(screen.getByText('创建任务'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    const createJob = useCronStore.getState().createJob as Mock;
+    await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
+    return createJob.mock.calls[0][0];
+  }
+  const folderValue = () => (screen.getByTestId('cron-working-folder-input') as HTMLInputElement).value;
+
+  afterEach(() => useSessionStore.setState({ sessions: [] }));
+
+  it('文件夹只在来源会话：切到本机后输入框预填，载荷只带 workingDirectory', async () => {
+    setSessions('/tmp/Notes');
+    render(<CronJobEditor isOpen job={null} copySource={sessionJob()} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
+    fireEvent.click(screen.getByTestId('cron-runs-on-local'));
+    fireEvent.click(screen.getByText('执行动作'));
+    await waitFor(() => expect(folderValue()).toBe('/tmp/Notes'));
+    expect((await saveCopy()).metadata).toEqual({ workingDirectory: '/tmp/Notes' });
+  });
+
+  it('本机 → 云端 → 本机：文件夹与载荷保持', async () => {
+    setSessions('/tmp/Notes');
+    render(<CronJobEditor isOpen job={null} copySource={sessionJob()} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
+    fireEvent.click(screen.getByTestId('cron-runs-on-local'));
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    fireEvent.click(screen.getByTestId('cron-runs-on-local'));
+    fireEvent.click(screen.getByText('执行动作'));
+    await waitFor(() => expect(folderValue()).toBe('/tmp/Notes'));
+    expect((await saveCopy()).metadata).toEqual({ workingDirectory: '/tmp/Notes' });
+  });
+
+  it('既无 metadata 文件夹也无来源会话：输入框为空，载荷 {}', async () => {
+    render(<CronJobEditor isOpen job={null} copySource={sessionJob()} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue(/Refresh status\.md/)).toBeTruthy());
+    fireEvent.click(screen.getByTestId('cron-runs-on-local'));
+    fireEvent.click(screen.getByText('执行动作'));
+    await waitFor(() => expect(folderValue()).toBe(''));
+    expect((await saveCopy()).metadata).toEqual({});
+  });
+});
+
+describe('编辑已有云端任务（I1 回归）', () => {
+  it('云端任务带 workingDirectory：改名保存不删文件夹，也不显示「切回本机」提示', async () => {
+    const job = makeRefreshJob({ runsOn: 'cloud', metadata: { workingDirectory: '/tmp/Notes' } });
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByDisplayValue('Refresh status.md')).toBeTruthy());
+    fireEvent.click(screen.getByText('执行动作'));
+    expect(screen.queryByTestId('cron-working-folder-cloud-notice')).toBeNull();
+    fireEvent.click(screen.getByText('保存修改'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob.mock.calls[0][1].metadata).toEqual({ workingDirectory: '/tmp/Notes' });
   });
 });

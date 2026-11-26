@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
+import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
@@ -24,8 +25,10 @@ import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
 import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
+import { interpolatePlural } from '../../i18n/interpolate';
 
 interface RequestDetailsProps {
+  hideConsequence?: boolean;
   request: PermissionRequest;
 }
 
@@ -98,7 +101,7 @@ function sandboxStatusCopy(
   return labels.sandboxDegraded;
 }
 
-export function RequestDetails({ request }: RequestDetailsProps) {
+export function RequestDetails({ request, hideConsequence = false }: RequestDetailsProps) {
   const { language, t } = useI18n();
   const developerMode = useAppStore().developerMode === true;
   const { type, details } = request;
@@ -184,7 +187,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {peerOriginNotice}
       {pluginOriginNotice}
       {externalScopeNotice}
-      {consequence && (
+      {!hideConsequence && consequence && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {consequence}
         </p>
@@ -194,7 +197,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath pathDisplay={details.pathDisplay} />}
 
       {/* 命令 */}
       {details.command && (
@@ -203,7 +206,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           label={labels.detailCommand}
           value={details.command}
           isCode
-          isDangerous={isDangerousRequestShape(request)}
+          isDangerous={isSafeDefaultDeny(request)}
           collapsible={type === 'command' && !(isDangerousRequestShape(request) || isSafeDefaultDeny(request))}
         />
       )}
@@ -358,7 +361,7 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
       >
         <span>{expanded ? '\u25BC' : '\u25B6'}</span>
         <span>{t.decisionCard.permission.traceToggle}</span>
-        <span className="text-zinc-600">({t.decisionCard.permission.traceSteps.replace('{count}', String(trace.steps.length))})</span>
+        <span className="text-zinc-600">({interpolatePlural(t.decisionCard.permission.traceSteps, trace.steps.length)})</span>
       </button>
       {expanded && (
         <div className="mt-1.5 space-y-1">
@@ -414,10 +417,7 @@ function MediaPriceNotice({ request }: { request: PermissionRequest }) {
   } else if (estimate.kind === 'music') {
     text = labels.mediaPriceMusic.replace('{price}', formatCny(estimate.totalCny));
   } else if (estimate.count > 1) {
-    text = labels.mediaPriceImageBatch
-      .replace('{count}', String(estimate.count))
-      .replace('{unitPrice}', formatCny(estimate.unitPriceCny))
-      .replace('{total}', formatCny(estimate.totalCny));
+    text = interpolatePlural(labels.mediaPriceImageBatch, estimate.count, { unitPrice: formatCny(estimate.unitPriceCny), total: formatCny(estimate.totalCny) });
   } else {
     text = labels.mediaPriceImage.replace('{price}', formatCny(estimate.unitPriceCny));
   }
@@ -434,6 +434,7 @@ interface DetailItemProps {
   label: string;
   value: string;
   isPath?: boolean;
+  pathDisplay?: NonNullable<PermissionRequest['details']['pathDisplay']>;
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
@@ -481,15 +482,16 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
-function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
-  const { t } = useI18n();
+function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
+  const { t, language } = useI18n();
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   // 所有 DetailItem 的值只在这一处统一脱敏；title 始终使用脱敏值，打开原文也不泄到 tooltip。
   const redactedValue = redactCredentialText(value);
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
-  const rawDisplayValue = isPath ? formatFilePath(visibleValue) : visibleValue;
+  const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
+  const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatFilePath(visibleValue)) : visibleValue;
 
   const lines = rawDisplayValue.split('\n');
   const shouldFold = Boolean(
@@ -505,9 +507,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsi
     : foldedByLines;
   const displayValue = shouldFold && !expanded ? foldedValue : rawDisplayValue;
   const shownLinesCount = Math.min(lines.length, COMMAND_FOLD_MAX_LINES);
-  const foldHint = t.decisionCard.permission.commandFoldLineHint
-    .replace('{total}', String(lines.length))
-    .replace('{shown}', String(shownLinesCount));
+  const foldHint = interpolatePlural(t.decisionCard.permission.commandFoldLineHint, lines.length, { total: lines.length, shown: String(shownLinesCount) });
 
   return (
     <div>
@@ -515,7 +515,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsi
       <div
         className={`
           p-2 rounded font-mono text-xs
-          ${isCode ? 'whitespace-pre-wrap break-all' : 'break-all'}
+          ${isCode ? 'max-h-48 overflow-y-auto whitespace-pre-wrap break-all' : 'break-all'}
           ${
             isCode
               ? isDangerous
@@ -527,7 +527,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsi
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={redactedValue}
+        title={isCode ? undefined : (isPath && humanPath !== visibleValue ? humanPath : redactedValue)}
       >
         {displayValue}
       </div>

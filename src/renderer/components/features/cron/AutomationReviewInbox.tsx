@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { isEditableTool } from '@shared/contract';
 import { toolUserLabel } from '@shared/utils/toolUserLabel';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
-import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
+import type { OutboundDraftInboxItem, ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
@@ -38,6 +38,7 @@ import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+import { OutboundDraftCard } from './OutboundDraftCard';
 import { AutomationRoleChip } from './AutomationRoleChip';
 import { folderDisplayName, ParkedArgsDisclosure } from './parkedArgsDisclosure';
 
@@ -102,6 +103,7 @@ interface AutomationReviewInboxProps {
   onParkedChange?: () => void;
   /** 卡片里「N 个操作等你确认」的 N（status==='pending' 的停车审批数）；页首 tile 并入同一个数 */
   onParkedPendingChange?: (count: number) => void;
+  onDraftPendingChange?: (count: number) => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -135,12 +137,13 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
   return out;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, onDraftPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
+  const [drafts, setDrafts] = useState<OutboundDraftInboxItem[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
   const [voidedExpanded, setVoidedExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -189,6 +192,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
         setParked(list);
       })
       .catch(warnFailed('parked approvals'));
+    sessionAutomationClient.listOutboundDrafts()
+      .then(setDrafts)
+      .catch(warnFailed('mail drafts'));
   }, [onPendingCountChange, onParkedChange]);
 
   useEffect(() => {
@@ -196,9 +202,13 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   }, [load, refreshSignal]);
 
   const parkedPendingCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length;
+  const pendingActionCount = parkedPendingCount + drafts.length;
   useEffect(() => {
     onParkedPendingChange?.(parkedPendingCount);
   }, [onParkedPendingChange, parkedPendingCount]);
+  useEffect(() => {
+    onDraftPendingChange?.(drafts.length);
+  }, [onDraftPendingChange, drafts.length]);
 
   // 页面停着时定时任务跑完也要自动刷新：可见时低频轮询，切回前台/窗口聚焦立即重拉。
   useEffect(() => {
@@ -299,7 +309,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
 
   const voided = parked.filter((item) => item.status === 'voided');
   const foldVoided = voided.length >= 2;
-  const hasContent = items.length > 0 || parked.length > 0;
+  const hasContent = items.length > 0 || parked.length > 0 || drafts.length > 0;
   const urgencyGroups: Record<CronUrgency, SessionAutomationRecord[]> = {
     must_today: [],
     can_wait: [],
@@ -330,13 +340,18 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
           {cc.inboxAllClear}
         </div>
       ) : (
-        <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3">
-          {parked.length > 0 && (
+        <div className={`rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3 ${drafts.length === 0 ? 'max-h-[32vh] overflow-y-auto' : ''}`}>
+          {(parked.length > 0 || drafts.length > 0) && (
             <div className="mb-3" data-testid="parked-approval-group">
-              {parked.some((item) => item.status !== 'voided') && (
+              {(drafts.length > 0 || parked.some((item) => item.status !== 'voided')) && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {interpolatePlural(cc.parkedTitle, parkedPendingCount)}
+                  {interpolatePlural(cc.parkedTitle, pendingActionCount)}
+                </div>
+              )}
+              {drafts.length > 0 && (
+                <div className={`mb-2 grid items-start gap-2 ${drafts.length > 1 ? 'xl:grid-cols-2' : ''}`}>
+                  {drafts.map((draft) => <OutboundDraftCard key={draft.id} draft={draft} onChange={load} />)}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -383,7 +398,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           {isPairing
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
-                              ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
+                              ? interpolatePlural(cc.parkedWriteGroupTitle, item.groupIds.length, { folder: folderDisplayName(item.writeGrantFolder) })
                               : (parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh'))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
@@ -489,7 +504,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 })}
                 {foldVoided && (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-500" data-testid="parked-approval-voided-summary">
-                    <span>{cc.parkedVoided.summary.replace('{count}', String(voided.length))}</span>
+                    <span>{interpolatePlural(cc.parkedVoided.summary, voided.length)}</span>
                     <Button variant="ghost" size="sm" aria-expanded={voidedExpanded} data-testid="parked-approval-voided-toggle" onClick={() => setVoidedExpanded((expanded) => !expanded)}>
                       {voidedExpanded ? cc.parkedVoided.collapse : cc.parkedVoided.expand}
                     </Button>
@@ -593,7 +608,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             )}
                             {maxRunsReached && (
                               <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
-                                {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
+                                {maxRunsReached.summary ?? interpolatePlural(cc.inboxMaxRunsReached, maxRunsReached.maxRuns)}
                               </div>
                             )}
                             {record.config?.pendingReview?.connectorLost?.summary && (
@@ -609,10 +624,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             {record.config?.missedNotice ? (
                               <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
                                 {record.config.missedNotice.reason === 'webhook-expired'
-                                  ? cc.inboxWebhookExpired.replace(
-                                    '{count}',
-                                    String(record.config.missedNotice.count ?? 0),
-                                  )
+                                  ? interpolatePlural(cc.inboxWebhookExpired, record.config.missedNotice.count ?? 0)
                                   : cc.inboxMissedAt.replace(
                                     '{time}',
                                     formatDateTime(record.config.missedNotice.scheduledAt, language),

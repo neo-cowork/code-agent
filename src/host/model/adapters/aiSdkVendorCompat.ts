@@ -1,4 +1,5 @@
 import type { ModelConfig } from '../../../shared/contract';
+import { DEFAULT_ENGINE_LOW_REASONING_EFFORT_MODELS } from '../../../shared/constants';
 import { resolveModelInfo } from '../modelInfo';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 
@@ -84,6 +85,23 @@ function withStreamResumePrefixCompat(
   };
 }
 
+// 白名单模型固定 reasoning_effort:'low'。名单外原样交还内层 transform（可能为 undefined），
+// 请求体与改动前逐字段相同。名单内：滑块 / SDK 已经写上的其它档位不转发，一律改成 low；
+// 已经是 low 则不动对象。deepseek 自己的 effort 映射与 prefix 兼容先跑，本层只补这一个字段。
+function withDefaultEngineLowReasoningEffort(
+  config: ModelConfig,
+  vendorTransform?: (body: Record<string, unknown>) => Record<string, unknown>,
+): ((body: Record<string, unknown>) => Record<string, unknown>) | undefined {
+  if (!DEFAULT_ENGINE_LOW_REASONING_EFFORT_MODELS.includes(config.model)) {
+    return vendorTransform;
+  }
+  return (body) => {
+    const transformed = vendorTransform ? vendorTransform(body) : body;
+    if (transformed.reasoning_effort === 'low') return transformed;
+    return { ...transformed, reasoning_effort: 'low' };
+  };
+}
+
 export function buildVendorCompatSettings(config: ModelConfig, options?: { searchEnabled?: boolean }): OpenAICompatVendorSettings {
   let settings: OpenAICompatVendorSettings;
   switch (config.provider) {
@@ -159,13 +177,17 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
   }
   return {
     ...finalSettings,
-    // 组合顺序：prefix 注入最后跑（deepseek 顶层 prefix:true 不碰 messages；moonshot 只给末条
-    // assistant 消息打 partial:true，其余消息不动），reasoning_content 兼容先跑（遍历所有
+    // 组合顺序：低推理白名单最后跑（只改名单内模型的 reasoning_effort，其余字段不动）。
+    // prefix 在它之前（deepseek 顶层 prefix:true 不碰 messages；moonshot 只给末条
+    // assistant 消息打 partial:true，其余消息不动），reasoning_content 兼容更早（遍历所有
     // assistant 消息补字段，B1 续接的 prefix 消息同受覆盖——DeepSeek 要求所有 assistant
     // 消息回传该字段，prefix 消息不例外）。
-    transformRequestBody: withStreamResumePrefixCompat(
+    transformRequestBody: withDefaultEngineLowReasoningEffort(
       config,
-      withDeepSeekReasoningContentCompat(config, settings.transformRequestBody),
+      withStreamResumePrefixCompat(
+        config,
+        withDeepSeekReasoningContentCompat(config, settings.transformRequestBody),
+      ),
     ),
   };
 }

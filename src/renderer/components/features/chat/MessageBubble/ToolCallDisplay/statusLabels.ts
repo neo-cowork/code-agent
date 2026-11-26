@@ -10,6 +10,7 @@ import type { Translations } from '../../../../../i18n';
 import { humanizeToolFailureReason, resolveParkedApprovalClosureCopy, resolveToolTerminalOutcomeKey } from '../../../../../utils/toolExecutionPresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../../../i18n/outcomeWords';
 import type { StreamInterruptionReason } from '@shared/contract';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 type StatusLabels = Pick<Translations['toolStatus']['default'], 'preparing' | 'running'>;
 
@@ -105,19 +106,19 @@ function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | nul
 
   if (name === 'Grep') {
     const match = output.match(/(\d+)\s*match/i);
-    if (match) return t.toolStatus.grepMatches.replace('{count}', match[1]);
+    if (match) return interpolatePlural(t.toolStatus.grepMatches, Number(match[1]));
     if (isEmptyMatchForStatusLine(toolCall)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Glob') {
     const match = output.match(/(\d+)\s*file/i);
-    if (match) return t.toolStatus.globFiles.replace('{count}', match[1]);
+    if (match) return interpolatePlural(t.toolStatus.globFiles, Number(match[1]));
     if (isEmptyMatchForStatusLine(toolCall)) return t.toolStatus.grepNoMatches;
   }
 
   if (name === 'Read') {
     const match = output.match(/(\d+)\s*lines?\b/i);
-    if (match) return t.toolStatus.readLines.replace('{count}', match[1]);
+    if (match) return interpolatePlural(t.toolStatus.readLines, Number(match[1]));
   }
 
   if (name === 'Bash' || name === 'bash') {

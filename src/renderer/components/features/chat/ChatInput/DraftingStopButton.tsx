@@ -1,6 +1,7 @@
-import { Loader2, Square } from 'lucide-react';
+import { Square } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { IconButton } from '../../../primitives';
+import { StoppingButton } from './StoppingButton';
 
 interface DraftingStopButtonProps {
   isProcessing?: boolean;
@@ -20,13 +21,24 @@ export function DraftingStopButton({
   const { t } = useI18n();
   if (!(isProcessing || hasStoppableBackgroundWork) || !hasContent) return null;
 
-  const label = isStopping ? t.chatInput.stoppingAria : t.chatInput.stopAria;
+  if (isStopping) {
+    return (
+      <StoppingButton
+        onStop={onStop}
+        testId="composer-stop-while-drafting"
+        className="composer-drafting-stop"
+        title
+      />
+    );
+  }
+
+  const label = t.chatInput.stopAria;
   return (
     <IconButton
       type="button"
       size="sm"
       className="composer-drafting-stop h-7 w-7 shrink-0"
-      icon={isStopping ? <Loader2 className="animate-spin" /> : <Square className="fill-current" />}
+      icon={<Square className="fill-current" />}
       onClick={onStop}
       aria-label={label}
       title={label}

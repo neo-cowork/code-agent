@@ -30,7 +30,7 @@ import type { Citation } from '@shared/contract/citation';
 import type { LibraryEvidenceProjection } from '@shared/contract/library';
 import { projectLibraryEvidence } from '../../../../../services/libraryClient';
 import {
-  humanizeToolError,
+  humanizeToolError, localizeToolUserMessage,
   isRemindersReadAuthorizationFailure,
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
@@ -49,6 +49,7 @@ import {
   FileResultDisplay,
   VideoResultDisplay,
 } from './ToolResultMediaDisplays';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 // Shiki 高亮内核按需动态加载,只在真的渲染 JSON 高亮时才下载。
 const LazyShikiCodeBlock = lazy(() => import('../ShikiCodeBlock'));
 
@@ -149,7 +150,7 @@ function CappedResultBody({
         >
           {showAll
             ? copy.collapse
-            : copy.expandRemaining.replace('{count}', String(overflow))}
+            : interpolatePlural(copy.expandRemaining, overflow)}
         </button>
       )}
     </>
@@ -173,14 +174,14 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const { t, language } = useI18n();
   const copy = t.rendererHumanPipe.toolDetails;
 
-  // 报错说人话：识别得了的错误（如搜索源额度耗尽）给一行摘要 + 去设置入口，原始报错折叠。
-  // metadata.code 命中登记表的门（如工作台范围拦截）优先用 code 文案，正则降为兜底。
-  const humanError = result && !result.success
-    ? humanizeToolError(result.error, name, t, result.metadata)
-    : null;
+  const userMessage = result?.userMessage === undefined ? undefined : localizeToolUserMessage(result.userMessage, t);
+  const displayError = userMessage ?? result?.error;
   const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
+  const humanError = userMessage === undefined
+    ? result && !result.success ? humanizeToolError(displayError, name, t, result.metadata) : null
+    : { summary: stripAnsiCodes(userMessage), detail: structuredHostReason ? humanizeToolError(undefined, name, t, result?.metadata)?.detail : undefined };
   const remindersReadDenied = isRemindersReadAuthorizationFailure(name, result?.metadata);
-  const errorDetail = humanError?.detail ?? (remindersReadDenied ? undefined : copy.genericErrorDetail);
+  const errorDetail = humanError?.detail ?? (userMessage !== undefined || remindersReadDenied ? undefined : copy.genericErrorDetail);
 
   const isEditFile = name === 'Edit';
   // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一聚合 old/new；legacy 平铺不变
@@ -358,9 +359,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
               )}
               {showGenericErrorActions && (
                 <GenericToolErrorActions
-                  errorText={structuredHostReason
+                  errorText={structuredHostReason && userMessage === undefined
                     ? [humanError?.summary, humanError?.detail].filter(Boolean).join('\n')
-                    : stripAnsiCodes(toolErrorActions.errorText)}
+                    : stripAnsiCodes(userMessage ?? toolErrorActions.errorText)}
                   canRetry={toolErrorActions.canRetry}
                   messageId={mediaContext?.messageId}
                   copy={copy}
@@ -385,7 +386,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       {copy.settingsHint}
                     </button>
                   )}
-                  {!interruptionPlaceholder && !structuredHostReason && !remindersReadDenied && (
+                  {userMessage === undefined && !interruptionPlaceholder && !structuredHostReason && !remindersReadDenied && (
                     <>
                       <button
                         type="button"
@@ -396,22 +397,22 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       </button>
                       {showRawError && (
                         <pre className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-800/50 bg-gray-900/50 p-2 text-[11px] text-zinc-500">
-                          {stripAnsiCodes(result.error || '')}
+                          {stripAnsiCodes(displayError || '')}
                         </pre>
                       )}
                     </>
                   )}
                 </div>
-              ) : (!safeBrowserComputerResult && !result.error && result.output !== null && typeof result.output === 'object') ? (
+              ) : (!safeBrowserComputerResult && userMessage === undefined && !displayError && result.output !== null && typeof result.output === 'object') ? (
                 // 对象/数组型 output（非字符串日志）走 JSON 语法高亮
                 <JsonHighlight code={JSON.stringify(result.output, null, 2)} error={!result.success} />
               ) : (
                 <CappedResultBody
                   text={
-                    safeBrowserComputerResult
-                      ? stripAnsiCodes(safeBrowserComputerResult)
-                      : result.error
-                        ? stripAnsiCodes(result.error)
+                    userMessage !== undefined || (!safeBrowserComputerResult && displayError)
+                      ? stripAnsiCodes(displayError ?? '')
+                      : safeBrowserComputerResult
+                        ? stripAnsiCodes(safeBrowserComputerResult)
                         : typeof result.output === 'string'
                           ? replaceCompletenessWarningInOutput(
                             name,

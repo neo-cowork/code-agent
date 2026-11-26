@@ -150,7 +150,7 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     expect((screen.getByRole('option', { name: '季度复盘' }).closest('select') as HTMLSelectElement).value).toBe('proj-abc');
   });
 
-  it('不归档：卡内容与以前一致，只有四行、没有 archive 行', async () => {
+  it('不归档：确认卡包含估算和原有复述行，没有 archive 行', async () => {
     mocks.listProjects.mockResolvedValue([{ id: 'proj-abc', name: '季度复盘' }]);
     render(<CronSimpleCreate onDone={() => undefined} />);
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每天盯一下竞品发布' } });
@@ -158,7 +158,7 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     await waitFor(() => expect(pendingCard()).toBeTruthy());
     const keys = Array.from(pendingCard().querySelectorAll('[data-pending-routine-row]'))
       .map((el) => el.getAttribute('data-pending-routine-row'));
-    expect(keys).toEqual(['what', 'when', 'notifyWhen', 'result']);
+    expect(keys).toEqual(['what', 'when', 'estimate', 'notifyWhen', 'result']);
   });
 
   it('「确认保存」后 createJob 恰好一次，随后关闭（onDone）', async () => {
