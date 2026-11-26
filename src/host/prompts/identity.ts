@@ -278,7 +278,7 @@ type: {{type from the table}}
 {{content}}
 \`\`\`
 
-2. Update INDEX.md — add a pointer: \`- [filename](path) — description\`
+INDEX.md updates automatically; do not write or edit it.
 
 ## How to Read
 

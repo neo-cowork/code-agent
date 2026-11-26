@@ -409,7 +409,19 @@ export async function archiveMemoryFile(filename: string, deprecatedBy?: string 
  * Apply pointer-only changes to INDEX.md. Non-pointer prose, headings, comments,
  * and ordering stay untouched; consolidation must never regenerate INDEX body.
  */
-export async function updateLightMemoryIndexPointers(input: {
+export function updateLightMemoryIndexPointers(input: {
+  remove: string[];
+  add: Array<{ filename: string; description: string }>;
+}): Promise<{ removed: string[]; added: string[] }> {
+  // INDEX.md 是读改写：同进程内串行，否则并行更新后完成者覆盖先完成者的指针。
+  const run = indexPointerQueue.then(() => applyLightMemoryIndexPointers(input));
+  indexPointerQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+let indexPointerQueue: Promise<void> = Promise.resolve();
+
+async function applyLightMemoryIndexPointers(input: {
   remove: string[];
   add: Array<{ filename: string; description: string }>;
 }): Promise<{ removed: string[]; added: string[] }> {
