@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AttemptEnv } from '../../../scripts/e2e-core/types';
 
 const { openFolderSessionMock, sendMessageMock } = vi.hoisted(() => ({
-  openFolderSessionMock: vi.fn(async () => 'session-f10'),
-  sendMessageMock: vi.fn(async () => undefined),
+  openFolderSessionMock: vi.fn<(env: AttemptEnv, title: string) => Promise<string>>(async () => 'session-f10'),
+  sendMessageMock: vi.fn<(page: AttemptEnv['page'], text: string) => Promise<void>>(async () => undefined),
 }));
 
 vi.mock('../../../scripts/e2e-core/ui', () => ({
-  approveCard: vi.fn(async () => undefined),
+  approveCard: vi.fn(async () => '允许一次'),
   driveTurn: vi.fn(async () => undefined),
   openFolderSession: openFolderSessionMock,
   sendMessage: sendMessageMock,
@@ -15,25 +16,29 @@ vi.mock('../../../scripts/e2e-core/ui', () => ({
 }));
 
 import { f10 } from '../../../scripts/e2e-core/attachmentFlow';
-import type { StepEnv } from '../../../scripts/e2e-core/types';
 
 function createStepEnv(
   messages: Array<{ session_id: string; role: string; content: string }>,
   toolEvents: Array<{ session_id: string; tool_name: string; phase: string; status: string }> = [],
-): StepEnv {
+): AttemptEnv {
   return {
-    page: {} as StepEnv['page'],
-    server: {} as StepEnv['server'],
+    page: {} as AttemptEnv['page'],
+    server: {} as AttemptEnv['server'],
     sessionIds: ['session-f10'],
+    startedAtMs: 0,
+    sseFile: 'test.sse',
     scratch: {},
     note: vi.fn(),
     readDb: vi.fn(async () => ({
-      path: 'db-1.json',
+      file: 'db-1.json',
       data: {
         sessions: [{ id: 'session-f10' }],
         messages,
         toolEvents,
+        pendingApprovals: [],
         permissionDecisions: [],
+        cronJobs: [],
+        cronExecutions: [],
       },
     })),
   };
