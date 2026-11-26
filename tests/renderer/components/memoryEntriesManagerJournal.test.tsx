@@ -601,17 +601,17 @@ describe('MemoryEntriesManager — responsive 5-column table layout (N-FIX-MEMOR
     ]);
 
     // 折叠规则（容器查询；jsdom 不求值，这里只钉住类名）：滚动容器是 @container；
-    // 「类型」列在容器 < 520px 时隐藏，「更新 / 来源」列在 < 420px 时隐藏；勾选、条目、状态三列永不隐藏
+    // 「类型」列在容器 < 460px 时隐藏，「更新 / 来源」列在 < 420px 时隐藏；勾选、条目、状态三列永不隐藏
     const wrapper = table!.closest('.overflow-auto');
     expect(wrapper).not.toBeNull();
     expect(wrapper!.className.split(/\s+/)).toContain('@container');
     const classList = (el: Element) => el.className.split(/\s+/);
-    expect(classList(headers[3]!)).toContain('@max-[520px]:hidden');
+    expect(classList(headers[3]!)).toContain('@max-[460px]:hidden');
     expect(classList(headers[4]!)).toContain('@max-[420px]:hidden');
     for (const index of [0, 1, 2]) expect(headers[index]!.className).not.toMatch(/hidden/);
     for (const row of rows) {
       const cells = row.querySelectorAll('td');
-      expect(classList(cells[3]!)).toContain('@max-[520px]:hidden');
+      expect(classList(cells[3]!)).toContain('@max-[460px]:hidden');
       expect(classList(cells[4]!)).toContain('@max-[420px]:hidden');
       for (const index of [0, 1, 2]) expect(cells[index]!.className).not.toMatch(/hidden/);
     }
@@ -656,5 +656,7 @@ describe('MemoryEntriesManager — responsive 5-column table layout (N-FIX-MEMOR
 
     fireEvent.click(pausedRow);
     await waitFor(() => expect(screen.getByTestId('memory-entry-paused-notice')).toBeTruthy());
+    // 列表里的「更新 / 来源」列窄窗口会收起，详情栏必须仍能看到所选条目的更新时间
+    expect(screen.getByTestId('memory-entry-detail-updated').textContent?.trim()).toBe(`更新: ${updatedLabelFor(pausedDbEntry)}`);
   });
 });

@@ -652,7 +652,7 @@ export const MemoryEntriesManager: React.FC<{
                       <th className="w-9 px-2 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.entry}</th>
                       <th className="w-[96px] px-2 py-2 font-medium">{memoryText.entries.table.status}</th>
-                      <th className="w-[100px] px-2 py-2 font-medium @max-[520px]:hidden">{memoryText.entries.table.kind}</th>
+                      <th className="w-[100px] px-2 py-2 font-medium @max-[460px]:hidden">{memoryText.entries.table.kind}</th>
                       <th className="w-[104px] px-2 py-2 font-medium @max-[420px]:hidden">
                         {memoryText.entries.table.updated} / {memoryText.entries.table.source}
                       </th>
@@ -725,7 +725,7 @@ export const MemoryEntriesManager: React.FC<{
                             <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-background-badge" title={row.backgroundWriteLabel}>{row.backgroundWriteLabel}</div>
                           )}
                         </td>
-                        <td className="break-words px-2 py-3 align-top text-zinc-300 @max-[520px]:hidden">{row.kindLabel}</td>
+                        <td className="break-words px-2 py-3 align-top text-zinc-300 @max-[460px]:hidden">{row.kindLabel}</td>
                         <td className="break-words px-2 py-3 align-top text-zinc-400 @max-[420px]:hidden">
                           <div>{row.updatedAtLabel}</div>
                           <div className="mt-1 text-[11px] text-zinc-500">
@@ -759,6 +759,9 @@ export const MemoryEntriesManager: React.FC<{
                         <Database className="h-4 w-4 text-badge-info" />
                       )}
                       <span className="truncate">{selectedEntry.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth, memoryText.sourceLabels)}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500" data-testid="memory-entry-detail-updated">
+                      {memoryText.entries.table.updated}: {formatMemoryEntryUpdatedAt(selectedEntry.updatedAt, Date.now(), memoryText.relativeDate, localeForLanguage(language))}
                     </div>
                   </div>
                   <button
