@@ -15,3 +15,20 @@ export function isBackgroundWakeMessage(message: {
   if (message.metadata?.automation?.automationId?.startsWith(IDLE_WAKE_AUTOMATION_PREFIX)) return true;
   return typeof message.content === 'string' && FOREGROUND_WAKE_PROMPT_RE.test(message.content);
 }
+
+/**
+ * The text whose cues decide how a bounced step is reported. On a background-result wake turn the run prompt is
+ * host scaffolding (it even says 「用户自己写过的命令可以点名」), so use the user's own latest real request instead.
+ */
+export function inabilityGatePrompt(ctx: {
+  turn?: { runUserPrompt?: string } | null;
+  messages?: ReadonlyArray<{ role: string; content?: unknown; isMeta?: boolean; visibility?: string; metadata?: { automation?: { automationId?: string } } | null }>;
+}): string {
+  const prompt = ctx.turn?.runUserPrompt ?? '';
+  if (!isBackgroundWakeMessage({ content: prompt })) return prompt;
+  const original = [...(ctx.messages ?? [])].reverse().find((message) => (
+    message.role === 'user' && !message.isMeta && message.visibility !== 'rewound'
+    && typeof message.content === 'string' && !isBackgroundWakeMessage(message)
+  ));
+  return typeof original?.content === 'string' ? original.content : prompt;
+}
