@@ -164,7 +164,7 @@ const MemoryTidyHistory: React.FC<{ toggleEnabled: boolean | null }> = ({ toggle
                       <div data-testid="memory-tidy-putaway">
                         {copy.putAwayLabel.replace(
                           '{names}',
-                          putAway.map((source) => source.name).join('、'),
+                          putAway.map((source) => source.name).join(t.punctuation.listSeparator),
                         )}
                       </div>
                     );

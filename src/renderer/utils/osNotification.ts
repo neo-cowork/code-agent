@@ -243,7 +243,7 @@ async function postOsNotificationInner(
           label: notice.deniedNoticeAction,
           onClick: () => {
             openNativeDesktopSystemSettings('notifications').catch((err) => {
-              console.warn('[osNotification] 打开系统设置的「通知」页失败', err);
+              console.warn('[osNotification] failed to open the system notification settings page', err);
             });
             useToastStore.getState().removeToast(noticeId);
           },

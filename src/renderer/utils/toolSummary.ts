@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import { toolSummaryCopyZh } from '../i18n/toolSummaryCopy';
 import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 
 /**
@@ -259,12 +260,12 @@ export function summarizeToolCall(toolCall: ToolCall): string {
         || '';
       if (agentType) return `创建代理: ${agentType}`;
       const parallelCount = args?.parallel === true && Array.isArray(args?.agents) ? args.agents.length : 0;
-      return parallelCount > 0 ? `创建 ${parallelCount} 个代理` : '创建代理';
+      return parallelCount > 0 ? toolSummaryCopyZh.spawnParallel(parallelCount) : toolSummaryCopyZh.spawn;
     }
 
     case 'agent_message': {
       const targetAgent = (args?.target as string) || '';
-      return targetAgent ? `发送消息给: ${targetAgent}` : '发送消息给代理';
+      return targetAgent ? `发送消息给: ${targetAgent}` : toolSummaryCopyZh.messageAgent;
     }
 
     case 'workflow_orchestrate': {

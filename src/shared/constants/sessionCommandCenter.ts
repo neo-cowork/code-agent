@@ -1,5 +1,11 @@
 import { INTERACTION_TIMEOUTS } from './timeouts';
 import { SESSION_TASK_DELIVERY_FAILURE_MESSAGES } from '../i18n/sessionTaskDeliveryFailure';
+import {
+  SESSION_TASK_CANCELLED_CLOSING_MESSAGES,
+  SESSION_TASK_COMMAND_FAILED_LEAD,
+  SESSION_TASK_COMMAND_FAILED_SENTENCE,
+  SESSION_TASK_USER_DENIED_MESSAGES,
+} from '../i18n/sessionTaskClosingCopy';
 
 /**
  * 后台任务禁止递归调用的指挥台调度工具。
@@ -176,11 +182,6 @@ const SESSION_TASK_RESULT_STATUS_WORDS = {
 
 export type SessionTaskResultStatusWordLocale = keyof typeof SESSION_TASK_RESULT_STATUS_WORDS;
 
-const SESSION_TASK_USER_DENIED_MESSAGES = {
-  zh: '你拒绝了这一步，任务已停止。',
-  en: 'You declined this step, so the task was stopped.',
-} as const;
-
 export function formatSessionTaskUserDenied(locale: SessionTaskResultStatusWordLocale): string {
   return SESSION_TASK_USER_DENIED_MESSAGES[locale];
 }
@@ -190,11 +191,6 @@ export function isSessionTaskUserDeniedDetail(detail: string | undefined): boole
   return detail === SESSION_TASK_USER_DENIED_MESSAGES.zh || detail === SESSION_TASK_USER_DENIED_MESSAGES.en;
 }
 
-const SESSION_TASK_CANCELLED_CLOSING_MESSAGES = {
-  zh: '这个后台任务已取消。',
-  en: 'This background task was cancelled.',
-} as const;
-
 /** Closing line shown under a cancelled card so the chat body agrees with the card status. */
 export function formatSessionTaskCancelledClosing(locale: SessionTaskResultStatusWordLocale): string {
   return SESSION_TASK_CANCELLED_CLOSING_MESSAGES[locale];
@@ -202,20 +198,13 @@ export function formatSessionTaskCancelledClosing(locale: SessionTaskResultStatu
 
 export type SessionTaskDeliveryFailure = keyof typeof SESSION_TASK_DELIVERY_FAILURE_MESSAGES.zh;
 
-const SESSION_TASK_COMMAND_FAILED_LEAD = {
-  zh: '后台任务没能完成：命令 ',
-  en: 'The background task could not finish: the command ',
-} as const;
-
 /** 后台任务最后一条命令没跑成功：带上命令行与白话原因（路径已按工作区缩短，调用方保证）。 */
 export function formatSessionTaskCommandFailed(
   locale: SessionTaskResultStatusWordLocale,
   command: string,
   reason?: string,
 ): string {
-  const lead = SESSION_TASK_COMMAND_FAILED_LEAD[locale];
-  if (locale === 'zh') return `${lead}${command} 没有运行成功${reason ? `（${reason}）` : ''}，已停止。`;
-  return `${lead}${command} did not run successfully${reason ? ` (${reason})` : ''}, so it stopped.`;
+  return SESSION_TASK_COMMAND_FAILED_SENTENCE[locale](SESSION_TASK_COMMAND_FAILED_LEAD[locale], command, reason);
 }
 
 /** True when a task_error detail is the command-failed sentence (either locale). */
