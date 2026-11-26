@@ -53,6 +53,8 @@ import { useScheduleSettingsDraftStore } from './scheduleSettingsDraftStore';
 import { discardCronEditorDraft } from '../components/features/cron/cronEditorDraftStash';
 import { buildContentPreviewState } from './contentPreviewState';
 import { buildPermissionDecisionState, buildPermissionDismissState, buildForegroundRunEndState, buildBackgroundRunEndState } from './permissionDecisionState';
+import { useBackgroundTaskStore } from './backgroundTaskStore';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { installedBundledCapabilityIds } from './bundledCapabilityStore';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
@@ -814,7 +816,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 归后台 run，宿主侧在前台 run 结束后仍 pending，要留给用户点
   // （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
   clearForegroundPermissionRequestsForSession: (sessionId) =>
-    set((state) => buildForegroundRunEndState(state, sessionId, GLOBAL_PERMISSION_REQUEST_SESSION_ID)),
+    set((state) => buildForegroundRunEndState(
+      state,
+      sessionId,
+      GLOBAL_PERMISSION_REQUEST_SESSION_ID,
+      (runId) => useBackgroundTaskStore.getState().tasks.some(
+        (task) => (task.id === runId || task.runId === runId) && !isTerminalTaskStatus(task.status),
+      ),
+    )),
 
   // 后台任务自己的 run 收线（subagent_run_end）：该 lane 未裁决的卡成死卡，按身份收走。
   removePermissionRequestsForBackgroundRun: (identity) =>
