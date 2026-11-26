@@ -1,5 +1,6 @@
 // Same-turn handoff when the foreground face refuses an execution tool.
 // messageProcessor stays a caller: the denial block lives here so that file does not grow.
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import type { Message, ToolCall } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
@@ -26,6 +27,7 @@ import {
 } from './toolRunPolicy';
 import { resolveTurnToolFace } from './turnToolFace';
 import { attachTurnQualityMetadata } from './turnQuality';
+import { userRequestedExecution } from '../../../shared/inabilityReplyContract';
 
 const logger = createLogger('ForegroundDenialHandoff');
 
@@ -282,12 +284,13 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   }
 
   guard.toolCallRetryCount++;
+  const requested = userRequestedExecution(inabilityGatePrompt(ctx) || verbatimUserRequest(ctx));
   const shellDenial = describeDeniedShellCalls(ctx, deniedToolCalls);
   contextAssembly.injectSystemMessage(
     [
       '<tool-run-policy>',
-      ctx.foregroundToolFace ? 'The previous call was NOT run.'
-        : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
+      ...(ctx.foregroundToolFace ? (requested ? ['The previous call was NOT run.'] : [])
+        : [`${requested ? 'The previous call was NOT run. ' : ''}Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`]),
       deniedToolRetryGuidance(ctx),
       ...(shellDenial ? [shellDenial.guidance] : []),
       '</tool-run-policy>',
