@@ -61,7 +61,7 @@ export async function projectTerminalResult(
   const resultText = task.resultText ?? task.summary;
     await getSessionManager().addMessageToSession(
     task.sessionId,
-    buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale(), task.deliverableArtifacts),
+    buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale(), task.deliverableArtifacts, task.outcome),
   );
   // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等）。放在 [任务结果] 行之后：
   // 说明写失败会抛出并随整条投影重试，但绝不会挡住结果行落库。

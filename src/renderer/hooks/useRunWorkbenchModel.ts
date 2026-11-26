@@ -53,7 +53,7 @@ import {
 } from '../utils/runWorkbenchProjection';
 import { buildWorkflowTimeline } from '../utils/workflowTimeline';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
-import { backgroundTaskFailureCopy, isShellBackgroundTask } from '../utils/agentFailureCopy';
+import { backgroundTaskFailureCopy, isShellBackgroundTask, notDoneOutcome } from '../utils/agentFailureCopy';
 import { useDurableSwarmRunDetail } from './useDurableSwarmRunDetail';
 
 /**
@@ -354,7 +354,7 @@ function backgroundTaskResumeHint(
   if (isShellBackgroundTask(task) && ['running', 'cancelled'].includes(task.status)) return {};
   if (recoverySummary) return { hint: recoverySummary };
 
-  if (task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE) {
+  if (task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE || notDoneOutcome(task)) {
     return { hint: backgroundTaskFailureCopy(task, languages[language]) ?? undefined };
   }
 

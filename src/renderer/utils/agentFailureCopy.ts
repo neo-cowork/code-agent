@@ -49,10 +49,18 @@ export function agentOutputAfterFailure(node: AgentTreeNode, t: Translations, le
   return output ? `${reason}\n\n${output}` : reason;
 }
 
+/** 助手自报 failed / partial（结构化字段，不看文字）。 */
+export function notDoneOutcome(task: Pick<Task, 'failure'>): 'failed' | 'partial' | undefined {
+  const status = task.failure?.outcome?.status;
+  return status === 'failed' || status === 'partial' ? status : undefined;
+}
+
 /** Session-work recovery has its own stable reason, distinct from parent-gone. */
 export function backgroundTaskFailureCopy(task: Task, t: Translations): string | null {
   if (task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE) return t.outcomeWords['delete-incomplete'].detail.reason;
   if (task.failure?.reason === 'session_command_task_interrupted_by_restart') return t.backgroundPanel.interrupted;
+  const outcome = notDoneOutcome(task);
+  if (outcome) return t.backgroundPanel.helperNotDone[outcome];
   const shellCopy = shellBackgroundTaskFailureCopy(task, t.backgroundPanel);
   if (shellCopy || isShellBackgroundTask(task)) return shellCopy;
   return agentFailureCopy(isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary);

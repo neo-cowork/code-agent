@@ -40,16 +40,12 @@ import { generateMessageId } from '../../shared/utils/id';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
-import {
-  SESSION_COMMAND_CENTER_TOOL_NAMES,
-  formatSessionTaskDeliveryFailure,
-  formatSessionTaskUserDenied,
-} from '../../shared/constants/sessionCommandCenter';
+import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { describeFailedCommand, getTaskDeliveryFailure } from './taskDeliveryVerdict';
+import { AUXILIARY_RUN_SYSTEM_CONTEXT, resolveBackgroundRunTerminal } from './backgroundRunOutcome';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
@@ -72,11 +68,6 @@ export type {
 } from './taskManagerTypes';
 
 const logger = createLogger('TaskManager');
-const AUXILIARY_RUN_SYSTEM_CONTEXT = [
-  '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
-  '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
-  'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
-].join('\n');
 
 function isInferenceHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
@@ -394,22 +385,17 @@ export class TaskManager extends EventEmitter {
           seenArtifactLocations.add(location);
           return true;
         });
-        const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
-        if (deliveryFailure === 'user_denied') {
-          this.emitEvent('task_cancelled', sessionId, { taskId, detail: formatSessionTaskUserDenied(resolveSessionTaskResultLocale()) });
-          return;
-        }
-        this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
+        const terminal = resolveBackgroundRunTerminal({
+          messages,
+          finalText: finalMessage?.content,
+          artifactCount: artifacts.length,
+          workingDirectory: session?.workingDirectory,
+          locale: resolveSessionTaskResultLocale(),
+        });
+        this.emitEvent(terminal.type, sessionId, {
           taskId,
-          ...(deliveryFailure
-            ? {
-              error: (deliveryFailure === 'command_failed'
-                ? describeFailedCommand(messages, session?.workingDirectory, resolveSessionTaskResultLocale())
-                : formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale()))
-                ?? (finalMessage?.content?.trim() || 'Task delivery failed.'),
-            }
-            : { conclusion: finalMessage?.content?.trim() }),
-          ...(artifacts.length ? { artifacts } : {}),
+          ...terminal.data,
+          ...(terminal.type !== 'task_cancelled' && artifacts.length ? { artifacts } : {}),
         });
       }
     } catch (error) {

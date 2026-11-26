@@ -77,6 +77,8 @@ type EventData = {
   error?: string;
   detail?: string;
   artifacts?: Array<{ artifactId?: string; path?: string }>;
+  rawDetail?: string;
+  outcome?: { status: string; reason?: string };
 };
 
 function artifact(artifactId: string, path: string, role = 'deliverable') {
@@ -317,14 +319,17 @@ describe('TaskManager background delivery verdict', () => {
     expect(JSON.stringify(event.data)).not.toContain('chmod');
   });
 
-  it('ends a failed Bash (COMMAND_FAILED) as task_error naming the command, with workspace paths as ./', async () => {
+  it('ends a failed Bash (COMMAND_FAILED) as task_error: one plain sentence collapsed, command only in rawDetail, workspace paths as ./', async () => {
     sessionManagerState.getSession.mockResolvedValue({ messages: [], workingDirectory: '/work/proj' });
     const event = await runBackgroundTask(messages({
       calls: [{ id: 'bash-1', name: 'Bash', success: false, command: '/work/proj/check.sh', failedOutput: 'missing: brief.pdf' }],
       conclusion: '检查完成。',
     }));
     expect(event.type).toBe('task_error');
-    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
+    const data = event.data as EventData;
+    expect(data.error).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+    expect(data.error).not.toMatch(/check\.sh|missing|exit/);
+    expect(data.rawDetail).toContain('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
     expect(JSON.stringify(event.data)).not.toContain('/work/proj');
   });
 
@@ -337,7 +342,8 @@ describe('TaskManager background delivery verdict', () => {
         conclusion: 'done',
       }));
       expect(event.type).toBe('task_error');
-      expect((event.data as EventData).error).toBe('The background task could not finish: the command ./check.sh did not run successfully (missing: brief.pdf), so it stopped.');
+      expect((event.data as EventData).error).toBe('This background task is not done: one of its steps did not work. Add what is missing and I can try again.');
+      expect((event.data as EventData).rawDetail).toContain('The background task could not finish: the command ./check.sh did not run successfully (missing: brief.pdf), so it stopped.');
     } finally {
       configState.language = 'zh';
     }
@@ -352,7 +358,7 @@ describe('TaskManager background delivery verdict', () => {
       conclusion: '看了一下目录。',
     }));
     expect(event.type).toBe('task_error');
-    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
+    expect((event.data as EventData).rawDetail).toContain('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
   });
 
   it('shows the workspace as ./ from the result write root when the session has no working directory', async () => {
@@ -361,7 +367,8 @@ describe('TaskManager background delivery verdict', () => {
       conclusion: 'done',
     }));
     expect(event.type).toBe('task_error');
-    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 cd ./; sh check.sh 没有运行成功（missing: brief.pdf），已停止。');
+    expect((event.data as EventData).rawDetail).toContain('后台任务没能完成：命令 cd ./; sh check.sh 没有运行成功（missing: brief.pdf），已停止。');
+    expect((event.data as EventData).error).not.toContain('check.sh');
   });
 
   it('keeps a failed Bash completed when a later non-probe Bash succeeded', async () => {
@@ -541,5 +548,114 @@ describe('TaskManager background delivery verdict', () => {
       center.dispose();
     }
     configState.language = 'zh';
+  });
+
+  describe('structured helper outcome', () => {
+    const MARKER = '__NEO_TASK_OUTCOME__';
+    const maskedCopy = (conclusion: string) => messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, command: 'cp missing-report.txt archive/', failedOutput: 'cp: missing-report.txt: No such file or directory' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'touch archive/.checked' },
+      ],
+      conclusion,
+    });
+
+    it('turns a helper-reported failed into task_error even though a later command succeeded (masked exit)', async () => {
+      const event = await runBackgroundTask(maskedCopy(`${MARKER}{"status":"failed","reason":"源文件不存在"}\n复制没有做成，源文件不在。`));
+      const data = event.data as EventData;
+      expect(event.type).toBe('task_error');
+      expect(data.outcome).toEqual({ status: 'failed', reason: '源文件不存在' });
+      expect(data.error).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      expect(data.rawDetail).toContain('复制没有做成，源文件不在。');
+      expect(JSON.stringify(event.data)).not.toContain(MARKER);
+    });
+
+    it('turns partial into task_error with the partial sentence, in English too', async () => {
+      configState.language = 'en';
+      try {
+        const event = await runBackgroundTask(messages({
+          calls: [{ id: 'read-1', name: 'Read', success: true }],
+          conclusion: `${MARKER}{"status":"partial"}\nCopied 2 of 3 files.`,
+        }));
+        const data = event.data as EventData;
+        expect(event.type).toBe('task_error');
+        expect(data.outcome).toEqual({ status: 'partial' });
+        expect(data.error).toBe('This background task is only partly done: some steps did not work. Add what is missing and I can pick it up again.');
+        expect(data.rawDetail).toBe('Copied 2 of 3 files.');
+      } finally {
+        configState.language = 'zh';
+      }
+    });
+
+    it('strips the marker from a done outcome and keeps the completed state', async () => {
+      const event = await runBackgroundTask(messages({
+        calls: [{ id: 'read-1', name: 'Read', success: true }],
+        conclusion: `${MARKER}{"status":"done"}\nAll three files copied.`,
+      }));
+      expect(event.type).toBe('task_completed');
+      expect(event.data).toMatchObject({ conclusion: 'All three files copied.', outcome: { status: 'done' } });
+      expect(JSON.stringify(event.data)).not.toContain(MARKER);
+    });
+
+    it('strips a malformed marker without inventing an outcome and keeps the old verdict', async () => {
+      const event = await runBackgroundTask(messages({
+        calls: [{ id: 'read-1', name: 'Read', success: true }],
+        conclusion: `${MARKER}{"status":"great"\nSummary of findings.`,
+      }));
+      expect(event.type).toBe('task_completed');
+      expect((event.data as EventData).conclusion).toBe('Summary of findings.');
+      expect((event.data as EventData).outcome).toBeUndefined();
+    });
+
+    it('does not guess from prose: no marker keeps the existing verdict even when the helper says it failed', async () => {
+      const event = await runBackgroundTask(messages({
+        calls: [{ id: 'read-1', name: 'Read', success: true }],
+        conclusion: 'The copy did not happen because the file is missing.',
+      }));
+      expect(event.type).toBe('task_completed');
+      expect(event.data).toEqual({ taskId: 'task-1', conclusion: 'The copy did not happen because the file is missing.' });
+    });
+
+    it('settles a masked-exit helper as failed end to end: collapsed rows plain, raw details expanded, marker nowhere', async () => {
+      configState.language = 'zh';
+      resetSessionTaskConcurrencyPoolForTest();
+      resetBackgroundTaskLedgerForTest();
+      orchestratorState.messageRuns.push(maskedCopy(`${MARKER}{"status":"failed","reason":"源文件不存在"}\n复制没有做成，源文件不在。`));
+      const manager = new TaskManager({ maxConcurrentTasks: 1 });
+      manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+      const projectTerminalResult = vi.fn();
+      const center = new SessionCommandCenter(manager, {
+        projectTerminalResult, persistMemberInput: vi.fn(), wakeForegroundBrain: vi.fn(),
+      });
+      const spawned = await center.spawn({
+        sessionId: 'session-1', title: 'Archive', shortName: 'archive', laneKey: 'archive',
+        submissionKey: 'archive-outcome', prompt: 'copy the report',
+        workspaceScope: createWorkspaceScope('project-1', [{
+          sourceId: 'primary', path: '/work', role: 'primary', access: 'read_write',
+        }]),
+      });
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      await vi.waitFor(() => expect(projectTerminalResult).toHaveBeenCalled());
+      const [task, projectedStatus] = projectTerminalResult.mock.calls[0];
+      expect(projectedStatus).toBe('failed');
+
+      const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-1' })[0];
+      expect(ledgerTask.status).toBe('failed');
+      expect(ledgerTask.failure?.outcome).toEqual({ status: 'failed', reason: '源文件不存在' });
+      expect(ledgerTask.failure?.message).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      expect(ledgerTask.summary).not.toMatch(/cp |No such file|exit/);
+      expect(String(ledgerTask.metadata?.resultMarkdown)).toContain('cp missing-report.txt archive/');
+      expect(String(ledgerTask.metadata?.resultMarkdown)).toContain('复制没有做成，源文件不在。');
+
+      const row = buildSessionTaskResultMessage(
+        task, projectedStatus, task.resultText ?? task.summary, `session-task-result-${task.id}`, 'zh', [], task.outcome,
+      );
+      expect(row.metadata?.backgroundTaskResult).toMatchObject({ status: 'failed', outcome: { status: 'failed' } });
+      for (const surface of [JSON.stringify(row), JSON.stringify(ledgerTask), task.stopped?.content ?? '']) {
+        expect(surface).not.toContain(MARKER);
+      }
+      expect(task.stopped?.content).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      center.dispose();
+    });
   });
 });

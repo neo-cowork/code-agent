@@ -11,7 +11,7 @@ import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from
 import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
-import type { TaskProgress } from '../../../shared/contract/backgroundTask';
+import type { TaskOutcome, TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { ToolCall, ToolResult } from '../../../shared/contract/tool';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
@@ -47,14 +47,13 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
-  composeSessionCommandTaskDisplayText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
-import { composeTaskResultForModel } from './taskResultHandback';
+import { composeExpandedDetailText, composeModelResultText, readOutcomeFields } from './sessionTaskOutcomeFields';
 import { appendBashStep, bashStepFromProgress, withToolCallOutcome } from '../../agent/bashStepOutcome';
 
 const logger = createLogger('SessionCommandCenter');
@@ -80,6 +79,7 @@ export interface SessionCommandTask {
   createdAt: number;
   updatedAt: number;
   detail?: string;
+  outcome?: TaskOutcome; rawDetail?: string; // 助手自报结局；原始说明只进展开详情
   leftoverPaths?: string[];
   summary?: string;
   /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
@@ -565,6 +565,7 @@ export class SessionCommandCenter {
     const task = this.tasksBySession.get(event.sessionId)?.get(id);
     if (!task) return;
 
+    if (event.type !== 'task_started') Object.assign(task, readOutcomeFields(data));
     if (event.type === 'task_started') {
       task.status = 'running';
       task.updatedAt = Date.now();
@@ -602,12 +603,9 @@ export class SessionCommandCenter {
     if (event.type === 'task_error') {
       const rawError = typeof data?.error === 'string' ? data.error : '执行失败';
       const stopped = resolveStoppedTaskOutcome({
-        status: 'failed',
-        detail: rawError,
-        lastUrl: this.lastUrlByTask.get(task.id),
+        status: 'failed', detail: rawError, lastUrl: this.lastUrlByTask.get(task.id), hostWritten: Boolean(task.outcome || task.rawDetail),
       });
       if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
-      // 任务记录 / ledger / 给模型的 [任务结果] 保留原始错误（诊断依据）；白话说明只走 backgroundTaskStopped 通道。
       await this.settle(task, 'failed', rawError);
       return;
     }
@@ -881,7 +879,7 @@ export class SessionCommandCenter {
     );
     // 模型侧文本与 UI/账本 summary 分家：240 字硬切会截断 SSRF 拒绝提示里的
     // 「改走 Bash curl 审批」整句，前台拿不到可执行的下一步（FB-577）。
-    task.resultText = composeTaskResultForModel(task, detail);
+    task.resultText = composeModelResultText(task, detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
     if (task.leftoverPaths) {
@@ -990,7 +988,7 @@ export class SessionCommandCenter {
         progress: task.progress,
         ...(task.leftoverPaths ? { leftoverPaths: task.leftoverPaths } : {}),
         ...(task.status === 'failed' && task.detail
-          ? { failure: { message: task.detail, reason: task.leftoverPaths ? BACKGROUND_TASK_DELETE_INCOMPLETE : 'session_command_task_failed' } }
+          ? { failure: { message: task.detail, reason: task.leftoverPaths ? BACKGROUND_TASK_DELETE_INCOMPLETE : 'session_command_task_failed', ...(task.outcome ? { outcome: task.outcome } : {}) } }
           : {}),
         metadata: {
           shortName: task.shortName,
@@ -1001,7 +999,7 @@ export class SessionCommandCenter {
           parentRunId: task.parentRunId,
           childRunId: task.id,
           ...(TERMINAL.has(task.status) && task.detail
-            ? { resultMarkdown: composeSessionCommandTaskDisplayText(task.detail) }
+            ? { resultMarkdown: composeExpandedDetailText(task) }
             : {}),
         },
       });
