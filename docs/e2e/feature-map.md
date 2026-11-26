@@ -72,8 +72,8 @@
 
 ### F05 — 审批卡：允许一次
 - **Preconditions**: surface web；任一需审批的操作（shell 命令、写全局文件）；新会话。
-- **Steps**: 1. 让 Neo 执行一个需审批的命令。2. 审批卡出现，核对命令正文只出现一次。3. 点「允许一次」。
-- **Selectors**: `testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；`testid:permission-args-preview` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；按钮文案「允许一次」见 `src/renderer/i18n/decisionCard.ts`（`optionOnce`）。
+- **Steps**: 1. 让 Neo 执行一个需审批的命令。2. 审批卡出现，核对命令正文只出现一次。3. 点「允许」。
+- **Selectors**: `testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；`testid:permission-args-preview` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；卡面默认只有一句话和「允许 / 暂不」两个按钮，命令正文在「更多选项与详情」里；按钮文案见 `src/renderer/i18n/decisionCard.ts`（`allow`、`notNow`、`moreOptionsDetails`）。
 - **Expected UI**: 点后卡片消失，该工具继续执行，回合正常收尾。
 - **Observable**: `permission_decisions` 新增行 `final_outcome='allow'`、`history_outcome='ask-approved'`、`reason='user'`；随后 `tool_execution_events` 同工具 complete success。
 - **Failure looks like**: 点了没反应卡片还在；工具没继续跑；同一命令再问第二次。
@@ -81,8 +81,8 @@
 
 ### F06 — 审批卡：拒绝
 - **Preconditions**: 同 F05。
-- **Steps**: 1. 触发审批卡。2. 点「拒绝」。
-- **Selectors**: `testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；按钮文案「拒绝」见 `src/renderer/i18n/decisionCard.ts`（`optionDeny`）。
+- **Steps**: 1. 触发审批卡。2. 点「暂不」。
+- **Selectors**: `testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；按钮文案「暂不」见 `src/renderer/i18n/decisionCard.ts`（`notNow`）。
 - **Expected UI**: 卡片收起；回复说明没有执行，且不是报「失败」；不再重试同一动作。
 - **Observable**: `permission_decisions` 行 `final_outcome='deny'`；无该工具的 `complete success` 事件。
 - **Failure looks like**: 拒绝后仍然执行；回复把拒绝说成「出错了」；任务被记为失败。
@@ -90,7 +90,7 @@
 
 ### F07 — 审批卡：本次任务内允许
 - **Preconditions**: 同 F05，且任务会连续多次调用同类工具。
-- **Steps**: 1. 触发审批卡。2. 点「本次任务内允许」。3. 任务继续，后续同类操作不再弹卡。
+- **Steps**: 1. 触发审批卡。2. 展开「更多选项与详情」，点「本次任务内允许」。3. 任务继续，后续同类操作不再弹卡。
 - **Selectors**: `testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；按钮文案「本次任务内允许」见 `src/renderer/i18n/decisionCard.ts`（`optionRun`）。
 - **Expected UI**: 之后同会话同类操作直接执行；换新会话仍会再问。
 - **Observable**: `permission_decisions` 首行 `ask-approved`，后续同工具行 `history_outcome='auto-approve'`（授权记忆命中）。
@@ -153,7 +153,7 @@
 
 ### F14 — 记忆写入并在新会话召回
 - **Preconditions**: surface web；记忆开启（默认自动）。
-- **Steps**: 1. 说「记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万」。2. 先出现第一个弹窗「确认用户规则」（不是审批卡），点「确认保存规则」；2 分钟内不点会自动关闭、本次不写入。3. 紧接着出现第二个确认：普通审批卡（`permission-card`，同 F05），因为记忆文件写在项目目录外；点「允许一次」。两个都点了才会写入。4. 新开一个会话说「帮我起草这周周报」。
+- **Steps**: 1. 说「记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万」。2. 先出现第一个弹窗「确认用户规则」（不是审批卡），点「确认保存规则」；2 分钟内不点会自动关闭、本次不写入。3. 紧接着出现第二个确认：普通审批卡（`permission-card`，同 F05），因为记忆文件写在项目目录外；点「允许」。两个都点了才会写入。4. 新开一个会话说「帮我起草这周周报」。
 - **Selectors**: 确认弹窗是 `src/renderer/components/features/memory/MemoryConfirmModal.tsx`，**没有 data-testid**，用可见文字定位：标题「确认用户规则」、按钮「确认保存规则」（文案在 `src/renderer/i18n/zh.ts` 的 `memory.confirmDirectiveTitle` / `confirmDirectiveSave`）；超时常量 `MEMORY_TIMEOUTS.DIRECTIVE_CONFIRM` = 120000 毫秒（`src/shared/constants/timeouts.ts`）；`testid:sidebar-new-task` @ `src/renderer/components/features/sidebar/SidebarNewTaskRow.tsx`；`testid:memory-settings-tab` @ `src/renderer/components/features/settings/tabs/MemoryTab.tsx`；`testid:memory-entry-row` @ `src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx`。
 - **Expected UI**: 第一轮明确说「已记住」；设置里记忆列表多一条；第二个会话的草稿直接用三段式。
 - **Observable**: 成功：`<home>/.code-agent/memory/` 下出现新的 .md 文件，`Write` 的 `tool_execution_events` 为 complete success；`permission_decisions` 有一行 `tool_name='Write'`、`final_outcome='allow'`、`history_outcome='ask-approved'`，`trace_json` 里规则为 `W3: outside_project`（「写入项目目录外」，由第二个审批卡产生）；第二个会话的工具事件里有对该文件的 `Read`。「确认用户规则」弹窗本身不写 `permission_decisions`，那一行只来自第二个审批卡。失败（第一个弹窗没点或超时）：`Write` 工具结果带错误码 `DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED`，文案含「确认窗口等了 2 分钟没有等到响应，已自动关闭，这次没有写入」，目录里没有新文件，也没有 `Write` 的 `permission_decisions` 行。

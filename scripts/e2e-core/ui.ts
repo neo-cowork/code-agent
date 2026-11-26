@@ -121,7 +121,33 @@ export class RealHomeWriteError extends Error {
   constructor(dir: string) { super(`审批卡指向真实主目录 ${dir}，已拒绝，没有批准（模型分支）`); }
 }
 
-const DENY_LABEL = '拒绝';
+// 普通卡和高危卡的两个按钮是「允许 / 暂不」；沙盒拦截卡仍是「允许仅这一次 / 拒绝」。
+const DENY_LABELS = ['暂不', '拒绝'];
+const EXPAND_LABEL = '更多选项与详情';
+type CardLocator = ReturnType<Page['getByTestId']>;
+
+/** 卡面的「允许」「暂不」要整词匹配：展开后还有「本次任务内允许」「24 小时内允许」，按子串找会一次命中多个。 */
+function cardButton(card: CardLocator, label: string): ReturnType<CardLocator['getByRole']> {
+  return card.getByRole('button', { name: label, exact: label === '允许' || label === '暂不' });
+}
+
+/**
+ * 审批卡默认只露一句话和两个按钮，命令、路径和限时授权都收在「更多选项与详情」里。
+ * 读卡上的命令/路径、点限时授权之前先展开；已展开或这张卡没有折叠区时什么都不做。
+ */
+export async function expandCard(page: Page): Promise<void> {
+  const more = page.getByTestId('permission-card').first().getByRole('button', { name: EXPAND_LABEL, exact: true });
+  if (await more.count()) await more.click({ timeout: 10_000 });
+}
+
+/** 审批卡上的「不同意」按钮。 */
+export async function denyCard(page: Page): Promise<string> {
+  const card = page.getByTestId('permission-card').first();
+  for (const label of DENY_LABELS) {
+    if (await cardButton(card, label).count()) { await clickCardButton(page, label); return label; }
+  }
+  throw new Error('审批卡上没有「暂不」/「拒绝」按钮');
+}
 
 /** 这台机器真实的数据目录（不是 neo-realrun 的隔离 HOME）。模型会从路径里的用户名猜出它。 */
 export const realDataDir = (): string => path.join(os.homedir(), '.code-agent');
@@ -132,14 +158,18 @@ export const realDataDir = (): string => path.join(os.homedir(), '.code-agent');
  */
 export async function clickCardButton(page: Page, label: string): Promise<void> {
   const card = page.getByTestId('permission-card').first();
+  // 护栏要读到路径和命令，它们在折叠区里：不展开就读，等于没检查。
+  await expandCard(page);
   const before = await card.innerText();
-  if (label !== DENY_LABEL && before.includes(realDataDir())) {
-    await card.getByRole('button', { name: DENY_LABEL }).click({ timeout: 10_000 });
+  if (!DENY_LABELS.includes(label) && before.includes(realDataDir())) {
+    for (const deny of DENY_LABELS) {
+      if (await cardButton(card, deny).count()) { await cardButton(card, deny).click({ timeout: 10_000 }); break; }
+    }
     throw new RealHomeWriteError(realDataDir());
   }
   const countBefore = await page.getByTestId('permission-card').count();
   const clickedAt = Date.now();
-  await card.getByRole('button', { name: label }).click({ timeout: 10_000 });
+  await cardButton(card, label).click({ timeout: 10_000 });
   // 点完这张卡应当收起（或换成下一张不同的卡）；原样还在就是「点了没反应」。快速轮询，别漏掉短暂的收起
   const deadline = Date.now() + CARD_COLLAPSE_TIMEOUT_MS;
   for (;;) {
@@ -185,13 +215,13 @@ export async function openFolderSession(env: { page: Page; server: { port: numbe
   return id;
 }
 
-/** 审批卡上的「同意」按钮：普通卡是「允许一次」，沙盒拦截卡是「允许仅这一次」，风险无法判定的命令卡是「仍然执行」。 */
+/** 审批卡上的「同意」按钮：普通卡和高危卡是「允许」，沙盒拦截卡是「允许仅这一次」，浏览器会话授权卡仍是「允许一次」。 */
 export async function approveCard(page: Page): Promise<string> {
   const card = page.getByTestId('permission-card').first();
-  for (const label of ['允许一次', '允许仅这一次', '仍然执行']) {
-    if (await card.getByRole('button', { name: label }).count()) { await clickCardButton(page, label); return label; }
+  for (const label of ['允许', '允许仅这一次', '允许一次']) {
+    if (await cardButton(card, label).count()) { await clickCardButton(page, label); return label; }
   }
-  throw new Error('审批卡上没有「允许一次」/「允许仅这一次」/「仍然执行」按钮');
+  throw new Error('审批卡上没有「允许」/「允许仅这一次」/「允许一次」按钮');
 }
 
 /**
