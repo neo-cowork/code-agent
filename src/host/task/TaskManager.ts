@@ -45,7 +45,7 @@ import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifact
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { AUXILIARY_RUN_SYSTEM_CONTEXT, resolveBackgroundRunTerminal } from './backgroundRunOutcome';
+import { auxiliaryRunSystemContext, resolveBackgroundRunTerminal } from './backgroundRunOutcome';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
@@ -361,7 +361,7 @@ export class TaskManager extends EventEmitter {
           deniedToolNames,
           turnSystemContext: [
             ...(options?.turnSystemContext ?? []),
-            AUXILIARY_RUN_SYSTEM_CONTEXT,
+            auxiliaryRunSystemContext(resolveSessionTaskResultLocale()),
           ],
         },
         messageMetadata,
@@ -461,7 +461,7 @@ export class TaskManager extends EventEmitter {
         deniedToolNames,
         turnSystemContext: [
           ...(options?.turnSystemContext ?? []),
-          AUXILIARY_RUN_SYSTEM_CONTEXT,
+          auxiliaryRunSystemContext(resolveSessionTaskResultLocale()),
         ],
       },
       messageMetadata,

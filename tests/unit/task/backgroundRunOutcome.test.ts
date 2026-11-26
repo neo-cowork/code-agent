@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
-import { AUXILIARY_RUN_SYSTEM_CONTEXT, resolveBackgroundRunTerminal } from '../../../src/host/task/backgroundRunOutcome';
+import { auxiliaryRunSystemContext, resolveBackgroundRunTerminal } from '../../../src/host/task/backgroundRunOutcome';
 
 const M = '__NEO_TASK_OUTCOME__';
 const noTools: Message[] = [];
@@ -27,6 +27,8 @@ describe('background run marker parsing (via the terminal resolver)', () => {
     expect(terminal(`intro\n${M}{"status":"failed"}\nbody`)).toEqual({ type: 'task_completed', data: { conclusion: 'intro\nbody' } });
   });
   it('the run context asks for the marker', () => {
-    expect(AUXILIARY_RUN_SYSTEM_CONTEXT).toContain(M);
+    expect(auxiliaryRunSystemContext('zh')).toContain(M);
+    expect(auxiliaryRunSystemContext('zh')).toContain('用中文');
+    expect(auxiliaryRunSystemContext('en')).toContain('in English');
   });
 });
