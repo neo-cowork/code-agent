@@ -34,6 +34,7 @@ import { removeCapability } from './SelectedCapabilityChips';
 import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 import { RoleIcon } from '../../shared/RoleIcon';
 import { CapabilitySourceHover } from './CapabilitySourceHover';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 /** 和框内技能胶囊同一条溢出规则，只是底栏更窄所以上限更小 */
 const MAX_VISIBLE_MANUAL = 4;
@@ -313,9 +314,7 @@ export const MountedConnectorIcons: React.FC = () => {
           {/* 专家带的那颗：灰一档、无移除键——要关去能力中心，会话里只选不配 */}
           <div
             data-testid="expert-connector-badge"
-            aria-label={text.expertGroupAria
-              .replace('{expert}', expertName)
-              .replace('{count}', String(expertSource.items.length))}
+            aria-label={interpolatePlural(text.expertGroupAria, expertSource.items.length, { expert: expertName })}
             className={`relative inline-flex h-[24px] shrink-0 items-center gap-1 rounded-full border border-zinc-700/70 bg-zinc-800/40 px-1.5 text-xs text-zinc-400 ${
               expertSource.sessionOverridden ? 'opacity-60' : ''
             }`}

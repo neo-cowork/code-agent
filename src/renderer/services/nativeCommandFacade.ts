@@ -161,6 +161,10 @@ export interface NativeCommandActionMap {
     payload: { title: string; body: string; id?: string };
     result: NativeSystemNotificationResult;
   };
+  retractSystemNotification: {
+    payload: { id: string };
+    result: NativeSystemNotificationResult;
+  };
 }
 
 export type NativeCommandAction = keyof NativeCommandActionMap;
@@ -191,6 +195,7 @@ const NATIVE_COMMANDS: {
   hideAgentHalo: 'agent_halo_hide',
   setGlobalHotkeys: 'keybindings_set_global_hotkeys',
   postSystemNotification: 'post_system_notification',
+  retractSystemNotification: 'retract_system_notification',
   setShellLanguage: 'set_shell_language',
 };
 

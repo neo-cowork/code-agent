@@ -15,6 +15,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
 import { DecisionCard, isEditableTarget, type DecisionCardViewMode, type DecisionOption } from '../DecisionCard';
+import { Button } from '../primitives/Button';
 import { RequestDetails } from './RequestDetails';
 import { OutboundMaskNotice } from './OutboundMaskNotice';
 import { UserRequestQuote, scheduledTaskOriginName } from './UserRequestQuote';
@@ -22,7 +23,6 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionTitle } from './utils';
 import { describeApproval } from './describeApproval';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
@@ -35,7 +35,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isHighRiskCommandRequest, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
@@ -147,6 +147,11 @@ interface PermissionCardProps {
   onCollapse?: () => void;
 }
 
+const FACE_CONSEQUENCE_KINDS: ReadonlySet<string> = new Set([
+  'shell', 'file_read', 'file_write', 'file_edit', 'file_delete', 'network',
+  'web_action', 'web_upload', 'web_clipboard', 'folder_access',
+]);
+
 export function PermissionCard({
   requestOverride,
   sessionIdOverride,
@@ -222,7 +227,7 @@ export function PermissionCard({
   const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
   const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
 
-  // 「这操作本身危险」与「这次必须你亲手点」是两件事，卡上必须分开表达。
+  // 保留原有风险形状对常驻授权的限制；视觉语义单独消费 safeDefaultDeny。
   //
   // host 侧的 forceConfirm 同时被两个来源置位：confirmationGate 的真风险评估
   // （它另外还给出 dangerLevel），和 readOnly / 通话抬严这类**流程性**要求
@@ -488,7 +493,7 @@ export function PermissionCard({
     ...(!hideStandingGrants
       ? [
           { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : [connectorScope, p.optionRunDesc].filter(Boolean).join(' · '), shortcut: 's' },
-          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, sourceRequest?.details.commandGrantTarget === null ? p.option24hUnavailableDesc : sourceRequest?.details.commandGrantTarget ? p.option24hExactCommandDesc : p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -515,7 +520,7 @@ export function PermissionCard({
     request.details.url ||
     request.details.changes
   );
-  const title = connectorQuestion ?? (sandboxEscalation
+  const title = connector ? p.titleExternal : (sandboxEscalation
     ? p.sandboxEscalationTitle
     : described.dedicatedBrowserCard
     ? browserCopy.title
@@ -537,9 +542,7 @@ export function PermissionCard({
               ? w.remindersDeleteTitle
               : editable
               ? w.mailSendTitle
-              : isDangerous && described.kind === 'shell'
-                ? getPermissionTitle('command', p)
-                : described.title);
+              : described.kind === 'shell' ? p.titleCommand : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
@@ -569,9 +572,15 @@ export function PermissionCard({
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);
-  const headerEnd = isDangerous || pendingHeaderEnd ? (
+  const quietFace = !editable && !appGrantCard && !sandboxEscalation && !request.details.browserSessionGrant;
+  // 卡面只留一行真有后果的话，而且只用这类卡自己的那句（describeApproval 给的），不跨类套用：
+  // 命令 / 文件 / 网络卡已收窄到删除、覆盖、工作区外写入、外发、高危或判不出风险的命令；
+  // 网页上点击输入、交文件、读剪贴板和授权其他文件夹本身就是外发或越界。读取范围、通用提示留在详情里。
+  const faceConsequence = quietFace && FACE_CONSEQUENCE_KINDS.has(described.kind) ? described.consequence : undefined;
+  const showDangerBadge = safeDefaultDeny && (!quietFace || (request !== null && isHighRiskCommandRequest(request)));
+  const headerEnd = showDangerBadge || pendingHeaderEnd ? (
     <span className="flex items-center gap-2">
-      {isDangerous && (
+      {showDangerBadge && (
         <span className="rounded-full border border-red-500/35 bg-red-500/10 px-2 py-0.5 text-[10px] text-badge-danger">
           {t.decisionCard.dangerBadge}
         </span>
@@ -584,11 +593,10 @@ export function PermissionCard({
         { id: 'once', label: p.sandboxEscalationAllowOnce, shortcut: 'y' },
         { id: 'deny', label: p.optionDeny, shortcut: 'n' },
       ]
+    : quietFace
+    ? [{ id: 'once', label: p.allow }, { id: 'deny', label: p.notNow }]
     : isDangerous
-    ? [
-        { id: 'once', label: t.decisionCard.stillExecute, shortcut: 'y' },
-        { id: 'deny', label: p.optionDeny, shortcut: 'n' },
-      ]
+    ? [{ id: 'once', label: p.allow, shortcut: 'y' }, { id: 'deny', label: p.notNow, shortcut: 'n' }]
     : appGrantCard
       ? appOptions
       : options;
@@ -660,12 +668,17 @@ export function PermissionCard({
       testId="permission-card"
       className="w-full animate-slideUp"
       pinActions
-      tone={isDangerous ? 'danger' : 'amber'}
+      tone={safeDefaultDeny && !editable ? 'danger' : 'amber'}
       icon={icon}
       title={title}
       headerEnd={headerEnd}
       headerLine={requesterLine}
       question={question}
+      quietFace={quietFace}
+      faceContent={<>
+        <UserRequestQuote details={editable ? { ...request.details, userRequest: undefined } : request.details} labels={p} />
+        {faceConsequence && <p className="break-words text-xs leading-5 text-zinc-400" data-testid="permission-consequence">{faceConsequence}</p>}
+      </>}
       details={
         <>
           {request.details.outboundMasked === true && <OutboundMaskNotice message={w.outboundMaskedNote} />}
@@ -691,9 +704,22 @@ export function PermissionCard({
               {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
             </p>
           ) : null}
-          {/* 写回卡已逐项列出要写的字段，再引述用户原话是重复（N-FIX-APPROVAL-CARD-COPY-ODD 决策 B）；定时任务来源照常显示 */}
-          <UserRequestQuote details={editable ? { ...request.details, userRequest: undefined } : request.details} labels={p} />
-          <RequestDetails request={request} />
+          {(request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write') && <p className="text-xs text-zinc-400">{p.workspaceOutside}</p>}
+          <RequestDetails request={request} hideConsequence={Boolean(faceConsequence)} />
+          {quietFace && <div className="space-y-2" data-testid="permission-secondary-choices">
+            {options.filter((option) => option.id === 'run' || option.id === '24h').map((option) => (
+              <Button key={option.id} size="sm" variant="ghost"
+                className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-lg border border-zinc-700 p-2.5 text-left hover:border-zinc-600"
+                onClick={() => { void handleApproval(option.id as ApprovalLevel); }}>
+                <span className="min-w-0 flex-1 whitespace-normal break-words text-left">
+                  <span className="block text-sm font-medium text-zinc-200">{option.label}</span>
+                  <span className="mt-0.5 block text-xs font-normal text-zinc-400">{option.description}</span>
+                </span>
+                <kbd className="mt-0.5 shrink-0 rounded bg-zinc-700 px-1 py-0.5 font-mono text-2xs text-zinc-400">{option.shortcut}</kbd>
+              </Button>
+            ))}
+            <p className="text-xs text-zinc-400">{p.keyboardHints}</p>
+          </div>}
         </>
       }
       options={visibleOptions}
@@ -712,10 +738,10 @@ export function PermissionCard({
       enterDisabled={isDangerous || editable}
       viewMode={viewMode}
       onViewModeChange={(mode) => setViewState({ requestId: request.id, mode })}
-      expandLabel={t.decisionCard.details}
+      expandLabel={p.moreOptionsDetails}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      showActionDescriptions={Boolean(connector)}
+      showActionDescriptions={!quietFace && Boolean(connector || sourceRequest?.details.commandGrantTarget !== undefined)}
       primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {

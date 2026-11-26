@@ -5,6 +5,7 @@
 import type { ToolCall } from '@shared/contract';
 import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 import type { Translations } from '../../../../../../i18n';
+import { interpolatePlural } from '../../../../../../i18n/interpolate';
 
 export function summarizeEdit(toolCall: ToolCall, t: Translations): string | null {
   // For successful edit_file, show Done or line change info
@@ -28,9 +29,9 @@ export function summarizeEdit(toolCall: ToolCall, t: Translations): string | nul
       const diff = newLines - oldLines;
 
       if (diff > 0) {
-        return t.toolResultSummary.addedLines.replace('{count}', String(diff));
+        return interpolatePlural(t.toolResultSummary.addedLines, diff);
       } else if (diff < 0) {
-        return t.toolResultSummary.removedLines.replace('{count}', String(Math.abs(diff)));
+        return interpolatePlural(t.toolResultSummary.removedLines, Math.abs(diff));
       }
       return 'Modified';
     }
@@ -48,12 +49,12 @@ export function summarizeWrite(toolCall: ToolCall, t: Translations): string | nu
     // 会把几百行的文件算成 ~12 行。截断时后端保留了权威总行数 content_lines。
     const contentLines = toolCall.arguments?.content_lines;
     if (typeof contentLines === 'number') {
-      return t.toolResultSummary.lineCount.replace('{count}', String(contentLines));
+      return interpolatePlural(t.toolResultSummary.lineCount, contentLines);
     }
     const content = toolCall.arguments?.content as string | undefined;
     if (content) {
       const lines = content.split('\n').length;
-      return t.toolResultSummary.lineCount.replace('{count}', String(lines));
+      return interpolatePlural(t.toolResultSummary.lineCount, lines);
     }
     return 'Done';
   }

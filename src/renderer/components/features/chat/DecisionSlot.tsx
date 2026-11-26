@@ -31,6 +31,7 @@ import type { PendingPlanApprovalTarget } from '../../../utils/planApprovalView'
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { hasCurrentTurnJevInjectionFlag } from '../../../utils/jevInjectionAdvisory';
 import { ParkedApprovalCards } from './ParkedApprovalCards';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 const GLOBAL_PERMISSION_SESSION_ID = 'global';
 
@@ -86,7 +87,7 @@ function interruptionSummary(
     .replace('{outcome}', outcome.label)
     .replace('{action}', action || t.chat.unknownTool)
     .replace('{extra}', snapshot.toolCalls.length > 1
-      ? t.chat.streamInterruptedDecisionExtra.replace('{count}', String(snapshot.toolCalls.length - 1))
+      ? interpolatePlural(t.chat.streamInterruptedDecisionExtra, snapshot.toolCalls.length - 1)
       : '');
 }
 

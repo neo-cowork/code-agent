@@ -28,6 +28,12 @@ vi.mock('../../../../../src/host/services/infra/logger', () => ({
 }));
 
 import { readModule } from '../../../../../src/host/tools/modules/file/read';
+import { imageAnalyzeSchema } from '../../../../../src/host/tools/modules/network/imageAnalyze.schema';
+import { toolSearchSchema } from '../../../../../src/host/tools/modules/search/toolSearch.schema';
+import type { ToolDefinition } from '../../../../../src/shared/contract';
+
+/** Fields of the request ToolDefinition this test needs (names come from the production schemas). */
+type RequestToolShape = Pick<ToolDefinition, 'name' | 'description' | 'inputSchema'>;
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -413,18 +419,125 @@ describe('readModule (native)', () => {
       const body = Buffer.alloc(320 * 1024);
       for (let i = 0; i < body.length; i++) body[i] = (i * 131 + 7) & 0xff;
       await fs.writeFile(file, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), body]));
+      const requestTools: RequestToolShape[] = [
+        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
+        { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
+      ];
+      const requestToolNames = requestTools.map((tool) => tool.name);
       const handler = await readModule.createHandler();
       for (const name of ['screenshot.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp']) {
         const target = path.join(tmpDir, name);
         if (name !== 'screenshot.png') await fs.copyFile(file, target);
-        const result = await handler.execute({ file_path: target }, makeCtx(), allowAll);
+        const ext = path.extname(name).toLowerCase();
+        const result = await handler.execute({ file_path: target }, makeCtx({ requestToolNames }), allowAll);
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
           expect(result.error.length).toBeLessThan(1024);
-          expect(result.error).toContain('image_analyze');
-          expect(result.error).toContain('get_content');
-          expect(result.error).toContain(target);
+          expect(result.error).toBe(
+            `Cannot read ${ext} file as text. This is an image, not text. To understand a picture use image_analyze.\nPath: ${target}`,
+          );
+        }
+      }
+    });
+
+    it('includes the browser_action clause without ToolSearch when both image_analyze and browser_action are listed', async () => {
+      const target = path.join(tmpDir, 'webpage-shot.png');
+      await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));
+      const handler = await readModule.createHandler();
+      for (const requestToolNames of [
+        ['Read', 'image_analyze', 'browser_action'],
+        ['Read', 'image_analyze', 'browser_action', 'ToolSearch'],
+      ]) {
+        const result = await handler.execute({ file_path: target }, makeCtx({ requestToolNames }), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+          expect(result.error).toBe(
+            `Cannot read .png file as text. This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; to understand a picture use image_analyze.\nPath: ${target}`,
+          );
+          expect(result.error).not.toContain('ToolSearch');
+          expect(result.error).not.toContain('select:image_analyze');
+        }
+      }
+    });
+
+    it('omits ToolSearch and browser_action when image_analyze and ToolSearch are listed without browser_action', async () => {
+      const target = path.join(tmpDir, 'toolsearch-only.png');
+      await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: target },
+        makeCtx({ requestToolNames: ['Read', 'image_analyze', 'ToolSearch'] }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. To understand a picture use image_analyze.\nPath: ${target}`,
+        );
+        expect(result.error).not.toContain('ToolSearch');
+        expect(result.error).not.toContain('browser_action');
+        expect(result.error).not.toContain('select:image_analyze');
+      }
+    });
+
+    it('keeps the ToolSearch pointer for a not-yet-loaded image_analyze when ToolSearch is in the request list', async () => {
+      const target = path.join(tmpDir, 'local-photo.png');
+      await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));
+      const requestTools: RequestToolShape[] = [
+        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
+        { name: toolSearchSchema.name, description: toolSearchSchema.description, inputSchema: toolSearchSchema.inputSchema },
+      ];
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: target },
+        makeCtx({ requestToolNames: requestTools.map((tool) => tool.name) }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('already in the conversation');
+        expect(result.error).toContain('load image_analyze first with ToolSearch select:image_analyze.');
+        for (const absent of ['browser_action', 'get_content', 'get_dom_snapshot']) {
+          expect(result.error).not.toContain(absent);
+        }
+      }
+    });
+
+    it('omits removed tool names from image refusal when image_analyze is filtered out of requestToolNames or unknown', async () => {
+      const pngBytes = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.alloc(256, 0xfe),
+      ]);
+      const fullTools: RequestToolShape[] = [
+        { name: readModule.schema.name, description: readModule.schema.description, inputSchema: readModule.schema.inputSchema },
+        { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
+      ];
+      const postPreflightTools = fullTools.filter((tool) => tool.name !== 'image_analyze');
+      const handler = await readModule.createHandler();
+
+      for (const name of ['dialog.png', 'dialog-noext', 'dialog-renamed.txt']) {
+        const target = path.join(tmpDir, name);
+        await fs.writeFile(target, pngBytes);
+        for (const ctxOverrides of [
+          // Post-preflight request list lacks image_analyze even though foreground allowedToolNames still includes it.
+          { allowedToolNames: fullTools.map((t) => t.name), requestToolNames: postPreflightTools.map((t) => t.name) },
+          // Unknown request tool list (omitted).
+          {},
+        ]) {
+          const result = await handler.execute({ file_path: target }, makeCtx(ctxOverrides), allowAll);
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+            expect(result.error).toContain('This is an image, not text.');
+            expect(result.error).toContain('already in the conversation');
+            expect(result.error).toContain(target);
+            for (const forbidden of ['image_analyze', 'ToolSearch', 'select:image_analyze', 'browser_action', 'get_content', 'get_dom_snapshot']) {
+              expect(result.error).not.toContain(forbidden);
+            }
+          }
         }
       }
     });

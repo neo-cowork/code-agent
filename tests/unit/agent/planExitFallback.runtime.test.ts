@@ -490,7 +490,7 @@ describe('plan exit fallback runtime（ADR-074 K1）', () => {
       } as unknown as ModelResponse)
       .mockResolvedValueOnce({ type: 'text', content: '好的，先等确认' } as ModelResponse);
 
-    await runtime.run('出方案');
+    await runtime.run('出方案，然后创建文件');
 
     expect(modules.toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
     const guidance = modules.contextAssembly.injectSystemMessage.mock.calls

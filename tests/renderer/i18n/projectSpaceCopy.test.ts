@@ -19,7 +19,7 @@ const EN_SNAPSHOT = {
     "statusActive": "Active",
     "statusIdle": "Idle",
     "statusArchived": "Archived",
-    "activeTopicBadge": "{count} active topics",
+    "activeTopicBadge": { "one": "{count} active topic", "other": "{count} active topics" },
     "noActivity": "No activity yet",
     "backToList": "Spaces",
     "tabActivity": "Activity",

@@ -3,6 +3,7 @@ import { Brain } from 'lucide-react';
 import type { TurnQualityMemoryBlockType, TurnQualityMemoryItem, TurnQualitySummary } from '@shared/contract/turnQuality';
 import { Button } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 
 // 只计打包器按条目放进提示词的记忆。user-directives 每轮不带 query、全量注入；
@@ -40,7 +41,7 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
   const used = usedMemory(summary);
   if (!used) return null;
   const { items } = used;
-  const label = t.memorySource.usedCount.replace('{count}', String(items.length));
+  const label = interpolatePlural(t.memorySource.usedCount, items.length);
   return (
     <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
       <Button

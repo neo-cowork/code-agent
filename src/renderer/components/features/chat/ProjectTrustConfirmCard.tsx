@@ -71,7 +71,11 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
         return;
       }
       // 确认成功：复用既有失败重发路径，原 clientMessageId 原样重发
-      useMessageActionStore.getState().regenerateMessage(messageId);
+      const resent = useMessageActionStore.getState().regenerateMessage(messageId);
+      if (!resent) {
+        setState('idle');
+        return;
+      }
       // 这句「需要你确认」到此已经过时：从时间线和失败发件箱里拿掉，
       // 否则它会一直挂在新回复上面（真跑实测），读起来像确认没生效。
       const sessions = useSessionStore.getState();
