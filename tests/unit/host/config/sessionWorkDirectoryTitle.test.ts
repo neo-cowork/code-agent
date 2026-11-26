@@ -185,6 +185,18 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
     expect(path.basename(await planSessionWorkDirectory({ userMessage, now, env }))).toBe(expected);
   });
 
+  it.each([
+    ['帮我把表格按月份求和', '任务_1113_表格按月份求和'],
+    ['把表格转成横向', '任务_1113_表格转成横向'],
+    ['把表格转成纵向', '任务_1113_表格转成纵向'],
+    ['帮我统计本月迟到', '任务_1113_统计本月迟到'],
+    ['把空行跳过', '任务_1113_空行跳过'],
+    ['把后面的接着', '任务_1113_后面的接着'],
+    ['帮我找出重复的', '任务_1113_找出重复的'],
+  ] as const)('I1 keeps untruncated complete clauses ending in content words: %s', async (userMessage, expected) => {
+    expect(path.basename(await planSessionWorkDirectory({ userMessage, now, env }))).toBe(expected);
+  });
+
   it('does not mistake the provisional web title for a usable smart title', async () => {
     const askTitle = vi.fn(async () => ({ success: true, content: '合同文件夹逐份摘要' }));
     const result = await planSessionWorkDirectory({ sessionTitle: rr85.slice(0, 30) + '...', userMessage: rr85, askTitle, now, env });

@@ -194,11 +194,14 @@ const EN_FUNCTION_WORDS = new Set([
 /** 英文开头放过冠词与 to（The contracts need… / to build a site 是完整短语）。 */
 const EN_LEADING_DANGLING_WORDS = new Set(Array.from(EN_FUNCTION_WORDS).filter((word) => !['the', 'a', 'an', 'to'].includes(word)));
 
-function endsDangling(text: string): boolean {
+function endsDangling(text: string, truncated = true): boolean {
   const last = text.split(' ').filter(Boolean).pop() ?? '';
   if (EN_FUNCTION_WORDS.has(last.toLowerCase())) return true;
   const chars = Array.from(last);
-  return ZH_DANGLING_CHARS.has(chars[chars.length - 1] ?? '') && !ZH_CONTENT_WORDS.has(chars.slice(-2).join(''));
+  const lastChar = chars[chars.length - 1] ?? '';
+  // 未被截断的完整分句只拒句末状态助词「了」（如「拖进来了」）；其余收尾多为完整实词（求和/横向/迟到/跳过/接着/重复的）。
+  if (!truncated) return lastChar === '了';
+  return ZH_DANGLING_CHARS.has(lastChar) && !ZH_CONTENT_WORDS.has(chars.slice(-2).join(''));
 }
 
 function startsDangling(text: string, zhChars: ReadonlySet<string>, enWords: ReadonlySet<string>): boolean {
@@ -227,9 +230,10 @@ function isFolderTitleFragment(name: string): boolean {
 function acceptableRuleFolderTitle(segment: string, language?: 'zh' | 'en'): string | undefined {
   const derived = deriveRuleSummaryTitle(segment, language, { avoidFragment: true });
   if (hasDanglingHole(derived)) return undefined;
-  // 完整问句（结论合理吗）只收掉句末语气词，不当半句；了/的 等仍按悬空拒。
+  const truncated = !segment.endsWith(derived);
+  // 完整问句（结论合理吗）只收掉句末语气词，不当半句；了仍按悬空拒，未截断的完整实词收尾不误杀。
   const name = sanitizeFolderTitle(derived.replace(REMOVED_TOKEN_RUN, ' ').replace(/(?<=\S{2})[吗呢吧]+$/u, ''));
-  if (!name || endsDangling(name) || isFolderTitleFragment(name)
+  if (!name || endsDangling(name, truncated) || isFolderTitleFragment(name)
     || startsDangling(name, ZH_LEADING_DANGLING_CHARS, EN_LEADING_DANGLING_WORDS)) return undefined;
   return name;
 }
