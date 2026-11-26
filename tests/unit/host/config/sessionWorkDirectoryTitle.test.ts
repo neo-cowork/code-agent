@@ -240,7 +240,7 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
         userMessage: `${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报发给团队`,
         now, env,
       });
-      expect(path.basename(rule)).toBe('任务_1113_把三页会议纪要整理成一份周报发给团队');
+      expect(path.basename(rule)).toBe('任务_1113_三页会议纪要整理成一份周报发给团队');
     });
 
     it('a notice-only message behaves like an empty message: attachment name or untitled, never the notice', async () => {
