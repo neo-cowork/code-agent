@@ -10,7 +10,7 @@ import { isDelegationTool, isTaskTerminalStatus } from './agentActivity';
 type TerminalState = 'running' | 'completed' | 'failed' | 'interrupted' | 'hidden';
 
 /** What a handed-off call may claim: the task's real outcome, or nothing when no task row is known. */
-export type HandedOffOutcome = 'completed' | 'failed' | 'running' | 'neutral';
+type HandedOffOutcome = 'completed' | 'failed' | 'running' | 'neutral';
 
 /** The call's own outcome sources, which always outrank any agent row. */
 function ownOutcome(toolCall: ToolCall | undefined, sessionId: string | null | undefined, tasks?: readonly Task[]) {
