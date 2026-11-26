@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest, ToolCall } from '../../../src/shared/contract';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { TraceNode } from '../../../src/shared/contract/trace';
+import type { MemoryTidyMergeView, MemoryTidyPreviewView, MemoryTidyRunView } from '../../../src/shared/contract/memory';
 import { en } from '../../../src/renderer/i18n/en';
 
 const state = vi.hoisted(() => ({ pending: null as PermissionRequest | null }));
@@ -42,6 +43,12 @@ import { ToolStepGroup } from '../../../src/renderer/components/features/chat/To
 import { humanizeToolGroupLabel } from '../../../src/renderer/utils/humanizeToolStep';
 import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
 import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
+import { buildChatImageAnnotationMessage } from '../../../src/renderer/utils/chatImageAnnotation';
+import {
+  buildTidyPreviewSentence,
+  buildTidyRunSummary,
+} from '../../../src/renderer/components/features/settings/tabs/MemoryTidyHistory.helpers';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 afterEach(() => { cleanup(); state.pending = null; });
 
@@ -125,5 +132,41 @@ describe('completed background card (DelegationReceipt, production consumer)', (
     render(<DelegationReceipt presentation={presentation!} />);
     expect(screen.getByTestId('delegation-receipt').textContent).toContain(text);
     expect(screen.getByTestId('delegation-receipt').textContent).not.toMatch(/Completed 1 steps/);
+  });
+});
+
+// Strings that arrived from main while integrating origin/main and were converted there.
+describe('count copy that arrived from main (image markup header, memory tidy summary)', () => {
+  const region = (index: number) => ({ index, box: { left: 10, top: 10, right: 40, bottom: 40 }, comment: 'softer' });
+
+  it('image markup message header agrees in number and has no "(s)"', () => {
+    const header = (count: number) => buildChatImageAnnotationMessage({
+      regions: Array.from({ length: count }, (_, i) => region(i + 1)), note: '', copy: en.chatImageAnnotate,
+    }).split('\n')[0];
+    expect(header(1)).toBe('I boxed 1 spot on the image. Please change it as described:');
+    expect(header(2)).toBe('I boxed 2 spots on the image. Please change them as described:');
+    const zhHeader = buildChatImageAnnotationMessage({ regions: [region(1)], note: '', copy: zh.chatImageAnnotate }).split('\n')[0];
+    expect(zhHeader).toBe('我在图片上框出了 1 处，请按框和说明修改：');
+  });
+
+  it('memory tidy summary follows the number of merged groups; the Chinese text is unchanged', () => {
+    const copy = en.settings.memoryTidy;
+    const merge = (name: string): MemoryTidyMergeView => ({
+      sources: [{ filename: `${name}-a.md`, name: `${name}甲` }, { filename: `${name}-b.md`, name: `${name}乙` }],
+      result: { filename: `${name}.md`, name, summary: `${name} summary` },
+    });
+    const run = (merges: MemoryTidyMergeView[]): MemoryTidyRunView => ({
+      auditId: 'run-1', at: 1, outcome: 'applied', reason: '', mergeCount: merges.length, conflictCount: 0,
+      netPutAway: 0, merges, conflicts: [], restored: false, restoredAt: null, restorable: true,
+    });
+    expect(buildTidyRunSummary(run([merge('report')]), copy)).toBe('merged 1 memory group, put away 2 older ones');
+    expect(buildTidyRunSummary(run([merge('report'), merge('invoice')]), copy)).toBe('merged 2 memory groups, put away 4 older ones');
+    expect(buildTidyRunSummary(run([merge('report')]), zh.settings.memoryTidy)).toBe('合并 1 组记忆，收起 2 条旧记忆');
+
+    const preview = (merges: MemoryTidyMergeView[]): MemoryTidyPreviewView => ({ at: 1, wouldChangeNothing: false, reason: '', merges, conflicts: [] });
+    const sentence = (merges: MemoryTidyMergeView[]) => buildTidyPreviewSentence(preview(merges), copy, zh.settings.memory.relativeDate, 'en', 2);
+    expect(sentence([merge('report')])).toMatch(/if turned on, 1 group of similar memories would be merged and 2 older ones put away\.$/);
+    expect(sentence([merge('report'), merge('invoice')])).toMatch(/if turned on, 2 groups of similar memories would be merged and 4 older ones put away\.$/);
+    expect(`${sentence([merge('report')])}${buildTidyRunSummary(run([merge('report')]), copy)}`).not.toContain('(s)');
   });
 });

@@ -114,6 +114,18 @@ const pluralExceptions = [
   { file: 'src/renderer/i18n/chatInput.ts', text: '{count} files are already attached (including {name})', reason: 'attachmentMergeToast.ts:27 uses attachmentAlreadyAddedMany only when result.skippedCount > 1; count 1 uses attachmentAlreadyAdded' },
   { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There is still text from the input box: "{preview}", plus {count} attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftNoticeWithOneAttachment when safeAttachments.length === 1; this key only for >= 2' },
   { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There are still {count} unsent attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftOneAttachmentOnly when safeAttachments.length === 1; this key only for >= 2' },
+  { file: 'src/renderer/i18n/chatInput.ts', text: 'PDF · {count} pages', reason: 'pdfPageSentence (src/renderer/components/features/chat/ChatInput/pdfPageSentence.ts) returns attachPdfOnePage when pageCount === 1 and undefined below 1; attachPdfPages is reached only for pageCount >= 2' },
+  { file: 'src/renderer/i18n/decisionCard.ts', text: '{count} times', reason: 'settled-approval summary in src/renderer/components/features/chat/ToolStepGroup.tsx appends settledAllowedFolded only when count > 1' },
+  ...[
+    ['src/renderer/i18n/chatTranscript.ts', 'Started {count} agent tasks — {names}'],
+    ['src/renderer/i18n/toolStepVerbs.ts', 'Request to start {count} agent tasks — {names}'],
+    ['src/renderer/i18n/toolStepVerbs.ts', 'Starting {count} agent tasks — {names}'],
+    ['src/renderer/i18n/toolStepVerbs.ts', 'Could not start {count} agent tasks — {names}'],
+  ].map(([file, text]) => ({
+    file,
+    text,
+    reason: 'subagentSpawn in src/renderer/utils/humanizeToolStep.ts returns subagentSpawn for one parallel entry; subagentSpawnParallel is reached only when parallelEntries.length >= 2',
+  })),
 ];
 const usedPluralExceptions = new Set();
 let pluralHits = 0;
