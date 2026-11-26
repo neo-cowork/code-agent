@@ -88,6 +88,6 @@ export function resolveBackgroundRunTerminal(input: {
   }
   return {
     type: 'task_error',
-    data: { error: formatSessionTaskDeliveryFailure(deliveryFailure!, locale) || text || 'Task delivery failed.' },
+    data: { error: formatSessionTaskDeliveryFailure(deliveryFailure, locale) || text || 'Task delivery failed.' },
   };
 }
