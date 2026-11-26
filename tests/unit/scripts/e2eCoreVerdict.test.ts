@@ -205,6 +205,40 @@ describe('e2e-core verdict CLI', () => {
     expect(out.stdout).toMatch(/^FAIL F06 step 2:/);
   });
 
+  it('keeps RED when a broken path also has an infra skip attempt — skip is not evaluated, not a pass', () => {
+    const file = writeFixture(
+      'red-with-skip-attempt',
+      buildResult(meta, [
+        buildFlowResult('F06', '审批卡：拒绝', [failed(1, 2), failed(2, 2), skipped(3, 1, '打开工作台并等待就绪')]),
+      ]),
+    );
+    const out = runVerdict(['--result', file]);
+    expect(out.code).toBe(2);
+    expect(out.stdout).toMatch(/^FAIL F06 step 2:/);
+  });
+
+  it('keeps FLAKY when pass and fail mix with an infra skip attempt, counting evaluated attempts only', () => {
+    const file = writeFixture(
+      'flaky-with-skip-attempt',
+      buildResult(meta, [
+        buildFlowResult('F05', '审批卡：允许一次', [passed(1), failed(2, 3, '点击允许一次'), skipped(3)]),
+      ]),
+    );
+    const out = runVerdict(['--result', file]);
+    expect(out.code).toBe(3);
+    expect(out.stdout).toContain('FLAKY F05');
+    expect(out.stdout).toContain('1/2');
+  });
+
+  it('returns 6 NO-RESULT when an attempt carries an unrecognized status', () => {
+    const result = buildResult(meta, [buildFlowResult('F05', '审批卡：允许一次', [passed(1)])]);
+    (result.flows[0].attempts[0] as { status: string }).status = 'bogus';
+    const file = writeFixture('bad-status', result);
+    const out = runVerdict(['--result', file]);
+    expect(out.code).toBe(6);
+    expect(out.stdout).toContain('NO-RESULT');
+  });
+
   it('returns 64 with usage on stderr for bad CLI arguments', () => {
     const out = runVerdict(['--unknown-flag']);
     expect(out.code).toBe(64);

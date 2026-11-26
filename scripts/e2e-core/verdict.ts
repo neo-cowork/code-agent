@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { STABLE_ATTEMPTS, type AttemptResult, type CoreResult, type FlowResult } from './result';
+import { formatFailure, STABLE_ATTEMPTS, type AttemptResult, type CoreResult, type FlowResult } from './result';
 
 const EXIT_GREEN = 0;
 const EXIT_RED = 2;
@@ -10,6 +10,7 @@ const EXIT_SKIP = 5;
 const EXIT_NO_RESULT = 6;
 const EXIT_USAGE = 64;
 const MIN_COMMIT_PREFIX = 7;
+const ATTEMPT_STATUSES = new Set<AttemptResult['status']>(['pass', 'fail', 'skip']);
 
 interface VerdictArgs {
   resultPath: string;
@@ -76,13 +77,16 @@ function isValidCoreResult(value: unknown): value is CoreResult {
       flow &&
       typeof flow === 'object' &&
       typeof (flow as FlowResult).id === 'string' &&
-      Array.isArray((flow as FlowResult).attempts),
+      Array.isArray((flow as FlowResult).attempts) &&
+      (flow as FlowResult).attempts.every(
+        (a) => a && typeof a === 'object' && ATTEMPT_STATUSES.has((a as AttemptResult).status),
+      ),
   );
 }
 
-function formatHead(word: 'FAIL' | 'SKIP', flowId: string, attempt: AttemptResult): string {
-  const step = attempt.failedStep;
-  return step ? `${word} ${flowId} step ${step.n}: ${oneLine(step.text)}` : `${word} ${flowId}`;
+/** 与 formatFailure 首行同文案；skip 记的是「未评估」，跳过尝试不算进成败判据。 */
+function evaluatedAttempts(flow: FlowResult): AttemptResult[] {
+  return flow.attempts.filter((a) => a.status !== 'skip');
 }
 
 function evaluate(result: CoreResult, expectedCommit: string | null): { code: number; line: string } {
@@ -101,21 +105,25 @@ function evaluate(result: CoreResult, expectedCommit: string | null): { code: nu
     }
   }
 
-  const redFlows = result.flows.filter(
-    (f) => f.attempts.length > 0 && f.attempts.every((a) => a.status === 'fail'),
-  );
+  const redFlows = result.flows.filter((f) => {
+    const evaluated = evaluatedAttempts(f);
+    return evaluated.length > 0 && evaluated.every((a) => a.status === 'fail');
+  });
   if (redFlows.length > 0) {
     const first = redFlows[0];
-    const head = formatHead('FAIL', first.id, first.attempts[0]);
+    const firstFail = first.attempts.find((a) => a.status === 'fail')!;
+    const head = formatFailure(first.id, firstFail).split('\n')[0];
     const more = redFlows.length > 1 ? ` (+${redFlows.length - 1} more)` : '';
     return { code: EXIT_RED, line: `${head}${more}` };
   }
 
+  // 有真实失败的路径不归 SKIP：skip 只是「未评估」，fail 混 skip 由上面的 RED / 下面的 FLAKY 认领
+  const hasFail = result.flows.some((f) => f.attempts.some((a) => a.status === 'fail'));
   const skipFlows = result.flows.filter((f) => f.attempts.some((a) => a.status === 'skip'));
-  if (skipFlows.length > 0) {
+  if (!hasFail && skipFlows.length > 0) {
     const first = skipFlows[0];
     const skippedAttempt = first.attempts.find((a) => a.status === 'skip')!;
-    const head = formatHead('SKIP', first.id, skippedAttempt);
+    const head = formatFailure(first.id, skippedAttempt).split('\n')[0];
     const more = skipFlows.length > 1 ? ` (+${skipFlows.length - 1} more)` : '';
     return {
       code: EXIT_SKIP,
@@ -123,21 +131,22 @@ function evaluate(result: CoreResult, expectedCommit: string | null): { code: nu
     };
   }
 
-  const flakyFlows = result.flows.filter(
-    (f) => f.attempts.some((a) => a.status === 'pass') && f.attempts.some((a) => a.status === 'fail'),
-  );
+  const flakyFlows = result.flows.filter((f) => {
+    const evaluated = evaluatedAttempts(f);
+    return evaluated.some((a) => a.status === 'pass') && evaluated.some((a) => a.status === 'fail');
+  });
   if (flakyFlows.length > 0) {
     const first = flakyFlows[0];
-    const passCount = first.attempts.filter((a) => a.status === 'pass').length;
-    const totalCount = first.attempts.length;
-    const firstFail = first.attempts.find((a) => a.status === 'fail')!;
+    const evaluated = evaluatedAttempts(first);
+    const passCount = evaluated.filter((a) => a.status === 'pass').length;
+    const firstFail = evaluated.find((a) => a.status === 'fail')!;
     const stepPart = firstFail.failedStep
       ? `step ${firstFail.failedStep.n}: ${oneLine(firstFail.failedStep.text)}`
       : 'no failed step recorded';
     const more = flakyFlows.length > 1 ? ` (+${flakyFlows.length - 1} more)` : '';
     return {
       code: EXIT_FLAKY,
-      line: `FLAKY ${first.id} (${passCount}/${totalCount} passed, ${stepPart})${more}`,
+      line: `FLAKY ${first.id} (${passCount}/${evaluated.length} passed, ${stepPart})${more}`,
     };
   }
 
