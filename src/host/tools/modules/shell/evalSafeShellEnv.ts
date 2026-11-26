@@ -12,6 +12,8 @@
 //      fail-closed 不 exec，稳定 code，错误串只带 env.NAME。
 //   5. 托管 Python：已装 ⇒ 注入 NEO_PYTHON；未装且命令引用 ⇒ fail-closed
 //      结构化错误并后台按需安装（N-PY-RUNTIME-K2，见 managedPythonEnv.ts）。
+//   6. 托管 LibreOffice：命令执行 soffice/libreoffice 且本机没有 ⇒ fail-closed 并后台安装；
+//      已装只是 PATH 上没有 ⇒ 把托管目录追加到 PATH 末尾（N-ENV-ASSIST-S5-RUNTIME，见 managedLibreOfficeEnv.ts）。
 // ============================================================================
 
 import type { ToolContext } from '../../../protocol/tools';
@@ -20,6 +22,7 @@ import { filterSecretEnvVars } from '../../../utils/envSecretFilter';
 import { injectEnvSecretRefs, backfillEnvSecretRefs } from '../../../utils/envSecretRefs';
 import { getEnvFilterPolicy } from '../../../security/policyLoader';
 import { applyManagedPython } from './managedPythonEnv';
+import { applyManagedLibreOffice } from './managedLibreOfficeEnv';
 
 export interface EvalSafeShellEnvRefill {
   /** 这一跳是否放网（resolveSandboxNetworkPolicy）；放网才把引用解回真值。 */
@@ -30,7 +33,8 @@ export interface EvalSafeShellEnvRefill {
 
 export type EvalSafeShellEnvResult =
   | { ok: true; env: Record<string, string> }
-  | { ok: false; error: string; code: string };
+  /** envBlocked/waitable: the refusal is a runtime Neo installs itself; see parkMissingRuntime. */
+  | { ok: false; error: string; code: string; envBlocked?: { class: 'runtime_missing'; target: string }; waitable?: boolean };
 
 export function createEvalSafeShellEnv(
   extra: Record<string, string | undefined> | undefined,
@@ -46,6 +50,12 @@ export function createEvalSafeShellEnv(
   if (managedBlock) {
     logger?.warn('Bash child env: managed Python not ready, refusing to exec', { code: managedBlock.code });
     return managedBlock;
+  }
+  // 命令执行 soffice/libreoffice：本机没有 ⇒ fail-closed 并后台安装；已装 ⇒ 托管目录进 PATH 末尾。
+  const libreOfficeBlock = applyManagedLibreOffice(result.env, refill?.command ?? '', logger);
+  if (libreOfficeBlock) {
+    logger?.warn('Bash child env: LibreOffice is not usable, refusing to exec', { code: libreOfficeBlock.code });
+    return libreOfficeBlock;
   }
   return result;
 }
