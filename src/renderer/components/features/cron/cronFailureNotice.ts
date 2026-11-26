@@ -11,6 +11,7 @@ import {
 import { localizeDecisionText } from '@shared/cronEventDecisionText';
 import { parseScheduledJobName } from '@shared/i18n/cronNotificationTitle';
 import type { NotificationShowEvent } from '@shared/ipc';
+import { type PluralTemplates } from '../../../i18n/interpolate';
 import { cronTrustFailureSentence } from '../../../i18n/cronTrustFailure';
 
 interface CronFailureCopy {
@@ -18,7 +19,7 @@ interface CronFailureCopy {
   loginWallNotificationBody: string;
   failureNotificationTitle: string;
   failureToastView: string;
-  missedAlertsMerged: string;
+  missedAlertsMerged: PluralTemplates;
   failureQuotaWithReset: string;
   failureQuotaWithResetAndLimit: string;
   failureQuotaUnknown: string;

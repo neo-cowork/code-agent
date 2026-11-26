@@ -47,7 +47,7 @@ export const zhSettingsExternalImport = {
       // 注：旧的整文件「逐条确认」钮与「已确认并写入」文案随 K1A-FU1 规则拆条下线，
       // 现行文案在 instructionRules 组里（导入这一条 / 已导入）。
       instructionRules: {
-        rulesFound: '找到 {count} 条规则',
+        rulesFound: { one: '找到 {count} 条规则', other: '找到 {count} 条规则' },
         expand: '展开',
         collapse: '收起',
         capHint: '新会话每次最多携带 {max} 条规则（约 {chars} 字），优先导入最重要的。',
@@ -152,7 +152,7 @@ export const zhSettingsExternalImport = {
         statusPaused: '已暂停，已复制的技能保留',
         pause: '暂停同步',
         resume: '恢复同步',
-        keptNeoLine: '{count} 个技能已有同名技能，保留 Neo 版本',
+        keptNeoLine: { one: '{count} 个技能已有同名技能，保留 Neo 版本', other: '{count} 个技能已有同名技能，保留 Neo 版本' },
         failed: '更新同步设置失败',
       },
       instructionsSync: {
@@ -161,12 +161,12 @@ export const zhSettingsExternalImport = {
         toggleLabel: '保持说明同步',
         statusUnavailable: '请先手动导入一条 Codex 说明',
         statusOff: '未开启',
-        statusNew: '来源中有 {count} 条新说明',
+        statusNew: { one: '来源中有 {count} 条新说明', other: '来源中有 {count} 条新说明' },
         statusOnEmpty: '已开启，没有新说明',
         statusPaused: '已暂停，已导入的说明保留',
         pause: '暂停同步',
         resume: '恢复同步',
-        keptNeoLine: '{count} 条说明保留了 Neo 中的版本',
+        keptNeoLine: { one: '{count} 条说明保留了 Neo 中的版本', other: '{count} 条说明保留了 Neo 中的版本' },
         importThis: '导入这一条',
         confirming: '等待确认…',
         imported: '已导入',
