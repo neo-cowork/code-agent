@@ -40,6 +40,7 @@ import {
 } from './activityPanelModel';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { PageCard, PageContent } from '../shared/PageContent';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 function buildEmptyPreview(copy: ActivityPanelCopy): ActivityContextPreview {
   return {
@@ -203,9 +204,7 @@ export const ActivityPanel: React.FC = () => {
         label: getActivitySourceLabel(kind, ap),
         status: source?.status ?? 'missing',
         detail: source?.status === 'available'
-          ? ap.preview.sourceItems
-            .replace('{count}', String(getActivitySourceItemCount(source)))
-            .replace('{confidence}', source.confidence.toFixed(2))
+          ? interpolatePlural(ap.preview.sourceItems, getActivitySourceItemCount(source), { confidence: source.confidence.toFixed(2) })
           : source?.unavailableReason || ap.preview.sourceNotReturned,
         tone: sourceTone(source?.status),
       };

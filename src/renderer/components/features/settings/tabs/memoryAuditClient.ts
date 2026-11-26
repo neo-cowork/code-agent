@@ -372,7 +372,7 @@ export function countLightMemoryHealthIssues(health: LightMemoryHealthReport | n
 export function buildLightMemoryIssuePreview(health: LightMemoryHealthReport, t: Translations = zh): string[] {
   const issues: string[] = [];
   if (!health.indexExists && health.totalFiles > 0) issues.push(t.knowledgeMemory.healthIssueIndexMissing);
-  if (health.indexTooLong) issues.push(t.knowledgeMemory.healthIssueIndexTooLong.replace('{count}', String(health.indexLineCount)));
+  if (health.indexTooLong) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueIndexTooLong, health.indexLineCount));
   if (health.missingInIndex.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueMissingInIndex, health.missingInIndex.length));
   if (health.orphanInIndex.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueOrphanInIndex, health.orphanInIndex.length));
   if (health.invalidFrontmatter.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueInvalidFrontmatter, health.invalidFrontmatter.length));

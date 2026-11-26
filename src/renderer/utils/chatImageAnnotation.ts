@@ -2,7 +2,7 @@
 // 以及走现有 appshot 附件链路的 capture。纯函数，UI 只负责采集矩形与评论。
 
 import type { AppshotCapture } from '@shared/contract/appshot';
-import { interpolate } from '../i18n/interpolate';
+import { interpolate, interpolatePlural, type PluralTemplates } from '../i18n/interpolate';
 
 /** 显示空间（像素）里用户拖出的矩形；w/h 允许为负（反向拖拽）或越出图片。 */
 export interface ChatImageAnnotationRect {
@@ -36,7 +36,7 @@ export interface ChatImageAnnotationCopy {
   positionWideBand: string;
   positionTallBand: string;
   /** 含 {count} */
-  messageHeader: string;
+  messageHeader: PluralTemplates;
   /** 含 {n} {position} {x1} {x2} {y1} {y2} {comment} */
   regionLine: string;
   noComment: string;
@@ -110,7 +110,7 @@ export function buildChatImageAnnotationMessage(input: {
   copy: ChatImageAnnotationCopy;
 }): string {
   const lines = [
-    interpolate(input.copy.messageHeader, { count: input.regions.length }),
+    interpolatePlural(input.copy.messageHeader, input.regions.length),
     buildRegionList(input.regions, input.copy),
   ];
   const note = input.note.trim();

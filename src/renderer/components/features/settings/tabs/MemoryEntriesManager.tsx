@@ -45,6 +45,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 type EntryStatusFilter = MemoryEntryStatus | 'all';
 type EntryKindFilter = MemoryEntryKind | 'all';
@@ -640,21 +641,22 @@ export const MemoryEntriesManager: React.FC<{
               </div>
             </div>
 
-            <div className="max-h-[520px] overflow-auto">
+            <div className="max-h-[520px] overflow-auto @container">
               {busy === 'load' ? (
                 <div className="flex h-40 items-center justify-center">
                   <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
                 </div>
               ) : (
-                <table className="w-full min-w-[720px] text-left text-xs">
+                <table className="w-full table-fixed text-left text-xs">
                   <thead className="sticky top-0 border-b border-zinc-800 bg-zinc-950 text-[11px] uppercase tracking-[0.08em] text-zinc-500">
                     <tr>
-                      <th className="w-10 px-3 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
+                      <th className="w-9 px-2 py-2 font-medium" aria-label={memoryText.entries.batchReview.selection} />
                       <th className="px-3 py-2 font-medium">{memoryText.entries.table.entry}</th>
-                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.status}</th>
-                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.kind}</th>
-                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.source}</th>
-                      <th className="px-3 py-2 font-medium">{memoryText.entries.table.updated}</th>
+                      <th className="w-[96px] px-2 py-2 font-medium">{memoryText.entries.table.status}</th>
+                      <th className="w-[100px] px-2 py-2 font-medium @max-[460px]:hidden">{memoryText.entries.table.kind}</th>
+                      <th className="w-[104px] px-2 py-2 font-medium @max-[420px]:hidden">
+                        {memoryText.entries.table.updated} / {memoryText.entries.table.source}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800">
@@ -665,7 +667,7 @@ export const MemoryEntriesManager: React.FC<{
                         onClick={() => setSelectedEntryId(row.id)}
                         className={`cursor-pointer ${row.selected ? 'bg-indigo-500/10' : 'bg-zinc-900/30 hover:bg-zinc-800/60'}`}
                       >
-                        <td className="px-3 py-3 align-top">
+                        <td className="px-2 py-3 align-top">
                           {(() => {
                             const entry = entries.find((item) => item.id === row.id);
                             if (entry?.status !== 'candidate') return null;
@@ -712,7 +714,7 @@ export const MemoryEntriesManager: React.FC<{
                               : null;
                           })()}
                         </td>
-                        <td className="px-3 py-3 align-top text-zinc-300">
+                        <td className="break-words px-2 py-3 align-top text-zinc-300">
                           {row.statusLabel}
                           {entries.find((item) => item.id === row.id)?.source.kind === 'manual' && (
                             <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-manual-badge">{MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually}</div>
@@ -724,14 +726,18 @@ export const MemoryEntriesManager: React.FC<{
                             <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-background-badge" title={row.backgroundWriteLabel}>{row.backgroundWriteLabel}</div>
                           )}
                         </td>
-                        <td className="px-3 py-3 align-top text-zinc-300">{row.kindLabel}</td>
-                        <td className="px-3 py-3 align-top text-zinc-400">{entries.find((item) => item.id === row.id)?.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : row.sourceLabel}</td>
-                        <td className="px-3 py-3 align-top text-zinc-400">{row.updatedAtLabel}</td>
+                        <td className="break-words px-2 py-3 align-top text-zinc-300 @max-[460px]:hidden">{row.kindLabel}</td>
+                        <td className="break-words px-2 py-3 align-top text-zinc-400 @max-[420px]:hidden">
+                          <div>{row.updatedAtLabel}</div>
+                          <div className="mt-1 text-[11px] text-zinc-500">
+                            {entries.find((item) => item.id === row.id)?.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : row.sourceLabel}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                     {rows.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-3 py-10 text-center text-zinc-500">
+                        <td colSpan={5} className="px-3 py-10 text-center text-zinc-500">
                           {memoryText.entries.noMatches}
                         </td>
                       </tr>
@@ -754,6 +760,9 @@ export const MemoryEntriesManager: React.FC<{
                         <Database className="h-4 w-4 text-badge-info" />
                       )}
                       <span className="truncate">{selectedEntry.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth, memoryText.sourceLabels)}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-500" data-testid="memory-entry-detail-updated">
+                      {memoryText.entries.table.updated}: {formatMemoryEntryUpdatedAt(selectedEntry.updatedAt, Date.now(), memoryText.relativeDate, localeForLanguage(language))}
                     </div>
                   </div>
                   <button
@@ -879,7 +888,7 @@ export const MemoryEntriesManager: React.FC<{
                 <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
                   <div className="mb-2 font-medium text-zinc-400">{memoryText.entries.evidence}</div>
                   {selectedEntry.evidence.length > 0 ? (
-                    <div>{memoryText.entries.evidenceCount.replace('{count}', String(selectedEntry.evidence.length))}</div>
+                    <div>{interpolatePlural(memoryText.entries.evidenceCount, selectedEntry.evidence.length)}</div>
                   ) : (
                     <div>{memoryText.entries.noEvidence}</div>
                   )}

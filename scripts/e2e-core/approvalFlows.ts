@@ -1,6 +1,6 @@
 import { describeRows, expectDb, family, inSessions, lastAssistantText } from './db';
 import type { AttemptEnv, FlowDef } from './types';
-import { approveCard, clickCardButton, driveTurn, openNewSession, sendMessage } from './ui';
+import { approveCard, denyCard, driveTurn, expandCard, openNewSession, sendMessage, settleBackground } from './ui';
 
 // 用户会说的话：让 Neo 用 curl 抓网页。命令走网络、需要审批（实测会弹「允许执行这条命令？」）。
 const PROMPT_ONCE = '用 curl 帮我把 https://example.com 的网页抓下来，存成 example.html';
@@ -21,6 +21,8 @@ async function askAndWaitForCard(env: AttemptEnv, prompt: string): Promise<void>
 
 // 命令正文：有 permission-args-preview 就用它，Bash 卡把命令放在「命令」下的等宽块里（RequestDetails），没有 testid
 async function cardPreview(env: AttemptEnv): Promise<string> {
+  // 命令正文在「更多选项与详情」里，先展开再读
+  await expandCard(env.page);
   const card = env.page.getByTestId('permission-card').first();
   const preview = card.getByTestId('permission-args-preview');
   const block = (await preview.count()) > 0 ? preview : card.locator('div.font-mono').first();
@@ -44,16 +46,16 @@ export const f05: FlowDef = {
       },
     },
     {
-      text: '点「允许一次」。',
+      text: '点「允许」。',
       run: async (env) => {
-        await clickCardButton(env.page, '允许一次');
-        await driveTurn(env.page, {
-          onPermissionCard: async (page) => {
-            if ((await cardPreview(env)) === env.scratch.preview) throw new Error('同一条命令点了允许后又问了第二次');
-            await approveCard(page);
-          },
-        }, TURN_TIMEOUT_MS);
-        if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「允许一次」后审批卡还在');
+        await approveCard(env.page);
+        const onSecondCard = async (page: typeof env.page) => {
+          if ((await cardPreview(env)) === env.scratch.preview) throw new Error('同一条命令点了允许后又问了第二次');
+          await approveCard(page);
+        };
+        await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: onSecondCard }, TURN_TIMEOUT_MS);
+        await settleBackground(env.page, onSecondCard, TURN_TIMEOUT_MS);
+        if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「允许」后审批卡还在');
       },
     },
     {
@@ -77,14 +79,14 @@ export const f06: FlowDef = {
   steps: [
     { text: '触发审批卡。', run: (env) => askAndWaitForCard(env, PROMPT_DENY) },
     {
-      text: '点「拒绝」。',
+      text: '点「暂不」。',
       run: async (env) => {
         env.scratch.preview = await cardPreview(env);
-        await clickCardButton(env.page, '拒绝');
+        await denyCard(env.page);
         await driveTurn(env.page, {
           onPermissionCard: async () => { throw new Error('拒绝后又弹出审批卡（重试了动作）'); },
         }, TURN_TIMEOUT_MS);
-        if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「拒绝」后审批卡还在');
+        if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「暂不」后审批卡还在');
       },
     },
     {

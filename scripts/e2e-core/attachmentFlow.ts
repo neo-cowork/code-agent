@@ -12,10 +12,10 @@ export const f10: FlowDef = {
   prepare: async (server) => { writeSalesXlsx(server); },
   steps: [
     {
-      text: '说「帮我看一下 q1-sales.xlsx，哪个区域哪个月卖得最好」。',
+      text: '说「帮我看一下 q1-sales.xlsx，哪个区域哪个月卖得最好，再告诉我各区域一季度的合计」。',
       run: async (env) => {
         env.sessionIds.push(await openFolderSession(env, 'q1 销售分析'));
-        await sendMessage(env.page, '帮我看一下 q1-sales.xlsx，哪个区域哪个月卖得最好');
+        await sendMessage(env.page, '帮我看一下 q1-sales.xlsx，哪个区域哪个月卖得最好，再告诉我各区域一季度的合计');
       },
     },
     {

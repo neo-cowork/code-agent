@@ -67,9 +67,17 @@ export function buildPermissionDismissState(
  * 有身份的是后台任务的卡，留到它被裁决、被取消或它自己的 run 结束；
  * 没身份的按原样清掉（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
  */
-function belongsToBackgroundTask(request: PermissionRequest): boolean {
+function belongsToBackgroundTask(
+  request: PermissionRequest,
+  isLiveBackgroundTaskId: (runId: string) => boolean,
+): boolean {
   return (typeof request.runId === 'string' && request.runId.length > 0)
-    || (typeof request.agentId === 'string' && request.agentId.length > 0);
+    || (typeof request.agentId === 'string' && request.agentId.length > 0)
+    // delegate_task 通道的请求没有顶层身份，只有 turnOrigin[].runId（= 后台任务 id）。
+    // 前台请求的 turnOrigin 指向前台 run、不是台账里的活任务，所以仍会被清掉。
+    || (request.turnOrigin ?? []).some(
+      (origin) => typeof origin.runId === 'string' && origin.runId.length > 0 && isLiveBackgroundTaskId(origin.runId),
+    );
 }
 
 /**
@@ -81,6 +89,7 @@ export function buildForegroundRunEndState(
   state: PermissionDecisionState,
   sessionId: string,
   globalSessionId: string,
+  isLiveBackgroundTaskId: (runId: string) => boolean = () => false,
 ): Pick<PermissionDecisionState, 'queuedPermissionRequests' | 'pendingPermissionRequest' | 'pendingPermissionSessionId'> {
   const queuedPermissionRequests: Record<string, PermissionRequest[]> = {};
   for (const [key, queue] of Object.entries(state.queuedPermissionRequests)) {
@@ -88,7 +97,7 @@ export function buildForegroundRunEndState(
       queuedPermissionRequests[key] = queue;
       continue;
     }
-    const remaining = queue.filter((item) => belongsToBackgroundTask(item));
+    const remaining = queue.filter((item) => belongsToBackgroundTask(item, isLiveBackgroundTaskId));
     if (remaining.length > 0) queuedPermissionRequests[key] = remaining;
   }
 
@@ -100,7 +109,7 @@ export function buildForegroundRunEndState(
     );
   const clearsPending = considersPending
     && state.pendingPermissionRequest !== null
-    && !belongsToBackgroundTask(state.pendingPermissionRequest);
+    && !belongsToBackgroundTask(state.pendingPermissionRequest, isLiveBackgroundTaskId);
 
   return {
     queuedPermissionRequests,
@@ -126,7 +135,12 @@ export function buildBackgroundRunEndState(
     if (agentId !== null && typeof request.agentId === 'string' && request.agentId.length > 0) {
       return request.agentId === agentId;
     }
-    return runId !== null && request.runId === runId;
+    if (runId === null) return false;
+    if (request.runId === runId) return true;
+    // delegate_task 通道的请求（无顶层 runId/agentId）只在 turnOrigin[].runId 上带任务 id；
+    // 有顶层身份的请求（团队成员、前台）不走这条，免得父 run 共享的 runId 误收它们。
+    const hasTopLevelIdentity = Boolean(request.runId) || Boolean(request.agentId);
+    return !hasTopLevelIdentity && (request.turnOrigin ?? []).some((origin) => origin.runId === runId);
   };
 
   const queuedPermissionRequests: Record<string, PermissionRequest[]> = {};

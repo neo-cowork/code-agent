@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { AgentEventSchema } from '../../../src/shared/contract/agentEventSchemas';
 import { resolveFileTargetKind } from '../../../src/host/permissions/fileTargetKind';
 
 const posix = process.platform !== 'win32';
@@ -29,9 +30,29 @@ describe('resolveFileTargetKind', () => {
     expect(resolveFileTargetKind(1)).toBe('unknown');
   });
 
-  it('missing path is unknown, not device', () => {
+  it('missing path is absent, not device', () => {
     const missing = path.join(tmpDir(), 'does-not-exist.md');
-    expect(resolveFileTargetKind(missing)).toBe('unknown');
+    expect(resolveFileTargetKind(missing)).toBe('absent');
+  });
+
+  it.each(['atomic-replace', 'write-through'] as const)('ENOENT and ENOTDIR are absent, other errors unknown: %s', (writeMode) => {
+    const dir = tmpDir();
+    const file = path.join(dir, 'contract.txt');
+    writeFileSync(file, 'Contract');
+    expect(resolveFileTargetKind(file, dir, { writeMode })).toBe('regular');
+    expect(resolveFileTargetKind(path.join(dir, 'notes.md'), dir, { writeMode })).toBe('absent');
+    expect(resolveFileTargetKind(path.join(file, 'notes.md'), dir, { writeMode })).toBe('absent');
+    expect(resolveFileTargetKind('invalid\0path', dir, { writeMode })).toBe('unknown');
+  });
+
+  it('the host absent value survives the public agent-event schema', () => {
+    const targetKind = resolveFileTargetKind(path.join(tmpDir(), 'notes.md'));
+    expect(targetKind).toBe('absent');
+    const event = AgentEventSchema.parse({
+      type: 'permission_request',
+      data: { id: 'missing-write', tool: 'Write', type: 'file_write', details: { path: 'notes.md', targetKind }, timestamp: 1 },
+    });
+    expect(event).toMatchObject({ data: { details: { targetKind: 'absent' } } });
   });
 
   it('ordinary file is regular', () => {
@@ -49,9 +70,9 @@ describe('resolveFileTargetKind', () => {
     expect(resolveFileTargetKind('/dev/null')).toBe('device');
   });
 
-  // Windows-side expectations (/dev/null → C:\dev\null → unknown, NUL → device) are not
+  // Windows-side expectations (/dev/null → C:\dev\null → absent, NUL → device) are not
   // asserted here: this repo's fleet and CI are POSIX, and skipIf-gated tests fail the
-  // fast gate. Both cases fail closed to the overwrite warning.
+  // fast gate. Missing targets are absent; path spelling never replaces an inode check.
   //
   // #1692 round 1: `/dev/` prefix is not a device predicate.
   it('/dev/shm-shaped ordinary file is not a device', () => {
@@ -108,7 +129,7 @@ describe('resolveFileTargetKind', () => {
     writeFileSync(path.join(dir, 'report.md'), 'payload');
     // The tool would create a new file literally named ' report.md '; classifying the
     // trimmed name instead would borrow the existing file's kind.
-    expect(resolveFileTargetKind(' report.md ', dir)).toBe('unknown');
+    expect(resolveFileTargetKind(' report.md ', dir)).toBe('absent');
     expect(resolveFileTargetKind('report.md', dir)).toBe('regular');
   });
 
@@ -147,10 +168,10 @@ describe('resolveFileTargetKind', () => {
     expect(resolveFileTargetKind('/dev/null', workbench)).toBe('device');
   });
 
-  it.skipIf(!posix)('write-through mode on a dangling symlink is unknown (nothing to write through to)', () => {
+  it.skipIf(!posix)('write-through mode on a dangling symlink is absent (nothing to write through to)', () => {
     const link = path.join(tmpDir(), 'dangling');
     symlinkSync(path.join(path.dirname(link), 'missing-target'), link);
-    expect(resolveFileTargetKind(link, process.cwd(), { writeMode: 'write-through' })).toBe('unknown');
+    expect(resolveFileTargetKind(link, process.cwd(), { writeMode: 'write-through' })).toBe('absent');
     expect(resolveFileTargetKind(link)).toBe('regular');
   });
 
