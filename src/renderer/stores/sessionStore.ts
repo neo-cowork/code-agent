@@ -272,7 +272,7 @@ interface SessionActions {
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
   /** In-flight createSession promise, if any — send path awaits this to rebind to the new session. */
   getPendingSessionCreate: () => Promise<Session | null> | null;
-  switchSession: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
+  switchSession: (sessionId: string, options?: { force?: boolean; preserveSecondaryPages?: boolean }) => Promise<void>;
   refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
   deleteSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
@@ -379,7 +379,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
       const { currentSessionId, unreadSessionIds } = get();
       // 落到某个会话 = 回到会话区：二级页（能力中心/资料库/自动化…）让位。
       // 放在早退之前——从二级页点当前会话也要回得来。
-      if (!options?.force) useAppStore.getState().closeSecondaryPages();
+      if (!options?.force && !options?.preserveSecondaryPages) useAppStore.getState().closeSecondaryPages();
       if (currentSessionId === sessionId && !options?.force) return;
 
       useSessionLoadRecoveryStore.setState({ sessionId: null, errorCode: null });
@@ -1141,8 +1141,8 @@ function openBootSession(store: SessionStore, sessions: SessionWithMeta[]): Prom
   return openInitialSession({
     sessions,
     isBlank: isBlankNewSession,
-    switchSession: store.switchSession,
-    createSession: () => store.createSession('新对话', { workingDirectory: null }),
+    switchSession: (id) => store.switchSession(id, { preserveSecondaryPages: true }),
+    createSession: () => store.createSession('新对话', { workingDirectory: null, preserveSecondaryPages: true }),
   });
 }
 
