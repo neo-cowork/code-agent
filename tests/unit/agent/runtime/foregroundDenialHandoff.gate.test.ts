@@ -273,7 +273,7 @@ describe('foreground narrowing gate', () => {
     expect(tasks[0]?.prompt.match(/<original_user_request /g)).toHaveLength(1);
     expect(tasks[0]?.toolCallId).toBe('host-handoff:turn-1');
     const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
-    expect(sealed?.metadata).toMatchObject({ code: 'HANDED_OFF_TO_BACKGROUND', bounced: true, skipped: true });
+    expect(sealed?.metadata).toMatchObject({ code: 'HANDED_OFF_TO_BACKGROUND', bounced: true, skipped: true, handoffTaskToolCallId: 'host-handoff:turn-1' });
     expect(ledgerEvents.some((row) => row.phase === 'begin' && row.toolName === 'delegate_task' && row.toolCallId === 'host-handoff:turn-1')).toBe(true);
     expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
   });

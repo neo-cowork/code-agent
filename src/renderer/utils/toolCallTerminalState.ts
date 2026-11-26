@@ -9,11 +9,19 @@ import { isDelegationTool, isTaskTerminalStatus } from './agentActivity';
 
 type TerminalState = 'running' | 'completed' | 'failed' | 'interrupted' | 'hidden';
 
+/** What a handed-off call may claim: the task's real outcome, or nothing when no task row is known. */
+export type HandedOffOutcome = 'completed' | 'failed' | 'running' | 'neutral';
+
 /** The call's own outcome sources, which always outrank any agent row. */
 function ownOutcome(toolCall: ToolCall | undefined, sessionId: string | null | undefined, tasks?: readonly Task[]) {
   const result = isToolInterruptionPlaceholder(toolCall?.result?.error) ? undefined : toolCall?.result;
+  // A call the host handed to a background task is settled by that task's row, which is keyed by the
+  // handoff's own id (stamped on the sealed result), not by this call's id.
+  const handoffTaskId = result?.metadata?.code === 'HANDED_OFF_TO_BACKGROUND'
+    && typeof result.metadata.handoffTaskToolCallId === 'string' ? result.metadata.handoffTaskToolCallId : undefined;
   const task = toolCall && sessionId ? tasks?.find(candidate =>
-    candidate.sessionId === sessionId && candidate.toolCallId === toolCall.id) : undefined;
+    candidate.sessionId === sessionId && (candidate.toolCallId === toolCall.id
+      || (handoffTaskId !== undefined && candidate.toolCallId === handoffTaskId))) : undefined;
   return { result, task };
 }
 
@@ -51,11 +59,18 @@ export function resolveToolCallTerminalState(input: {
     (agentId && candidate.key === agentId)
     || (toolCall && candidate.task?.toolCallId === toolCall.id && candidate.task.sessionId === sessionId));
   let state: TerminalState;
+  let handedOffOutcome: HandedOffOutcome | undefined;
   // A delegation's result only acknowledges the dispatch, so the delegated work's own record outranks it
   // (a failure already recovered by a later success stays settled).
   if (delegatedWork && result?.metadata?.recovered !== true) state = delegatedWork === 'working' ? 'running' : delegatedWork === 'cancelled' ? 'interrupted' : delegatedWork;
   // Otherwise an actual call outcome takes precedence over every inferred task/agent outcome.
-  else if (result) state = result.success || result.metadata?.recovered === true || handedOff ? 'completed' : 'failed';
+  else if (result && handedOff) {
+    // Not a failure a later success fixed: the step's state is whatever the task it was handed to ended as.
+    handedOffOutcome = !task ? 'neutral' : !isTaskTerminalStatus(task.status) ? 'running'
+      : task.status === 'completed' ? 'completed' : 'failed';
+    state = handedOffOutcome === 'failed' ? 'failed' : handedOffOutcome === 'running' ? 'running' : 'completed';
+  }
+  else if (result) state = result.success || result.metadata?.recovered === true ? 'completed' : 'failed';
   else if (awaitingApproval) state = 'running';
   else if (task) state = task.status === 'completed' ? 'completed'
     : task.status === 'cancelled' ? 'interrupted'
@@ -80,7 +95,7 @@ export function resolveToolCallTerminalState(input: {
   // 主机封存、从未执行的 Bash（metadata.skipped）：即使被降级为 recovered（state 仍是 completed、
   // 不变色），标题也不能说「运行了」。executed===true 是命令跑完后才被读循环封口替换的结果，不算没执行。只改措辞，不改 state。
   const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !handedOff && !!toolCall && classifyToolName(toolCall.name) === 'bash';
-  return { state, displayStatus, stepStatus, notRun, skipped, handedOff };
+  return { state, displayStatus, stepStatus, notRun, skipped, handedOff, handedOffOutcome, handoffTask: handedOff ? task : undefined };
 }
 
 /** Preserve even empty tool results when adapting the trace's flattened representation. */

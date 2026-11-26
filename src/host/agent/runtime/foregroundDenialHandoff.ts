@@ -140,7 +140,8 @@ function delegationWorkspace(ctx: RuntimeContext): Pick<ToolContext, 'workspace'
   return { workspace: workspaceScope.primaryRoot, workspaceScope };
 }
 
-async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
+/** Returns the task's toolCallId (the key its background row carries) when the handoff succeeded. */
+async function handOffInThisTurn(ctx: RuntimeContext): Promise<string | undefined> {
   const userText = verbatimUserRequest(ctx);
   const turnId = turnKey(ctx);
   // 折叠空白为单个空格再截 24 个码点，保证英文请求的任务名可读（不再粘成 Runoneshell…）。
@@ -183,7 +184,7 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
         code: result.code,
         error: result.error,
       });
-      return false;
+      return undefined;
     }
     const ledger = createToolExecutionLedger({
       toolName: 'delegate_task',
@@ -199,14 +200,14 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
     ledger.begin();
     ledger.complete('success');
     logger.info('Foreground denial handed off in the same turn', { sessionId: ctx.sessionId, turnId });
-    return true;
+    return toolContext.currentToolCallId;
   } catch (error) {
     logger.warn('Foreground denial handoff failed', {
       sessionId: ctx.sessionId,
       turnId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return false;
+    return undefined;
   }
 }
 
@@ -245,13 +246,14 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   const eligible = deniedToolCalls.filter((call) => isHandoffEligible(ctx, call, planModeActive));
   if (eligible.length > 0 && !alreadyAttempted(ctx)) {
     markAttempted(ctx);
-    if (await handOffInThisTurn(ctx)) {
+    const handoffToolCallId = await handOffInThisTurn(ctx);
+    if (handoffToolCallId) {
       // The whole request went to the background task: the handed-off calls and their same-batch
       // siblings (skipped, not themselves denied) are both "handed off". Other denials keep their code.
       const handedOffIds = new Set(toolCalls
         .filter((call) => !deniedIds.has(call.id) || eligible.includes(call))
         .map((call) => call.id));
-      await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds, handedOffIds);
+      await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds, handedOffIds, handoffToolCallId);
       await emitAssistantClose(ctx, contextAssembly, response, backgroundHandoffUserSentence(ctx));
       return 'break';
     }
