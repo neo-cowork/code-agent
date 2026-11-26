@@ -47,25 +47,40 @@ walk('surfaceExecutionEn', getSurfaceExecutionTranslations('en'), []);
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
 const hasCjk = (text: string) => /[㐀-鿿]/.test(text);
 const keyOf = (f: Found) => `${f.exportName}.${f.path}`;
+// #3681 的 skipped bash 词表不是本单 codemod 出来的形状：单数直接不带数字
+// （"A command did not run" / 「有一条命令没有执行」），"{count} not run" 没有名词可配，one === other。
+// 下面三条形状约束只管 codemod 形状的对；这两对按原文登记，文案改了要同步改这里（过期条目会红）。
+const notCodemodShaped = new Set([
+  'A command did not run', '{count} commands did not run',
+  '有一条命令没有执行', '有 {count} 条命令没有执行',
+  '{count} not run', '{count} 条未执行',
+]);
+const isNotCodemodShaped = (p: Found) => notCodemodShaped.has(p.value.one) && notCodemodShaped.has(p.value.other);
+const shaped = pairs.filter((p) => !isNotCodemodShaped(p));
 
 describe('plural pair contract (en + zh bundles)', () => {
   it('finds the converted pairs', () => {
     expect(pairs.length).toBeGreaterThan(150);
   });
 
+  it('every registered non-codemod pair still exists', () => {
+    const texts = new Set(pairs.flatMap((p) => [p.value.one, p.value.other]));
+    expect([...notCodemodShaped].filter((text) => !texts.has(text))).toEqual([]);
+  });
+
   it('every pair keeps the same placeholders in one and other', () => {
-    const bad = pairs.filter((p) => placeholders(p.value.one) !== placeholders(p.value.other)).map(keyOf);
+    const bad = shaped.filter((p) => placeholders(p.value.one) !== placeholders(p.value.other)).map(keyOf);
     expect(bad).toEqual([]);
   });
 
   it('every English pair has different one/other text', () => {
-    const bad = pairs.filter((p) => isEnglishExport(p.exportName) && p.value.one === p.value.other).map(keyOf);
+    const bad = shaped.filter((p) => isEnglishExport(p.exportName) && p.value.one === p.value.other).map(keyOf);
     expect(bad).toEqual([]);
   });
 
   it('every Chinese pair is one === other (no plural form in zh)', () => {
     // localOps 的 zh 包里历史上放的是英文串（无 CJK），它按英文规则处理。
-    const bad = pairs
+    const bad = shaped
       .filter((p) => isChineseExport(p.exportName) && hasCjk(p.value.one + p.value.other) && p.value.one !== p.value.other)
       .map(keyOf);
     expect(bad).toEqual([]);

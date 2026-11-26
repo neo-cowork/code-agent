@@ -178,7 +178,7 @@ describe('PermissionCard 紧凑/展开判据', () => {
     expect(screen.getByText('Allow writing report.md (outside workspace)?')).toBeTruthy();
     expect(screen.getByText('Write file')).toBeTruthy();
     const consequence = screen.getByTestId('permission-consequence').textContent ?? '';
-    expect(consequence).toBe('Writes /Users/me/Documents/report.md outside the workspace (1 files) and may overwrite existing content.');
+    expect(consequence).toBe('Writes /Users/me/Documents/report.md outside the workspace (1 file) and may overwrite existing content.');
     expect(consequence).not.toMatch(/[\u3000-\u303F\uFF00-\uFFEF]/u);
     expect(screen.queryByText('允许写入 report.md（工作区外）？')).toBeNull();
   });

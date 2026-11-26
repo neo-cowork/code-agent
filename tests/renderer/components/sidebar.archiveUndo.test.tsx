@@ -75,6 +75,7 @@ import { useSessionUIStore } from '../../../src/renderer/stores/sessionUIStore';
 import { useSessionArchiveUndoStore } from '../../../src/renderer/stores/sessionArchiveUndoStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 const originalDomainAPI = window.domainAPI;
 type DomainInvoke = (domain: string, action: string, payload?: unknown) => Promise<unknown>;
@@ -390,7 +391,7 @@ describe('归档后撤销（真实 Sidebar 树）', () => {
     await act(async () => { useSessionUIStore.getState().softDelete(['s-b']); });
     await act(async () => { fireEvent.click(rowArchiveButton(TITLE)); });
     await flush();
-    const deleteToast = screen.getByText(zh.sidebar.deletedCount.replace('{count}', '1')).closest('.fixed')!;
+    const deleteToast = screen.getByText(interpolatePlural(zh.sidebar.deletedCount, 1)).closest('.fixed')!;
     const archiveToast = screen.getByText(zh.sidebar.archivedToast.replace('{title}', TITLE)).closest('.fixed')!;
     const anchor = (el: Element) => [...el.classList].find((c) => /^bottom-\d+$/.test(c));
     expect(anchor(deleteToast)).toBeTruthy();

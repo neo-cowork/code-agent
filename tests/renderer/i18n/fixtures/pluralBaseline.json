@@ -205,7 +205,7 @@
  "previewWorkspaceEn.previewWorkspace.preview.slides": "{count} slides",
  "previewWorkspaceEn.previewWorkspace.workspacePreview.visualAssets": "{count} visual assets",
  "previewWorkspaceEn.previewWorkspace.workspacePreview.restoredFiles": "Restored {count} files.",
- "projectSpaceZh.projectSpace.activeTopicBadge": "{count} 个活跃 topic",
+ "projectSpaceZh.projectSpace.activeTopicBadge": "{count} 张活跃工作卡",
  "projectSpaceEn.projectSpace.activeTopicBadge": "{count} active topics",
  "renderHumanPipeZh.rendererHumanPipe.toolDetails.expandRemaining": "展开剩余 {count} 行",
  "renderHumanPipeZh.rendererHumanPipe.workflowPreview.agents": "{count} 个子任务",
@@ -328,5 +328,10 @@
  "zhSettingsSystem.nativeDesktop.audioRetention.confirmMessage": "将删除 {count} 个文件，释放 {bytes} 字节。转写文字会保留。",
  "zhSettingsSystem.nativeDesktop.audioRetention.cleared": "已删除 {count} 个文件，释放 {bytes} 字节。",
  "zhSettingsSystem.nativeDesktop.audioRetention.failedPermission": "有 {count} 个录音删不掉：没有删除权限。可在访达里检查录音文件夹权限后重试",
- "zhSettingsSystem.nativeDesktop.audioRetention.failedOther": "有 {count} 个录音删不掉，这次清理没有完成。可稍后重试"
+ "zhSettingsSystem.nativeDesktop.audioRetention.failedOther": "有 {count} 个录音删不掉，这次清理没有完成。可稍后重试",
+ "chatImageAnnotateZh.chatImageAnnotate.messageHeader": "我在图片上框出了 {count} 处，请按框和说明修改：",
+ "memorySourceZh.memorySource.usedCount": "参考了 {count} 条记忆",
+ "memorySourceEn.memorySource.usedCount": "Used {count} memories",
+ "zhSettingsMemoryTidy.memoryTidy.summaryMerged": "合并 {groups} 组记忆，收起 {cards} 条旧记忆",
+ "zhSettingsMemoryTidy.memoryTidy.previewWouldChange": "开启后会把 {groups} 组相似记忆合并，收起 {cards} 条旧记忆。"
 }
