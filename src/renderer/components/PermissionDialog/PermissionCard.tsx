@@ -763,7 +763,7 @@ export function PermissionCard({
       expandLabel={p.moreOptionsDetails}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      showActionDescriptions={!quietFace && Boolean(connector || sourceRequest?.details.commandGrantTarget !== undefined)}
+      showActionDescriptions={!quietFace && Boolean(connector || (!handback && sourceRequest?.details.commandGrantTarget !== undefined))}
       primaryActionId={handback ? 'user_did_it' : appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {

@@ -47,7 +47,7 @@ afterEach(() => {
   state.request = null;
 });
 
-// 带参数预览的卡默认展开，详情区直接在页面上；命令带精确授权目标，所以普通卡会给出常驻授权入口。
+// 带参数预览的卡默认展开，详情区直接在页面上。
 function commandRequest(handback: boolean): PermissionRequest {
   return {
     id: handback ? 'k2-handback-card' : 'k2-plain-card',
@@ -56,7 +56,7 @@ function commandRequest(handback: boolean): PermissionRequest {
     tool: 'Bash',
     timestamp: 1,
     argsPreview: 'make release',
-    details: { command: 'make release', commandGrantTarget: 'make release' },
+    details: { command: 'make release' },
     ...(handback ? { handback: true } : {}),
   } as PermissionRequest;
 }
@@ -79,5 +79,24 @@ describe('交回我亲手做的审批卡不出常驻授权入口', () => {
     expect(labels.some((label) => label.includes(NL_RULE_K2_TEXT.card.userDidIt))).toBe(true);
     expect(labels.some((label) => label.includes(NL_RULE_K2_TEXT.card.letNeoOnce))).toBe(true);
     expect(container.textContent).toContain(NL_RULE_K2_TEXT.card.title);
+  });
+
+  // 终端输入的卡带「24 小时内只对这条输入免确认」的精确授权目标，普通卡因此在按钮下加说明。
+  // handback 卡没有这个授权，按钮保持单行：收起时卡只有一行高，两行的按钮会被裁掉。
+  it('handback 卡：终端输入带精确授权目标时，按钮仍是单行', () => {
+    state.request = {
+      id: 'k2-handback-terminal',
+      sessionId: 'session-current',
+      type: 'command',
+      tool: 'terminal_write',
+      timestamp: 1,
+      handback: true,
+      details: { preview: { type: 'command', summary: 'make release' }, commandGrantTarget: 'make release' },
+    } as PermissionRequest;
+    const { container } = render(<PermissionCard />);
+    const labels = Array.from(container.querySelectorAll('button')).map((button) => button.textContent ?? '');
+    expect(labels.some((label) => label.includes(NL_RULE_K2_TEXT.card.userDidIt))).toBe(true);
+    expect(labels.some((label) => label.includes(NL_RULE_K2_TEXT.card.userDidItDesc))).toBe(false);
+    expect(labels.some((label) => label.includes(NL_RULE_K2_TEXT.card.letNeoOnceDesc))).toBe(false);
   });
 });
