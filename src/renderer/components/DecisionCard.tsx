@@ -293,6 +293,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
               {headerEnd}
             </div>
             <div className="space-y-2 px-4 pb-2" data-testid={`${testId}-face`}>
+              {headerLineContent}
               <p className="break-words text-[13px] font-semibold leading-[1.5] text-zinc-100">{question}</p>
               {faceContent}
               <div className={`flex flex-wrap items-center gap-2 ${dangerActionId ? '' : 'justify-end'}`}>

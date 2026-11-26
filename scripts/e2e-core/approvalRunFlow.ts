@@ -28,7 +28,7 @@ export const f07: FlowDef = {
       await waitFirstCard(env);
     } },
     {
-      text: '点「本次任务内允许」。',
+      text: '展开「更多选项与详情」，点「本次任务内允许」。',
       run: async (env) => {
         await clickCardButton(env.page, '本次任务内允许');
         env.scratch.approvedAt = Date.now();
