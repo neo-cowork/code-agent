@@ -19,6 +19,7 @@ import { useModeStore } from '../../../../stores/modeStore';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { initializeCommands, getCommandRegistry } from '@shared/commands';
 import type { CommandDefinition } from '@shared/commands';
+import { formatPermissionsBlock } from '@shared/i18n/permissionsCommand';
 import { formatPermissionDecision } from '@shared/commands/formatPermissionDecision';
 import { generateMessageId } from '@shared/utils/id';
 import { IPC_CHANNELS, IPC_DOMAINS, COMMAND_CHANNELS } from '@shared/ipc';
@@ -567,35 +568,11 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         const mode = await invokeDomain<{ mode?: string }>(IPC_DOMAINS.AGENT, 'getSessionPermissionMode', {
           sessionId: useSessionStore.getState().currentSessionId,
         }).then((d) => d?.mode ?? 'default').catch(() => 'default');
-        const lines: string[] = ['Permissions', `  Mode:     ${mode}`, ''];
-        try {
-          const ep = await invokeDomain<{ rules: Array<{ pattern: string[]; decision: string; source: string }> }>(IPC_DOMAINS.DIAGNOSTICS, 'execPolicy');
-          lines.push(`  Exec Policy (${ep.rules.length} rules):`);
-          if (ep.rules.length === 0) {
-            lines.push('    (no rules learned yet)');
-          } else {
-            for (const rule of ep.rules.slice(0, 15)) {
-              lines.push(`    ${(rule.pattern.join(' ') + ' *').padEnd(24)} → ${rule.decision}  (${rule.source})`);
-            }
-            if (ep.rules.length > 15) lines.push(`    ... and ${ep.rules.length - 15} more`);
-          }
-        } catch {
-          lines.push('  Exec Policy: (not available)');
-        }
-        lines.push('');
-        try {
-          const dh = await invokeDomain<{ total: number; recent: Array<{ toolName: string; summary: string; outcome: string; reason: string; durationMs: number }> }>(IPC_DOMAINS.DIAGNOSTICS, 'decisions');
-          lines.push(`  Recent Decisions (${dh.total} total, showing last ${dh.recent.length}):`);
-          if (dh.recent.length === 0) {
-            lines.push('    (no decisions yet)');
-          } else {
-            for (const e of dh.recent) {
-              lines.push(`    ${formatPermissionDecision(e, language)}`);
-            }
-          }
-        } catch {
-          lines.push('  Recent Decisions: (not available)');
-        }
+        const rules = await invokeDomain<{ rules: Array<{ pattern: string[]; decision: string; source: string }> }>(IPC_DOMAINS.DIAGNOSTICS, 'execPolicy')
+          .then((ep) => ep.rules).catch(() => null);
+        const decisions = await invokeDomain<{ total: number; recent: Array<{ toolName: string; summary: string; outcome: string; reason: string; durationMs: number }> }>(IPC_DOMAINS.DIAGNOSTICS, 'decisions')
+          .then((dh) => ({ total: dh.total, lines: dh.recent.map((e) => formatPermissionDecision(e, language)) })).catch(() => null);
+        const lines = formatPermissionsBlock(language, { mode, rules, decisions });
         writeAssistant(lines.join('\n'));
       },
     },

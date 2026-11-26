@@ -16,6 +16,7 @@ import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { Button } from '../../primitives/Button';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { copyPathToClipboard } from '../../../utils/platform';
+import { cronDecisionFailureReason } from './cronFailureNotice';
 
 /** 决策行底色：「本会执行」是观察期要用户过目的，高亮。 */
 function decisionRowClass(decision: CronEventDecision['decision']): string {
@@ -93,7 +94,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   };
 
   const renderRow = (row: CronEventDecision, testId: string) => {
-    const reason = localizeDecisionText(row.reason, language);
+    const reason = cronDecisionFailureReason(row.reason, language);
     const rule = row.matchedRule ? localizeDecisionText(row.matchedRule, language) : undefined;
     const time = formatDateTime(row.createdAt, language);
     const copyButton = (value: string, valueTestId: string) => (

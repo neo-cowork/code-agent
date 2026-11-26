@@ -26,10 +26,13 @@ const IMAGE_READ_HINT_NO_TOOL =
 
 function imageReadHint(requestToolNames?: readonly string[]): string {
   if (requestToolNames?.includes('image_analyze')) {
-    return (
-      'This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; ' +
-      'to understand a picture use image_analyze (a deferred tool: load it first with ToolSearch select:image_analyze).'
-    );
+    if (requestToolNames.includes('browser_action')) {
+      return (
+        'This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; ' +
+        'to understand a picture use image_analyze.'
+      );
+    }
+    return 'This is an image, not text. To understand a picture use image_analyze.';
   }
   // image_analyze 是延迟工具：本请求没带它但带了 ToolSearch 时仍可加载，保留这条指路；
   // 两者都不在（如识图预处理成功后被移除、ToolSearch 被收窄）就一个工具名都不提。

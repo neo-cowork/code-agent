@@ -25,6 +25,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 vi.mock('../../../src/renderer/utils/osNotification', () => ({
   postOsNotification: vi.fn(),
+  retractOsNotification: vi.fn(),
   registerNotificationClick: vi.fn(async (cb: () => void) => { handlers.click = cb; }),
   reportNotificationHandled: vi.fn(),
 }));
