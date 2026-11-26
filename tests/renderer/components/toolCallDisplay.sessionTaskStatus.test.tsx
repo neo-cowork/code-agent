@@ -64,6 +64,7 @@ describe.each([
   { locale: 'zh', running: '进行中', completed: '已完成', failed: '失败' },
   { locale: 'en', running: 'Running', completed: 'Completed', failed: 'Failed' },
 ] as const)('task status card ($locale)', ({ locale, running, completed, failed }) => {
+  const separator = locale === 'zh' ? '\u3000' : ' — ';
   it.each([
     { status: 'completed', expected: completed },
     { status: 'failed', expected: failed },
@@ -78,12 +79,12 @@ describe.each([
     state.messages = [...state.messages, taskResult(status, 3), taskResult('cancelled', 4)];
     view.rerender(<ToolCallDisplay toolCall={poll} index={0} total={1} />);
     const row = screen.getByTestId('tool-call-row-task_status');
-    expect(row.textContent).toContain(`${shortName}\u3000${expected}`);
+    expect(row.textContent).toContain(`${shortName}${separator}${expected}`);
     expect(row.textContent).not.toContain(running);
     expect(row.textContent).not.toContain(detail);
 
     fireEvent.click(row);
-    expect(view.container.textContent).toContain(`${shortName}\u3000${expected}`);
+    expect(view.container.textContent).toContain(`${shortName}${separator}${expected}`);
     expect(view.container.textContent).not.toContain(running);
     expect(view.container.textContent).not.toContain(detail);
     expect(poll).toEqual(makePoll());
@@ -100,7 +101,7 @@ describe.each([
     state.messages = [...before, pollMessage(poll), ...after];
     render(<ToolCallDisplay toolCall={poll} index={0} total={1} />);
     const row = screen.getByTestId('tool-call-row-task_status');
-    expect(row.textContent).toContain(`${shortName}\u3000${running}`);
+    expect(row.textContent).toContain(`${shortName}${separator}${running}`);
     expect(row.textContent).toContain(detail);
   });
 
@@ -109,6 +110,6 @@ describe.each([
     const poll = makePoll();
     state.messages = [pollMessage(poll), taskResult('completed', 3)];
     render(<ToolCallDisplay toolCall={poll} index={0} total={1} mediaContext={{ sessionId: 'history' }} />);
-    expect(screen.getByTestId('tool-call-row-task_status').textContent).toContain(`${shortName}\u3000${running}`);
+    expect(screen.getByTestId('tool-call-row-task_status').textContent).toContain(`${shortName}${separator}${running}`);
   });
 });
