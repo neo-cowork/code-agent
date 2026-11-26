@@ -286,8 +286,8 @@ describe('SessionManager 自动标题', () => {
       await settle();
 
       const title = dbMock.getSession(session.id)?.title as string;
-      // 小模型失败 → resolveSessionTitle 降级到规则摘要：剥掉「帮我」套话，只剩真实正文
-      expect(title).toBe('把三页会议纪要整理成一份周报');
+      // 小模型失败 → resolveSessionTitle 降级到规则摘要：剥掉「帮我/把」套话，只剩真实正文
+      expect(title).toBe('三页会议纪要整理成一份周报');
       expect(title).not.toMatch(LEAK);
     });
 

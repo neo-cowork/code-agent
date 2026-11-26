@@ -15,10 +15,14 @@ vi.mock('../../../../src/host/services/core/configService', () => ({
 
 const rr85 = '我把合同文件夹整个拖进来了（共 30 份：PDF、Excel 表、图片、文本都有），请逐份摘要并写入 notes.md';
 const cases = [
-  [rr85, '合同文件夹逐份摘要', '合同文件夹整个拖进来了', 'zh'],
-  ['请帮我整理 `/tmp/contracts` 和 /tmp/notes 的会议记录（附原始资料），输出摘要', '会议记录摘要', '整理 和 的会议记录', 'zh'],
-  ['Please help me organize all the contracts and produce a detailed summary for the team (thirty documents)', 'Contract collection summary', 'organize all the', 'en'],
+  [rr85, '合同文件夹逐份摘要', '逐份摘要并写入 notes', 'zh'],
+  ['请帮我整理 `/tmp/contracts` 和 /tmp/notes 的会议记录（附原始资料），输出摘要', '会议记录摘要', 'untitled', 'zh'],
+  ['Please help me organize all the contracts and produce a detailed summary for the team (thirty documents)', 'Contract collection summary', 'organize all the contracts', 'en'],
 ] as const;
+/** 以虚词/助词/连词/冠词收尾 = 半句。 */
+const DANGLING_END = /(?:[的了着过吗呢吧和与及或跟在把被对给向为从到]|\b(?:the|a|an|of|to|for|and|or|in|on|at|with|by|from|into|about|as|is|are|be))$/i;
+/** 删掉记号留下的洞：洞标记本身、连续空白，或空白夹着的单个虚词（`整理 和 的会议记录`）。 */
+const HOLE = /\uE000|\s{2}|(?:^|\s)[的了着过吗呢吧和与及或跟同在把被对给向为从到](?:\s|$)/;
 let home: string;
 let env: NodeJS.ProcessEnv;
 const now = new Date(2026, 10, 13, 12).getTime();
@@ -67,7 +71,7 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
     ['invalid-answer', { success: true, content: '/tmp/contracts' }],
   ] as const)('③ falls back with reason=%s', async (reason, answer) => {
     const result = await planSessionWorkDirectory({ userMessage: rr85, askTitle: async () => answer, now, env });
-    expect(path.basename(result)).toBe('任务_1113_合同文件夹整个拖进来了');
+    expect(path.basename(result)).toBe('任务_1113_逐份摘要并写入 notes');
     expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(new RegExp(`source=rule elapsedMs=\\d+ reason=${reason}$`)));
     console.log(log.info.mock.calls[0][0]);
   });
@@ -99,7 +103,7 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
     expect(signal?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     const directory = await result;
-    expect(path.basename(directory)).toBe('任务_1113_合同文件夹整个拖进来了');
+    expect(path.basename(directory)).toBe('任务_1113_逐份摘要并写入 notes');
     expect(signal?.aborted).toBe(true);
     expect(log.info).toHaveBeenCalledExactlyOnceWith('Task folder title source=rule elapsedMs=3000 reason=timeout');
     console.log(log.info.mock.calls[0][0]);
@@ -125,6 +129,72 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
   it.each(['/tmp/x', 'https://example.com/docs', '`/tmp/x`', 'C:\\docs\\x', 'sub/notes.md'])('drops the entire token %s before sanitizing', async token => {
     const result = await planSessionWorkDirectory({ userMessage: `请整理 ${token} 合同`, now, env });
     expect(path.basename(result)).toBe('任务_1113_整理 合同');
+  });
+
+  it('② rule-path names for the three original sentences are complete phrases with no holes (zh + en)', async () => {
+    const names = [];
+    for (const [userMessage, , ruleTitle, language] of cases) {
+      const name = path.basename(await planSessionWorkDirectory({ userMessage, now, env, language }));
+      const title = name.replace(/^(任务|Task)_1113_/, '');
+      expect(title).toBe(ruleTitle);
+      expect(title).not.toMatch(DANGLING_END);
+      expect(title).not.toMatch(HOLE);
+      names.push(name);
+    }
+    expect(names).toEqual(['任务_1113_逐份摘要并写入 notes', '任务_1113_untitled', 'Task_1113_organize all the contracts']);
+  });
+
+  it.each(['unavailable', 'timeout', 'deferModelTitle'] as const)('③ %s fallback branch names every original sentence with a complete phrase', async (branch) => {
+    vi.useFakeTimers();
+    for (const [userMessage, , ruleTitle, language] of cases) {
+      log.info.mockClear();
+      const askTitle = branch === 'unavailable' ? undefined : vi.fn(() => new Promise<{ success: boolean; content: string }>(() => {}));
+      const pending = planSessionWorkDirectory({ userMessage, askTitle, deferModelTitle: branch === 'deferModelTitle', now, env, language });
+      await vi.advanceTimersByTimeAsync(SESSION_WORK_DIRECTORY_TIMEOUTS.TITLE_WAIT_MS);
+      const title = path.basename(await pending).replace(/^(任务|Task)_1113_/, '');
+      expect(title).toBe(ruleTitle);
+      expect(title).not.toMatch(DANGLING_END);
+      expect(title).not.toMatch(HOLE);
+      const reason = branch === 'deferModelTitle' ? 'deferred-native-turn' : branch;
+      expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(new RegExp(`source=rule elapsedMs=\\d+ reason=${reason}$`)));
+      if (branch === 'deferModelTitle') expect(askTitle).not.toHaveBeenCalled();
+    }
+  });
+
+  it('④ strips a leading bare 把 from the rule folder name', async () => {
+    const result = await planSessionWorkDirectory({ userMessage: '把上次的报告再补充一下数据来源', now, env });
+    expect(path.basename(result)).toBe('任务_1113_上次的报告再补充一下数据来源');
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/source=rule elapsedMs=\d+ reason=unavailable/));
+  });
+
+  it.each([
+    ['请整理 /tmp/x 合同', 'zh', '任务_1113_整理 合同'],
+    ['Please organize /tmp/x contracts and summarize them for the team', 'en', 'Task_1113_organize contracts'],
+  ] as const)('a path token between two content words just collapses: %s', async (userMessage, language, expected) => {
+    expect(path.basename(await planSessionWorkDirectory({ userMessage, now, env, language }))).toBe(expected);
+  });
+
+  it.each([
+    ['整理 /tmp/a 的会议记录，输出摘要', '任务_1113_untitled'],
+    ['整理 /tmp/a 的会议记录，请输出摘要', '任务_1113_输出摘要'],
+    ['合同文件夹已经整理好了吗（共 30 份），帮我逐份写摘要', '任务_1113_逐份写摘要'],
+    ['请帮我看看这个报告的结论合理吗（附件在下面）', '任务_1113_看看这个报告的结论合理'],
+    ['检查这个公式对不对（第 3 列）', '任务_1113_检查这个公式对不对'],
+    ['把控项目风险清单（共 12 项）', '任务_1113_把控项目风险清单'],
+  ] as const)('rejects a hole next to a particle or a non-task clause: %s', async (userMessage, expected) => {
+    expect(path.basename(await planSessionWorkDirectory({ userMessage, now, env }))).toBe(expected);
+  });
+
+  it.each([
+    ['帮我把表格按月份求和', '任务_1113_表格按月份求和'],
+    ['把表格转成横向', '任务_1113_表格转成横向'],
+    ['把表格转成纵向', '任务_1113_表格转成纵向'],
+    ['帮我统计本月迟到', '任务_1113_统计本月迟到'],
+    ['把空行跳过', '任务_1113_空行跳过'],
+    ['把后面的接着', '任务_1113_后面的接着'],
+    ['帮我找出重复的', '任务_1113_找出重复的'],
+  ] as const)('I1 keeps untruncated complete clauses ending in content words: %s', async (userMessage, expected) => {
+    expect(path.basename(await planSessionWorkDirectory({ userMessage, now, env }))).toBe(expected);
   });
 
   it('does not mistake the provisional web title for a usable smart title', async () => {
@@ -170,7 +240,7 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
         userMessage: `${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报发给团队`,
         now, env,
       });
-      expect(path.basename(rule)).toBe('任务_1113_把三页会议纪要整理成一份周报发给团队');
+      expect(path.basename(rule)).toBe('任务_1113_三页会议纪要整理成一份周报发给团队');
     });
 
     it('a notice-only message behaves like an empty message: attachment name or untitled, never the notice', async () => {
@@ -233,7 +303,7 @@ describe('workspace model title instruction window', () => {
       now,
       language: 'en',
     });
-    expect(path.basename(folder)).toBe('Task_1113_Summarize this for');
+    expect(path.basename(folder)).toBe('Task_1113_Summarize this for me');
     expect(askTitle).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/source=rule elapsedMs=\d+ reason=deferred-native-turn/));
   });
