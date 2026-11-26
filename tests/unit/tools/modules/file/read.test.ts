@@ -462,6 +462,27 @@ describe('readModule (native)', () => {
       }
     });
 
+    it('omits ToolSearch and browser_action when image_analyze and ToolSearch are listed without browser_action', async () => {
+      const target = path.join(tmpDir, 'toolsearch-only.png');
+      await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: target },
+        makeCtx({ requestToolNames: ['Read', 'image_analyze', 'ToolSearch'] }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. To understand a picture use image_analyze.\nPath: ${target}`,
+        );
+        expect(result.error).not.toContain('ToolSearch');
+        expect(result.error).not.toContain('browser_action');
+        expect(result.error).not.toContain('select:image_analyze');
+      }
+    });
+
     it('keeps the ToolSearch pointer for a not-yet-loaded image_analyze when ToolSearch is in the request list', async () => {
       const target = path.join(tmpDir, 'local-photo.png');
       await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));

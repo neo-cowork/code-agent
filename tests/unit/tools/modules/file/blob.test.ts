@@ -147,6 +147,22 @@ describe('blobModule', () => {
       }
     });
 
+    it('omits ToolSearch and browser_action on Blob read_text when image_analyze and ToolSearch are listed without browser_action', async () => {
+      const { file, result } = await readText('toolsearch-only.png', PNG, {
+        requestToolNames: ['Blob', 'image_analyze', 'ToolSearch'],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. To understand a picture use image_analyze. Blob stat still returns size/mime for images.\nPath: ${file}`,
+        );
+        expect(result.error).not.toContain('ToolSearch');
+        expect(result.error).not.toContain('browser_action');
+        expect(result.error).not.toContain('select:image_analyze');
+      }
+    });
+
     it('omits removed tool names on image read_text after preflight filter or when requestToolNames is unknown, while keeping Blob stat hint', async () => {
       for (const name of ['shot.png', 'shot-noext', 'shot-renamed.txt']) {
         for (const ctxOverrides of [
