@@ -1250,11 +1250,22 @@
               "enum": [
                 "device",
                 "regular",
+                "absent",
                 "unknown"
               ]
             },
             "standingGrantTarget": {
               "type": "string"
+            },
+            "commandGrantTarget": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "browserSessionGrant": {
               "type": "object",
@@ -4740,12 +4751,16 @@
         "sessionId": {
           "type": "string"
         },
+        "requestId": {
+          "type": "string"
+        },
         "description": {
           "type": "string"
         }
       },
       "required": [
         "sessionId",
+        "requestId",
         "description"
       ],
       "additionalProperties": false

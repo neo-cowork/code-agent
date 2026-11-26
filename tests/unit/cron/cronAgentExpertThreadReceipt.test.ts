@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobAction, CronJobDefinition, Message } from '../../../src/shared/contract';
 import { parseCronRunDigest } from '../../../src/shared/cronRunDigest';
 import { parseUrgencyHeader } from '../../../src/shared/cronUrgency';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
 
 const state = vi.hoisted(() => ({
   expertThreadId: null as string | null,
@@ -222,6 +223,19 @@ describe('named cron agent expert-thread receipt', () => {
       status: 'failed',
       resultSessionId: 'cron-session',
     });
+  });
+
+  it('trust failure receipt names only the folder, never the English sentence or absolute path', async () => {
+    state.expertThreadId = 'existing-expert-thread';
+    state.assistantText = '';
+    state.runError = new ProjectSourceTrustError('identity_changed', '/Users/someone/work/notes-proj');
+
+    await expect(executeAgentAction(agentJob('牧之'))).rejects.toBeInstanceOf(ProjectSourceTrustError);
+
+    const content = state.receipts[0].message.content;
+    expect(content).toContain('结果：失败（项目文件夹“notes-proj”需要重新确认）。');
+    expect(content).not.toContain('/Users/');
+    expect(content).not.toContain('Project Source');
   });
 
   function receiptSummary(content: string): string {

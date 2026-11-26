@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { resolveProviderKey } from './configProviderKey';
 import { createLogger } from '../infra/logger';
+import { bindBackgroundTaskUiLanguage } from '../../config/backgroundTaskLocale';
 import { getPolicyEngine } from '../../permissions/policyEngine';
 import { hydratePersistedPermissionMode } from '../../permissions/modes';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
@@ -1243,3 +1244,5 @@ export function getConfigService(): ConfigService {
   }
   return configServiceInstance;
 }
+
+bindBackgroundTaskUiLanguage(() => getConfigService().getSettings().ui.language);

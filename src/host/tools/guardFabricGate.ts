@@ -127,11 +127,9 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
     if (denied) return { deny: denied };
   }
 
-  // 用户 ask 规则（Bash(rm *) → ask）命中：强制进审批，不被自动放行捷径越过。
-  // deny 已在上面先行；非 main 拓扑的 topology 裁决（deny）仍优先于这里的 ask。
-  const userAsk = isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
-    ? matchUserAskRule(buildPolicyRequest(input), input.sessionId, input.executionToolName)
-    : undefined;
+  // 用户 ask 规则命中（任意工具，含 Read；Bash(rm *) 同路径）：强制进审批，不被自动放行捷径越过。
+  // deny 已在上面先行；非 main 拓扑的 topology 裁决（deny/ask）仍优先于这里的 ask。
+  const userAsk = matchUserAskRule(buildPolicyRequest(input), input.sessionId, input.executionToolName);
   const askResult: GuardFabricGateResult = userAsk ? { forceApproval: true, userAskRuleOnly: true, traceStep: userAsk.traceStep } : {};
 
   if (input.topology === 'main') {

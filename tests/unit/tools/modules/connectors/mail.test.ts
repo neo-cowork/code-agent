@@ -116,7 +116,7 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain(
           'Mail is not connected on this computer, so email cannot be read.',
         );
-        expect(result.output).toContain('Connectors page');
+        expect(result.meta?.modelGuidance).toContain('Connectors page');
         expect(result.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
         expect(result.output).not.toContain('Capabilities:');
         expect(result.meta).toMatchObject({
@@ -219,7 +219,7 @@ describe('mailModule (native)', () => {
       if (disconnected.ok) {
         expect(disconnected.output).toContain('Mail is not connected right now, so email cannot be read.');
         expect(disconnected.output).toContain('Permission check pending.');
-        expect(disconnected.output).toContain('Connectors page');
+        expect(disconnected.meta?.modelGuidance).toContain('Connectors page');
         expect(disconnected.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
         expect(disconnected.output).not.toContain('Capabilities:');
       }

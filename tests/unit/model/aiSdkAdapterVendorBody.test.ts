@@ -157,3 +157,66 @@ describe('buildVendorCompatSettings — xiaomi/mimo thinking control', () => {
       .toBeUndefined();
   });
 });
+
+describe('buildVendorCompatSettings — glm-5.3 默认引擎低推理白名单', () => {
+  const apply = (provider: string, model: string, body: Record<string, unknown>) => {
+    const settings = buildVendorCompatSettings({ provider, model, apiKey: 'k' } as ModelConfig);
+    return settings.transformRequestBody ? settings.transformRequestBody(body) : body;
+  };
+
+  it('zhipu + glm-5.3 注入 reasoning_effort:low，其余字段保留', () => {
+    const input = { model: 'glm-5.3', messages: [{ role: 'user', content: 'hi' }], temperature: 0.2 };
+    const body = apply('zhipu', 'glm-5.3', input);
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.model).toBe('glm-5.3');
+    expect(body.messages).toEqual(input.messages);
+    expect(body.temperature).toBe(0.2);
+  });
+
+  it('custom-* + glm-5.3 同样注入 low（FB-2070）', () => {
+    const input = { model: 'glm-5.3', messages: [] };
+    const body = apply('custom-xxx', 'glm-5.3', input);
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.model).toBe(input.model);
+    expect(body.messages).toEqual(input.messages);
+  });
+
+  it('滑块已经写上的其它档位不转发，白名单一律改成 low', () => {
+    const body = apply('zhipu', 'glm-5.3', { model: 'glm-5.3', messages: [], reasoning_effort: 'high' });
+    expect(body.reasoning_effort).toBe('low');
+  });
+
+  it.each([
+    ['zhipu', 'glm-5.3-flash'],
+    ['zhipu', 'glm-5'],
+    ['custom-tokenrhythm', 'chat-model'],
+  ])('%s + %s 不注入 reasoning_effort，请求体与输入深相等', (provider, model) => {
+    const input = { model, messages: [{ role: 'user', content: 'hi' }], temperature: 0.2 };
+    const body = apply(provider, model, input);
+    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body).toEqual(input);
+  });
+
+  it('与 deepseek 的 effort / prefix / reasoning_content 组合：白名单模型仍是 low，prefix 照旧', () => {
+    const settings = buildVendorCompatSettings(deepseek({ model: 'glm-5.3', reasoningEffort: 'high' }));
+    const body = settings.transformRequestBody!({
+      model: 'glm-5.3',
+      messages: [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: 'partial' },
+      ],
+    });
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.prefix).toBe(true);
+    expect(body.messages).toEqual([
+      { role: 'user', content: 'x' },
+      { role: 'assistant', content: 'partial', reasoning_content: '' },
+    ]);
+  });
+
+  it('与 qwen enable_search 组合：搜索开关还在，白名单再补 low', () => {
+    const body = buildVendorCompatSettings({ provider: 'qwen', model: 'glm-5.3' } as ModelConfig)
+      .transformRequestBody?.({ messages: [] });
+    expect(body).toMatchObject({ enable_search: true, reasoning_effort: 'low' });
+  });
+});

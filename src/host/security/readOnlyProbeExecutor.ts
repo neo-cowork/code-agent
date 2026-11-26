@@ -41,7 +41,7 @@ class ProbeAbort extends Error {}
 const MAX_OUTPUT_CHARS = 256 * 1024;
 const EXEC_TIMEOUT_MS = 5000;
 const SHELL_BUILTINS = new Set(['echo', 'printf', 'test', 'command', 'cd', 'pwd', 'type', 'read', 'true', 'false', 'export', 'unset', 'set', 'exit']);
-const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
+const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami', stat: '/usr/bin/stat' } as const;
 
 // ----------------------------------------------------------------------------
 // 路径授权
@@ -290,8 +290,11 @@ class Runner {
     return 0;
   }
 
+  /** 执行一条普通命令。when 步骤由 executeReadOnlyProbePlan 拆开（先判条件，再执行分支里的命令）。 */
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
+      // 分支里不会再有 when（编译器不认嵌套 if）；真出现了就中止，交回审批
+      case 'when': throw new ProbeAbort('nested when');
       case 'cd': {
         const directory = this.need(cmd.path);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
@@ -371,6 +374,14 @@ class Runner {
         return result.exitCode;
       }
       case 'noop': return 0;
+      case 'stat': {
+        // `-f format` 是 macOS BSD 语法（Linux 同形不同义：那是文件系统状态）；其它平台交回审批链
+        if (process.platform !== 'darwin') throw new ProbeAbort('stat unavailable');
+        for (const p of cmd.paths) this.need(p);
+        const res = await runFixed(FIXED_BINARIES.stat, ['-f', cmd.format, ...(cmd.timeFormat ? ['-t', cmd.timeFormat] : []), '--', ...cmd.paths], this.currentDirectory);
+        this.emit(redirect, res.stdout, res.stderr);
+        return res.exitCode;
+      }
       case 'test': {
         const abs = this.need(cmd.path);
         let ok: boolean;
@@ -483,13 +494,20 @@ class Runner {
 export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: ProbeAuthority): Promise<ProbeRunResult | { aborted: string }> {
   const runner = new Runner({ ...auth, homeDir: auth.homeDir || os.homedir() });
   let status = 0;
+  // 当前这段 if 的条件是否成立；条件不成立的分支语句不执行，也不动退出码
+  let branch: boolean | undefined;
   try {
     for (const step of plan.steps) {
       if (step.op === '&&' && status !== 0) continue;
       if (step.op === '||' && status === 0) continue;
-      const cmd = step.cmd.kind === 'echo'
-        ? { ...step.cmd, text: step.cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) }
-        : step.cmd;
+      let cmd = step.cmd;
+      if (cmd.kind === 'when') {
+        // 一段 if 的条件只在它带 start 的第一条语句处判一次，后面的分支语句沿用
+        if (cmd.start) branch = (await runner.run(cmd.test, step.redirect)) === 0;
+        if (branch === cmd.negate) continue;
+        cmd = cmd.cmd;
+      }
+      if (cmd.kind === 'echo') cmd = { ...cmd, text: cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) };
       status = await runner.run(cmd, step.redirect);
     }
   } catch (err) {

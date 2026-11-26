@@ -33,6 +33,7 @@ export interface SidebarProjectArtifactMeta {
 
 export interface SidebarProjectMeta {
   name?: string;
+  primaryPath?: string;
   status?: ProjectStatus;
   description?: string;
   /** 项目升级为协作空间的时间（ADR-053 三分区判据）；null/缺省 = 独立空间。 */

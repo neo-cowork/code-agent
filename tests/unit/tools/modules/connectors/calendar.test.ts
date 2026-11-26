@@ -104,7 +104,7 @@ describe('calendarModule (native)', () => {
         expect(result.output).toContain(
           'Calendar is not connected on this computer, so calendar events cannot be read.',
         );
-        expect(result.output).toContain('Connectors page');
+        expect(result.meta?.modelGuidance).toContain('Connectors page');
         expect(result.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
         expect(result.output).not.toContain('Capabilities:');
         expect(result.meta).toMatchObject({
@@ -194,7 +194,7 @@ describe('calendarModule (native)', () => {
           'Calendar is not connected right now, so calendar events cannot be read.',
         );
         expect(disconnected.output).toContain('Automation permission needed.');
-        expect(disconnected.output).toContain('Connectors page');
+        expect(disconnected.meta?.modelGuidance).toContain('Connectors page');
         expect(disconnected.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
         expect(disconnected.output).not.toContain('Capabilities:');
       }

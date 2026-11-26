@@ -129,7 +129,7 @@ export async function executeCronAgentAction(
       waitMs: connectorPrecheck.waitMs,
     });
   } else if (connectorPrecheck.kind === 'lost' && definition.scheduleType !== 'at') {
-    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
+    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now(), { notify: true });
     const skipReason = `connector_lost:${connectorPrecheck.ids.join(',')}`;
     logger.warn('Cron run skipped because a core CLI connector is signed out', {
       jobId: definition.id,
