@@ -9,6 +9,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { updateTeamRecipe, type TeamRecipeWrite } from '../../../services/teamRecipeClient';
 import { translateCatalogText } from '../../../utils/catalogText';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 const CATEGORIES: SkillCategory[] = ['docs-office', 'data-analysis', 'design-creative', 'content-marketing', 'product', 'research', 'automation', 'development'];
 
@@ -109,7 +110,7 @@ export const TeamRecipeDetailPage: React.FC<Props> = ({ recipe, entries, editabl
         </>
       ) : (
         <>
-          <SettingsSection title={text.modeTitle} description={recipe.lead ? text.expertTeamMode.replace('{lead}', roleName(recipe.lead.roleId)) : text.expertGroupMode.replace('{count}', String(recipe.members.length))}>
+          <SettingsSection title={text.modeTitle} description={recipe.lead ? text.expertTeamMode.replace('{lead}', roleName(recipe.lead.roleId)) : interpolatePlural(text.expertGroupMode, recipe.members.length)}>
             <p className="text-xs text-zinc-400">{text.concurrent.replace('{count}', String(recipe.members.length))}</p>
             {recipe.lead ? <p className="text-xs text-zinc-400">{text.briefTemplate}: {translateCatalogText(recipe.lead.briefTemplate, language)}</p> : null}
           </SettingsSection>

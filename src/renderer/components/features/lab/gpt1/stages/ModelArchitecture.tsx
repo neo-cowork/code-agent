@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { ChevronRight, ChevronLeft, Layers, Box, Zap, Info } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 // 模型配置
 const modelConfig = {
@@ -47,16 +48,16 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
   const layerDetails: Record<NonNullable<SelectedLayer>, { title: string; description: string; analogy: string; simple: string }> = {
     embedding: {
       ...ma.layers.embedding,
-      simple: ma.layers.embedding.simple.replace('{count}', String(modelConfig.nEmbd)),
+      simple: interpolatePlural(ma.layers.embedding.simple, modelConfig.nEmbd),
     },
     attention: {
       ...ma.layers.attention,
-      simple: ma.layers.attention.simple.replace('{count}', String(modelConfig.nHead)),
+      simple: interpolatePlural(ma.layers.attention.simple, modelConfig.nHead),
     },
     ffn: ma.layers.ffn,
     output: {
       ...ma.layers.output,
-      simple: ma.layers.output.simple.replace('{count}', String(modelConfig.vocabSize)),
+      simple: interpolatePlural(ma.layers.output.simple, modelConfig.vocabSize),
     },
   };
 
@@ -75,7 +76,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
             <div className="space-y-3">
               {/* Input */}
               <div className="text-center text-xs text-zinc-500 mb-2">
-                {ma.diagramInput.replace('{count}', String(modelConfig.blockSize))}
+                {interpolatePlural(ma.diagramInput, modelConfig.blockSize)}
               </div>
 
               {/* Embedding Layer */}
@@ -89,7 +90,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
               >
                 <div className="text-sm font-medium">{ma.embeddingButtonTitle}</div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  {ma.embeddingButtonSub.replace('{count}', String(modelConfig.nEmbd))}
+                  {interpolatePlural(ma.embeddingButtonSub, modelConfig.nEmbd)}
                 </div>
               </button>
 
@@ -98,7 +99,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
 
               {/* Transformer Blocks */}
               <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800">
-                <div className="text-xs text-zinc-500 mb-2 text-center">{ma.thinkingLayerLabel.replaceAll('{count}', String(modelConfig.nLayer))}</div>
+                <div className="text-xs text-zinc-500 mb-2 text-center">{interpolatePlural(ma.thinkingLayerLabel, modelConfig.nLayer, { repeats: modelConfig.nLayer })}</div>
 
                 {/* Attention */}
                 <button
@@ -145,7 +146,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
               >
                 <div className="text-sm font-medium">{ma.outputButtonTitle}</div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  {ma.outputButtonSub.replace('{count}', String(modelConfig.vocabSize))}
+                  {interpolatePlural(ma.outputButtonSub, modelConfig.vocabSize)}
                 </div>
               </button>
 
