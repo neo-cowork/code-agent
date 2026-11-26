@@ -5,6 +5,7 @@ import { settleBackgroundOnTaskComplete } from '../../task/backgroundTaskTermina
 import { resolveBackgroundRunSettlement } from '../../session/backgroundRunSettlement';
 import { backgroundChildAdmitted, backgroundChildSettled, backgroundParentOwnsChildNotice } from '../../session/backgroundSettlementHold';
 import { notificationService } from '../infra/notificationService';
+import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
 import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
@@ -889,6 +890,16 @@ export class SessionCommandCenter {
     task.resultText = composeTaskResultForModel(task, detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
+    // A delete that left the file behind is a finished (failed) task, not a crash: if the sweeper already
+    // parked its durable run as resumable, close it so the "app quit unexpectedly · Continue" banner never shows.
+    if (task.leftoverPaths) {
+      void getConfiguredApplicationRunRegistry()
+        ?.terminalRecoveredWaitingRun({ runId: task.id }, Date.now(), { abandonParked: true })
+        .catch((error: unknown) => logger.warn('Failed to close parked durable run of a settled delete-incomplete task', {
+          taskId: task.id,
+          message: error instanceof Error ? error.message : String(error),
+        }));
+    }
     if (task.leftoverPaths && !backgroundParentOwnsChildNotice(task.sessionId, task.id)) {
       notificationService.notifyTaskComplete({
         sessionId: task.sessionId,
