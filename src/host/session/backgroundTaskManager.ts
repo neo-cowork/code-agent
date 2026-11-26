@@ -5,6 +5,8 @@ import { readUiLanguage } from './sessionTitleHostPrompt';
 
 import { EventEmitter } from 'events';
 import { AppWindow, broadcastToRenderer } from '../platform';
+import { backgroundTaskFailureSummary } from '../../shared/i18n/backgroundTaskFailureCopy';
+import { getHostUiLocale } from '../config/hostUiLocale';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
 import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
@@ -193,8 +195,8 @@ class BackgroundTaskManager extends EventEmitter {
       sessionTitle: task.title,
       ...(error === BACKGROUND_TASK_DELETE_INCOMPLETE ? { code: error } : {}),
       summary: error === RUN_ERROR_CODE_MAX_ITERATIONS
-        ? '已达最大执行轮次，任务停止（部分结果已保留）'
-        : `任务失败: ${error || '未知错误'}`,
+        ? backgroundTaskFailureSummary(getHostUiLocale(), 'maxIterations')
+        : backgroundTaskFailureSummary(getHostUiLocale(), 'failed', error),
       duration,
       toolsUsed: [],
       succeeded: false,
