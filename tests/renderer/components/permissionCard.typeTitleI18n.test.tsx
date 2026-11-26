@@ -50,16 +50,20 @@ afterEach(cleanup);
 describe('审批卡按权限类型给的标题跟随界面语言（FB-1151）', () => {
   // 措辞以 main 的语言包为准（#3605 把标题改成按工具名统一取词：写入文件 / Write file、运行命令 / Run command）。
   it('写文件：中文「写入文件」，英文 Write file 且整卡无中文', () => {
-    // 标题在展开态的卡头里：先点「详情」
+    // 标题在展开态的卡头里：折叠态先点「更多选项与详情」（#4034 的改版卡），默认展开的卡不用点
+    const expand = (current: 'zh' | 'en') => {
+      const toggle = screen.queryByRole('button', { name: languages[current].decisionCard.permission.moreOptionsDetails });
+      if (toggle) fireEvent.click(toggle);
+    };
     lang.current = 'zh';
     const zh = render(<PermissionCard requestOverride={writeRequest} sessionIdOverride="session-current" />);
-    fireEvent.click(screen.getByRole('button', { name: languages.zh.decisionCard.details }));
+    expand('zh');
     expect(zh.container.textContent).toContain('写入文件');
     cleanup();
 
     lang.current = 'en';
     const en = render(<PermissionCard requestOverride={writeRequest} sessionIdOverride="session-current" />);
-    fireEvent.click(screen.getByRole('button', { name: languages.en.decisionCard.details }));
+    expand('en');
     expect(en.container.textContent).toContain('Write file');
     expect(en.container.textContent).not.toMatch(HAN);
   });
