@@ -26,7 +26,7 @@ import {
   getServerReconnectingMessage,
   reportServerUnreachable,
 } from '../utils/serverConnectionMonitor';
-import { getServerConnectionStatus } from '../stores/serverConnectionStore';
+import { getServerConnectionStatus, useServerConnectionStore } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 import { useAppStore } from '../stores/appStore';
 import { domainFailureMessage, httpFailureMessage, readProjectSourceTrustHttpFields, readRetryAfterSeconds, UploadFailureError, uploadFailureMessage } from '../utils/httpFailureMessage';
@@ -573,6 +573,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
     const query = params.toString();
     const sseUrl = query ? `${baseUrl}/api/events?${query}` : `${baseUrl}/api/events`;
     eventSource = new EventSource(sseUrl);
+    eventSource.onopen = () => useServerConnectionStore.getState().markEventStreamConnected();
 
     eventSource.onmessage = (event) => {
       // EventSource 从 `id:` 行解析出的 lastEventId 是字符串。broadcastSSE 用单调

@@ -61,6 +61,7 @@ import { AtMentionPopover } from './AtMentionPopover';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { isAgentEventForCurrentSession } from '../../../../hooks/agent/agentEventSession';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
@@ -115,6 +116,7 @@ import type { InlineChipView } from './InlineComposerChip';
 import { pdfPageSentence } from './pdfPageSentence';
 import { usePinnedLibraryItems } from './PinnedLibraryChips';
 import { buildMentionAttachment } from './mentionAttachment';
+import { getAttachmentDisplayName, getCollisionHoverTitles } from './attachmentDisplayName';
 import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
@@ -445,7 +447,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     stepCount: number;
     toolNames: string[];
   } | null>(null);
-  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft } = useScheduleDraft(currentSessionId);
+  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, clearRequestDraft } = useScheduleDraft(currentSessionId);
   // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
   const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
@@ -599,12 +601,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const item = capabilityRegistry.items.find((entry) => entry.kind === 'skill' && entry.id === skillId);
       chips.push({ key: `skill:${skillId}`, kind: 'skill', id: skillId, label: item?.label ?? skillId });
     }
+    const hoverTitles = getCollisionHoverTitles(attachments, useAppStore.getState().workingDirectory ?? null);
     for (const attachment of attachments) {
       chips.push({
         key: `file:${attachment.id}`,
         kind: 'file',
         id: attachment.id,
-        label: attachment.name,
+        label: getAttachmentDisplayName(attachment.name),
+        title: hoverTitles.get(attachment.id),
         category: attachment.category,
         thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
         description: attachment.category === 'pdf'
@@ -792,8 +796,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // Listen for context-aware suggestions from agent (pushed after each turn)
   useEffect(() => {
-    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
-      if (event.type === 'suggestions_update' && Array.isArray(event.data)) {
+    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown; sessionId?: string }) => {
+      // 芯片属于事件里的那个会话。agent:event 是全局广播（收线后补播、镜像轮、别的窗口的轮都
+      // 走它），停在别的会话上的输入框不能收：点了就把与当前会话无关的指令发了出去。
+      if (
+        event.type === 'suggestions_update'
+        && Array.isArray(event.data)
+        && isAgentEventForCurrentSession(event, sessionless ? null : useSessionStore.getState().currentSessionId)
+      ) {
         setSuggestions(event.data as Array<{ id: string; text: string; source: string }>);
       }
       // Combo Skill suggestion from backend
@@ -802,7 +812,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     });
     return () => { unsubscribe?.(); };
-  }, []);
+  }, [sessionless]);
+
+  // 切换会话：上一个会话的芯片不留在新会话的输入框里
+  useEffect(() => {
+    setSuggestions([]);
+  }, [currentSessionId]);
 
   // IACT protocol: listen for inline interaction events from message bubbles
   // （!run 的执行不走这里：RunCommandCard 自己就地执行 + 渲染结果。但它的「发给 Neo」
@@ -1092,14 +1107,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSessionReferences,
     setArtifactReferences,
     setScheduleComposerOpen,
-    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule },
+    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule, clearRequestDraft },
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
-  useScheduleDraftRequest(currentSessionId, creatingSchedule, runScheduleCreation);
+  useScheduleDraftRequest(currentSessionId, creatingSchedule, { pendingScheduleDraft, storePendingScheduleDraft, clearRequestDraft }, formRef);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 

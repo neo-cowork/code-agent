@@ -27,6 +27,7 @@ import {
   MODEL_MAX_TOKENS,
 } from '../../../../shared/constants';
 import { ModelRouter } from '../../../model/modelRouter';
+import { resolveZhipuVisionFallbackBaseUrl } from '../../../model/providers/providerResolution';
 import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { ModelMessage } from '../../../model/types';
@@ -143,7 +144,7 @@ async function callZhipuVision(
   };
 
   const response = await fetchWithAbort(
-    `${MODEL_API_ENDPOINTS.zhipuCoding}/chat/completions`,
+    `${resolveZhipuVisionFallbackBaseUrl()}/chat/completions`,
     {
       method: 'POST',
       headers: {

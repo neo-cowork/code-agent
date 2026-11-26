@@ -45,6 +45,21 @@ describe('scheduled result location i18n drift', () => {
       .filter((copy) => !copy.includes(tabRuns) || copy.includes('To review'));
     expect(mismatches).toEqual([]);
   });
+  it('zh result channel copy names the live 运行记录 tab', () => {
+    expect(zh.cronCenter.resultPushNoAccounts).toContain(zh.cronCenter.tabRuns);
+    expect(zh.cronCenter.resultPushNoAccounts).not.toContain('待过目');
+  });
+  it.each(['zh', 'en'] as const)('result-channel copy naming a place uses tabRuns or the inbox title (%s)', (language) => {
+    const cc = (language === 'zh' ? zh : en).cronCenter;
+    const inboxPlace = cc.inboxTitle.replace('{count}', '').trim();
+    const placeWords = ['待过目', '运行记录', '收件箱', 'Run history', 'run history', 'to review', 'To review', 'inbox', 'Inbox'];
+    const mismatches = Object.entries(cc)
+      .filter(([key, copy]) => key.startsWith('resultPush') && typeof copy === 'string')
+      .map(([, copy]) => copy as string)
+      .filter((copy) => placeWords.some((word) => copy.includes(word)))
+      .filter((copy) => !copy.includes(cc.tabRuns) && !copy.includes(inboxPlace));
+    expect(mismatches).toEqual([]);
+  });
 });
 
 it.each(['zh', 'en'] as const)('production result rows without resultChannel (%s)', (language) => {

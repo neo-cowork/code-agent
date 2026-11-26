@@ -9,6 +9,8 @@ import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 import { Notification, broadcastToRenderer } from '../../platform';
 import { hasInteractiveUi } from '../../platform/windowBridge';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../shared/constants';
+import { CRON_CONNECTOR_LOST } from '../../../shared/constants/cronErrors';
+import { getCronConnectorLostNotificationText } from '../../../shared/i18n/cronConnectorLostNotification';
 import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
@@ -120,10 +122,11 @@ interface VoiceWorkSettledNotificationData {
 
 export interface RecordedNotification {
   id: string;
-  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin' | 'digest';
+  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin' | 'digest' | 'cron_connector_lost';
   sessionId: string;
   title: string;
   body: string;
+  code?: string;
   createdAt: number;
   delivery: 'sent' | 'dry_run';
 }
@@ -317,6 +320,7 @@ class NotificationService implements Disposable {
       sessionId: item.sessionId,
       title: item.title,
       body: item.body,
+      ...(item.delivery.code ? { code: item.delivery.code } : {}),
     });
     this.deliver({
       id: entry.id,
@@ -631,6 +635,20 @@ class NotificationService implements Disposable {
       title: text.title,
       body: text.body,
       delivery: { urgent: true },
+    });
+  }
+
+  notifyCronConnectorLost(data: { connectorId: string }): void {
+    if (!this.isIntentAllowed('needs_input')) return;
+    if (!this.shouldNotify(true)) return;
+    const text = getCronConnectorLostNotificationText(readNotificationLocale(), data.connectorId);
+    if (!text) return;
+    this.enqueueBudgeted({
+      intent: 'needs_input',
+      type: 'cron_connector_lost',
+      sessionId: '',
+      ...text,
+      delivery: { urgent: true, code: CRON_CONNECTOR_LOST },
     });
   }
 

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
-import type { CreateCronJobInput } from '../../../../services/cronClient';
+import type { ScheduleDraftRef } from '@shared/ipc/schemas/cron';
+import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
+import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
+import { normalizeScheduleDraft } from './scheduleConfirm';
 import type { EventScheduleDisplayNames } from '../../cron/types';
 
 export interface ScheduleRestatement {
@@ -32,6 +36,25 @@ export interface PendingScheduleDraft {
    * 确认卡据此重置挂载期初始化的本地编辑态，避免上一份草案的账号/群/预算残留进新卡。
    */
   draftId?: number;
+  requestId?: string;
+}
+
+export function buildPendingScheduleDraft(
+  raw: unknown,
+  description: string,
+  sourceSessionId: string | null,
+  handoffPrompt?: string,
+): PendingScheduleDraft | null {
+  const normalized = normalizeScheduleDraft(raw);
+  if (!normalized) return null;
+  return {
+    input: normalized.input,
+    restatement: normalized.restatement,
+    description,
+    handoffPrompt: handoffPrompt?.trim() || undefined,
+    sourceSessionId,
+    eventGroupName: normalized.eventGroupName || undefined,
+  };
 }
 
 export interface ScheduleDraftController {
@@ -39,9 +62,11 @@ export interface ScheduleDraftController {
   storePendingScheduleDraft: (draft: PendingScheduleDraft) => boolean;
   discardPendingScheduleDraft: () => void;
   setCreatingSchedule: Dispatch<SetStateAction<boolean>>;
+  clearRequestDraft?: (ref: ScheduleDraftRef) => void;
 }
 
 export function useScheduleDraft(currentSessionId: string | null) {
+  const { t } = useI18n();
   const [scheduleComposerOpen, setScheduleComposerOpen] = useState(false);
   const [creatingSchedule, setCreatingSchedule] = useState(false);
   const [pendingScheduleDraft, setPendingScheduleDraft] = useState<PendingScheduleDraft | null>(null);
@@ -67,18 +92,32 @@ export function useScheduleDraft(currentSessionId: string | null) {
     return true;
   }, []);
 
+  const clearRequestDraft = useCallback(({ sessionId, requestId }: ScheduleDraftRef) => {
+    setPendingScheduleDraft((draft) => draft?.requestId === requestId && draft.sourceSessionId === sessionId ? null : draft);
+    const settings = useScheduleSettingsDraftStore.getState();
+    if (settings.draft?.requestId === requestId && settings.draft.sourceSessionId === sessionId) settings.clearDraft();
+  }, []);
+
   const discardPendingScheduleDraft = useCallback(() => {
+    if (pendingScheduleDraft?.requestId && pendingScheduleDraft.sourceSessionId) {
+      const ref = { requestId: pendingScheduleDraft.requestId, sessionId: pendingScheduleDraft.sourceSessionId };
+      void cronClient.ackScheduleDraft({ ...ref, status: 'discarded' })
+        .then(() => clearRequestDraft(ref))
+        .catch(() => toast.error(t.chatInputSubmit.scheduleDiscardFailed));
+      return;
+    }
     useScheduleSettingsDraftStore.getState().clearDraft();
     setPendingScheduleDraft(null);
     setCreatingSchedule(false);
-  }, []);
+  }, [clearRequestDraft, pendingScheduleDraft, t]);
 
   return {
     scheduleComposerOpen,
     setScheduleComposerOpen,
     creatingSchedule,
     setCreatingSchedule,
-    pendingScheduleDraft,
+    pendingScheduleDraft: pendingScheduleDraft?.sourceSessionId === currentSessionId ? pendingScheduleDraft : null,
+    clearRequestDraft,
     storePendingScheduleDraft,
     discardPendingScheduleDraft,
   };

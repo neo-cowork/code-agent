@@ -429,7 +429,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           <details className="mt-3" data-testid="cron-failure-technical">
             <summary className="cursor-pointer text-xs text-zinc-400">{cc.failureTechnical}</summary>
             <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400 whitespace-pre-wrap">
-              {execution.error}
+              {classified?.kind === 'project_trust' ? failureSentence : execution.error}
             </pre>
           </details>
         </section>

@@ -286,6 +286,10 @@ export const ROLE_PROACTIVITY = {
   WAKE_LEDGER_MAX_ROWS: 256,
   WAKE_LEDGER_DEDUP_DAYS: 30,
   WAKE_LEDGER_FUNNEL_DAYS: 7,
+  /** 记录页「最近唤醒」一次带回的决策行数。 */
+  WAKE_LEDGER_RECENT_ROWS: 20,
+  /** 账本行与定时执行记录对齐的窗口：账本 at 落在 [startedAt, startedAt + 该值]。 */
+  WAKE_LEDGER_EXECUTION_MATCH_MS: 30 * 60 * 1000,
   /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
   /** 醒来 run 返回后等待 task_complete 收口链排空的上限（防泄漏兜底，非时序依赖） */

@@ -7,6 +7,7 @@ import { MODEL_PRICING_PER_1M } from '../../constants';
 import type { ExtensionInfo, ExtensionValidationResult } from '../../contract/extension';
 import type { SkillCautionConfirmationRequired } from '../../contract/skillInstallCaution';
 import { loadCommandPort } from '../loadCommandPort';
+import { formatPermissionsBlock, type PermissionsBlockData } from '../../i18n/permissionsCommand';
 import { formatPermissionDecision } from '../formatPermissionDecision';
 
 interface ExtensionOpsCommandService {
@@ -581,14 +582,6 @@ export const contextCommand: CommandDefinition = {
   },
 };
 
-function fmtRelativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
-}
-
 export const permissionsCommand: CommandDefinition = {
   id: 'permissions',
   name: 'Permissions',
@@ -596,69 +589,36 @@ export const permissionsCommand: CommandDefinition = {
   category: 'status',
   surfaces: ['cli', 'gui'],
   handler: async (ctx) => {
-    const lines: string[] = [];
-
-    // Section 1: Mode
+    const language = ctx.getLocale?.() ?? 'zh';
+    let mode = 'default';
     try {
       const { getPermissionModeManager } = await loadCommandPort<PermissionModeModule>(ctx, 'loadPermissionModes');
-      const manager = getPermissionModeManager();
-      const mode = manager.getMode();
-      const config = manager.getModeConfig();
-      lines.push('Permissions');
-      lines.push(`  Mode:     ${mode} — ${config.description}`);
-    } catch {
-      lines.push('Permissions');
-      lines.push('  Mode:     default');
-    }
+      mode = getPermissionModeManager().getMode();
+    } catch { /* 缺端口按默认档显示 */ }
 
-    lines.push('');
-
-    // Section 2: Exec Policy Rules
+    let rules: PermissionsBlockData['rules'] = null;
     try {
       const { getExecPolicyStore } = await loadCommandPort<ExecPolicyModule>(ctx, 'loadExecPolicy');
-      const rules = getExecPolicyStore().getRules();
-      lines.push(`  Exec Policy (${rules.length} rules):`);
-      if (rules.length === 0) {
-        lines.push('    (no rules learned yet)');
-      } else {
-        for (const rule of rules.slice(0, 15)) {
-          const pattern = rule.pattern.join(' ') + ' *';
-          const time = fmtRelativeTime(rule.createdAt);
-          const src = rule.source === 'builtin' ? 'builtin' : time;
-          lines.push(`    ${pattern.padEnd(24)} → ${rule.decision}  (${src})`);
-        }
-        if (rules.length > 15) {
-          lines.push(`    ... and ${rules.length - 15} more`);
-        }
-      }
-    } catch {
-      lines.push('  Exec Policy: (not initialized)');
-    }
+      rules = getExecPolicyStore().getRules();
+    } catch { /* 留 null，由文案模块写「暂不可用」 */ }
 
-    lines.push('');
-
-    // Section 3: Recent Decisions
+    let decisions: PermissionsBlockData['decisions'] = null;
     try {
       const { getDecisionHistory } = await loadCommandPort<DecisionHistoryModule>(ctx, 'loadDecisionHistory');
       const recent = getDecisionHistory().getRecent(10);
-      const total = getDecisionHistory().getAll().length;
-      lines.push(`  Recent Decisions (${total} total, showing last ${recent.length}):`);
-      if (recent.length === 0) {
-        lines.push('    (no decisions yet)');
-      } else {
-        const language = ctx.getLocale?.() ?? 'zh';
-        for (const entry of recent) {
+      decisions = {
+        total: getDecisionHistory().getAll().length,
+        lines: recent.map((entry) => {
           const time = new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false });
           const trace = entry.decisionTrace
-            ? `, trace=${entry.decisionTrace.finalOutcome}/${entry.decisionTrace.steps.length}`
-            : '';
-          lines.push(`    ${time} ${formatPermissionDecision(entry, language, trace)}`);
-        }
-      }
-    } catch {
-      lines.push('  Recent Decisions: (not available)');
-    }
+            ? { finalOutcome: entry.decisionTrace.finalOutcome, steps: entry.decisionTrace.steps.length }
+            : undefined;
+          return `${time} ${formatPermissionDecision(entry, language, trace)}`;
+        }),
+      };
+    } catch { /* 留 null */ }
 
+    const lines = formatPermissionsBlock(language, { mode, rules, decisions });
     ctx.output.info(lines.join('\n'));
     return { success: true };
   },
