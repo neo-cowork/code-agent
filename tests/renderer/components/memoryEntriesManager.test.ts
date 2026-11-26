@@ -49,6 +49,7 @@ describe('MemoryEntriesManager helpers', () => {
     const adopted = entry({ id: 'adopted', status: 'active', supersedes: 'project.md', lastChange });
     const rejected = entry({ id: 'rejected', status: 'rejected', supersedes: 'project.md', lastChange });
     const rows = buildMemoryEntryRows({
+      language: 'zh',
       entries: [original, adopted, rejected],
       selectedEntryId: null,
       searchQuery: '',
@@ -97,6 +98,7 @@ describe('MemoryEntriesManager helpers', () => {
     });
 
     expect(buildMemoryEntryRows({
+      language: 'zh',
       entries: [light, db],
       selectedEntryId: 'mem_entry_db',
       searchQuery: 'pattern',
@@ -117,6 +119,7 @@ describe('MemoryEntriesManager helpers', () => {
     ]);
 
     expect(buildMemoryEntryRows({
+      language: 'zh',
       entries: [light, db],
       selectedEntryId: null,
       searchQuery: '',
@@ -132,6 +135,7 @@ describe('MemoryEntriesManager helpers', () => {
     const paused = entry({ id: 'mem_paused', status: 'active', injectionPaused: { reason: 'never_used', since: now } });
     const normal = entry({ id: 'mem_normal', status: 'active' });
     const rows = buildMemoryEntryRows({
+      language: 'zh',
       entries: [paused, normal],
       selectedEntryId: null,
       searchQuery: '',
@@ -157,6 +161,7 @@ describe('MemoryEntriesManager helpers', () => {
     });
     const unjournaled = entry({ id: 'mem_no_journal', status: 'active' });
     const rows = buildMemoryEntryRows({
+      language: 'zh',
       entries: [background, manual, unjournaled],
       selectedEntryId: null,
       searchQuery: '',
@@ -221,6 +226,7 @@ describe('MemoryEntriesManager helpers', () => {
     const directive = entry({ id: 'mem_candidate_directive', status: 'candidate', kind: 'directive' });
     const stale = entry({ id: 'mem_stale', status: 'stale', kind: 'pattern' });
     const rows = buildMemoryEntryRows({
+      language: 'zh',
       entries: [normal, directive, stale],
       selectedEntryId: null,
       searchQuery: '',

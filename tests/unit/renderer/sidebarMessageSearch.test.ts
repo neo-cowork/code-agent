@@ -8,6 +8,10 @@ import {
   resolveSidebarSearchScope,
   stripSearchHighlightMarkers,
 } from '../../../src/renderer/utils/sidebarMessageSearch';
+import { languages } from '../../../src/renderer/i18n';
+
+// 前缀不再有中文缺省：调用方显式传当前语言包（与 SidebarSearchDialog 的 t.chatSearch 同源）
+const zhHitPrefixes = languages.zh.chatSearch;
 
 describe('sidebarMessageSearch', () => {
   it('strips markdown highlight markers from snippets', () => {
@@ -65,14 +69,14 @@ describe('sidebarMessageSearch', () => {
       matchCount: 2,
       relevance: 0.8,
     });
-    expect(formatSidebarMessageSearchHitLabel(hits['session-1'])).toBe('消息命中 · better match');
+    expect(formatSidebarMessageSearchHitLabel(hits['session-1'], zhHitPrefixes)).toBe('消息命中 · better match');
     expect(formatSidebarMessageSearchHitMeta(hits['session-1'], 90 + 5 * 60 * 1000)).toBe('第 2 轮 · 5分钟前');
   });
 
   it('labels tool-output hits distinctly (zh default and en prefixes) and keeps user hits as message hits', () => {
     const base = { sessionId: 's', messageId: 'm', messageIndex: -1, snippet: 'deadline ZK-1', timestamp: 1, matchCount: 1, relevance: 0.5, messagePositionLabel: '消息' } as const;
-    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'tool' })).toBe('工具输出命中 · deadline ZK-1');
-    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'user' })).toBe('消息命中 · deadline ZK-1');
+    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'tool' }, zhHitPrefixes)).toBe('工具输出命中 · deadline ZK-1');
+    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'user' }, zhHitPrefixes)).toBe('消息命中 · deadline ZK-1');
     const en = { messageHitPrefix: 'Message match', toolHitPrefix: 'Tool output match' };
     expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'tool' }, en)).toBe('Tool output match · deadline ZK-1');
   });

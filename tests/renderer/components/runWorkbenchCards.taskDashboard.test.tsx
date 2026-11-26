@@ -212,7 +212,7 @@ describe('后台任务行：raw JS 异常清洗为类别人话（FB-746）', () 
           category: 'agent_engine',
         },
       },
-    ], 'session-1');
+    ], 'session-1', 'zh');
 
     const html = renderToStaticMarkup(
       React.createElement(TaskDashboardSummary, { tasks: records, run: null }),

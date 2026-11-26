@@ -438,6 +438,7 @@ describe('buildSavedRoutineRestateRows · 归档项目行', () => {
 
   it('有归档项目：result 之后出 archive 行，值是项目名而非 id', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: withArchive('proj-123'), channelLabel: '', labels, archiveProjectName: ' 季度复盘 ',
     });
     expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result', 'archive']);
@@ -447,6 +448,7 @@ describe('buildSavedRoutineRestateRows · 归档项目行', () => {
   it('名称读不到（缺省/空白）：落兜底文案，绝不透出 id；停用状态行仍排在最后', () => {
     for (const name of [undefined, '  ']) {
       const rows = buildSavedRoutineRestateRows({
+        lang: 'zh',
         job: { ...withArchive('proj-123'), enabled: false }, channelLabel: '', labels, archiveProjectName: name,
       });
       expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result', 'archive', 'status']);
@@ -461,7 +463,7 @@ describe('buildSavedRoutineRestateRows · 归档项目行', () => {
       withArchive('  '),
       agentJob({ action: { type: 'role-wake', roleId: 'role-x' }, scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'days' } }),
     ]) {
-      const rows = buildSavedRoutineRestateRows({ job, channelLabel: '', labels, archiveProjectName: '不该出现' });
+      const rows = buildSavedRoutineRestateRows({ lang: 'zh', job, channelLabel: '', labels, archiveProjectName: '不该出现' });
       expect(rows.map((row) => row.key)).not.toContain('archive');
     }
   });

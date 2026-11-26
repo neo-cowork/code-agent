@@ -138,7 +138,7 @@ describe('buildLedgerTaskRecords', () => {
 
     const records = buildLedgerTaskRecords(tasks, 'session-1', 'zh');
     expect(records.map((record) => record.displayTitle)).toEqual(['后台命令 2', '后台命令 1', description]);
-    expect(records.map((record) => deriveTaskRailView(record).title)).toEqual(['后台命令 2', '后台命令 1', description]);
+    expect(records.map((record) => deriveTaskRailView(record, null, 'zh').title)).toEqual(['后台命令 2', '后台命令 1', description]);
     expect(records.map((record) => record.title)).toEqual([english, english, description]);
     const [englishRecord] = buildLedgerTaskRecords([tasks[2]], 'session-1', 'en');
     expect(deriveTaskRailView(englishRecord, null, 'en').title).toBe('Background command');
@@ -234,7 +234,7 @@ describe('buildLedgerTaskRecords', () => {
         title: 'Other session run',
         status: 'completed',
       }),
-    ], 'session-1');
+    ], 'session-1', 'zh');
 
     expect(tasks[0]).toMatchObject({
       id: 'background:agent:codex:run-1',
@@ -278,7 +278,7 @@ describe('buildLedgerTaskRecords', () => {
   it('carries the ledger source through so the rail can localise model titles', () => {
     const [record] = buildLedgerTaskRecords([
       makeLedgerTask({ id: 'delegate:1', sessionId: 'session-1', title: 'Summarize the weekly report', source: 'delegate_task' }),
-    ], 'session-1');
+    ], 'session-1', 'zh');
     expect(record.source).toBe('delegate_task');
   });
 
@@ -288,7 +288,7 @@ describe('buildLedgerTaskRecords', () => {
         id: 'agent:codex:run-1',
         sessionId: 'session-1',
       }),
-    ], null)).toEqual([]);
+    ], null, 'zh')).toEqual([]);
   });
 
   it('uses durable recovery plan summaries as resume hints', () => {
@@ -317,7 +317,7 @@ describe('buildLedgerTaskRecords', () => {
           createdAt: 10,
         }],
       }),
-    ], 'session-1');
+    ], 'session-1', 'zh');
 
     expect(tasks[0]).toMatchObject({
       status: 'blocked',
@@ -507,7 +507,7 @@ describe('buildLedgerTaskRecords — 失败原因语义化清洗（FB-746）', (
           category: 'agent_engine',
         },
       }),
-    ], 'session-1');
+    ], 'session-1', 'zh');
 
     expect(records).toHaveLength(1);
     expect(records[0].status).toBe('blocked');
@@ -526,7 +526,7 @@ describe('buildLedgerTaskRecords — 失败原因语义化清洗（FB-746）', (
         status: 'failed',
         failure: { message: 'Durable Run run-77 has no live owner lease', category: 'agent_engine' },
       }),
-    ], 'session-1');
+    ], 'session-1', 'zh');
     expect(record.resumeHint).toBeUndefined();
     expect(record.resumeHintCategory).toBe('unknown');
     expect(JSON.stringify(record)).not.toContain('owner lease');
@@ -541,7 +541,7 @@ describe('buildLedgerTaskRecords — 失败原因语义化清洗（FB-746）', (
         status: 'failed',
         failure: { message: '目标网站拒绝了这次登录，需要重新授权后再试', category: 'agent_engine' },
       }),
-    ], 'session-1');
+    ], 'session-1', 'zh');
     expect(record.resumeHint).toBe('目标网站拒绝了这次登录，需要重新授权后再试');
     expect(record.resumeHintCategory).toBeUndefined();
   });

@@ -38,14 +38,9 @@ export interface SidebarMessageSearchHitPrefixes {
   toolHitPrefix: string;
 }
 
-const ZH_HIT_PREFIXES: SidebarMessageSearchHitPrefixes = {
-  messageHitPrefix: '消息命中',
-  toolHitPrefix: '工具输出命中',
-};
-
 export function formatSidebarMessageSearchHitLabel(
   hit: SidebarMessageSearchHit,
-  prefixes: SidebarMessageSearchHitPrefixes = ZH_HIT_PREFIXES,
+  prefixes: SidebarMessageSearchHitPrefixes,
 ): string {
   const prefix = hit.role === 'tool' ? prefixes.toolHitPrefix : prefixes.messageHitPrefix;
   return `${prefix} · ${hit.snippet}`;

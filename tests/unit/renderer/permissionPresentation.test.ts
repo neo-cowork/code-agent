@@ -34,7 +34,7 @@ describe('folder targets in permission titles', () => {
     ['', '允许这次操作？', 'Allow this operation?'],
   ])('describes reading %j in both languages', (path, zh, english) => {
     const request = { ...baseRequest, details: { path } };
-    const zhTitle = permissionSummary(request, decisionCardZh as never);
+    const zhTitle = permissionSummary(request, decisionCardZh as never, 'zh');
     const enTitle = permissionSummary(request, decisionCardEn as never, 'en');
     expect([zhTitle, enTitle]).toEqual([zh, english]);
     expect(zhTitle).not.toMatch(/(?:^|\s)\.(?=\s|[？?（]|$)/u);
@@ -47,7 +47,7 @@ describe('folder targets in permission titles', () => {
     ['file_delete', '允许删除 当前文件夹？', 'Allow deleting the current folder?'],
   ] as const)('describes the current folder in %s titles', (type, zh, english) => {
     const request = { ...baseRequest, type, details: { filePath: '.' } };
-    expect(permissionSummary(request, decisionCardZh as never)).toBe(zh);
+    expect(permissionSummary(request, decisionCardZh as never, 'zh')).toBe(zh);
     expect(permissionSummary(request, decisionCardEn as never, 'en')).toBe(english);
   });
 
@@ -57,7 +57,7 @@ describe('folder targets in permission titles', () => {
       details: { path: '../' },
       boundary: { id: 'file.external_read' },
     };
-    expect(permissionSummary(request, decisionCardZh as never)).toBe('允许读取 上一级文件夹（工作区外）？');
+    expect(permissionSummary(request, decisionCardZh as never, 'zh')).toBe('允许读取 上一级文件夹（工作区外）？');
     expect(permissionSummary(request, decisionCardEn as never, 'en')).toBe('Allow reading the parent folder (outside workspace)?');
   });
 });
@@ -179,7 +179,7 @@ it('describes unknown command risk without calling it safe', () => {
     details: { command: './bin/kill -9 12345', commandRiskLevel: 'unknown' },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
+  expect(permissionConsequence(request, decisionCardZh as never, 'zh')).toBe('命令风险无法自动判定，需要你确认后才能执行。');
 });
 
 describe('per-app grant card consequence suppression', () => {
@@ -199,7 +199,7 @@ describe('per-app grant card consequence suppression', () => {
       },
     };
 
-    expect(permissionConsequence(request, zh)).toBeUndefined();
+    expect(permissionConsequence(request, zh, 'zh')).toBeUndefined();
   });
 
   it('危险形状的按应用请求仍保留命令后果行', () => {
@@ -210,7 +210,7 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' }, command: 'chmod 777 ~/.ssh/id_rsa' },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
   });
 
   it('forceConfirm 的按应用请求（appGrantCard=false）仍保留命令后果行', () => {
@@ -222,7 +222,7 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' } },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
   });
 });
 
@@ -248,7 +248,7 @@ it('shows the deterministic command guard reason instead of generic local-risk c
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
+  expect(permissionConsequence(request, decisionCardZh as never, 'zh')).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
 });
 
 it.each([
@@ -276,7 +276,7 @@ it.each([
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('将执行高风险命令，可能覆盖本机系统或项目状态。');
+  expect(permissionConsequence(request, decisionCardZh as never, 'zh')).toBe('将执行高风险命令，可能覆盖本机系统或项目状态。');
   expect(request.reason).toContain('deterministic supplement');
 });
 
@@ -312,7 +312,7 @@ describe('device / special path copy', () => {
 
   it('host-marked device uses the device copy and skips overwrite wording', () => {
     const request = writeRequest('/dev/null', 'device');
-    const consequence = permissionConsequence(request, zh);
+    const consequence = permissionConsequence(request, zh, 'zh');
     expect(consequence).toBe('将向工作区外的设备文件 /dev/null 写入；原子写入会替换该设备节点本身。');
     expect(consequence).toContain('设备文件');
     expect(consequence).not.toContain('可能覆盖现有内容');
@@ -326,12 +326,12 @@ describe('device / special path copy', () => {
       details: { path: '/dev/null', targetKind: 'device' },
       boundary: { id: 'file.project_write' },
     };
-    expect(permissionConsequence(request, zh)).toBe('将写入设备文件 /dev/null；原子写入会替换该设备节点本身。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将写入设备文件 /dev/null；原子写入会替换该设备节点本身。');
   });
 
   it('Append to a host-marked device shows the write-through copy, not node replacement', () => {
     const request = { ...writeRequest('/dev/null', 'device'), tool: 'Append' };
-    const consequence = permissionConsequence(request, zh);
+    const consequence = permissionConsequence(request, zh, 'zh');
     expect(consequence).toBe('将向设备文件 /dev/null 追加写入，内容直接送达设备。');
     expect(consequence).not.toContain('替换该设备节点');
     expect(consequence).not.toContain('可能覆盖现有内容');
@@ -341,7 +341,7 @@ describe('device / special path copy', () => {
     'targetKind %s fail-closes to the overwrite warning',
     (targetKind) => {
       const request = writeRequest('/dev/null', targetKind);
-      const consequence = permissionConsequence(request, zh);
+      const consequence = permissionConsequence(request, zh, 'zh');
       expect(consequence).toContain('可能覆盖现有内容');
       expect(consequence).not.toContain('设备文件');
     },
@@ -354,7 +354,7 @@ describe('device / special path copy', () => {
     ['\\dev\\null', '反斜杠归一化'],
     ['C:/dev/null', 'Windows /dev/null 归一化'],
   ])('POSIX/Windows 构造 %s（%s）无 targetKind=device 时必须保留覆盖警告', (path) => {
-    const consequence = permissionConsequence(writeRequest(path), zh);
+    const consequence = permissionConsequence(writeRequest(path), zh, 'zh');
     expect(consequence).toContain('可能覆盖现有内容');
     expect(consequence).not.toContain('设备文件');
   });
@@ -362,8 +362,8 @@ describe('device / special path copy', () => {
   it('titles /dev/stdout with the full path and does not infer a device from the path', () => {
     const request = writeRequest('/dev/stdout');
     expect(permissionSummary(request, zh, 'zh')).toBe('允许写入 /dev/stdout（工作区外）？');
-    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
-    expect(permissionConsequence(request, zh)).not.toContain('设备文件');
+    expect(permissionConsequence(request, zh, 'zh')).toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh, 'zh')).not.toContain('设备文件');
   });
 
   it('keeps basename titles and overwrite wording for ordinary files', () => {
@@ -375,7 +375,7 @@ describe('device / special path copy', () => {
       boundary: { id: 'file.project_write' },
     };
     expect(permissionSummary(inside, zh, 'zh')).toBe('允许编辑 report.md？');
-    expect(permissionConsequence(inside, zh)).toBe('将写入 /workspace/src/report.md（约 1 个文件），可能覆盖现有内容。');
+    expect(permissionConsequence(inside, zh, 'zh')).toBe('将写入 /workspace/src/report.md（约 1 个文件），可能覆盖现有内容。');
 
     const outside: PermissionRequest = {
       ...baseRequest,
@@ -385,7 +385,7 @@ describe('device / special path copy', () => {
       boundary: { id: 'file.external_write' },
     };
     expect(permissionSummary(outside, zh, 'zh')).toBe('允许写入 notes.txt（工作区外）？');
-    expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
+    expect(permissionConsequence(outside, zh, 'zh')).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
   });
 
   it('still titles an ordinary file named null by basename', () => {
@@ -397,7 +397,7 @@ describe('device / special path copy', () => {
       boundary: { id: 'file.project_write' },
     };
     expect(permissionSummary(request, zh, 'zh')).toBe('允许编辑 null？');
-    expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
+    expect(permissionConsequence(request, zh, 'zh')).toContain('可能覆盖现有内容');
   });
 
   it('uncertain write target with a path deny uses the dedicated ask copy', () => {
@@ -409,7 +409,7 @@ describe('device / special path copy', () => {
       details: { command: 'echo x > "$SSHDIR/authorized_keys"' },
     };
     expect(permissionSummary(request, zh, 'zh')).toBe('这条命令说不清会写到哪个文件，而你设过禁止写入的路径。');
-    expect(permissionConsequence(request, zh)).toBe('允许的话，它可能写到那些被禁止的位置。拒绝则什么都不写。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('允许的话，它可能写到那些被禁止的位置。拒绝则什么都不写。');
   });
 
   it('deletion plus uncertain write target still shows the deletion consequence', () => {
@@ -424,7 +424,7 @@ describe('device / special path copy', () => {
         affectedFileCount: 3,
       },
     };
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 /tmp/projects/foo（约 3 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将永久删除 /tmp/projects/foo（约 3 个文件），不进回收站。');
   });
 });
 
@@ -446,14 +446,14 @@ describe('deletion consequence file count for multi-target rm', () => {
     const request = deletionRequest('sudo rm ./旧日志-1.log ./旧日志-2.log', {
       commandSecurityFlags: ['sudo_rm'],
     });
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./旧日志-1.log（约 2 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将永久删除 ./旧日志-1.log（约 2 个文件），不进回收站。');
   });
 
   it('3 个确切目标（带 -- 与引号）按解析目标数显示约 3 个文件', () => {
     const request = deletionRequest('sudo rm -- "./旧日志-1.log" "./旧日志-2.log" "./旧日志-3.log"', {
       commandSecurityFlags: ['sudo_rm'],
     });
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./旧日志-1.log（约 3 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将永久删除 ./旧日志-1.log（约 3 个文件），不进回收站。');
   });
 
   it('宿主盘点的计数优先于解析目标数（3 目标求和=3）', () => {
@@ -462,12 +462,12 @@ describe('deletion consequence file count for multi-target rm', () => {
       affectedPath: '/workspace/旧日志-1.log',
       affectedFileCount: 3,
     });
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 /workspace/旧日志-1.log（约 3 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将永久删除 /workspace/旧日志-1.log（约 3 个文件），不进回收站。');
   });
 
   it('递归多目标且宿主未盘点：不写数字，改说「多个文件」', () => {
     const request = deletionRequest('rm -rf ./d1 ./d2');
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./d1（多个文件），不进回收站。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将永久删除 ./d1（多个文件），不进回收站。');
   });
 
   it('通配符命令说「多个文件」，绝不退回「约 1 个文件」', () => {
@@ -476,7 +476,7 @@ describe('deletion consequence file count for multi-target rm', () => {
       commandSecurityFlags: ['recursive_delete_targeted'],
       affectedPath: '/workspace/./*.log',
     });
-    const consequence = permissionConsequence(request, zh);
+    const consequence = permissionConsequence(request, zh, 'zh');
     expect(consequence).toBe('将永久删除 /workspace/./*.log（多个文件），不进回收站。');
     expect(consequence).toContain('多个文件');
     expect(consequence).not.toContain('约 1 个文件');
@@ -484,12 +484,12 @@ describe('deletion consequence file count for multi-target rm', () => {
 
   it('变量展开说「多个文件」，不写具体数字', () => {
     const request = deletionRequest('rm -rf $LOGS');
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 $LOGS（多个文件），不进回收站。');
+    expect(permissionConsequence(request, zh, 'zh')).toBe('将永久删除 $LOGS（多个文件），不进回收站。');
   });
 
   it('管道喂入的 rm（ls | xargs rm）去掉数量，不写任何数字', () => {
     const request = deletionRequest('ls | xargs rm -rf');
-    const consequence = permissionConsequence(request, zh);
+    const consequence = permissionConsequence(request, zh, 'zh');
     expect(consequence).toBe('将永久删除 目标，不进回收站。');
     expect(consequence).not.toContain('约');
     expect(consequence).not.toContain('个文件');
@@ -499,7 +499,7 @@ describe('deletion consequence file count for multi-target rm', () => {
     const request = deletionRequest("find . -name '*.log' -delete", {
       commandSecurityFlags: ['recursive_delete_targeted'],
     });
-    const consequence = permissionConsequence(request, zh);
+    const consequence = permissionConsequence(request, zh, 'zh');
     expect(consequence).toBe('将永久删除 目标，不进回收站。');
     expect(consequence).not.toContain('约');
     expect(consequence).not.toContain('个文件');
@@ -510,13 +510,13 @@ describe('deletion consequence file count for multi-target rm', () => {
     const twoTargets = deletionRequest('sudo rm ./old-log-1.log ./old-log-2.log', {
       commandSecurityFlags: ['sudo_rm'],
     });
-    expect(permissionConsequence(twoTargets, en)).toBe('Permanently deletes ./old-log-1.log (2 files) without using Trash.');
+    expect(permissionConsequence(twoTargets, en, 'en')).toBe('Permanently deletes ./old-log-1.log (2 files) without using Trash.');
 
     const wildcard = deletionRequest('rm -rf ./*.log', {
       commandSecurityFlags: ['recursive_delete_targeted'],
       affectedPath: '/workspace/./*.log',
     });
-    const consequence = permissionConsequence(wildcard, en);
+    const consequence = permissionConsequence(wildcard, en, 'en');
     expect(consequence).toBe('Permanently deletes /workspace/./*.log (multiple files) without using Trash.');
     expect(consequence).toContain('(multiple files)');
     expect(consequence).not.toMatch(/\(1 files?\)/);
@@ -560,7 +560,7 @@ describe('en outside-workspace question punctuation', () => {
   });
 
   it('zh 工作区外问句保持全角括号与全角问号', () => {
-    expect(permissionSummary(outsideRequest('file_write'), decisionCardZh as never))
+    expect(permissionSummary(outsideRequest('file_write'), decisionCardZh as never, 'zh'))
       .toBe('允许写入 notes.txt（工作区外）？');
   });
 });

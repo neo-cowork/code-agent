@@ -62,7 +62,7 @@ describe('group-listen template', () => {
   it('maps injected prefilter / maxRunsPerHour into the event schedule; blank stays out of the payload', () => {
     const withLimits = buildCronJobInput(groupListen!.generate({
       task: '总结', accountId: 'account-feishu', prefilter: '只处理催款的消息', maxRunsPerHour: '10',
-    }));
+    }, 'zh'));
     expect(withLimits.schedule).toEqual({
       type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu',
       prefilter: '只处理催款的消息', maxRunsPerHour: 10,
@@ -73,7 +73,7 @@ describe('group-listen template', () => {
     expect(readBack.eventMaxRunsPerHour).toBe('10');
     const blank = buildCronJobInput(groupListen!.generate({
       task: '总结', accountId: 'account-feishu', prefilter: '  ', maxRunsPerHour: '',
-    }));
+    }, 'zh'));
     expect(blank.schedule).not.toHaveProperty('prefilter');
     expect(blank.schedule).not.toHaveProperty('maxRunsPerHour');
   });

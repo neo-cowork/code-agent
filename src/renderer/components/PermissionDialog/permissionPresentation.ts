@@ -184,7 +184,7 @@ function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets,
   return '';
 }
 
-export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
+export function permissionConsequence(request: PermissionRequest, t: Translations, language: Language): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是

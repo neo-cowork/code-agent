@@ -391,7 +391,7 @@ function backgroundTaskResumeHint(
   return task.summary && !isShellBackgroundTask(task) ? { hint: task.summary } : {};
 }
 
-export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null, language: Language = 'zh'): TaskRecord[] {
+export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null, language: Language): TaskRecord[] {
   if (!currentSessionId) return [];
   const t = languages[language];
 
