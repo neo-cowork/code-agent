@@ -15,6 +15,7 @@ import {
   isContextWindowKnown,
 } from '../../../utils/contextUsageFormat';
 import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 type Tone = 'normal' | 'warning' | 'critical';
 
@@ -184,7 +185,7 @@ export const ContextUsagePill: React.FC = () => {
             <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
                 ? ch.freedTokens.replace('{tokens}', formatContextTokenNumber(compactResult.totalSavedTokens))
-                : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
+                : interpolatePlural(ch.compactedCount, compactResult.compressionCount)}
             </div>
           )}
           {compactError && (
