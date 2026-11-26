@@ -280,6 +280,13 @@ describe('Prompt Builder', () => {
   // Dynamic Prompt Building V2
   // --------------------------------------------------------------------------
   describe('buildDynamicPromptV2', () => {
+    it('keeps an explicit PPT preview request ahead of deck synthesis', () => {
+      const result = buildDynamicPromptV2('根据这份季度笔记做一份 8 页的季度汇报 PPT，先给我看三种风格的样张');
+      expect(result.userMessage).toContain('按第 3.5 步运行随包的 `theme-samples.mjs`');
+      expect(result.userMessage).toContain('展示三张 PNG，再用 AskUserQuestion 问用户选哪种风格，选完再合成');
+      expect(result.userMessage).toContain('把同一条渲染命令交给后台');
+    });
+
     it('should return a DynamicPromptResultV2', () => {
       const result = buildDynamicPromptV2('refactor the auth module');
       expect(result).toHaveProperty('systemPrompt');

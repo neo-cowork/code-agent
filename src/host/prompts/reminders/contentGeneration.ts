@@ -26,6 +26,10 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     content: `<system-reminder>
 **PPT 生成必须遵循的流程**：
 
+**用户要求先看风格样张时**：先用 Skill 加载 \`frontend-slides\`，读素材并写 \`slides.json\`，按第 3.5 步运行随包的 \`theme-samples.mjs\`。在原对话展示三张 PNG，再用 AskUserQuestion 问用户选哪种风格，选完再合成。前台执行受限时把同一条渲染命令交给后台，省去环境探查与自写预览。
+
+其余情况下，沿用以下流程。
+
 **第一步：先落骨架，不要先调研，也不要先问需求**
 - 直接给一版大纲骨架，把你的假设摆明（「不对就说」），让对方在骨架上改
 - **用途、受众、页数、风格一律先按常见做法假设，这些交付偏好不要走 AskUserQuestion**——对方看到
@@ -45,7 +49,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 复杂流程图可用 mermaid_export 生成透明 PNG，传入 images 参数
 - 10 页 PPT 最多 1-2 张流程图，大部分页面用文字列表即可
 </system-reminder>`,
-    tokens: 410,
+    tokens: 540,
     shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
