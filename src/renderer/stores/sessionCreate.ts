@@ -103,7 +103,7 @@ interface SessionCreateStoreSlice extends DraftBusySignals {
   currentSessionId: string | null;
   messages: Message[];
   todos: TodoItem[];
-  switchSession: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
+  switchSession: (sessionId: string, options?: { force?: boolean; preserveSecondaryPages?: boolean }) => Promise<void>;
   updateSessionEngine: (sessionId: string, engine: Partial<AgentEngineSessionMetadata>) => Promise<void>;
 }
 
@@ -207,7 +207,9 @@ export async function executeCreateSession(
       const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
       let verifiedDraft = await findVerifiedDraft(deps, newSessionWorkingDirectory, newSessionProjectId);
       if (verifiedDraft && get().currentSessionId !== verifiedDraft.id) {
-        await get().switchSession(verifiedDraft.id);
+        await (options?.preserveSecondaryPages
+          ? get().switchSession(verifiedDraft.id, { preserveSecondaryPages: true })
+          : get().switchSession(verifiedDraft.id));
         // load can observe a message that arrived after getMessages; never land there as "new".
         const live = get();
         if (excludeBusySessions([verifiedDraft], live.currentSessionId, live.messages, live).length === 0) {
