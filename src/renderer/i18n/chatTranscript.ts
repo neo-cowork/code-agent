@@ -519,7 +519,7 @@ chat: {
     cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].detail.label,
     dispatched: 'Dispatched',
     steps: { one: 'Completed {count} step', other: 'Completed {count} steps' },
-    stepsNotDone: { one: 'Steps run: {count}', other: 'Steps run: {count}' },
+    stepsNotDone: { one: 'Ran {count} step', other: 'Ran {count} steps' },
     output: 'Output',
     mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
     viewTargetSession: 'View target chat',

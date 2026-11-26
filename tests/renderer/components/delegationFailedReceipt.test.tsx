@@ -271,7 +271,7 @@ describe('step-count wording on cards that did not finish', () => {
   it('a failed card does not say "Completed N steps"; a completed card still does', () => {
     mocks.language = 'en';
     const failed = render(<DelegationReceipt presentation={{ ...failedCard('task-steps'), stepCount: 1 }} />);
-    expect(failed.container.textContent).toContain('Steps run: 1');
+    expect(failed.container.textContent).toContain('Ran 1 step');
     expect(failed.container.textContent).not.toContain('Completed 1');
     failed.unmount();
     const done = render(<DelegationReceipt presentation={{ ...failedCard('task-steps'), state: 'completed', failure: undefined, stepCount: 3 }} />);
