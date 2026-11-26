@@ -23,6 +23,7 @@ export function recordRequestManifest(
   input: RecordRequestManifestInput,
 ): TraceEventDataMap['request_manifest'] {
   const toolSchemaSnapshot = emitToolSchemaSnapshot(ctx, input.tools);
+  ctx.runtime.turn.setRequestToolNames(toolSchemaSnapshot.toolNames);
   const engine = process.env.CODE_AGENT_MODEL_ENGINE !== 'legacy'
     && aiSdkSupportsProvider(input.requestConfig.provider, input.requestConfig.model)
     ? 'aisdk'

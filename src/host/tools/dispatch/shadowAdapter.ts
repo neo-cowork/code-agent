@@ -152,6 +152,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,
     allowedToolNames: legacy?.allowedToolNames as readonly string[] | undefined,
     foregroundToolFace: legacy?.foregroundToolFace === true ? true : undefined,
+    requestToolNames: legacy?.requestToolNames as readonly string[] | undefined,
     skillDiscoveryService: legacy?.skillDiscoveryService,
     telemetryCollector: legacy?.telemetryCollector,
     neoTag: input.legacyCtx.neoTag,

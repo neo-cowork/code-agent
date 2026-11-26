@@ -8,6 +8,7 @@
 // ② 给模型一句不再死路重试的指引。超过重试上限时 messageProcessor 发给用户的那句话
 // 走 toolRunPolicy 的 deniedToolFinalReply（按工具面取、不点名工具）。
 
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { ToolCall } from '../../../shared/contract';
 import { formatForegroundShellDenialFinalMessage } from '../../../shared/i18n/foregroundShellDenial';
@@ -38,9 +39,10 @@ export function describeDeniedShellCalls(
     sessionId: ctx.sessionId,
     userBashRules: userBashRules.map((rule) => rule.id),
   });
-  const locale = detectMessageLanguage(extractUserRequest(ctx.turn?.runUserPrompt ?? '')) ?? readUiLanguage();
+  const gatePrompt = inabilityGatePrompt(ctx);
+  const locale = detectMessageLanguage(extractUserRequest(gatePrompt)) ?? readUiLanguage();
   return {
-    guidance: getInabilityReplyGuidance(ctx.turn?.runUserPrompt ?? '', locale),
+    guidance: getInabilityReplyGuidance(gatePrompt, locale),
     finalMessage: formatForegroundShellDenialFinalMessage(locale),
   };
 }

@@ -1,5 +1,6 @@
 // Same-turn handoff when the foreground face refuses an execution tool.
 // messageProcessor stays a caller: the denial block lives here so that file does not grow.
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import type { Message, ToolCall } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
@@ -26,6 +27,7 @@ import {
 } from './toolRunPolicy';
 import { resolveTurnToolFace } from './turnToolFace';
 import { attachTurnQualityMetadata } from './turnQuality';
+import { userRequestedExecution } from '../../../shared/inabilityReplyContract';
 
 const logger = createLogger('ForegroundDenialHandoff');
 
@@ -140,11 +142,28 @@ function delegationWorkspace(ctx: RuntimeContext): Pick<ToolContext, 'workspace'
   return { workspace: workspaceScope.primaryRoot, workspaceScope };
 }
 
+/** 任务名最长 24 个码点。 */
+const HANDOFF_TITLE_MAX_CODE_POINTS = 24;
+const SENTENCE_ENDINGS = new Set(['。', '！', '？', '!', '?']);
+
+/**
+ * 任务名取用户原话的第一句，折叠空白；第一句长过 24 个码点才按 24 截。
+ * 「明天上午 9 点提醒我交报告。请用 Bash 工具…」按 24 截是「…请用 Bash 工」：半截词，
+ * 还把用户点名的工具带进了任务名。
+ */
+function handoffTitle(userText: string): string {
+  const chars = Array.from(userText.replace(/\s+/g, ' ').trim());
+  const firstSentenceEnd = chars.findIndex((char) => SENTENCE_ENDINGS.has(char));
+  const cut = firstSentenceEnd > 0 && firstSentenceEnd < HANDOFF_TITLE_MAX_CODE_POINTS
+    ? firstSentenceEnd
+    : HANDOFF_TITLE_MAX_CODE_POINTS;
+  return chars.slice(0, cut).join('').trimEnd() || 'Background task';
+}
+
 async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
   const userText = verbatimUserRequest(ctx);
   const turnId = turnKey(ctx);
-  // 折叠空白为单个空格再截 24 个码点，保证英文请求的任务名可读（不再粘成 Runoneshell…）。
-  const title = Array.from(userText.replace(/\s+/g, ' ').trim()).slice(0, 24).join('').trimEnd() || 'Background task';
+  const title = handoffTitle(userText);
   const stableKey = `fg-handoff:${ctx.sessionId}:${turnId}`;
   const args: Record<string, unknown> = {
     title,
@@ -152,6 +171,9 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
     lane_key: stableKey,
     submission_key: stableKey,
     prompt: buildDelegatedTaskPrompt(userText, userText),
+    // 槽位已满时排队。主机交接后面没有模型轮次去转述「排队 / 替换 / 暂不创建」，
+    // 那条提问没人答时不建任务，却照样以 ok 收尾。
+    queue_when_full: true,
   };
   const delegatedWorkspace = delegationWorkspace(ctx);
   const toolContext: ToolContext = {
@@ -175,13 +197,17 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
   try {
     // Dynamic: TaskManager imports AgentOrchestrator, which must not cycle back while this module loads.
     const { executeDelegateTask } = await import('../../tools/modules/commandCenter/sessionCommandCenter');
+    const { getSessionCommandCenter } = await import('../../services/commandCenter/sessionCommandCenter');
     const result = await executeDelegateTask(args, toolContext, allowTool);
-    if (!result.ok) {
+    // ok 只说明 delegate_task 处理过了：它的「尚未创建」回执也是 ok。只有本会话台账里
+    // 真有这次交接的任务、而且还在跑或还在排队，才能对用户说「交给后台任务了」。
+    const handedOff = getSessionCommandCenter().list(ctx.sessionId)
+      .some((task) => task.submissionKey === stableKey && (task.status === 'running' || task.status === 'queued'));
+    if (!result.ok || !handedOff) {
       logger.warn('Foreground denial handoff failed', {
         sessionId: ctx.sessionId,
         turnId,
-        code: result.code,
-        error: result.error,
+        ...(result.ok ? { code: 'TASK_NOT_CREATED' } : { code: result.code, error: result.error }),
       });
       return false;
     }
@@ -258,12 +284,13 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   }
 
   guard.toolCallRetryCount++;
+  const requested = userRequestedExecution(inabilityGatePrompt(ctx) || verbatimUserRequest(ctx));
   const shellDenial = describeDeniedShellCalls(ctx, deniedToolCalls);
   contextAssembly.injectSystemMessage(
     [
       '<tool-run-policy>',
-      ctx.foregroundToolFace ? 'The previous call was NOT run.'
-        : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
+      ...(ctx.foregroundToolFace ? (requested ? ['The previous call was NOT run.'] : [])
+        : [`${requested ? 'The previous call was NOT run. ' : ''}Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`]),
       deniedToolRetryGuidance(ctx),
       ...(shellDenial ? [shellDenial.guidance] : []),
       '</tool-run-policy>',
