@@ -215,7 +215,7 @@ export async function openFolderSession(env: { page: Page; server: { port: numbe
   return id;
 }
 
-/** 审批卡上的「同意」按钮：普通卡和高危卡是「允许」，沙盒拦截卡是「允许仅这一次」，写回卡等专用卡仍是「允许一次」。 */
+/** 审批卡上的「同意」按钮：普通卡和高危卡是「允许」，沙盒拦截卡是「允许仅这一次」，浏览器会话授权卡仍是「允许一次」。 */
 export async function approveCard(page: Page): Promise<string> {
   const card = page.getByTestId('permission-card').first();
   for (const label of ['允许', '允许仅这一次', '允许一次']) {

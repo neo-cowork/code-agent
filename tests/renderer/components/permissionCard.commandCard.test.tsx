@@ -147,8 +147,6 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     const { container, unmount } = render(<PermissionCard />);
     if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(countOccurrences(container.textContent || '', command)).toBe(1);
-    const markupWithoutTitle = renderToStaticMarkup(<PermissionCard />).replace(/title="[^"]*"/g, '');
-    expect(countOccurrences(markupWithoutTitle, command)).toBe(0);
     unmount();
 
     // Parked variant with argsPreview

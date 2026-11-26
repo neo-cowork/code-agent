@@ -237,6 +237,51 @@ describe('PermissionCard quiet face', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  // #1611：推到 Git 远端是外发，读凭据路径是隐私——卡收起和展开时都要看得到这句，且只出现一次。
+  it.each([
+    ['git push origin feature-x', 'B1: git_remote_or_credential_write', '命令将写入 Git 远端或远端/凭据配置，需要你确认。'],
+    ['cat ~/.aws/credentials', 'B1: sensitive_credential_read', '命令将读取可能包含凭据的路径，需要你确认。'],
+  ] as const)('classifier-named command %s keeps its consequence on the face', (command, rule, copy) => {
+    renderRequest({
+      ...internalWrite, type: 'command', tool: 'Bash',
+      details: { command, commandRiskLevel: 'medium' },
+      decisionTrace: {
+        toolName: 'Bash', finalOutcome: 'ask', totalDurationMs: 0,
+        steps: [{ timestamp: 1, layer: 'permission_classifier', rule, result: 'ask', reason: 'guard', durationMs: 0 }],
+      },
+    });
+    expect(screen.getByTestId('permission-card').firstElementChild?.getAttribute('data-view-mode')).toBe('compact');
+    expect(screen.getByTestId('permission-card-face').textContent).toContain(copy);
+    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
+    expect(screen.getByTestId('permission-consequence').textContent).toBe(copy);
+  });
+
+  // 网页上接受确认框是 dangerous_command + browser_action.*：后果行必须是网页那句，不能套「高风险命令」。
+  it('a web dialog accept keeps the web consequence, never the command one', () => {
+    renderRequest({
+      ...internalWrite, tool: 'browser_action.handle_dialog', type: 'dangerous_command', dangerLevel: 'danger',
+      forceConfirm: true, details: { action: 'handle_dialog' }, boundary: undefined,
+    });
+    const text = screen.getByTestId('permission-card').textContent ?? '';
+    expect(text).toContain('将在网页上点击或输入，可能会提交内容。');
+    expect(text).not.toContain('高风险命令');
+    expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
+  });
+
+  it('MCP server / tool 只在展开的详情里出现，卡头和卡面不露协议工具原名', () => {
+    renderRequest(mcpRequest);
+    const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
+    expect(screen.getByText('允许调用这个外部工具？')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('MCPUnified');
+    expect(document.body.textContent).not.toContain('lark-prod');
+    expect(document.body.textContent).not.toContain('docs.search');
+    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    expect(screen.getByText('lark-prod / docs.search')).toBeTruthy();
+    expect((card.firstElementChild as HTMLElement).textContent).not.toContain('MCPUnified');
+    expect(screen.getByTestId('permission-card-face').textContent).not.toContain('lark-prod');
+  });
+
   it.each(['medium', 'unknown'] as const)('routine %s risk has a normal card', (commandRiskLevel) => {
     renderRequest({ ...internalWrite, type: 'command', tool: 'Bash', details: { command: 'mv draft.md notes.md', commandRiskLevel } });
     expect(screen.getByTestId('permission-card').firstElementChild?.className).not.toContain('border-red-500');

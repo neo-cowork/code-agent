@@ -261,8 +261,13 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
       .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
-  if (isHighRiskCommandRequest(request) && (request.type === 'command' || request.type === 'dangerous_command')) {
-    return p.consequenceHighRiskCommand;
+  if (request.type === 'command' || request.type === 'dangerous_command') {
+    if (isHighRiskCommandRequest(request)) return p.consequenceHighRiskCommand;
+    // 分类器点了名的两类（#1611）：推到 Git 远端是外发，读凭据路径是隐私，卡面必须说出来。
+    const classifierRules = request.decisionTrace?.steps.map((step) => step.rule) ?? [];
+    if (classifierRules.includes('B1: sensitive_credential_read')) return p.consequenceCredentialReadCommand;
+    if (classifierRules.includes('B1: git_remote_or_credential_write')) return p.consequenceGitRemoteWriteCommand;
+    // 其余命令（含宿主标 unknown 的——那只表示「不在已知安全名单里」，不是风险结论）不套泛泛的警告。
   }
   return undefined;
 }

@@ -226,7 +226,7 @@ describe('per-app grant card consequence suppression', () => {
   });
 });
 
-it('keeps the deterministic command guard reason in details', () => {
+it('shows the deterministic command guard reason instead of generic local-risk copy', () => {
   const request: PermissionRequest = {
     ...baseRequest,
     tool: 'Bash',
@@ -248,7 +248,7 @@ it('keeps the deterministic command guard reason in details', () => {
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
+  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
 });
 
 it.each([

@@ -35,7 +35,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isDangerousRequestShape, isHighRiskCommandRequest, isSafeDefaultDeny, permissionConsequence, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isHighRiskCommandRequest, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
@@ -146,6 +146,11 @@ interface PermissionCardProps {
   remainingCount?: number;
   onCollapse?: () => void;
 }
+
+const FACE_CONSEQUENCE_KINDS: ReadonlySet<string> = new Set([
+  'shell', 'file_read', 'file_write', 'file_edit', 'file_delete', 'network',
+  'web_action', 'web_upload', 'web_clipboard', 'folder_access',
+]);
 
 export function PermissionCard({
   requestOverride,
@@ -568,13 +573,10 @@ export function PermissionCard({
     ? viewState.mode
     : defaultPermissionViewMode(request);
   const quietFace = !editable && !appGrantCard && !sandboxEscalation && !request.details.browserSessionGrant;
-  // 卡面只留一行真有后果的话：删除 / 覆盖 / 工作区外写入 / 高危命令（permissionConsequence 已按此收窄），
-  // 以及把本机文件交给网页这种外发。其余说明（读取范围、通用提示）留在详情里。
-  const faceConsequence = !quietFace || described.kind === 'generic'
-    ? undefined
-    : described.kind === 'web_upload'
-      ? described.consequence
-      : permissionConsequence(request, t, language);
+  // 卡面只留一行真有后果的话，而且只用这类卡自己的那句（describeApproval 给的），不跨类套用：
+  // 命令 / 文件 / 网络卡已收窄到删除、覆盖、工作区外写入、外发、高危或判不出风险的命令；
+  // 网页上点击输入、交文件、读剪贴板和授权其他文件夹本身就是外发或越界。读取范围、通用提示留在详情里。
+  const faceConsequence = quietFace && FACE_CONSEQUENCE_KINDS.has(described.kind) ? described.consequence : undefined;
   const showDangerBadge = safeDefaultDeny && (!quietFace || (request !== null && isHighRiskCommandRequest(request)));
   const headerEnd = showDangerBadge || pendingHeaderEnd ? (
     <span className="flex items-center gap-2">

@@ -82,7 +82,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
 
     expect(html).toContain(DANGER_COPY);
     expect(html).toContain('border-red-500');
-    expect(html).toContain('border-red-500');
+    expect(html.match(/>危险</gu)).toHaveLength(1);
     for (const label of STANDING_GRANTS) expect(html).not.toContain(label);
   });
 
@@ -97,6 +97,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
 
     expect(html).toContain(DANGER_COPY);
     expect(html).toContain('border-red-500');
+    expect(html.match(/>危险</gu)).toHaveLength(1);
   });
 
   it('普通写文件（既不危险也不强制）保留常驻授权入口', () => {
