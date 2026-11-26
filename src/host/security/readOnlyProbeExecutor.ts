@@ -380,7 +380,7 @@ class Runner {
         // `-f format` 是 macOS BSD 语法（Linux 同形不同义：那是文件系统状态）；其它平台交回审批链
         if (process.platform !== 'darwin') throw new ProbeAbort('stat unavailable');
         for (const p of cmd.paths) this.need(p);
-        const res = await runFixed(FIXED_BINARIES.stat, ['-f', cmd.format, '--', ...cmd.paths], this.currentDirectory);
+        const res = await runFixed(FIXED_BINARIES.stat, ['-f', cmd.format, ...(cmd.timeFormat ? ['-t', cmd.timeFormat] : []), '--', ...cmd.paths], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }

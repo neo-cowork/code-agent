@@ -42,8 +42,8 @@ export type ProbeCommand =
   | { kind: 'printf'; text: string }
   | { kind: 'command-v'; name: string }
   | { kind: 'ls'; flags: string[]; paths: string[]; headLines?: number }
-  /** `stat -f <format> <path>…`（macOS BSD 语法，只打印元数据）。 */
-  | { kind: 'stat'; format: string; paths: string[] }
+  /** `stat -f <format> [-t <timefmt>] <path>…`（macOS BSD 语法，只打印元数据）。 */
+  | { kind: 'stat'; format: string; timeFormat?: string; paths: string[] }
   | { kind: 'cd'; path: string }
   | { kind: 'file-read'; program: 'cat' | 'wc' | 'head'; flags: string[]; paths: string[] }
   | { kind: 'xattr'; paths: string[] }
@@ -452,12 +452,22 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
       return { program, cmd: { kind: 'test', flag: args[0] as '-e' | '-f' | '-d', path: args[1] } };
     }
     case 'stat': {
-      // 只认 `stat -f <format> <path>…`：只打印元数据；其它旗标、缺省格式不认
-      const format = argv[0] === '-f' ? argv[1] : argv[0]?.startsWith('-f') ? argv[0].slice(2) : undefined;
-      const paths = argv[0] === '-f' ? argv.slice(2) : argv.slice(1);
-      if (format === undefined || format === '' || format.startsWith('-') || format.length > MAX_STAT_FORMAT || /\p{Cc}/u.test(format)
-        || paths.length === 0 || paths.some((operand) => operand === '' || operand.startsWith('-'))) return null;
-      return { program, cmd: { kind: 'stat', format, paths } };
+      // 只认 `stat -f <format> [-t <timefmt>] <path>…`（-t 在前在后都行）：只打印元数据；其它旗标、缺省格式不认
+      let args = argv;
+      let format: string | undefined;
+      let timeFormat: string | undefined;
+      for (let option = 0; option < 2; option++) {
+        const [flag = '', next] = args;
+        const name = flag === '-f' || flag.startsWith('-f') ? '-f' : flag === '-t' || flag.startsWith('-t') ? '-t' : null;
+        if (!name) break;
+        const argument = flag.length > 2 ? flag.slice(2) : next;
+        const seen = name === '-f' ? format : timeFormat;
+        if (seen !== undefined || argument === undefined || argument === '' || argument.startsWith('-') || argument.length > MAX_STAT_FORMAT || /\p{Cc}/u.test(argument)) return null;
+        if (name === '-f') format = argument; else timeFormat = argument;
+        args = flag.length > 2 ? args.slice(1) : args.slice(2);
+      }
+      if (format === undefined || args.length === 0 || args.some((operand) => operand === '' || operand.startsWith('-'))) return null;
+      return { program, cmd: { kind: 'stat', format, timeFormat, paths: args } };
     }
     case 'echo': {
       const e = compileEchoText(argv);

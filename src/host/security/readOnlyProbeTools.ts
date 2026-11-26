@@ -66,9 +66,10 @@ export function compileToolCommand(program: string, argv: string[]): { cmd: Prob
 // 循环变量的值怎么进到体里，按词分两条路：
 //  - 无引号安全词（纯 ASCII 标识符类字符，shell 赋不了别的含义）：照旧以文本替换后重新编译；
 //  - 其余词（带空格 / 中文 / 括号…）：值从不进文本，作为编译期已知值绑定给循环变量，由分词器在双引号里折叠。
+//  for 前面可以是行首 / `;` / 换行，或一条 `cd`（`cd X && for …`）。
 // ----------------------------------------------------------------------------
 
-const LOOP_HEAD = /(^|[;\n])[ \t]*for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in[ \t]+/;
+const LOOP_HEAD = /(^|[;\n]|&&)[ \t]*for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in[ \t]+/;
 const LOOP_TAIL = /^[;\n][ \t\n]*do[ \t\n]+([\s\S]*?)[;\n][ \t\n]*done[ \t]*(?:[;\n]([\s\S]*))?$/;
 const LOOP_WORD = /^[A-Za-z0-9._+/@:,=][A-Za-z0-9._+/@:,=-]*$/;
 // 引号里的字面量内容：不含 shell 还可能赋予含义的字符（展开 / 反斜杠 / 通配 / 波浪线 / 控制字符）
@@ -81,6 +82,10 @@ const MAX_LOOP_STEPS = 200;
 interface WithOp { op: ';' | '&&' | '||' }
 
 interface LiteralWord { value: string; wordSafe: boolean }
+
+function stepKind(step: unknown): unknown {
+  return (step as { cmd?: { kind?: unknown } } | null)?.cmd?.kind;
+}
 
 /** 从 from 起读词表，到引号外的 `;` / 换行为止；任一词不是字面量就返回 null。 */
 function parseLiteralWords(src: string, from: number): { words: LiteralWord[]; end: number } | null {
@@ -103,7 +108,7 @@ function parseLiteralWords(src: string, from: number): { words: LiteralWord[]; e
     // 引号后紧跟别的字符（拼接词）、空词、以 - 开头（会被当选项）都不认
     if ((next !== undefined && next !== ' ' && next !== '\t' && next !== ';' && next !== '\n') || value === '' || value.startsWith('-')) return null;
     if (quote ? QUOTED_WORD_FORBIDDEN.test(value) : !LOOP_WORD.test(value)) return null;
-    words.push({ value, wordSafe: !quote });
+    words.push({ value, wordSafe: !value.startsWith('-') && LOOP_WORD.test(value) });
   }
 }
 
@@ -165,6 +170,8 @@ export function expandLiteralForLoop<S extends WithOp>(
     return true;
   };
   if (prefixText && !add(prefixText)) return null;
+  // `cd X && for …`：cd 失败会让整个计划中止，与用 ; 接等价。换成别的命令，失败只是非零退出码、shell 会跳过循环而计划不会，不认
+  if (head[1] === '&&' && stepKind(steps[steps.length - 1]) !== 'cd') return null;
   for (const { value, wordSafe } of list.words) {
     if (!add(wordSafe ? body.replace(ref, value) : body, { name: variable, value, expanded: wordSafe })) return null;
   }

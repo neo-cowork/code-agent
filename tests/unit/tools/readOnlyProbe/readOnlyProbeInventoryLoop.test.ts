@@ -219,6 +219,28 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       await expectFreed(evidenceShape([out1(), out2()]));
     });
 
+    it('dogfood 真跑（修后 run 2）的盘点原样：cd … && for f in "…" "…"; do if [ -e "$f" ]; then stat -f … -t … "$f"; else echo …; fi; done', async () => {
+      const command = `cd "${fx}" && for f in "a.txt" "b c.txt" "合同.md" "missing.md"; do if [ -e "$f" ]; then stat -f "EXISTS | %N | %z bytes | %Sm" -t "%Y-%m-%d %H:%M:%S" "$f"; else echo "MISSING | $f"; fi; done`;
+      await expectFreed(command);
+    });
+
+    it('dogfood 真跑（修后 run 2）的删后复查原样：cd … && for f in "…" …; do if [ -e "$f" ]; then echo …; else echo …; fi; done', async () => {
+      const command = `cd "${fx}" && for f in "a.txt" "b c.txt" "合同.md"; do if [ -e "$f" ]; then echo "STILL THERE | $f"; else echo "gone | $f"; fi; done`;
+      await expectFreed(command);
+    });
+
+    it('stat 的 -t 写在 -f 前面免卡', async () => {
+      await expectFreed(`for p in ${a()}; do if [ -e "$p" ]; then stat -t '%Y-%m-%d' -f '%N | %Sm' "$p"; fi; done`);
+    });
+
+    it('引号括起的安全词 + 引号外的引用（command -v $t）免卡', async () => {
+      await expectFreed(`for t in 'ls' 'cat'; do command -v $t; done`);
+    });
+
+    it('cd 到工作区里的子目录再用相对路径盘点免卡', async () => {
+      await expectFreed(`cd "${fx}" && for p in 'b c.txt' 'a.txt' 'no-such.txt'; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else echo "MISSING | $p"; fi; done`);
+    });
+
     it('用户点名的带空格路径（引号词表）免卡', async () => {
       const named = path.join(elsewhere, 'old report 2.docx');
       await fs.writeFile(named, 'x');
@@ -248,6 +270,11 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     ['引号词里带反斜杠', () => `for p in '${fx}/a\\b.txt'; do ls -l "$p"; done`],
     ['双引号词里转义了双引号（同类引号）', () => `for p in "${fx}/a\\"b"; do ls -l "$p"; done`],
     ['空的引号词', () => `for p in ''; do ls -l "$p"; done`],
+    // ---- for 前面的连接 ----
+    ['for 前面用 && 接了一条非 cd 的命令', () => `echo x && for p in ${a()}; do ls -l "$p"; done`],
+    ['cd 之后还有一条命令再 && 接 for', () => `cd "${fx}" && echo x && for p in ${a()}; do ls -l "$p"; done`],
+    ['for 前面用 || 接了一条命令', () => `echo x || for p in ${a()}; do ls -l "$p"; done`],
+    ['for 前面是后台 &', () => `echo x & for p in ${a()}; do ls -l "$p"; done`],
     // ---- 循环体 ----
     ['then 分支里有 rm', () => `for p in ${a()}; do if [ -e "$p" ]; then rm "$p"; fi; done`],
     ['if 之后还有 rm', () => `for p in ${a()}; do if [ -e "$p" ]; then ls "$p"; fi; rm "$p"; done`],
@@ -281,7 +308,9 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     ['词表超过 32 个词', () => { const words = Array.from({ length: 33 }, (_, i) => `w${i}`); return `for p in ${words.join(' ')}; do echo "$p"; done`; }],
     // ---- stat ----
     ['stat 带 -L', () => `for p in ${a()}; do stat -L -f '%N' "$p"; done`],
-    ['stat 带 -t 时间格式', () => `for p in ${a()}; do stat -f '%Sm' -t '%Y' "$p"; done`],
+    ['stat 只有 -t、没有 -f', () => `for p in ${a()}; do stat -t '%Y' "$p"; done`],
+    ['stat 给了两次 -f', () => `for p in ${a()}; do stat -f '%N' -f '%z' "$p"; done`],
+    ['stat 的 -t 后面没有值', () => `for p in ${a()}; do stat -f '%Sm' -t; done`],
     ['stat 用缺省格式', () => `for p in ${a()}; do stat "$p"; done`],
     ['stat 的格式以 - 开头', () => `for p in ${a()}; do stat -f -x "$p"; done`],
     ['stat 的格式是空的', () => `for p in ${a()}; do stat -f '' "$p"; done`],
@@ -352,6 +381,12 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       await expectStillAsks(`for p in ${path.join(fx, 'link')}/old-report-1.docx; do if [ -e "$p" ]; then ls -l "$p"; fi; done`);
     });
 
+    it('cd 到工作区外 && 盘点循环 → 仍出卡', async () => {
+      const command = `cd "${elsewhere}" && for f in "old-report-1.docx"; do if [ -e "$f" ]; then echo "STILL | $f"; else echo "gone | $f"; fi; done`;
+      expect(compileReadOnlyProbePlan(command, ctx), command).not.toBeNull();
+      await expectStillAsks(command);
+    });
+
     it('then 分支里 cd 到工作区外 → 仍出卡', async () => {
       const command = `for p in ${a()}; do if [ -e "$p" ]; then cd /; fi; done`;
       expect(compileReadOnlyProbePlan(command, ctx), command).not.toBeNull();
@@ -405,6 +440,7 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
         `for p in "${a()}"; do test -e "$p" && echo "EXISTS: $p"; done`,
         `for p in ${sq(path.join(fx, 'b c.txt'))} ${sq(path.join(fx, '合同.md'))}; do if [ -e "$p" ]; then ls -l "$p"; else echo "GONE: $p"; fi; done`,
         dogfoodShape([a(), missing()]),
+        `cd "${fx}" && for f in "a.txt" "b c.txt"; do if [ -e "$f" ]; then stat -f '%Sm' -t '%Y' "$f"; else echo "MISSING | $f"; fi; done`,
         `for p in ${sq(a())}; do if test -f "$p"; then echo "FILE: $p"; fi; done`,
         `for p in ${sq(fx)}; do if [ -d "$p" ]; then ls "$p"; else echo "GONE: $p"; fi; done`,
       ];
