@@ -483,6 +483,36 @@ describe('NudgeManager', () => {
       // 第 4 次：达到 main 上限 3，放行停止
       expect(manager.runNudgeChecks(ctx)).toBe(false);
     });
+
+    it('skips incomplete-task nudge on text foreground turns while keeping it active in non-foreground turns', () => {
+      const prompt = 'Rename the 6 photos in this folder by date and write a changelog.md, plan it step by step first, then do it';
+      mockGetIncompleteTasks.mockReturnValue([
+        { id: 't1', subject: 'Rename photos by date', status: 'in_progress' },
+        { id: 't2', subject: 'Write changelog.md', status: 'pending' },
+      ]);
+
+      manager.reset([], prompt, '/tmp/test', []);
+      manager.recordTaskManagerUse();
+      const fgCtx = createMockContext({
+        isSimpleTaskMode: false,
+        foregroundToolFace: true,
+        toolsUsedInTurn: ['task_create', 'delegate_task'],
+      });
+      expect(manager.runNudgeChecks(fgCtx)).toBe(false);
+      expect(fgCtx.injectSystemMessage).not.toHaveBeenCalled();
+
+      const bgManager = new NudgeManager();
+      bgManager.reset([], prompt, '/tmp/test', []);
+      bgManager.recordTaskManagerUse();
+      const bgCtx = createMockContext({
+        isSimpleTaskMode: false,
+        foregroundToolFace: false,
+        toolsUsedInTurn: ['task_create', 'write_file'],
+      });
+      expect(bgManager.runNudgeChecks(bgCtx)).toBe(true);
+      const injected = (bgCtx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injected).toContain('task-completion-check');
+    });
   });
 
   describe('isTaskMutationToolCall (codex audit R1: TaskManager facade 也要触发 taskGate)', () => {

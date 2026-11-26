@@ -64,6 +64,7 @@ import { getHostUiLocale } from '../../../src/host/config/hostUiLocale';
 import { StreamHandler } from '../../../src/host/agent/runtime/streamHandler';
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { NudgeManager } from '../../../src/host/agent/nudgeManager';
+import { clearTasks, createTask, updateTask } from '../../../src/host/services/planning/taskStore';
 import { GoalTracker } from '../../../src/host/agent/goalTracker';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -180,5 +181,105 @@ describe('MessageProcessor text-only close with a real NudgeManager', () => {
     }));
     // 不再注入 task-tracking hint（也不注入任何 nudge）
     expect(injectSystemMessage).not.toHaveBeenCalled();
+  });
+
+  it('closes cleanly without task-completion-check re-entry when a foreground turn leaves delegated tasks pending', async () => {
+    vi.mocked(getHostUiLocale).mockReturnValue('en');
+    const sessionId = 'foreground-delegated-tasks-session';
+    const prompt = 'Rename the 6 photos in this folder by date and write a changelog.md, plan it step by step first, then do it';
+    clearTasks(sessionId);
+    try {
+      const t1 = createTask(sessionId, { subject: 'Rename photos by date', description: 'Delegated to background' });
+      updateTask(sessionId, t1.id, { status: 'in_progress' });
+      createTask(sessionId, { subject: 'Write changelog.md', description: 'After renaming completes' });
+
+      const nudgeManager = new NudgeManager();
+      nudgeManager.reset([], prompt, workDir, []);
+      nudgeManager.recordTaskManagerUse();
+
+      const ctx = {
+        stats: RunStatsState.forTest({ totalToolCallCount: 3 } as never),
+        contextHealth: ContextHealthState.forTest(),
+        artifact: ArtifactState.forTest(),
+        sessionId,
+        foregroundToolFace: true,
+        messages: [{ id: 'user-1', role: 'user' as const, content: prompt, timestamp: 1 }],
+        control: ControlState.forTest({ isCancelled: false } as never),
+        modelConfig: { model: 'mimo-v2.6-flash' },
+        turn: TurnState.forTest({
+          currentTurnId: 'turn-2',
+          toolsUsedInTurn: ['task_create', 'delegate_task'],
+          isSimpleTaskMode: false,
+          researchModeActive: false,
+        } as never),
+        goalTracker: new GoalTracker(),
+        workingDirectory: workDir,
+        onEvent: vi.fn(),
+        telemetryAdapter: { onTurnEnd: vi.fn() },
+        nudgeManager,
+        turnQualityState: {},
+      };
+      const addAndPersistMessage = vi.fn();
+      const injectSystemMessage = vi.fn();
+      const context = ctx as DeepPartial<RuntimeContext> as RuntimeContext;
+      const contextAssembly = {
+        generateId: () => 'assistant-fg-1',
+        stripInternalFormatMimicry: (content: string) => content,
+        addAndPersistMessage,
+        injectSystemMessage,
+        updateContextHealth: vi.fn(),
+        checkAndAutoCompress: vi.fn(),
+      } as unknown as ContextAssembly;
+      const runFinalizer = {
+        emitTaskProgress: vi.fn(),
+        emitTaskStats: vi.fn(),
+        emitTaskComplete: vi.fn(),
+        tryParseTodosFromResponse: vi.fn(),
+      } as unknown as RunFinalizer;
+      const processor = new MessageProcessor(context, contextAssembly, runFinalizer, {} as ToolExecutionEngine);
+
+      const action = await processor.handleTextResponse(
+        {
+          type: 'text',
+          content: 'I created the step-by-step task list and handed the photo renaming and changelog work to a background task.',
+          finishReason: 'stop',
+        } as ModelResponse,
+        false,
+        2,
+        false,
+        { endSpan: vi.fn() },
+      );
+
+      expect(action).toBe('break');
+      expect(injectSystemMessage).not.toHaveBeenCalled();
+      expect(addAndPersistMessage).toHaveBeenCalledTimes(1);
+
+      // Non-foreground (background/CLI) turns with open tasks still trigger task-completion-check
+      const bgNudgeManager = new NudgeManager();
+      bgNudgeManager.reset([], prompt, workDir, []);
+      bgNudgeManager.recordTaskManagerUse();
+      const bgInject = vi.fn();
+      const bgProcessor = new MessageProcessor(
+        { ...ctx, foregroundToolFace: false, nudgeManager: bgNudgeManager } as DeepPartial<RuntimeContext> as RuntimeContext,
+        { ...contextAssembly, injectSystemMessage: bgInject } as unknown as ContextAssembly,
+        runFinalizer,
+        {} as ToolExecutionEngine,
+      );
+      const bgAction = await bgProcessor.handleTextResponse(
+        {
+          type: 'text',
+          content: 'Done.',
+          finishReason: 'stop',
+        } as ModelResponse,
+        false,
+        2,
+        false,
+        { endSpan: vi.fn() },
+      );
+      expect(bgAction).toBe('continue');
+      expect(bgInject).toHaveBeenCalledWith(expect.stringContaining('<task-completion-check>'), 'nudge');
+    } finally {
+      clearTasks(sessionId);
+    }
   });
 });

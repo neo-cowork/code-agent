@@ -940,8 +940,8 @@ export class ToolExecutionEngine {
 
       // taskGate（roadmap 1.3）：模型主动写过任务（task_create/task_update 或
       // TaskManager facade 的 create/update）→ 收尾前强制任务收口检查
-      // （只读调用刻意不触发，防旧任务劫持）
-      if (normalizedResult.success && isTaskMutationToolCall(toolCall.name, toolCall.arguments)) {
+      // （只读调用与文字前台轮刻意不触发：前台只建/更清单并派后台，收尾时任务合法未完）
+      if (normalizedResult.success && !this.ctx.foregroundToolFace && isTaskMutationToolCall(toolCall.name, toolCall.arguments)) {
         this.ctx.nudgeManager.recordTaskManagerUse();
       }
 
