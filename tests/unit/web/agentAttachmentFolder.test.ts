@@ -244,7 +244,7 @@ describe('POST /api/run first-turn task folder summary wiring', () => {
   it('uses the rule summary when the quick model is unavailable', async () => {
     await run('我把合同文件夹整个拖进来了（共 30 份：PDF、Excel 表、图片、文本都有），请逐份摘要');
     expect(mocks.quickTask).not.toHaveBeenCalled();
-    expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_合同文件夹整个拖进来了`));
+    expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_逐份摘要`));
   });
 
   it('does not ask the quick model for a short clean clause', async () => {
