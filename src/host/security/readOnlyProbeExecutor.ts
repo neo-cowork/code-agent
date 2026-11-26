@@ -290,8 +290,11 @@ class Runner {
     return 0;
   }
 
+  /** 执行一条普通命令。when 步骤由 executeReadOnlyProbePlan 拆开（先判条件，再执行分支里的命令）。 */
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
+      // 分支里不会再有 when（编译器不认嵌套 if）；真出现了就中止，交回审批
+      case 'when': throw new ProbeAbort('nested when');
       case 'cd': {
         const directory = this.need(cmd.path);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
