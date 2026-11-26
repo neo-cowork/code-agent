@@ -5,32 +5,21 @@ import type {
   AgentTrajectoryQualityTier,
 } from '@shared/contract/agentTrajectory';
 import { useAppStore } from './appStore';
-import { useSessionStore, type SessionFilter, type SessionWithMeta } from './sessionStore';
+import { useSessionStore, type SessionFilter } from './sessionStore';
 import { useSurfaceExecutionStore } from './surfaceExecutionStore';
 import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
 import { languages } from '../i18n';
-import { getSidebarGroupKeyForSession, UNCATEGORIZED_WORKSPACE_KEY } from '../utils/workspaceGrouping';
+import {
+  findSessionAfterRemoval,
+  getSidebarGroupKeyForSession,
+  UNCATEGORIZED_WORKSPACE_KEY,
+} from '../utils/workspaceGrouping';
 import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 
 import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
 
 const logger = createLogger('SessionUIStore');
-
-function findSessionAfterDelete(
-  sessions: SessionWithMeta[],
-  current: SessionWithMeta,
-  deletedIds: ReadonlySet<string>,
-): SessionWithMeta | undefined {
-  const groupKey = getSidebarGroupKeyForSession(current);
-  const siblings = sessions
-    .filter((session) => getSidebarGroupKeyForSession(session) === groupKey)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  const currentIndex = siblings.indexOf(current);
-  const survives = (session: SessionWithMeta) => !deletedIds.has(session.id);
-  return siblings.slice(currentIndex + 1).find(survives)
-    ?? siblings.slice(0, currentIndex).reverse().find(survives);
-}
 
 async function deleteSession(id: string): Promise<void> {
   const response = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'delete', { sessionId: id });
@@ -242,7 +231,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     const { currentSessionId } = useSessionStore.getState();
     if (currentSessionId && idsSet.has(currentSessionId)) {
       const deletedCurrent = sessions.find((session) => session.id === currentSessionId);
-      const neighbour = deletedCurrent && findSessionAfterDelete(sessions, deletedCurrent, idsSet);
+      const neighbour = deletedCurrent && findSessionAfterRemoval(sessions, currentSessionId, idsSet);
       if (neighbour) {
         void sessionStore.switchSession(neighbour.id);
       } else {

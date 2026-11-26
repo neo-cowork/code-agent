@@ -2,6 +2,7 @@
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
+import { CRON_CONNECTOR_LOST } from '../../../src/shared/constants/cronErrors';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const h = vi.hoisted(() => ({
@@ -125,6 +126,30 @@ describe('notification-clicked 路由', () => {
     expect(open).not.toHaveBeenCalled();
     expect(useCronStore.getState().selectedJobId).toBe('job-9');
     expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+
+  it('signed-out connector notification opens only the Connectors tab', async () => {
+    const openCapabilityHub = vi.spyOn(useAppStore.getState(), 'openCapabilityHub');
+    const selectJob = vi.spyOn(useCronStore.getState(), 'selectJob');
+    const previousTab = useAppStore.getState().capabilityHubTab;
+    const previousVisibility = useAppStore.getState().showCapabilityHub;
+    try {
+      await mount();
+      h.show!({
+        ...ask,
+        sessionId: '',
+        jobId: 'job-connector',
+        code: CRON_CONNECTOR_LOST,
+      });
+      await click(ask.id);
+      expect(openCapabilityHub).toHaveBeenCalledExactlyOnceWith('connectors');
+      expect(useAppStore.getState().capabilityHubTab).toBe('connectors');
+      expect(open).not.toHaveBeenCalled();
+      expect(selectJob).not.toHaveBeenCalled();
+      expect(useAppStore.getState().showCronCenter).toBe(false);
+    } finally {
+      useAppStore.setState({ capabilityHubTab: previousTab, showCapabilityHub: previousVisibility });
+    }
   });
 
   it.each([
