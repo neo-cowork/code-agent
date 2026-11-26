@@ -5,7 +5,7 @@
 // ============================================================================
 import React from 'react';
 import type { CronJobExecution } from '@shared/contract';
-import { cronDailyCostTotals, cronTodayYesterdayKeys, readWakeSkipFromResult } from '@shared/cronRunLedger';
+import { cronDailyCostTotals, cronDayCostKind, cronTodayYesterdayKeys, readWakeSkipFromResult } from '@shared/cronRunLedger';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatRunCostUsd } from './types';
 import { interpolatePlural } from '../../../i18n/interpolate';
@@ -17,7 +17,7 @@ interface CronDailyCostSummaryProps {
 }
 
 function hasUnrecordedSessionCost(execution: CronJobExecution): boolean {
-  if (execution.cost != null || readWakeSkipFromResult(execution.result) !== null) return false;
+  if (execution.cost != null || execution.flatFee || readWakeSkipFromResult(execution.result) !== null) return false;
   if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(execution.status)) return false;
   // A missing cost alone is normal for non-model actions and wakes resolved before
   // creating a session. Only a finished session can have an unrecorded model cost.
@@ -38,6 +38,7 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
     scheduledAt: execution.scheduledAt,
     startedAt: execution.startedAt,
     cost: execution.cost,
+    flatFee: execution.flatFee,
     runsOn: execution.runsOn,
     skipped: readWakeSkipFromResult(execution.result) !== null,
   })));
@@ -63,7 +64,7 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
         return (
           <span key={bucket.dayKey} data-testid={`${testId}-day`} className="text-zinc-400">
             {label}{' '}
-            <span className="font-medium tabular-nums text-zinc-200">{incompleteDays.has(bucket.dayKey) ? cc.dailyCostIncomplete : formatRunCostUsd(bucket.totalUsd)}</span>
+            <span className="font-medium tabular-nums text-zinc-200">{incompleteDays.has(bucket.dayKey) ? cc.dailyCostIncomplete : cronDayCostKind(bucket) === 'flat-fee' ? cc.costFlatFee : formatRunCostUsd(bucket.totalUsd)}</span>
             <span className="text-zinc-600">{runsNote}</span>
           </span>
         );

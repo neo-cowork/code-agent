@@ -18,6 +18,8 @@ import { toast } from '../../../hooks/useToast';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
 import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
 import { StallNoticeLine } from './StallNoticeLine';
+import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
+import { useAgentRowStallLevels } from '../../../hooks/useAgentRowStallLevels';
 import { Button } from '../../primitives';
 import { isEditableTarget } from '../../DecisionCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
@@ -266,8 +268,10 @@ function LiveDecisionSlot({
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests = {},
+    activeWorkbenchTab,
+    workbenchCollapsed,
   } = useAppStore();
-  // 定时任务运行记录会话已由首气泡下方的 CronRunSessionStatusBar 原地承接「等你批准 · 批准/拒绝」，
+  // 定时任务运行记录会话已由首气泡下方的 CronRunSessionStatusBar 原地承接「等你确认 · 批准/拒绝」，
   // 底部不再叠一张重复的 PermissionCard。
   const candidates = isCronRunRecordSession
     ? []
@@ -299,13 +303,27 @@ function LiveDecisionSlot({
   ].filter(Boolean).join('|');
   const expand = useCallback(() => setCollapsed(false), []);
 
+  // 子代理行已在提示「暂无进展」时，spawn_agent 的卡住提示让位给行徽标。放在早退之前常驻：
+  // 审批放行时刻要跨「有待决卡 / 没有」两种状态持续记录，否则和右栏面板算出的档位会不一致。
+  const { rows: agentRows } = useSessionAgentRows(currentSessionId);
+  const agentRowLevels = useAgentRowStallLevels(agentRows);
+  // 行徽标只画在右栏「专家」页签里：页签没打开（或右栏收起）时用户看不到徽标，输入框提示必须留着
+  const agentBadgeOnScreen = activeWorkbenchTab === 'experts' && workbenchCollapsed === false;
+  // 通知只带工具名，对不上具体哪一行：只有所有在干活的行都已静默才让位（任一行还在推进，说明
+  // 静默的那行未必是这次调用对应的，输入框提示留着，宁可多说一句也不能零提示）。
+  const workingRows = agentRows.filter((row) => row.status === 'working');
+  const agentRowFlagged = agentBadgeOnScreen && workingRows.length > 0 && workingRows.every((row) => {
+    const level = agentRowLevels.get(row.key);
+    return level === 'quiet' || level === 'long';
+  });
+
   // 任何新请求进入可见队列都自动展开，包括当前卡未换但队尾新增的情况。
   useEffect(() => {
     if (requestSignature) setCollapsed(false);
   }, [requestSignature]);
 
   // 有待决卡时不挂这行。等审批或提问的时间由 host 停表，不算模型卡住。
-  if (decisionCount === 0) return <StallNoticeLine />;
+  if (decisionCount === 0) return <StallNoticeLine agentRowFlagged={agentRowFlagged} />;
 
   return (
     <section

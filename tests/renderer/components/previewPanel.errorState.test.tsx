@@ -117,7 +117,7 @@ describe('PreviewPanel 接线钉子 — catch 块真的走 toPreviewErrorState',
   it('loadContent/handleSave 的 catch 调用 toPreviewErrorState，不退回把 err.message 直接当主文案的旧形状', () => {
     const source = readSource('src/renderer/components/PreviewPanel.tsx');
 
-    expect(source).toContain('toPreviewErrorState(err, pv.loadFileFailed)');
+    expect(source).toContain("toPreviewErrorState(err, pv.loadFileFailedNamed.replace('{name}', basename(filePath)))");
     expect(source).toContain('toPreviewErrorState(err, pv.saveFailed)');
     expect(source).not.toContain('err instanceof Error ? err.message : pv.loadFileFailed');
     expect(source).not.toContain('err instanceof Error ? err.message : pv.saveFailed');

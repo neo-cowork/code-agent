@@ -161,6 +161,7 @@ export function buildContextSnapshot(
   provider: string | undefined,
   toolsUsed: string[],
   attachments?: Array<{ name?: string }>,
+  bashSteps: Array<{ description?: string; command: string; callId?: string; notRun?: boolean }> = [],
 ): SwarmAgentContextSnapshot {
   const maxTokens = resolveContextWindow(model, provider);
   const normalizedMessages = messages.map((message) => ({
@@ -171,6 +172,9 @@ export function buildContextSnapshot(
     sum + 4 + estimateTokens(message.content)
   ), 3);
   const usagePercent = maxTokens > 0 ? Math.round((currentTokens / maxTokens) * 1000) / 10 : 0;
+  const guiDisclosures = messages.flatMap((message) => (message.toolCalls ?? []).flatMap((call) => (
+    call.guiTakeoverDisclosure ? [{ app: call.guiTakeoverDisclosure.app, callId: call.id }] : []
+  )));
 
   return {
     currentTokens,
@@ -180,6 +184,8 @@ export function buildContextSnapshot(
     warningLevel: getWarningLevel(usagePercent),
     lastUpdated: Date.now(),
     tools: [...new Set(toolsUsed)].slice(-6),
+    bashSteps: bashSteps.slice(-20),
+    ...(guiDisclosures.length > 0 ? { guiDisclosures } : {}),
     attachments: [...new Set((attachments || []).map((attachment) => attachment.name).filter(Boolean) as string[])].slice(0, 6),
     previews: normalizedMessages.slice(-3).map((message) => ({
       role: message.role,

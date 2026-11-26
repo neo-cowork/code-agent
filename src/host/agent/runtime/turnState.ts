@@ -43,6 +43,8 @@ export class TurnState {
   private _currentIterationSpanId = '';
   private _turnStartTime = 0;
   private _toolsUsedInTurn: string[] = [];
+  private _requestToolNames?: readonly string[];
+  private _deferredPreloadWarnings = new Set<string>();
   /**
    * 本轮 run 开跑时的用户 prompt（initializeRun 的 userMessage）。
    * 轮内还会追加 user 角色消息（autoApprovePlan 合成确认、runtimeSteer 转向），
@@ -93,6 +95,7 @@ export class TurnState {
   get currentIterationSpanId(): string { return this._currentIterationSpanId; }
   get turnStartTime(): number { return this._turnStartTime; }
   get toolsUsedInTurn(): string[] { return this._toolsUsedInTurn; }
+  get requestToolNames(): readonly string[] | undefined { return this._requestToolNames; }
   get lastStreamedContent(): string { return this._lastStreamedContent; }
   get needsReinference(): boolean { return this._needsReinference; }
   get isSimpleTaskMode(): boolean { return this._isSimpleTaskMode; }
@@ -116,6 +119,8 @@ export class TurnState {
   /** run 开始：清 turn 标识与上一轮 run 残留的 advisory 注记，并记下本轮开跑 prompt */
   beginRun(runUserPrompt?: string): void {
     this._currentTurnId = '';
+    this._requestToolNames = undefined;
+    this._deferredPreloadWarnings.clear();
     this._advisoryTailBlocks.clear();
     this._runUserPrompt = runUserPrompt ?? '';
   }
@@ -127,8 +132,14 @@ export class TurnState {
   /** iteration 开始：新 turn id + delta 序号归零 + iteration span（原 streamHandler#setupIteration 前段） */
   beginTurn(turnId: string, iterationSpanId: string): void {
     this._currentTurnId = turnId;
+    this._requestToolNames = undefined;
+    this._deferredPreloadWarnings.clear();
     this._messageDeltaSeq = 0;
     this._currentIterationSpanId = iterationSpanId;
+  }
+
+  setRequestToolNames(toolNames: readonly string[] | undefined): void {
+    this._requestToolNames = toolNames;
   }
 
   /** iteration 计时与本 turn 工具清单归零（原 streamHandler#setupIteration 后段） */
@@ -140,6 +151,12 @@ export class TurnState {
   /** 前置自增并返回（原 `++ctx.turn.messageDeltaSeq`） */
   nextMessageDeltaSeq(): number {
     return ++this._messageDeltaSeq;
+  }
+
+  claimDeferredPreloadWarning(toolName: string): boolean {
+    if (this._deferredPreloadWarnings.has(toolName)) return false;
+    this._deferredPreloadWarnings.add(toolName);
+    return true;
   }
 
   recordToolUse(toolName: string): void {

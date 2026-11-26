@@ -45,6 +45,11 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
     const sessionIds = getStringArray(payload, 'sessionIds');
     return service.summarizeSessions(sessionIds);
   },
+  getRoleWakeRun: (_ctx, payload) => {
+    const sessionId = getString(payload, 'sessionId');
+    if (!sessionId) throw new Error('SESSION_ID_REQUIRED');
+    return getSessionAutomationService().getRoleWakeRun(sessionId);
+  },
   getSessionSummary: (_ctx, payload) => {
     const service = getSessionAutomationService();
     const sessionId = getString(payload, 'sessionId');
@@ -68,6 +73,16 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
   listParkedApprovals: (_ctx, _payload) => {
     const service = getSessionAutomationService();
     return service.listParkedApprovals();
+  },
+  listOutboundDrafts: async () => (await import('../agent/outboundDraft')).listOutboundDrafts(),
+  resolveOutboundDraft: async (_ctx, payload) => {
+    const id = getString(payload, 'id');
+    const decision = getString(payload, 'decision');
+    const revision = getString(payload, 'revision');
+    if (!id || (decision !== 'discard' && (decision !== 'send' || !revision))) {
+      throw new Error('OUTBOUND_DRAFT_INVALID_ACTION');
+    }
+    return (await import('../agent/outboundDraft')).resolveOutboundDraft(id, decision, revision);
   },
   countPendingReview: (_ctx, _payload) => {
     const service = getSessionAutomationService();

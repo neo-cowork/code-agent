@@ -18,9 +18,10 @@ import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
+import { useSlowStartNotice } from './useSlowStartNotice';
 
 interface StreamingIndicatorProps {
-  /** 回合开始时间。保留给调用方语义，不再用于「按耗时升级」。 */
+  /** 发送/回合开始时间；仅发送准入阶段使用一次静态慢启动提示。 */
   startTime: number;
   runningToolStartTime?: number;
   onForceStop?: () => void;
@@ -114,6 +115,7 @@ export function getRunningToolStartTime(nodes: TraceNode[]): number | undefined 
 }
 
 export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
+  startTime,
   runningToolStartTime,
   onForceStop,
   showCaret = true,
@@ -122,6 +124,7 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   subagentCount,
 }) => {
   const { t } = useI18n();
+  const slowStart = useSlowStartNotice(startTime, preparationPhase);
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const liveTurn = useSessionTurnActive(sessionId);
   const { snapshot } = useAgentTreeSnapshot(sessionId, waitingReason === 'subagent' && liveTurn, true);
@@ -194,7 +197,9 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   // 首 token 前与工具收尾后的空档不能只摆一根无语义的竖线。沿用思考头的
   // 图标、字号与扫光层级，分别说清是在准备，还是在整理已经完成的步骤。
   if (preparationPhase) {
-    const label = preparationPhase === 'submitting'
+    const label = slowStart
+      ? t.chat.slowStarting
+      : preparationPhase === 'submitting'
       ? t.chat.sendingMessage
       : preparationPhase === 'queued'
         ? t.chat.queuedStarting

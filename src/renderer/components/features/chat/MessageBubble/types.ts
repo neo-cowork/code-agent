@@ -18,6 +18,8 @@ export interface MessageContentProps {
    * 已由 .streaming-text > * 负责）。
    */
   streamingTailStart?: number | null;
+  /** 代码块折叠阈值（行）；缺省沿用聊天的 25 行。 */
+  codeCollapseLines?: number;
 }
 
 export interface ToolCallDisplayProps {

@@ -1,4 +1,4 @@
-import { buildDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
+import { buildDelegatedTaskPrompt, delegatedPlanText, isDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
 import type {
   CanUseToolFn,
   ToolContext,
@@ -49,16 +49,25 @@ function stringArg(args: Record<string, unknown>, key: string): string {
 /** Keep the UI/reference key compact even when a provider emits an English phrase. */
 export function normalizeSessionTaskShortName(value: string, title: string): string {
   const compact = value.replace(/\s+/g, '').trim();
-  const chars = Array.from(compact);
+  let chars = Array.from(compact);
   if (chars.length >= 2 && chars.length <= 4) return compact;
 
   if (chars.length > 4) {
-    const words = compact.match(/[A-Z][a-z0-9]*|[a-z0-9]+/g);
-    if (words && words.length >= 2) {
-      const initials = words.map((word) => Array.from(word)[0]).join('').toUpperCase();
-      if (Array.from(initials).length >= 2 && Array.from(initials).length <= 4) return initials;
+    // Kana shares modifier letters across scripts. Also retain its two combining voicing marks.
+    const cjkChars = compact.match(
+      /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3099\u309A]|(?=\p{Modifier_Letter})[\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}]/gu,
+    );
+    if (cjkChars) {
+      if (cjkChars.length >= 2) return cjkChars.slice(0, 4).join('');
+      chars = cjkChars;
+    } else {
+      const words = compact.match(/[A-Z][a-z0-9]*|[a-z0-9]+/g);
+      if (words && words.length >= 2) {
+        const initials = words.map((word) => Array.from(word)[0]).join('').toUpperCase();
+        if (Array.from(initials).length >= 2 && Array.from(initials).length <= 4) return initials;
+      }
+      return chars.slice(0, 4).join('');
     }
-    return chars.slice(0, 4).join('');
   }
 
   const titleChars = Array.from(title.replace(/\s+/g, '').trim());
@@ -182,12 +191,13 @@ export async function executeDelegateTask(
     shortName,
     laneKey,
     submissionKey,
-    prompt: buildDelegatedTaskPrompt(prompt, originalRequest),
+    prompt: isDelegatedTaskPrompt(prompt) ? prompt : buildDelegatedTaskPrompt(prompt, originalRequest),
     workspaceScope,
     queueWhenFull: args.queue_when_full === true,
     attachments: ctx.subagent?.attachments as MessageAttachment[] | undefined,
     options: {
       mode: 'normal',
+      displayContent: delegatedPlanText(prompt),
       toolScope: ctx.toolScope,
       executionIntent: ctx.executionIntent,
     },

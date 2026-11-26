@@ -16,6 +16,7 @@ describe('AgentFailureCode contract', () => {
       'tool-unavailable',
       'invalid-arguments',
       'budget-exhausted',
+      'step-cap-reached',
       'timeout',
       'parent-gone',
       'cancelled-by-user',
@@ -59,6 +60,8 @@ describe('AgentFailureCode contract', () => {
     expect(inferAgentFailureCode({ failureCode: AgentFailureCode.InvalidArguments, error })).toBe(AgentFailureCode.InvalidArguments);
     expect(inferAgentFailureCode({ error: 'execution timeout' })).toBe(AgentFailureCode.Timeout);
     expect(inferAgentFailureCode({ error: 'max token budget exhausted' })).toBe(AgentFailureCode.BudgetExhausted);
+    expect(inferAgentFailureCode({ error: 'Max iterations reached' })).toBe(AgentFailureCode.StepCapReached);
+    expect(inferAgentFailureCode({ failureCode: AgentFailureCode.StepCapReached, error: 'max token budget exhausted' })).toBe(AgentFailureCode.StepCapReached);
   });
 
   it('guards persisted strings before consumers treat them as known codes', () => {

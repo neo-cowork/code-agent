@@ -1,3 +1,4 @@
+import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../../src/shared/utils/cronRuntimeNotReady';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/services/infra/notificationService', () => ({
@@ -113,6 +114,18 @@ describe('notifyCronAgentExecution 无会话云端失败', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
+  it('无 sessionId 的启动期运行时未就绪失败放行通知，带 runtime_starting 类别与 jobId', () => {
+    notifyCronAgentExecution(definition(), sessionlessExecution(CRON_RUNTIME_NOT_READY_MESSAGE_EN), new CronFailureNoticeGate());
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: '',
+      code: 'CRON_FAILURE',
+      failureKind: 'runtime_starting',
+      jobId: definition().id,
+      succeeded: false,
+    }), { force: true, urgent: false });
+  });
+
   it('带 sessionId 的 cloud_unavailable 失败载荷不变（既有路径零扰动）', () => {
     notifyCronAgentExecution(
       definition(),
@@ -173,7 +186,7 @@ describe('cloud_unavailable 通知正文单语', () => {
 });
 
 describe('notifyCronAgentExecution 失败载荷', () => {
-  it('非登录墙失败带 CRON_FAILURE、类别和写明的重置时间，正文仍保留旧摘要', () => {
+  it('额度失败保留重置时间元数据，正文使用固定额度文案', () => {
     notifyCronAgentExecution(
       definition(),
       execution('usage limit reached. next_flush_time: 2026-10-15T05:00:00Z'),
@@ -184,7 +197,7 @@ describe('notifyCronAgentExecution 失败载荷', () => {
       failureKind: 'quota',
       resetAt: '2026-10-15T05:00:00.000Z',
       succeeded: false,
-      summary: expect.stringContaining('定时任务失败：'),
+      summary: '定时任务失败：模型额度/余额用完了。恢复时间以服务商为准',
     }), { force: true, urgent: false });
   });
 

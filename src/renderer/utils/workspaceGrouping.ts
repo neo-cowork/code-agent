@@ -75,6 +75,28 @@ export function getSidebarGroupKeyForSession(session: SidebarGroupKeySource): st
   return path || UNCATEGORIZED_WORKSPACE_KEY;
 }
 
+/**
+ * Pick the landing session in the same sidebar group after removing one or
+ * more sessions: ordered by updatedAt descending (matching the sidebar), next
+ * older row first, else nearest newer row; undefined when the group empties.
+ */
+export function findSessionAfterRemoval(
+  sessions: SessionWithMeta[],
+  currentId: string,
+  removedIds: ReadonlySet<string> = new Set([currentId]),
+): SessionWithMeta | undefined {
+  const current = sessions.find((session) => session.id === currentId);
+  if (!current) return undefined;
+  const groupKey = getSidebarGroupKeyForSession(current);
+  const siblings = sessions
+    .filter((session) => getSidebarGroupKeyForSession(session) === groupKey)
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const currentIndex = siblings.indexOf(current);
+  const survives = (session: SessionWithMeta) => !removedIds.has(session.id);
+  return siblings.slice(currentIndex + 1).find(survives)
+    ?? siblings.slice(0, currentIndex).reverse().find(survives);
+}
+
 function getGroupPaths(sessions: SessionWithMeta[]): string[] {
   const paths: string[] = [];
   for (const session of sessions) {

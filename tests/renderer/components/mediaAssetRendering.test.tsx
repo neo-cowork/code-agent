@@ -360,7 +360,7 @@ describe('media asset rendering', () => {
       kind: 'image',
       state: 'ready',
       path: '/repo/local.png',
-    }, { hasLightbox: true })).toEqual(['copy', 'lightbox', 'open', 'save', 'reveal']);
+    }, { hasLightbox: true })).toEqual(['copy', 'lightbox', 'open', 'save', 'reveal', 'annotate']);
 
     expect(getMediaAssetAvailableActions({
       assetId: 'remote-image',
@@ -370,7 +370,7 @@ describe('media asset rendering', () => {
       kind: 'image',
       state: 'ready',
       url: 'https://example.com/remote.png',
-    }, { hasLightbox: true })).toEqual(['copy', 'lightbox', 'open', 'save']);
+    }, { hasLightbox: true })).toEqual(['copy', 'lightbox', 'open', 'save', 'annotate']);
 
     expect(getMediaAssetAvailableActions({
       assetId: 'large-inline',

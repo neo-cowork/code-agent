@@ -19,6 +19,7 @@ import {
 } from '../shared/sessionTitlePlaceholder';
 import crypto from 'crypto';
 import { createLogger } from '../host/services/infra/logger';
+import { initMemorySessionTitle } from '../host/services/infra/sessionFolderName';
 
 const logger = createLogger('CLI-Session');
 
@@ -38,6 +39,8 @@ export interface SessionCreateOptions {
   workingDirectory?: string;
   /** 建行时写入的归属用户；缺省 NULL（纯 CLI 无登录）。 */
   userId?: string | null;
+  /** 建行时写入的项目归属；之后分支会继承它，所以必须在建行时给。 */
+  projectId?: string | null;
 }
 
 export interface SessionScopedMessageOptions extends SessionCreateOptions {
@@ -124,6 +127,7 @@ export class CLISessionManager {
       title: options.title || this.generateSessionTitle(),
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,
+      ...(options.projectId ? { projectId: options.projectId } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -217,9 +221,12 @@ export class CLISessionManager {
    * 更新会话
    */
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
+    let persisted = false;
     if (await this.ensureDbReady()) {
       try {
         this.getDb()!.updateSession(sessionId, updates);
+        persisted = true;
+        this.pushTitleToCloud(sessionId, updates);
         await this.syncTelemetrySessionTitle(sessionId, updates);
       } catch (error) {
         console.warn('[SessionManager] Failed to update session:', (error as Error).message);
@@ -231,6 +238,36 @@ export class CLISessionManager {
       const cached = this.sessionCache.get(sessionId)!;
       Object.assign(cached, updates, { updatedAt: Date.now() });
     }
+
+    // web 构建走本类，不经过 host SessionManager.notifySessionUpdated。
+    // 标题落库后立刻推到 renderer 总线，侧栏不必等本轮结束或整页刷新。
+    const title = typeof updates.title === 'string' ? updates.title : '';
+    if (persisted && title.trim()) {
+      this.broadcastSessionTitle(sessionId, title);
+    }
+  }
+
+  /** 懒加载：纯 CLI 启动不拉 window bridge；没有订阅者时 emit 是静默空操作。导入或发送失败只留痕，不阻断改名。 */
+  private broadcastSessionTitle(sessionId: string, title: string): void {
+    void import('../host/platform/windowBridge')
+      .then(({ broadcastToRenderer }) => {
+        broadcastToRenderer('session:updated', { sessionId, updates: { title } });
+      })
+      .catch((error: unknown) => {
+        logger.warn('session title broadcast failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  /** web 构建走本类而非 host SessionManager：标题变更同样回写云端行（懒加载，CLI 启动不拉起 supabase 栈）。 */
+  private pushTitleToCloud(sessionId: string, updates: Partial<Session>): void {
+    if (typeof updates.title !== 'string' || !updates.title.trim()) return;
+    const title = updates.title;
+    void import('../host/services/infra/sessionTitleCloudPush')
+      .then((m) => m.pushSessionTitleToCloud(sessionId, title))
+      .catch(() => { /* fail-open：回写失败不影响本地改名 */ });
   }
 
   /**
@@ -527,7 +564,8 @@ export class CLISessionManager {
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
-    const title = await resolveSessionTitle(titleSource, uiLanguage, (strict) => this.generateSmartTitle(titleSource, strict), logger);
+    const title = await initMemorySessionTitle(titleSource, session.workingDirectory)
+      ?? await resolveSessionTitle(titleSource, uiLanguage, (strict) => this.generateSmartTitle(titleSource, strict), logger);
 
     const latest = await this.getSession(sessionId);
     if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;

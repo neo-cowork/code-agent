@@ -32,6 +32,7 @@ const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'auth',
   'model_not_found',
   'forbidden',
+  'bad_request',
   'rate_limited',
   'usage_limit',
   'concurrency',

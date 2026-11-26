@@ -6,6 +6,8 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
+import { recordApprovedRmSettlementTargets } from '../../session/approvedRmSettlementTargets';
+import { rememberApprovedRmTargets, PRINTF_STATE_WRITE_WORD } from './approvedRmVerifyProbe';
 import { createLogger } from '../../services/infra/logger';
 
 const approvedRmLogger = createLogger('ApprovedRmGrant');
@@ -66,6 +68,50 @@ function projectApprovedRmRedirects(command: string): { source: string; marker: 
   return { source, marker, refused: false };
 }
 
+/** The shell keywords of a literal-file `for` loop are not commands; they only wrap the rm segments. */
+const LOOP_KEYWORDS = ['if', 'then', 'else', 'do'];
+const LOOP_BARE_KEYWORDS = ['do', 'done', 'then', 'else', 'fi'];
+
+/**
+ * `for f in /abs/a /abs/b; do [if] rm [-f|-v] -- "$f"; ...; done` is the same request as `rm a b`.
+ * Rewrites the parsed segments in place: loop keywords are dropped and an rm operand that is exactly the loop
+ * variable becomes the literal items. The variable anywhere else in an rm segment is left as `${name}` so the
+ * ordinary literal-operand rule refuses it. Items must be absolute, whitespace- and glob-free literals.
+ */
+function flattenLiteralRmLoop(segments: ReturnType<typeof parseShellCommand>['segments']): { sawRm: boolean; reason?: string } {
+  if (!segments.some((segment) => segment.words[0] === 'for')) return { sawRm: false };
+  const items = new Map<string, string[]>();
+  let sawRm = false;
+  const kept: typeof segments = [];
+  for (const segment of segments) {
+    let words = segment.words;
+    if (words[0] === 'for') {
+      const name = words[1] ?? '';
+      const list = words.slice(3);
+      if (items.size > 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || words[2] !== 'in' || list.length < 1) return { sawRm, reason: 'command_shape:loop_shape' };
+      if (list.some((item) => !path.isAbsolute(item) || /[\s*?[\]{}\\$`~]/.test(item))) return { sawRm, reason: 'command_shape:loop_item' };
+      items.set(name, list);
+      continue;
+    }
+    if (LOOP_BARE_KEYWORDS.includes(words[0] ?? '') && words.length === 1) continue;
+    while (LOOP_KEYWORDS.includes(words[0] ?? '')) words = words.slice(1);
+    if (path.posix.basename(words[0] ?? '') === 'rm') {
+      sawRm = true;
+      words = words.flatMap((word) => {
+        const name = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(word)?.[1];
+        return name && items.has(name) ? items.get(name) as string[] : [word];
+      });
+    } else {
+      // Probes and echo/printf may mention the variable as text; any other program is refused later by name.
+      words = words.map((word) => word.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (reference, name: string) => items.get(name)?.[0] ?? reference));
+    }
+    segment.words = words;
+    kept.push(segment);
+  }
+  segments.splice(0, segments.length, ...kept);
+  return { sawRm };
+}
+
 /** Parse approved static rm calls and read-only probes without executing their shell syntax. */
 function extractApprovedRmTargets(command: string, workingDirectory: string): {
   containsRm: boolean;
@@ -78,10 +124,13 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
   const parsed = parseShellCommand(projection.source);
   const redirected = new Set(parsed.segments.filter(segment => segment.words.includes(projection.marker)));
   for (const segment of parsed.segments) segment.words = segment.words.filter(word => word !== projection.marker);
+  const loop = flattenLiteralRmLoop(parsed.segments);
   const rmSegments = parsed.segments.filter((segment) => path.posix.basename(segment.words[0] ?? '') === 'rm');
   const operands: string[] = [];
-  const containsRm = rmSegments.length > 0 || original.segments.some(segment => path.posix.basename(segment.words[0] ?? '') === 'rm');
+  const containsRm = rmSegments.length > 0 || loop.sawRm
+    || original.segments.some(segment => path.posix.basename(segment.words[0] ?? '') === 'rm');
   const refuse = (reason: string) => ({ containsRm, operandCount: operands.length, reason });
+  if (loop.reason) return refuse(loop.reason);
   if (projection.refused) return refuse('command_shape:redirect_non_dup');
   if (hasUnsafeRmExpansion(command)) return refuse('expansion');
   if (parsed.writeTargets.length > 0) return refuse('command_shape:filesystem_change');
@@ -124,7 +173,7 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
         const arg = substitute(rawArg);
         if (!dashDash && arg === '--') { dashDash = true; continue; }
         if (!dashDash && arg.startsWith('-') && arg !== '-') {
-          if (arg !== '-f' && !(rmSegments.length === 1 && arg === '--force')) return refuse('option');
+          if (arg !== '-f' && arg !== '-v' && arg !== '--verbose' && !(rmSegments.length === 1 && arg === '--force')) return refuse('option');
           continue;
         }
         if (!arg || /[$`*?{}[\]]/.test(arg)) return refuse('literal_operand');
@@ -142,7 +191,14 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
       if (redirected.has(current) && ['true', ':'].includes(program)) return refuse('command_shape:redirect_non_dup');
       if (program === '[' && current.words.at(-1) !== ']') return refuse('command_shape');
       if (current.words.slice(1).some((word) => /[$`]/.test(substitute(word).replaceAll('${?}', '')))) return refuse('expansion');
-      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(substitute(word)))) return refuse('command_shape');
+      if (program === 'printf') {
+        const printfArgs = current.words.slice(1);
+        if (printfArgs.some((word) => PRINTF_STATE_WRITE_WORD.test(substitute(word)))) return refuse('command_shape');
+        // The approved suffix shape is `printf <format> "${?}"`: more than two words, or a "${?}"
+        // anywhere but the one extra word, is refused. A plain `printf <format> <text>` predates
+        // the arity rule and stays mintable.
+        if (printfArgs.length > 2 || (printfArgs.includes('${?}') && printfArgs[1] !== '${?}')) return refuse('command_shape');
+      }
     }
     if (current.terminator !== null && ![';', '\n', '&&', '||'].includes(current.terminator)) return refuse('command_shape');
   }
@@ -184,6 +240,8 @@ export interface SandboxEscalationEligibilityInput {
    * have rebound it. undefined = nobody bound one = hard deny.
    */
   policyEnforcer: PolicyEnforcer | null | undefined;
+  /** Session the approval belongs to; keys the short-lived record of what the user approved deleting. */
+  sessionId?: string;
 }
 
 type EscalationTarget = 'file' | 'missing' | 'other';
@@ -320,10 +378,11 @@ function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string
 /** Mint literal write paths for all files covered by one user-approved rm. */
 export function approvedSingleFileRmGrant(
   command: string,
-  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
+  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'> & { runId?: string },
 ): string | string[] | undefined {
   const parsed = extractApprovedRmTargets(command, input.workingDirectory);
   if (!parsed.containsRm) return undefined;
+  recordApprovedRmSettlementTargets(input.sessionId, input.runId, parsed.targets ?? []);
   const conditions = [
     !input.sandboxDecision.sandboxed && 'sandboxed',
     !input.foreground && !input.background && 'foreground', input.pty && 'pty',
@@ -356,7 +415,8 @@ export function approvedSingleFileRmGrant(
     approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
     return undefined;
   }
-  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify(diagnostic)}`);
+  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify({ ...diagnostic, sessionId: input.sessionId, runId: input.runId })}`);
+  rememberApprovedRmTargets(input.sessionId, [...(parsed.targets ?? []), ...grants]);
   return grants.length === 1 && parsed.operandCount === 1 ? grants[0] : grants;
 }
 

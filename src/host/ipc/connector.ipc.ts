@@ -40,6 +40,7 @@ import {
 import { createLarkCliDriver } from '../connectors/feishu/larkCli';
 import { createTmeetCliDriver } from '../connectors/tmeet/tmeetCli';
 import { getCachedStatus } from '../connectors/cli/cliConnector';
+import { readDevCliConnectorStatusShim } from '../connectors/cli/devCliConnectorStatusShim';
 import { validateProviderDescriptor, type ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
@@ -143,6 +144,8 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       checkedAt: status.checkedAt,
       noAccessibleItems: status.noAccessibleItems,
       errorCode: status.errorCode,
+      detailCode: status.detailCode,
+      settingsPane: status.settingsPane,
       actions: status.actions,
       capabilities: status.capabilities,
     } satisfies ConnectorStatusSummary;
@@ -264,6 +267,11 @@ async function executeConnectorAction(
 async function handleOpenAutomationSettings(): Promise<{ opened: boolean }> {
   if (!canOpenEnvSettings()) return { opened: false };
   return { opened: await openEnvSettings('automation') };
+}
+
+async function handleOpenCalendarSettings(): Promise<{ opened: boolean }> {
+  if (!canOpenEnvSettings()) return { opened: false };
+  return { opened: await openEnvSettings('calendars') };
 }
 
 async function handleProbeConnector(
@@ -477,10 +485,12 @@ async function collectConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderSt
       }
       const runtime = CLI_PROVIDER_RUNTIMES[descriptor.id];
       if (!runtime) throw new Error(`CLI connector runtime is unavailable for ${descriptor.id}`);
-      const cachedStatus = getCachedStatus(descriptor.id);
-      const cliStatus = cachedStatus && !cachedStatus.stale
+      // 开发替身优先于驱动缓存：否则缓存里的旧「未登录」会把重新连接后的真跑钉死。
+      const shimmed = readDevCliConnectorStatusShim(descriptor.id);
+      const cachedStatus = shimmed ? undefined : getCachedStatus(descriptor.id);
+      const cliStatus = shimmed ?? (cachedStatus && !cachedStatus.stale
         ? cachedStatus
-        : await runtime.driver.status();
+        : await runtime.driver.status());
       return {
         id: descriptor.id,
         displayName: descriptor.displayName,
@@ -868,6 +878,9 @@ const connectorHandlers: DomainRouteHandlers<ConnectorDomainRequest, ConnectorRo
   },
   openAutomationSettings: async () => {
     return await handleOpenAutomationSettings();
+  },
+  openCalendarSettings: async () => {
+    return await handleOpenCalendarSettings();
   },
   openApp: async (_ctx, payload) => {
     return await handleOpenConnectorApp(

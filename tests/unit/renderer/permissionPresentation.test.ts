@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
 import { permissionConsequence, permissionSummary, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { describeApproval } from '../../../src/renderer/components/PermissionDialog/describeApproval';
+import { en } from '../../../src/renderer/i18n/en';
 import { decisionCardEn, decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
@@ -11,6 +13,54 @@ const baseRequest: PermissionRequest = {
   type: 'file_read',
   details: { path: '/workspace/README.md' },
 };
+
+describe('folder targets in permission titles', () => {
+  it.each([
+    ['.', '允许读取 当前文件夹？', 'Allow reading the current folder?'],
+    ['./', '允许读取 当前文件夹？', 'Allow reading the current folder?'],
+    ['././', '允许读取 当前文件夹？', 'Allow reading the current folder?'],
+    ['..', '允许读取 上一级文件夹？', 'Allow reading the parent folder?'],
+    ['../', '允许读取 上一级文件夹？', 'Allow reading the parent folder?'],
+    ['./../.', '允许读取 上一级文件夹？', 'Allow reading the parent folder?'],
+    ['src/../.', '允许读取 src/..？', 'Allow reading src/..?'],
+    ['foo/bar/..', '允许读取 foo/bar/..？', 'Allow reading foo/bar/..?'],
+    ['../..', '允许读取 ../..？', 'Allow reading ../..?'],
+    ['src/.', '允许读取 src？', 'Allow reading src?'],
+    ['src\\.\\', '允许读取 src？', 'Allow reading src?'],
+    ['/workspace/proj', '允许读取 proj？', 'Allow reading proj?'],
+    ['/workspace/proj/.', '允许读取 proj？', 'Allow reading proj?'],
+    ['/', '允许读取 /？', 'Allow reading /?'],
+    ['/dev/stdout', '允许读取 /dev/stdout？', 'Allow reading /dev/stdout?'],
+    ['', '允许这次操作？', 'Allow this operation?'],
+  ])('describes reading %j in both languages', (path, zh, english) => {
+    const request = { ...baseRequest, details: { path } };
+    const zhTitle = permissionSummary(request, decisionCardZh as never);
+    const enTitle = permissionSummary(request, decisionCardEn as never, 'en');
+    expect([zhTitle, enTitle]).toEqual([zh, english]);
+    expect(zhTitle).not.toMatch(/(?:^|\s)\.(?=\s|[？?（]|$)/u);
+    expect(enTitle).not.toMatch(/(?:^|\s)\.(?=\s|[？?（]|$)/u);
+  });
+
+  it.each([
+    ['file_write', '允许写入 当前文件夹？', 'Allow writing the current folder?'],
+    ['file_edit', '允许编辑 当前文件夹？', 'Allow editing the current folder?'],
+    ['file_delete', '允许删除 当前文件夹？', 'Allow deleting the current folder?'],
+  ] as const)('describes the current folder in %s titles', (type, zh, english) => {
+    const request = { ...baseRequest, type, details: { filePath: '.' } };
+    expect(permissionSummary(request, decisionCardZh as never)).toBe(zh);
+    expect(permissionSummary(request, decisionCardEn as never, 'en')).toBe(english);
+  });
+
+  it('keeps the outside-workspace qualifier after the parent folder name', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      details: { path: '../' },
+      boundary: { id: 'file.external_read' },
+    };
+    expect(permissionSummary(request, decisionCardZh as never)).toBe('允许读取 上一级文件夹（工作区外）？');
+    expect(permissionSummary(request, decisionCardEn as never, 'en')).toBe('Allow reading the parent folder (outside workspace)?');
+  });
+});
 
 describe('isSafeDefaultDeny', () => {
   it.each<{
@@ -478,5 +528,47 @@ describe('deletion consequence file count for multi-target rm', () => {
     expect(consequence).toBe('Permanently deletes /workspace/./*.log (multiple files) without using Trash.');
     expect(consequence).toContain('(multiple files)');
     expect(consequence).not.toMatch(/\(1 files?\)/);
+  });
+});
+
+// N-FIX-EN-APPROVAL-QUESTION-FULLWIDTH-PAREN-OUTSIDE-WORKSPACE（FB-1982）：工作区外
+// 限定语的括号由词条自带——zh 全角括号、en 半角括号+文件名后一个空格——呈现层不再拼括号。
+describe('en outside-workspace question punctuation', () => {
+  const CJK_PUNCT = /[\u3000-\u303F\uFF00-\uFFEF]/u;
+  const FULLWIDTH_BRACKETS_OR_QUESTION = /[\uFF08\uFF09\uFF1F]/u;
+  const OUTSIDE_TOOLS = { file_read: 'Read', file_write: 'Write', file_edit: 'Edit', file_delete: 'Delete' } as const;
+
+  function outsideRequest(type: keyof typeof OUTSIDE_TOOLS): PermissionRequest {
+    return {
+      ...baseRequest,
+      tool: OUTSIDE_TOOLS[type],
+      type,
+      details: { path: '/tmp/notes.txt' },
+      boundary: { id: type === 'file_read' ? 'file.external_read' : 'file.external_write' },
+    };
+  }
+
+  it.each([
+    ['file_read', 'Allow reading notes.txt (outside workspace)?'],
+    ['file_write', 'Allow writing notes.txt (outside workspace)?'],
+    ['file_edit', 'Allow editing notes.txt (outside workspace)?'],
+    ['file_delete', 'Allow deleting notes.txt (outside workspace)?'],
+  ] as const)('en %s outside workspace asks with half-width brackets and one space', (type, expected) => {
+    const summary = permissionSummary(outsideRequest(type), decisionCardEn as never, 'en');
+    expect(summary).toBe(expected);
+    expect(summary).not.toMatch(FULLWIDTH_BRACKETS_OR_QUESTION);
+  });
+
+  it('en title and consequence for the four file kinds carry no CJK punctuation', () => {
+    for (const type of Object.keys(OUTSIDE_TOOLS) as (keyof typeof OUTSIDE_TOOLS)[]) {
+      const request = outsideRequest(type);
+      expect(describeApproval(request, en, 'en').title).not.toMatch(CJK_PUNCT);
+      expect(permissionConsequence(request, en, 'en')).not.toMatch(CJK_PUNCT);
+    }
+  });
+
+  it('zh 工作区外问句保持全角括号与全角问号', () => {
+    expect(permissionSummary(outsideRequest('file_write'), decisionCardZh as never))
+      .toBe('允许写入 notes.txt（工作区外）？');
   });
 });

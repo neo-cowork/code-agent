@@ -63,8 +63,9 @@ describe('FolderTrustDialog', () => {
     );
 
     expect(html).toContain(zh.folderTrust.title);
-    expect(html).toContain('/real/project');
-    expect(html).toContain('.code-agent/hooks/hooks.json');
+    expect(html).toContain(zh.folderTrust.locationDiffers);
+    expect(html).not.toContain('/real/project');
+    expect(html).not.toContain('.code-agent/hooks/hooks.json');
     expect(html).toContain(zh.folderTrust.identityChanged);
     expect(html).toContain(zh.folderTrust.risks.execution);
     expect(html).toContain(zh.folderTrust.risks.mcp);
@@ -273,7 +274,6 @@ describe('FolderTrustDialog', () => {
     expect(container.innerHTML).toContain('max-h-56');
     expect(container.innerHTML).toContain('overflow-y-scroll');
     expect(container.innerHTML).toContain('scrollbar-band');
-    expect(container.innerHTML).toContain('.project/config-4.json');
     await waitFor(() => expect(screen.getByTestId('folder-trust-more-hint')).toBeTruthy());
 
     const scroll = screen.getByTestId('folder-trust-danger-scroll');

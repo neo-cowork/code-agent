@@ -1,0 +1,3006 @@
+{
+  "streamEvents": [
+    {
+      "type": "task_start",
+      "data": {
+        "taskId": "task-1795124445557",
+        "prompt": "è¯»è¿™ä¸ªæ–‡ä»¶å¤¹çš„ README.md å’Œ package.jsonï¼ŒæŠŠé¡¹ç›®åã€ç‰ˆæœ¬ã€å¯ç”¨è„šæœ¬å’Œç›®å½•ç”¨é…[truncated 140]",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "clientMessageId": "d8e09c8b-ce10-4b8b-b793-647b2bdb01f1",
+        "runId": "run-8f0090e8-499a-4e68-9f70-35f621d406c3"
+      }
+    },
+    {
+      "type": "turn_start",
+      "data": {
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "iteration": 1,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 96
+      }
+    },
+    {
+      "type": "model_decision",
+      "data": {
+        "requestedProvider": "xiaomi",
+        "requestedModel": "neohorse-1.5-flash-preview",
+        "role": null,
+        "billingMode": "payg",
+        "fallbackFrom": null,
+        "resolvedProvider": "xiaomi",
+        "resolvedModel": "neohorse-1.5-flash-preview",
+        "reason": "strategy-main",
+        "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+        "taskClass": "artifact",
+        "costPolicy": "neutral",
+        "speedPolicy": "normal",
+        "providerHealthSnapshot": {
+          "provider": "xiaomi",
+          "status": "healthy",
+          "sampledAt": 1795124446436,
+          "latencyP50": 1506,
+          "latencyP95": 1552,
+          "errorRate": 0,
+          "lastSuccessAt": 1795124145052,
+          "lastErrorAt": 0,
+          "consecutiveErrors": 0
+        },
+        "providerIdentity": {
+          "provider": "xiaomi",
+          "protocol": "openai",
+          "transportLabel": "OpenAI-compatible",
+          "endpoint": "https://tokenrhythm.studio/v1"
+        },
+        "complexityScore": 50,
+        "taskComplexity": {
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.91",
+            "needs_clarification:0.76",
+            "needs_vision:0.04",
+            "high_stakes:0.05"
+          ]
+        },
+        "strategyProfile": "main",
+        "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+        "toolPolicy": "runtime-checked",
+        "capabilityNeeds": [
+          "tool-use",
+          "code",
+          "search",
+          "artifact"
+        ],
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "timestamp": 1795124446436,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 101
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "The user hasn't asked",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 3,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 102
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " a question yet â€” the",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 5,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 103
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " last message is just system",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 7,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 104
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " instructions setting",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 9,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 105
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " up my role as an",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 11,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 106
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " expert software engineer. My",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 13,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 107
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " previous turn",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 15,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 108
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " had essentially no thinking",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 17,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 109
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " content; I",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 19,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 110
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " acknowledged the instructions. There's",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 21,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 111
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " nothing substantive",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 23,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 112
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " to reproduce.\n",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 25,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 113
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "\n\n",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 26,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 114
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "\n",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "deltaSeq": 27,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 118
+      }
+    },
+    {
+      "type": "stream_usage",
+      "data": {
+        "inputTokens": 2306,
+        "outputTokens": 157,
+        "cacheReadTokens": 13056,
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 121
+      }
+    },
+    {
+      "type": "message",
+      "data": {
+        "id": "a0fcbde6-fbfc-40bf-999a-50e50d0cb2bd",
+        "role": "assistant",
+        "content": "",
+        "timestamp": 1795124447709,
+        "thinking": "The user hasn't asked a question yet â€” the last message is just system instructions setting up my …[truncated 266]",
+        "effortLevel": "high",
+        "inputTokens": 2306,
+        "outputTokens": 157,
+        "modelDecision": {
+          "requestedProvider": "xiaomi",
+          "requestedModel": "neohorse-1.5-flash-preview",
+          "role": null,
+          "billingMode": "payg",
+          "fallbackFrom": null,
+          "resolvedProvider": "xiaomi",
+          "resolvedModel": "neohorse-1.5-flash-preview",
+          "reason": "strategy-main",
+          "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+          "taskClass": "artifact",
+          "costPolicy": "neutral",
+          "speedPolicy": "normal",
+          "providerHealthSnapshot": {
+            "provider": "xiaomi",
+            "status": "healthy",
+            "sampledAt": 1795124446436,
+            "latencyP50": 1506,
+            "latencyP95": 1552,
+            "errorRate": 0,
+            "lastSuccessAt": 1795124145052,
+            "lastErrorAt": 0,
+            "consecutiveErrors": 0
+          },
+          "providerIdentity": {
+            "provider": "xiaomi",
+            "protocol": "openai",
+            "transportLabel": "OpenAI-compatible",
+            "endpoint": "https://tokenrhythm.studio/v1"
+          },
+          "complexityScore": 50,
+          "taskComplexity": {
+            "level": "moderate",
+            "score": 50,
+            "signals": [
+              "jev_intent:file_task",
+              "jev_confidence:0.91",
+              "needs_clarification:0.76",
+              "needs_vision:0.04",
+              "high_stakes:0.05"
+            ]
+          },
+          "strategyProfile": "main",
+          "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+          "toolPolicy": "runtime-checked",
+          "capabilityNeeds": [
+            "tool-use",
+            "code",
+            "search",
+            "artifact"
+          ],
+          "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+          "timestamp": 1795124446436,
+          "toolStrategy": {
+            "visibleToolCount": 13,
+            "toolNamesPreview": [
+              "AskUserQuestion",
+              "Edit",
+              "Glob",
+              "Grep",
+              "ListDirectory",
+              "Read",
+              "Write",
+              "cancel_task"
+            ],
+            "mcpToolCount": 0,
+            "programmaticToolCalling": "available",
+            "programmaticToolCount": 13,
+            "tokenSavings": {
+              "status": "estimated",
+              "savedTokens": 5173,
+              "detail": "ä¼°ç®—å€¼ï¼šè¿™ 13 ä¸ªå·¥å…·çš„åç§°ã€è¯´æ˜Žå’Œå‚æ•°è‹¥å†™è¿›æ™®é€šå¯¹è¯ä¸Šä¸‹æ–‡ï¼Œçº¦å  5173 …[truncated 215]",
+              "measurement": {
+                "savingsSource": "tool-spec-local-estimate",
+                "usageSource": "model-response-usage",
+                "providerReportedSavings": false
+              },
+              "basis": {
+                "source": "tool-spec-local-estimate",
+                "toolCount": 13,
+                "previewToolCount": 8,
+                "fields": [
+                  "name",
+                  "description",
+                  "inputSchema"
+                ]
+              },
+              "providerUsage": {
+                "source": "model-response-usage",
+                "inputTokens": 2306,
+                "outputTokens": 157,
+                "totalTokens": 2463
+              }
+            }
+          }
+        },
+        "metadata": {
+          "turnQuality": {
+            "memory": {
+              "mode": "auto",
+              "blocks": [
+                {
+                  "blockType": "user-directives",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "directive-memory-packer",
+                  "count": 0
+                },
+                {
+                  "blockType": "user-memory",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "memory-packer",
+                  "count": 0
+                }
+              ]
+            },
+            "strategy": {
+              "provider": "xiaomi",
+              "model": "neohorse-1.5-flash-preview",
+              "requestedProvider": "xiaomi",
+              "requestedModel": "neohorse-1.5-flash-preview",
+              "adaptive": true,
+              "effortLevel": "high",
+              "profile": "main",
+              "reason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+              "decisionReason": "strategy-main",
+              "complexity": {
+                "level": "moderate",
+                "score": 50,
+                "signals": [
+                  "jev_intent:file_task",
+                  "jev_confidence:0.91",
+                  "needs_clarification:0.76",
+                  "needs_vision:0.04",
+                  "high_stakes:0.05"
+                ]
+              }
+            },
+            "capabilities": {
+              "agentId": "default",
+              "agentName": "default"
+            },
+            "score": {
+              "score": 78,
+              "max": 100,
+              "grade": "good",
+              "breakdown": [
+                {
+                  "dimension": "strategy",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "å‘½ä¸­ main ç­–ç•¥",
+                    "è·¯ç”±åŽŸå›  strategy-main"
+                  ]
+                },
+                {
+                  "dimension": "memory",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘½ä¸­å¯è§è®°å¿†"
+                  ]
+                },
+                {
+                  "dimension": "tooling",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                  ]
+                },
+                {
+                  "dimension": "capability",
+                  "score": 14,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                  ]
+                },
+                {
+                  "dimension": "delivery",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "æ— è¿è¡Œè­¦å‘Š"
+                  ]
+                }
+              ]
+            },
+            "agentScorecard": {
+              "agentId": "default",
+              "agentName": "default",
+              "model": "xiaomi/neohorse-1.5-flash-preview",
+              "strategyProfile": "main",
+              "memoryUsed": 0,
+              "toolsUsed": 0,
+              "warnings": 0,
+              "score": {
+                "score": 78,
+                "max": 100,
+                "grade": "good",
+                "breakdown": [
+                  {
+                    "dimension": "strategy",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "å‘½ä¸­ main ç­–ç•¥",
+                      "è·¯ç”±åŽŸå›  strategy-main"
+                    ]
+                  },
+                  {
+                    "dimension": "memory",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘½ä¸­å¯è§è®°å¿†"
+                    ]
+                  },
+                  {
+                    "dimension": "tooling",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                    ]
+                  },
+                  {
+                    "dimension": "capability",
+                    "score": 14,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                    ]
+                  },
+                  {
+                    "dimension": "delivery",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "æ— è¿è¡Œè­¦å‘Š"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "correlation": {
+            "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+            "traceId": "85b46f5eeb86ece0f84d15d1ef07316b"
+          }
+        },
+        "contentParts": [
+          {
+            "type": "text",
+            "text": ""
+          },
+          {
+            "type": "tool_call",
+            "toolCallId": "call_0d446105670f4a38bfdc8946"
+          },
+          {
+            "type": "text",
+            "text": ""
+          },
+          {
+            "type": "tool_call",
+            "toolCallId": "call_314598b9560748b3b96675dd"
+          }
+        ],
+        "toolCalls": [
+          {
+            "id": "call_0d446105670f4a38bfdc8946",
+            "name": "Read",
+            "arguments": {
+              "file_path": "<workspace>/README.md"
+            }
+          },
+          {
+            "id": "call_314598b9560748b3b96675dd",
+            "name": "Read",
+            "arguments": {
+              "file_path": "<workspace>/package.json"
+            }
+          }
+        ],
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 124
+      }
+    },
+    {
+      "type": "message_snapshot",
+      "data": {
+        "role": "assistant",
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "messageId": "a0fcbde6-fbfc-40bf-999a-50e50d0cb2bd",
+        "content": "\n\n\n",
+        "reasoning": "The user hasn't asked a question yet â€” the last message is just system instructions setting up my …[truncated 266]",
+        "isFinal": true,
+        "source": "main_accumulator",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 133
+      }
+    },
+    {
+      "type": "turn_end",
+      "data": {
+        "turnId": "86a537e0-b119-4f29-b029-0ce2af9644bc",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 134
+      }
+    },
+    {
+      "type": "turn_start",
+      "data": {
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "iteration": 2,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 135
+      }
+    },
+    {
+      "type": "model_decision",
+      "data": {
+        "requestedProvider": "xiaomi",
+        "requestedModel": "neohorse-1.5-flash-preview",
+        "role": null,
+        "billingMode": "payg",
+        "fallbackFrom": null,
+        "resolvedProvider": "xiaomi",
+        "resolvedModel": "neohorse-1.5-flash-preview",
+        "reason": "strategy-main",
+        "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+        "taskClass": "artifact",
+        "costPolicy": "neutral",
+        "speedPolicy": "normal",
+        "providerHealthSnapshot": {
+          "provider": "xiaomi",
+          "status": "healthy",
+          "sampledAt": 1795124447793,
+          "latencyP50": 1506,
+          "latencyP95": 1552,
+          "errorRate": 0,
+          "lastSuccessAt": 1795124447703,
+          "lastErrorAt": 0,
+          "consecutiveErrors": 0
+        },
+        "providerIdentity": {
+          "provider": "xiaomi",
+          "protocol": "openai",
+          "transportLabel": "OpenAI-compatible",
+          "endpoint": "https://tokenrhythm.studio/v1"
+        },
+        "complexityScore": 50,
+        "taskComplexity": {
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.91",
+            "needs_clarification:0.76",
+            "needs_vision:0.04",
+            "high_stakes:0.05"
+          ]
+        },
+        "strategyProfile": "main",
+        "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+        "toolPolicy": "runtime-checked",
+        "capabilityNeeds": [
+          "tool-use",
+          "code",
+          "search",
+          "artifact"
+        ],
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "timestamp": 1795124447793,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 140
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "The README mentions docs/plan.md but docs",
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "messageId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "deltaSeq": 3,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 141
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "/ is empty. I",
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "messageId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "deltaSeq": 5,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 142
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " should note that discrepancy. Let me write summary.md.\n",
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "messageId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "deltaSeq": 8,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 143
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "\n\n",
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "messageId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "deltaSeq": 9,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 144
+      }
+    },
+    {
+      "type": "stream_usage",
+      "data": {
+        "inputTokens": 2966,
+        "outputTokens": 443,
+        "cacheReadTokens": 13056,
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 149
+      }
+    },
+    {
+      "type": "message",
+      "data": {
+        "id": "900b04b5-246d-4904-b47f-e83b3ff066cc",
+        "role": "assistant",
+        "content": "",
+        "timestamp": 1795124449854,
+        "thinking": "The README mentions docs/plan.md but docs/ is empty. I should note that discrepancy. Let me write su…[truncated 110]",
+        "effortLevel": "high",
+        "inputTokens": 2966,
+        "outputTokens": 443,
+        "modelDecision": {
+          "requestedProvider": "xiaomi",
+          "requestedModel": "neohorse-1.5-flash-preview",
+          "role": null,
+          "billingMode": "payg",
+          "fallbackFrom": null,
+          "resolvedProvider": "xiaomi",
+          "resolvedModel": "neohorse-1.5-flash-preview",
+          "reason": "strategy-main",
+          "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+          "taskClass": "artifact",
+          "costPolicy": "neutral",
+          "speedPolicy": "normal",
+          "providerHealthSnapshot": {
+            "provider": "xiaomi",
+            "status": "healthy",
+            "sampledAt": 1795124447793,
+            "latencyP50": 1506,
+            "latencyP95": 1552,
+            "errorRate": 0,
+            "lastSuccessAt": 1795124447703,
+            "lastErrorAt": 0,
+            "consecutiveErrors": 0
+          },
+          "providerIdentity": {
+            "provider": "xiaomi",
+            "protocol": "openai",
+            "transportLabel": "OpenAI-compatible",
+            "endpoint": "https://tokenrhythm.studio/v1"
+          },
+          "complexityScore": 50,
+          "taskComplexity": {
+            "level": "moderate",
+            "score": 50,
+            "signals": [
+              "jev_intent:file_task",
+              "jev_confidence:0.91",
+              "needs_clarification:0.76",
+              "needs_vision:0.04",
+              "high_stakes:0.05"
+            ]
+          },
+          "strategyProfile": "main",
+          "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+          "toolPolicy": "runtime-checked",
+          "capabilityNeeds": [
+            "tool-use",
+            "code",
+            "search",
+            "artifact"
+          ],
+          "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+          "timestamp": 1795124447793,
+          "toolStrategy": {
+            "visibleToolCount": 13,
+            "toolNamesPreview": [
+              "AskUserQuestion",
+              "Edit",
+              "Glob",
+              "Grep",
+              "ListDirectory",
+              "Read",
+              "Write",
+              "cancel_task"
+            ],
+            "mcpToolCount": 0,
+            "programmaticToolCalling": "available",
+            "programmaticToolCount": 13,
+            "tokenSavings": {
+              "status": "estimated",
+              "savedTokens": 5173,
+              "detail": "ä¼°ç®—å€¼ï¼šè¿™ 13 ä¸ªå·¥å…·çš„åç§°ã€è¯´æ˜Žå’Œå‚æ•°è‹¥å†™è¿›æ™®é€šå¯¹è¯ä¸Šä¸‹æ–‡ï¼Œçº¦å  5173 …[truncated 215]",
+              "measurement": {
+                "savingsSource": "tool-spec-local-estimate",
+                "usageSource": "model-response-usage",
+                "providerReportedSavings": false
+              },
+              "basis": {
+                "source": "tool-spec-local-estimate",
+                "toolCount": 13,
+                "previewToolCount": 8,
+                "fields": [
+                  "name",
+                  "description",
+                  "inputSchema"
+                ]
+              },
+              "providerUsage": {
+                "source": "model-response-usage",
+                "inputTokens": 2966,
+                "outputTokens": 443,
+                "totalTokens": 3409
+              }
+            }
+          }
+        },
+        "metadata": {
+          "turnQuality": {
+            "memory": {
+              "mode": "auto",
+              "blocks": [
+                {
+                  "blockType": "user-directives",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "directive-memory-packer",
+                  "count": 0
+                },
+                {
+                  "blockType": "user-memory",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "memory-packer",
+                  "count": 0
+                }
+              ]
+            },
+            "strategy": {
+              "provider": "xiaomi",
+              "model": "neohorse-1.5-flash-preview",
+              "requestedProvider": "xiaomi",
+              "requestedModel": "neohorse-1.5-flash-preview",
+              "adaptive": true,
+              "effortLevel": "high",
+              "profile": "main",
+              "reason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+              "decisionReason": "strategy-main",
+              "complexity": {
+                "level": "moderate",
+                "score": 50,
+                "signals": [
+                  "jev_intent:file_task",
+                  "jev_confidence:0.91",
+                  "needs_clarification:0.76",
+                  "needs_vision:0.04",
+                  "high_stakes:0.05"
+                ]
+              }
+            },
+            "capabilities": {
+              "agentId": "default",
+              "agentName": "default"
+            },
+            "score": {
+              "score": 78,
+              "max": 100,
+              "grade": "good",
+              "breakdown": [
+                {
+                  "dimension": "strategy",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "å‘½ä¸­ main ç­–ç•¥",
+                    "è·¯ç”±åŽŸå›  strategy-main"
+                  ]
+                },
+                {
+                  "dimension": "memory",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘½ä¸­å¯è§è®°å¿†"
+                  ]
+                },
+                {
+                  "dimension": "tooling",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                  ]
+                },
+                {
+                  "dimension": "capability",
+                  "score": 14,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                  ]
+                },
+                {
+                  "dimension": "delivery",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "æ— è¿è¡Œè­¦å‘Š"
+                  ]
+                }
+              ]
+            },
+            "agentScorecard": {
+              "agentId": "default",
+              "agentName": "default",
+              "model": "xiaomi/neohorse-1.5-flash-preview",
+              "strategyProfile": "main",
+              "memoryUsed": 0,
+              "toolsUsed": 0,
+              "warnings": 0,
+              "score": {
+                "score": 78,
+                "max": 100,
+                "grade": "good",
+                "breakdown": [
+                  {
+                    "dimension": "strategy",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "å‘½ä¸­ main ç­–ç•¥",
+                      "è·¯ç”±åŽŸå›  strategy-main"
+                    ]
+                  },
+                  {
+                    "dimension": "memory",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘½ä¸­å¯è§è®°å¿†"
+                    ]
+                  },
+                  {
+                    "dimension": "tooling",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                    ]
+                  },
+                  {
+                    "dimension": "capability",
+                    "score": 14,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                    ]
+                  },
+                  {
+                    "dimension": "delivery",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "æ— è¿è¡Œè­¦å‘Š"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "correlation": {
+            "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+            "traceId": "85b46f5eeb86ece0f84d15d1ef07316b"
+          }
+        },
+        "contentParts": [
+          {
+            "type": "text",
+            "text": ""
+          },
+          {
+            "type": "tool_call",
+            "toolCallId": "call_e0ff4157043d4bb2922747f5"
+          }
+        ],
+        "toolCalls": [
+          {
+            "id": "call_e0ff4157043d4bb2922747f5",
+            "name": "Write",
+            "arguments": {
+              "file_path": "<workspace>/summary.md",
+              "content": "# é¡¹ç›®æ¦‚è§ˆ\n\næ¥æºï¼š`README.md`ã€`package.json`ï¼ˆ2026-11-19 æ•´ç†ï¼‰\n\n## åŸºæœ¬ä¿¡æ¯\n\n| é¡¹…[truncated 405]",
+              "content_length": 683,
+              "content_lines": 34
+            }
+          }
+        ],
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 152
+      }
+    },
+    {
+      "type": "message_snapshot",
+      "data": {
+        "role": "assistant",
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "messageId": "900b04b5-246d-4904-b47f-e83b3ff066cc",
+        "content": "\n\n",
+        "reasoning": "The README mentions docs/plan.md but docs/ is empty. I should note that discrepancy. Let me write su…[truncated 110]",
+        "isFinal": true,
+        "source": "main_accumulator",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 156
+      }
+    },
+    {
+      "type": "turn_end",
+      "data": {
+        "turnId": "73cc2966-a5f9-46c5-b015-48c03e7b541b",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 157
+      }
+    },
+    {
+      "type": "turn_start",
+      "data": {
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "iteration": 3,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 158
+      }
+    },
+    {
+      "type": "model_decision",
+      "data": {
+        "requestedProvider": "xiaomi",
+        "requestedModel": "neohorse-1.5-flash-preview",
+        "role": null,
+        "billingMode": "payg",
+        "fallbackFrom": null,
+        "resolvedProvider": "xiaomi",
+        "resolvedModel": "neohorse-1.5-flash-preview",
+        "reason": "strategy-main",
+        "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+        "taskClass": "artifact",
+        "costPolicy": "neutral",
+        "speedPolicy": "normal",
+        "providerHealthSnapshot": {
+          "provider": "xiaomi",
+          "status": "healthy",
+          "sampledAt": 1795124449944,
+          "latencyP50": 1506,
+          "latencyP95": 2053,
+          "errorRate": 0,
+          "lastSuccessAt": 1795124449847,
+          "lastErrorAt": 0,
+          "consecutiveErrors": 0
+        },
+        "providerIdentity": {
+          "provider": "xiaomi",
+          "protocol": "openai",
+          "transportLabel": "OpenAI-compatible",
+          "endpoint": "https://tokenrhythm.studio/v1"
+        },
+        "complexityScore": 50,
+        "taskComplexity": {
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.91",
+            "needs_clarification:0.76",
+            "needs_vision:0.04",
+            "high_stakes:0.05"
+          ]
+        },
+        "strategyProfile": "main",
+        "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+        "toolPolicy": "runtime-checked",
+        "capabilityNeeds": [
+          "tool-use",
+          "code",
+          "search",
+          "artifact"
+        ],
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "timestamp": 1795124449944,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 163
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "The write succeeded",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "deltaSeq": 3,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 164
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": ". Let me verify by reading",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "deltaSeq": 5,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 165
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " back the file briefly to confirm content",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "deltaSeq": 7,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 166
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " is correct (",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "deltaSeq": 8,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 167
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "verification requirement).\n",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "deltaSeq": 11,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 168
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "\n\n",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "deltaSeq": 12,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 169
+      }
+    },
+    {
+      "type": "stream_usage",
+      "data": {
+        "inputTokens": 1153,
+        "outputTokens": 79,
+        "cacheReadTokens": 15296,
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 173
+      }
+    },
+    {
+      "type": "message",
+      "data": {
+        "id": "d9a76b58-9b38-4b67-9ccd-548316215374",
+        "role": "assistant",
+        "content": "",
+        "timestamp": 1795124450657,
+        "thinking": "The write succeeded. Let me verify by reading back the file briefly to confirm content is correct (v…[truncated 126]",
+        "effortLevel": "high",
+        "inputTokens": 1153,
+        "outputTokens": 79,
+        "modelDecision": {
+          "requestedProvider": "xiaomi",
+          "requestedModel": "neohorse-1.5-flash-preview",
+          "role": null,
+          "billingMode": "payg",
+          "fallbackFrom": null,
+          "resolvedProvider": "xiaomi",
+          "resolvedModel": "neohorse-1.5-flash-preview",
+          "reason": "strategy-main",
+          "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+          "taskClass": "artifact",
+          "costPolicy": "neutral",
+          "speedPolicy": "normal",
+          "providerHealthSnapshot": {
+            "provider": "xiaomi",
+            "status": "healthy",
+            "sampledAt": 1795124449944,
+            "latencyP50": 1506,
+            "latencyP95": 2053,
+            "errorRate": 0,
+            "lastSuccessAt": 1795124449847,
+            "lastErrorAt": 0,
+            "consecutiveErrors": 0
+          },
+          "providerIdentity": {
+            "provider": "xiaomi",
+            "protocol": "openai",
+            "transportLabel": "OpenAI-compatible",
+            "endpoint": "https://tokenrhythm.studio/v1"
+          },
+          "complexityScore": 50,
+          "taskComplexity": {
+            "level": "moderate",
+            "score": 50,
+            "signals": [
+              "jev_intent:file_task",
+              "jev_confidence:0.91",
+              "needs_clarification:0.76",
+              "needs_vision:0.04",
+              "high_stakes:0.05"
+            ]
+          },
+          "strategyProfile": "main",
+          "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+          "toolPolicy": "runtime-checked",
+          "capabilityNeeds": [
+            "tool-use",
+            "code",
+            "search",
+            "artifact"
+          ],
+          "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+          "timestamp": 1795124449944,
+          "toolStrategy": {
+            "visibleToolCount": 13,
+            "toolNamesPreview": [
+              "AskUserQuestion",
+              "Edit",
+              "Glob",
+              "Grep",
+              "ListDirectory",
+              "Read",
+              "Write",
+              "cancel_task"
+            ],
+            "mcpToolCount": 0,
+            "programmaticToolCalling": "available",
+            "programmaticToolCount": 13,
+            "tokenSavings": {
+              "status": "estimated",
+              "savedTokens": 5173,
+              "detail": "ä¼°ç®—å€¼ï¼šè¿™ 13 ä¸ªå·¥å…·çš„åç§°ã€è¯´æ˜Žå’Œå‚æ•°è‹¥å†™è¿›æ™®é€šå¯¹è¯ä¸Šä¸‹æ–‡ï¼Œçº¦å  5173 …[truncated 214]",
+              "measurement": {
+                "savingsSource": "tool-spec-local-estimate",
+                "usageSource": "model-response-usage",
+                "providerReportedSavings": false
+              },
+              "basis": {
+                "source": "tool-spec-local-estimate",
+                "toolCount": 13,
+                "previewToolCount": 8,
+                "fields": [
+                  "name",
+                  "description",
+                  "inputSchema"
+                ]
+              },
+              "providerUsage": {
+                "source": "model-response-usage",
+                "inputTokens": 1153,
+                "outputTokens": 79,
+                "totalTokens": 1232
+              }
+            }
+          }
+        },
+        "metadata": {
+          "turnQuality": {
+            "memory": {
+              "mode": "auto",
+              "blocks": [
+                {
+                  "blockType": "user-directives",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "directive-memory-packer",
+                  "count": 0
+                },
+                {
+                  "blockType": "user-memory",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "memory-packer",
+                  "count": 0
+                }
+              ]
+            },
+            "strategy": {
+              "provider": "xiaomi",
+              "model": "neohorse-1.5-flash-preview",
+              "requestedProvider": "xiaomi",
+              "requestedModel": "neohorse-1.5-flash-preview",
+              "adaptive": true,
+              "effortLevel": "high",
+              "profile": "main",
+              "reason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+              "decisionReason": "strategy-main",
+              "complexity": {
+                "level": "moderate",
+                "score": 50,
+                "signals": [
+                  "jev_intent:file_task",
+                  "jev_confidence:0.91",
+                  "needs_clarification:0.76",
+                  "needs_vision:0.04",
+                  "high_stakes:0.05"
+                ]
+              }
+            },
+            "capabilities": {
+              "agentId": "default",
+              "agentName": "default"
+            },
+            "score": {
+              "score": 78,
+              "max": 100,
+              "grade": "good",
+              "breakdown": [
+                {
+                  "dimension": "strategy",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "å‘½ä¸­ main ç­–ç•¥",
+                    "è·¯ç”±åŽŸå›  strategy-main"
+                  ]
+                },
+                {
+                  "dimension": "memory",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘½ä¸­å¯è§è®°å¿†"
+                  ]
+                },
+                {
+                  "dimension": "tooling",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                  ]
+                },
+                {
+                  "dimension": "capability",
+                  "score": 14,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                  ]
+                },
+                {
+                  "dimension": "delivery",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "æ— è¿è¡Œè­¦å‘Š"
+                  ]
+                }
+              ]
+            },
+            "agentScorecard": {
+              "agentId": "default",
+              "agentName": "default",
+              "model": "xiaomi/neohorse-1.5-flash-preview",
+              "strategyProfile": "main",
+              "memoryUsed": 0,
+              "toolsUsed": 0,
+              "warnings": 0,
+              "score": {
+                "score": 78,
+                "max": 100,
+                "grade": "good",
+                "breakdown": [
+                  {
+                    "dimension": "strategy",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "å‘½ä¸­ main ç­–ç•¥",
+                      "è·¯ç”±åŽŸå›  strategy-main"
+                    ]
+                  },
+                  {
+                    "dimension": "memory",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘½ä¸­å¯è§è®°å¿†"
+                    ]
+                  },
+                  {
+                    "dimension": "tooling",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                    ]
+                  },
+                  {
+                    "dimension": "capability",
+                    "score": 14,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                    ]
+                  },
+                  {
+                    "dimension": "delivery",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "æ— è¿è¡Œè­¦å‘Š"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "correlation": {
+            "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+            "traceId": "85b46f5eeb86ece0f84d15d1ef07316b"
+          }
+        },
+        "contentParts": [
+          {
+            "type": "text",
+            "text": ""
+          },
+          {
+            "type": "tool_call",
+            "toolCallId": "call_7e2169ea292f4d84b4a16351"
+          }
+        ],
+        "toolCalls": [
+          {
+            "id": "call_7e2169ea292f4d84b4a16351",
+            "name": "Read",
+            "arguments": {
+              "file_path": "<workspace>/summary.md"
+            }
+          }
+        ],
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 176
+      }
+    },
+    {
+      "type": "message_snapshot",
+      "data": {
+        "role": "assistant",
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "messageId": "d9a76b58-9b38-4b67-9ccd-548316215374",
+        "content": "\n\n",
+        "reasoning": "The write succeeded. Let me verify by reading back the file briefly to confirm content is correct (v…[truncated 126]",
+        "isFinal": true,
+        "source": "main_accumulator",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 181
+      }
+    },
+    {
+      "type": "turn_end",
+      "data": {
+        "turnId": "80d9f788-04cb-415b-a9b7-002183a26396",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 182
+      }
+    },
+    {
+      "type": "turn_start",
+      "data": {
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "iteration": 4,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 183
+      }
+    },
+    {
+      "type": "model_decision",
+      "data": {
+        "requestedProvider": "xiaomi",
+        "requestedModel": "neohorse-1.5-flash-preview",
+        "role": null,
+        "billingMode": "payg",
+        "fallbackFrom": null,
+        "resolvedProvider": "xiaomi",
+        "resolvedModel": "neohorse-1.5-flash-preview",
+        "reason": "strategy-main",
+        "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+        "taskClass": "artifact",
+        "costPolicy": "neutral",
+        "speedPolicy": "normal",
+        "providerHealthSnapshot": {
+          "provider": "xiaomi",
+          "status": "healthy",
+          "sampledAt": 1795124450714,
+          "latencyP50": 1506,
+          "latencyP95": 2053,
+          "errorRate": 0,
+          "lastSuccessAt": 1795124450645,
+          "lastErrorAt": 0,
+          "consecutiveErrors": 0
+        },
+        "providerIdentity": {
+          "provider": "xiaomi",
+          "protocol": "openai",
+          "transportLabel": "OpenAI-compatible",
+          "endpoint": "https://tokenrhythm.studio/v1"
+        },
+        "complexityScore": 50,
+        "taskComplexity": {
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.91",
+            "needs_clarification:0.76",
+            "needs_vision:0.04",
+            "high_stakes:0.05"
+          ]
+        },
+        "strategyProfile": "main",
+        "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+        "toolPolicy": "runtime-checked",
+        "capabilityNeeds": [
+          "tool-use",
+          "code",
+          "search",
+          "artifact"
+        ],
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "timestamp": 1795124450714,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 188
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "The task is complete",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 2,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 189
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": ". summary.md was",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 4,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 190
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " written and verified by reading it back.",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 6,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 191
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " I should report the",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 8,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 192
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": " result briefly.",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 10,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 193
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "reasoning",
+        "op": "append",
+        "text": "\n",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 11,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 194
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "\n\n",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 12,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 195
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "å·²ç”Ÿæˆ [summary.md](summary.md)ï¼ŒåŒ…å«é¡¹ç›®å `neo-demo-workspace`ã€ç‰ˆæœ¬ 1.4.0ã€ä¸‰ä¸ªè„š…[truncated 154]",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 14,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 197
+      }
+    },
+    {
+      "type": "message_delta",
+      "data": {
+        "role": "assistant",
+        "path": "content",
+        "op": "append",
+        "text": "æœ‰ä¸€å¤„ä¸Ž README æè¿°ä¸ç¬¦ï¼š`docs/plan.md` è¢«æåˆ°ä½†å®žé™…ä¸å­˜åœ¨ï¼ˆ`docs/` æ˜¯ç©ºç›®å½•…[truncated 130]",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "deltaSeq": 15,
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 198
+      }
+    },
+    {
+      "type": "stream_usage",
+      "data": {
+        "inputTokens": 1259,
+        "outputTokens": 104,
+        "cacheReadTokens": 15936,
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 199
+      }
+    },
+    {
+      "type": "message",
+      "data": {
+        "id": "9ee630cb-02b9-4390-abb3-b62564f6db84",
+        "role": "assistant",
+        "content": "å·²ç”Ÿæˆ [summary.md](summary.md)ï¼ŒåŒ…å«é¡¹ç›®å `neo-demo-workspace`ã€ç‰ˆæœ¬ 1.4.0ã€ä¸‰ä¸ªè„š…[truncated 284]",
+        "timestamp": 1795124451577,
+        "thinking": "The task is complete. summary.md was written and verified by reading it back. I should report the re…[truncated 114]",
+        "effortLevel": "high",
+        "inputTokens": 1259,
+        "outputTokens": 104,
+        "modelDecision": {
+          "requestedProvider": "xiaomi",
+          "requestedModel": "neohorse-1.5-flash-preview",
+          "role": null,
+          "billingMode": "payg",
+          "fallbackFrom": null,
+          "resolvedProvider": "xiaomi",
+          "resolvedModel": "neohorse-1.5-flash-preview",
+          "reason": "strategy-main",
+          "strategySummary": "ä»»åŠ¡ç­–ç•¥é€‰æ‹©ä¸»æ¨¡åž‹ï¼Œå¹³è¡¡é€Ÿåº¦å’Œè´¨é‡ã€‚",
+          "taskClass": "artifact",
+          "costPolicy": "neutral",
+          "speedPolicy": "normal",
+          "providerHealthSnapshot": {
+            "provider": "xiaomi",
+            "status": "healthy",
+            "sampledAt": 1795124450714,
+            "latencyP50": 1506,
+            "latencyP95": 2053,
+            "errorRate": 0,
+            "lastSuccessAt": 1795124450645,
+            "lastErrorAt": 0,
+            "consecutiveErrors": 0
+          },
+          "providerIdentity": {
+            "provider": "xiaomi",
+            "protocol": "openai",
+            "transportLabel": "OpenAI-compatible",
+            "endpoint": "https://tokenrhythm.studio/v1"
+          },
+          "complexityScore": 50,
+          "taskComplexity": {
+            "level": "moderate",
+            "score": 50,
+            "signals": [
+              "jev_intent:file_task",
+              "jev_confidence:0.91",
+              "needs_clarification:0.76",
+              "needs_vision:0.04",
+              "high_stakes:0.05"
+            ]
+          },
+          "strategyProfile": "main",
+          "strategyReason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+          "toolPolicy": "runtime-checked",
+          "capabilityNeeds": [
+            "tool-use",
+            "code",
+            "search",
+            "artifact"
+          ],
+          "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+          "timestamp": 1795124450714,
+          "toolStrategy": {
+            "visibleToolCount": 13,
+            "toolNamesPreview": [
+              "AskUserQuestion",
+              "Edit",
+              "Glob",
+              "Grep",
+              "ListDirectory",
+              "Read",
+              "Write",
+              "cancel_task"
+            ],
+            "mcpToolCount": 0,
+            "programmaticToolCalling": "available",
+            "programmaticToolCount": 13,
+            "tokenSavings": {
+              "status": "estimated",
+              "savedTokens": 5173,
+              "detail": "ä¼°ç®—å€¼ï¼šè¿™ 13 ä¸ªå·¥å…·çš„åç§°ã€è¯´æ˜Žå’Œå‚æ•°è‹¥å†™è¿›æ™®é€šå¯¹è¯ä¸Šä¸‹æ–‡ï¼Œçº¦å  5173 …[truncated 215]",
+              "measurement": {
+                "savingsSource": "tool-spec-local-estimate",
+                "usageSource": "model-response-usage",
+                "providerReportedSavings": false
+              },
+              "basis": {
+                "source": "tool-spec-local-estimate",
+                "toolCount": 13,
+                "previewToolCount": 8,
+                "fields": [
+                  "name",
+                  "description",
+                  "inputSchema"
+                ]
+              },
+              "providerUsage": {
+                "source": "model-response-usage",
+                "inputTokens": 1259,
+                "outputTokens": 104,
+                "totalTokens": 1363
+              }
+            }
+          }
+        },
+        "metadata": {
+          "turnQuality": {
+            "memory": {
+              "mode": "auto",
+              "blocks": [
+                {
+                  "blockType": "user-directives",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "directive-memory-packer",
+                  "count": 0
+                },
+                {
+                  "blockType": "user-memory",
+                  "trigger": "session_start",
+                  "chars": 0,
+                  "injected": false,
+                  "source": "memory-packer",
+                  "count": 0
+                }
+              ]
+            },
+            "strategy": {
+              "provider": "xiaomi",
+              "model": "neohorse-1.5-flash-preview",
+              "requestedProvider": "xiaomi",
+              "requestedModel": "neohorse-1.5-flash-preview",
+              "adaptive": true,
+              "effortLevel": "high",
+              "profile": "main",
+              "reason": "ä½¿ç”¨ main ä»»åŠ¡ç­–ç•¥",
+              "decisionReason": "strategy-main",
+              "complexity": {
+                "level": "moderate",
+                "score": 50,
+                "signals": [
+                  "jev_intent:file_task",
+                  "jev_confidence:0.91",
+                  "needs_clarification:0.76",
+                  "needs_vision:0.04",
+                  "high_stakes:0.05"
+                ]
+              }
+            },
+            "capabilities": {
+              "agentId": "default",
+              "agentName": "default"
+            },
+            "score": {
+              "score": 78,
+              "max": 100,
+              "grade": "good",
+              "breakdown": [
+                {
+                  "dimension": "strategy",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "å‘½ä¸­ main ç­–ç•¥",
+                    "è·¯ç”±åŽŸå›  strategy-main"
+                  ]
+                },
+                {
+                  "dimension": "memory",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘½ä¸­å¯è§è®°å¿†"
+                  ]
+                },
+                {
+                  "dimension": "tooling",
+                  "score": 12,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                  ]
+                },
+                {
+                  "dimension": "capability",
+                  "score": 14,
+                  "max": 20,
+                  "status": "watch",
+                  "reasons": [
+                    "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                  ]
+                },
+                {
+                  "dimension": "delivery",
+                  "score": 20,
+                  "max": 20,
+                  "status": "good",
+                  "reasons": [
+                    "æ— è¿è¡Œè­¦å‘Š"
+                  ]
+                }
+              ]
+            },
+            "agentScorecard": {
+              "agentId": "default",
+              "agentName": "default",
+              "model": "xiaomi/neohorse-1.5-flash-preview",
+              "strategyProfile": "main",
+              "memoryUsed": 0,
+              "toolsUsed": 0,
+              "warnings": 0,
+              "score": {
+                "score": 78,
+                "max": 100,
+                "grade": "good",
+                "breakdown": [
+                  {
+                    "dimension": "strategy",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "å‘½ä¸­ main ç­–ç•¥",
+                      "è·¯ç”±åŽŸå›  strategy-main"
+                    ]
+                  },
+                  {
+                    "dimension": "memory",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘½ä¸­å¯è§è®°å¿†"
+                    ]
+                  },
+                  {
+                    "dimension": "tooling",
+                    "score": 12,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœ¬è½®æ— å·¥å…·è°ƒç”¨"
+                    ]
+                  },
+                  {
+                    "dimension": "capability",
+                    "score": 14,
+                    "max": 20,
+                    "status": "watch",
+                    "reasons": [
+                      "æœªå‘ç”Ÿèƒ½åŠ› fallback"
+                    ]
+                  },
+                  {
+                    "dimension": "delivery",
+                    "score": 20,
+                    "max": 20,
+                    "status": "good",
+                    "reasons": [
+                      "æ— è¿è¡Œè­¦å‘Š"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "correlation": {
+            "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+            "traceId": "85b46f5eeb86ece0f84d15d1ef07316b"
+          }
+        },
+        "contentParts": [
+          {
+            "type": "text",
+            "text": "å·²ç”Ÿæˆ [summary.md](summary.md)ï¼ŒåŒ…å«é¡¹ç›®å `neo-demo-workspace`ã€ç‰ˆæœ¬ 1.4.0ã€ä¸‰ä¸ªè„š…[truncated 284]"
+          }
+        ],
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 202
+      }
+    },
+    {
+      "type": "task_complete",
+      "data": {
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "duration": 882,
+        "toolsUsed": [],
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 204
+      }
+    },
+    {
+      "type": "message_snapshot",
+      "data": {
+        "role": "assistant",
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "messageId": "9ee630cb-02b9-4390-abb3-b62564f6db84",
+        "content": "å·²ç”Ÿæˆ [summary.md](summary.md)ï¼ŒåŒ…å«é¡¹ç›®å `neo-demo-workspace`ã€ç‰ˆæœ¬ 1.4.0ã€ä¸‰ä¸ªè„š…[truncated 284]",
+        "reasoning": "The task is complete. summary.md was written and verified by reading it back. I should report the re…[truncated 114]",
+        "isFinal": true,
+        "source": "main_accumulator",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 205
+      }
+    },
+    {
+      "type": "turn_end",
+      "data": {
+        "turnId": "1b17f1e2-a7e2-4627-ae82-4b5494710f56",
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 206
+      }
+    },
+    {
+      "type": "agent_complete",
+      "data": {
+        "streamEpoch": "http:650f2551-e8d7-4eba-8f67-f30c3668b861",
+        "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+        "seq": 207
+      }
+    }
+  ],
+  "persistedMessages": [
+    {
+      "content": "重新读一遍 README.md 和 package.json，核对 summary.md 里的项目名、版本和脚本列表是否一致，有出入就改正，最后告诉我结论",
+      "id": "2bda4525-ebc9-4cfd-b0eb-c01eab9d31ed",
+      "metadata": {
+        "workbench": {
+          "executionIntent": {
+            "designCanvasActive": false
+          },
+          "routingMode": "auto",
+          "turnCapabilityScopeMode": "auto",
+          "workingDirectory": "<workspace>"
+        }
+      },
+      "role": "user",
+      "timestamp": 1795125591863,
+      "visibility": "active"
+    },
+    {
+      "content": "",
+      "contentParts": [
+        {
+          "text": "",
+          "type": "text"
+        },
+        {
+          "toolCallId": "call_41c96ac4d1a14d30a88ece7c",
+          "type": "tool_call"
+        },
+        {
+          "text": "",
+          "type": "text"
+        },
+        {
+          "toolCallId": "call_611a20ee8be345c2b843699f",
+          "type": "tool_call"
+        },
+        {
+          "text": "",
+          "type": "text"
+        },
+        {
+          "toolCallId": "call_fe8388f0dcd94cfc9e41a8f4",
+          "type": "tool_call"
+        }
+      ],
+      "effortLevel": "high",
+      "id": "7ed2ee8e-80f0-4542-bcd4-523fffb30bbc",
+      "metadata": {
+        "correlation": {
+          "traceId": "58560f00dd0b1ded564b4f74022c5c6c",
+          "turnId": "67e921b2-7e2f-4ef0-a962-701c9b72a7db"
+        },
+        "turnQuality": {
+          "agentScorecard": {
+            "agentId": "default",
+            "agentName": "default",
+            "memoryUsed": 0,
+            "model": "xiaomi/neohorse-1.5-flash-preview",
+            "score": {
+              "breakdown": [
+                {
+                  "dimension": "strategy",
+                  "max": 20,
+                  "reasons": [
+                    "命中 main 策略",
+                    "路由原因 strategy-main"
+                  ],
+                  "score": 20,
+                  "status": "good"
+                },
+                {
+                  "dimension": "memory",
+                  "max": 20,
+                  "reasons": [
+                    "未命中可见记忆"
+                  ],
+                  "score": 12,
+                  "status": "watch"
+                },
+                {
+                  "dimension": "tooling",
+                  "max": 20,
+                  "reasons": [
+                    "本轮无工具调用"
+                  ],
+                  "score": 12,
+                  "status": "watch"
+                },
+                {
+                  "dimension": "capability",
+                  "max": 20,
+                  "reasons": [
+                    "未发生能力 fallback"
+                  ],
+                  "score": 14,
+                  "status": "watch"
+                },
+                {
+                  "dimension": "delivery",
+                  "max": 20,
+                  "reasons": [
+                    "无运行警告"
+                  ],
+                  "score": 20,
+                  "status": "good"
+                }
+              ],
+              "grade": "good",
+              "max": 100,
+              "score": 78
+            },
+            "strategyProfile": "main",
+            "toolsUsed": 0,
+            "warnings": 0
+          },
+          "capabilities": {
+            "agentId": "default",
+            "agentName": "default"
+          },
+          "memory": {
+            "blocks": [
+              {
+                "blockType": "user-directives",
+                "chars": 0,
+                "count": 0,
+                "injected": false,
+                "source": "directive-memory-packer",
+                "trigger": "session_start"
+              },
+              {
+                "blockType": "user-memory",
+                "chars": 0,
+                "count": 0,
+                "injected": false,
+                "source": "memory-packer",
+                "trigger": "session_start"
+              },
+              {
+                "blockType": "memory_index",
+                "chars": 0,
+                "count": 0,
+                "injected": false,
+                "source": "light-memory-index",
+                "trigger": "memory_index_empty"
+              }
+            ],
+            "mode": "auto"
+          },
+          "score": {
+            "breakdown": [
+              {
+                "dimension": "strategy",
+                "max": 20,
+                "reasons": [
+                  "命中 main 策略",
+                  "路由原因 strategy-main"
+                ],
+                "score": 20,
+                "status": "good"
+              },
+              {
+                "dimension": "memory",
+                "max": 20,
+                "reasons": [
+                  "未命中可见记忆"
+                ],
+                "score": 12,
+                "status": "watch"
+              },
+              {
+                "dimension": "tooling",
+                "max": 20,
+                "reasons": [
+                  "本轮无工具调用"
+                ],
+                "score": 12,
+                "status": "watch"
+              },
+              {
+                "dimension": "capability",
+                "max": 20,
+                "reasons": [
+                  "未发生能力 fallback"
+                ],
+                "score": 14,
+                "status": "watch"
+              },
+              {
+                "dimension": "delivery",
+                "max": 20,
+                "reasons": [
+                  "无运行警告"
+                ],
+                "score": 20,
+                "status": "good"
+              }
+            ],
+            "grade": "good",
+            "max": 100,
+            "score": 78
+          },
+          "strategy": {
+            "adaptive": true,
+            "complexity": {
+              "level": "moderate",
+              "score": 50,
+              "signals": [
+                "jev_intent:file_task",
+                "jev_confidence:0.97",
+                "needs_clarification:0.80",
+                "needs_vision:0.04",
+                "high_stakes:0.08"
+              ]
+            },
+            "decisionReason": "strategy-main",
+            "effortLevel": "high",
+            "model": "neohorse-1.5-flash-preview",
+            "profile": "main",
+            "provider": "xiaomi",
+            "reason": "使用 main 任务策略",
+            "requestedModel": "neohorse-1.5-flash-preview",
+            "requestedProvider": "xiaomi"
+          }
+        }
+      },
+      "modelDecision": {
+        "billingMode": "payg",
+        "capabilityNeeds": [
+          "tool-use",
+          "code",
+          "search",
+          "artifact"
+        ],
+        "complexityScore": 50,
+        "costPolicy": "neutral",
+        "fallbackFrom": null,
+        "providerHealthSnapshot": {
+          "consecutiveErrors": 0,
+          "errorRate": 0,
+          "lastErrorAt": 0,
+          "lastSuccessAt": 1795124451571,
+          "latencyP50": 1263,
+          "latencyP95": 2053,
+          "provider": "xiaomi",
+          "sampledAt": 1795125593030,
+          "status": "healthy"
+        },
+        "providerIdentity": {
+          "endpoint": "https://tokenrhythm.studio/v1",
+          "protocol": "openai",
+          "provider": "xiaomi",
+          "transportLabel": "OpenAI-compatible"
+        },
+        "reason": "strategy-main",
+        "requestedModel": "neohorse-1.5-flash-preview",
+        "requestedProvider": "xiaomi",
+        "resolvedModel": "neohorse-1.5-flash-preview",
+        "resolvedProvider": "xiaomi",
+        "role": null,
+        "speedPolicy": "normal",
+        "strategyProfile": "main",
+        "strategyReason": "使用 main 任务策略",
+        "strategySummary": "任务策略选择主模型，平衡速度和质量。",
+        "taskClass": "artifact",
+        "taskComplexity": {
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.97",
+            "needs_clarification:0.80",
+            "needs_vision:0.04",
+            "high_stakes:0.08"
+          ]
+        },
+        "timestamp": 1795125593030,
+        "toolPolicy": "runtime-checked",
+        "toolStrategy": {
+          "mcpToolCount": 0,
+          "programmaticToolCalling": "available",
+          "programmaticToolCount": 13,
+          "tokenSavings": {
+            "basis": {
+              "fields": [
+                "name",
+                "description",
+                "inputSchema"
+              ],
+              "previewToolCount": 8,
+              "source": "tool-spec-local-estimate",
+              "toolCount": 13
+            },
+            "detail": "估算值：这 13 个工具的名称、说明和参数若写进普通对话上下文，约占 5173 tokens；本轮服务商用量已回传：输入 2114 / 输出 232 tokens；真实账单以服务商用量为准。",
+            "measurement": {
+              "providerReportedSavings": false,
+              "savingsSource": "tool-spec-local-estimate",
+              "usageSource": "model-response-usage"
+            },
+            "providerUsage": {
+              "inputTokens": 2114,
+              "outputTokens": 232,
+              "source": "model-response-usage",
+              "totalTokens": 2346
+            },
+            "savedTokens": 5173,
+            "status": "estimated"
+          },
+          "toolNamesPreview": [
+            "AskUserQuestion",
+            "Edit",
+            "Glob",
+            "Grep",
+            "ListDirectory",
+            "Read",
+            "Write",
+            "cancel_task"
+          ],
+          "visibleToolCount": 13
+        },
+        "turnId": "67e921b2-7e2f-4ef0-a962-701c9b72a7db"
+      },
+      "role": "assistant",
+      "thinking": "The user wants me to re-read README.md and package.json, verify summary.md's project name, version a…[truncated 326]",
+      "timestamp": 1795125594680,
+      "toolCalls": [
+        {
+          "arguments": {
+            "file_path": "<workspace>/README.md"
+          },
+          "id": "call_41c96ac4d1a14d30a88ece7c",
+          "name": "Read",
+          "shortDescription": "Read README.md"
+        },
+        {
+          "arguments": {
+            "file_path": "<workspace>/package.json"
+          },
+          "id": "call_611a20ee8be345c2b843699f",
+          "name": "Read",
+          "shortDescription": "Read package.json"
+        },
+        {
+          "arguments": {
+            "file_path": "<workspace>/summary.md"
+          },
+          "id": "call_fe8388f0dcd94cfc9e41a8f4",
+          "name": "Read",
+          "shortDescription": "Read summary.md"
+        }
+      ],
+      "visibility": "active"
+    },
+    {
+      "content": "[{\"toolCallId\":\"call_41c96ac4d1a14d30a88ece7c\",\"success\":true,\"output\":\"Read version digest: 0cac74f…[truncated 7630]",
+      "id": "5d057bce-452d-425d-a633-0af851d984a8",
+      "metadata": {
+        "correlation": {
+          "traceId": "58560f00dd0b1ded564b4f74022c5c6c",
+          "turnId": "67e921b2-7e2f-4ef0-a962-701c9b72a7db"
+        }
+      },
+      "role": "tool",
+      "timestamp": 1795125594756,
+      "toolResults": [
+        {
+          "duration": 40,
+          "metadata": {
+            "artifact": {
+              "artifactId": "artifact_52561fb7ab73ca31",
+              "createdAt": "2026-11-19T21:59:54.722Z",
+              "kind": "text",
+              "metadata": {},
+              "mimeType": "text/plain",
+              "name": "README.md",
+              "path": "<workspace>/README.md",
+              "preview": "     1\t# Neo Demo Workspace\n     2\t\n     3\t这是周报演示项目。本目录用于整理本周工程周报素材。\n     4\t\n     5\t- `docs/plan.md`…[truncated 258]",
+              "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+              "sha256": "0cac74f4055e9e446c564b1d1ba5ab6e4c25b60fd1ab4f0e1b75d2dca633ca0f",
+              "sizeBytes": 345,
+              "sourceTool": "Read"
+            },
+            "citations": [
+              {
+                "id": "cite_4_mwo3fhpp",
+                "label": "README.md:1",
+                "location": "lines:1-12",
+                "source": "<workspace>/README.md",
+                "timestamp": 1795125594733,
+                "toolCallId": "call_41c96ac4d1a14d30a88ece7c",
+                "type": "file"
+              }
+            ],
+            "digest": "0cac74f4055e9e44",
+            "documentOrigin": {
+              "digest": "0cac74f4055e9e446c564b1d1ba5ab6e4c25b60fd1ab4f0e1b75d2dca633ca0f",
+              "kind": "unclassified",
+              "path": "<workspace>/README.md",
+              "roots": [
+                "<workspace>/README.md"
+              ]
+            },
+            "evidenceKind": "file_read",
+            "evidenceRef": {
+              "freshness": {
+                "capturedAtMs": 1795125594713,
+                "digest": "0cac74f4055e9e44",
+                "state": "read"
+              },
+              "id": "evidence_d45bee6e",
+              "kind": "read",
+              "redactionStatus": "clean",
+              "ref": "<workspace>/README.md#L1-L11",
+              "source": "Read"
+            },
+            "executionStarted": true,
+            "filePath": "<workspace>/README.md",
+            "fromCache": false,
+            "preserveObservation": true,
+            "rangedRead": false,
+            "shownRange": {
+              "endLine": 11,
+              "startLine": 1,
+              "totalLines": 11
+            }
+          },
+          "output": "Read version digest: 0cac74f4055e9e44\n     1\t# Neo Demo Workspace\n     2\t\n     3\t这是周报演示项目。本目录用于整理本周工…[truncated 553]",
+          "success": true,
+          "toolCallId": "call_41c96ac4d1a14d30a88ece7c"
+        },
+        {
+          "duration": 49,
+          "metadata": {
+            "artifact": {
+              "artifactId": "artifact_38314441e5f29024",
+              "createdAt": "2026-11-19T21:59:54.734Z",
+              "kind": "text",
+              "metadata": {},
+              "mimeType": "text/plain",
+              "name": "package.json",
+              "path": "<workspace>/package.json",
+              "preview": "     1\t{\n     2\t  \"name\": \"neo-demo-workspace\",\n     3\t  \"version\": \"1.4.0\",\n     4\t  \"private\": tru…[truncated 453]",
+              "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+              "sha256": "6012683ba568583871500a885ab960244ad476ef2021e5714b41b7f739e953f5",
+              "sizeBytes": 320,
+              "sourceTool": "Read"
+            },
+            "citations": [
+              {
+                "id": "cite_5_mwo3fhpw",
+                "label": "package.json:1",
+                "location": "lines:1-20",
+                "source": "<workspace>/package.json",
+                "timestamp": 1795125594740,
+                "toolCallId": "call_611a20ee8be345c2b843699f",
+                "type": "file"
+              }
+            ],
+            "digest": "6012683ba5685838",
+            "evidenceKind": "file_read",
+            "evidenceRef": {
+              "freshness": {
+                "capturedAtMs": 1795125594715,
+                "digest": "6012683ba5685838",
+                "state": "read"
+              },
+              "id": "evidence_91830e7e",
+              "kind": "read",
+              "redactionStatus": "clean",
+              "ref": "<workspace>/package.json#L1-L19",
+              "source": "Read"
+            },
+            "executionStarted": true,
+            "filePath": "<workspace>/package.json",
+            "fromCache": false,
+            "preserveObservation": true,
+            "rangedRead": false,
+            "shownRange": {
+              "endLine": 19,
+              "startLine": 1,
+              "totalLines": 19
+            }
+          },
+          "output": "Read version digest: 6012683ba5685838\n     1\t{\n     2\t  \"name\": \"neo-demo-workspace\",\n     3\t  \"vers…[truncated 491]",
+          "success": true,
+          "toolCallId": "call_611a20ee8be345c2b843699f"
+        },
+        {
+          "duration": 56,
+          "metadata": {
+            "artifact": {
+              "artifactId": "artifact_5edb1068a5b1365e",
+              "createdAt": "2026-11-19T21:59:54.745Z",
+              "kind": "text",
+              "metadata": {},
+              "mimeType": "text/plain",
+              "name": "summary.md",
+              "path": "<workspace>/summary.md",
+              "preview": "     1\t# 项目概览\n     2\t\n     3\t来源：`README.md`、`package.json`（2026-11-19 整理）\n     4\t\n     5\t## 基本信息\n   …[truncated 500]",
+              "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
+              "sha256": "d2bbc764fe9d2f724cca3d2d81cb95464158fe6a803bc86a188b2ff1094a85f4",
+              "sizeBytes": 1053,
+              "sourceTool": "Read"
+            },
+            "citations": [
+              {
+                "id": "cite_6_mwo3fhq4",
+                "label": "summary.md:1",
+                "location": "lines:1-35",
+                "source": "<workspace>/summary.md",
+                "timestamp": 1795125594748,
+                "toolCallId": "call_fe8388f0dcd94cfc9e41a8f4",
+                "type": "file"
+              }
+            ],
+            "digest": "d2bbc764fe9d2f72",
+            "documentOrigin": {
+              "digest": "d2bbc764fe9d2f724cca3d2d81cb95464158fe6a803bc86a188b2ff1094a85f4",
+              "kind": "derived",
+              "path": "<workspace>/summary.md",
+              "roots": [
+                "<workspace>/README.md"
+              ]
+            },
+            "evidenceKind": "file_read",
+            "evidenceRef": {
+              "freshness": {
+                "capturedAtMs": 1795125594715,
+                "digest": "d2bbc764fe9d2f72",
+                "state": "read"
+              },
+              "id": "evidence_7a6a8633",
+              "kind": "read",
+              "redactionStatus": "clean",
+              "ref": "<workspace>/summary.md#L1-L34",
+              "source": "Read"
+            },
+            "executionStarted": true,
+            "filePath": "<workspace>/summary.md",
+            "fromCache": false,
+            "preserveObservation": true,
+            "rangedRead": false,
+            "shownRange": {
+              "endLine": 34,
+              "startLine": 1,
+              "totalLines": 34
+            }
+          },
+          "output": "Read version digest: d2bbc764fe9d2f72\n     1\t# 项目概览\n     2\t\n     3\t来源：`README.md`、`package.json`（202…[truncated 1212]",
+          "success": true,
+          "toolCallId": "call_fe8388f0dcd94cfc9e41a8f4"
+        }
+      ],
+      "visibility": "active"
+    },
+    {
+      "content": "核对完成，三个文件内容都与上次读取时一致（未变动），逐项比对结果：\n\n- 项目名 `neo-demo-workspace`、README 标题 Neo Demo Workspace — 一致\n- 版本…[truncated 345]",
+      "contentParts": [
+        {
+          "text": "核对完成，三个文件内容都与上次读取时一致（未变动），逐项比对结果：\n\n- 项目名 `neo-demo-workspace`、README 标题 Neo Demo Workspace — 一致\n- 版本…[truncated 345]",
+          "type": "text"
+        }
+      ],
+      "effortLevel": "high",
+      "id": "875a018c-0d05-4860-a148-faf4aaf2feca",
+      "metadata": {
+        "correlation": {
+          "traceId": "58560f00dd0b1ded564b4f74022c5c6c",
+          "turnId": "c9c5c8f6-e0f6-45e2-bce0-c51b086f5503"
+        },
+        "turnQuality": {
+          "agentScorecard": {
+            "agentId": "default",
+            "agentName": "default",
+            "memoryUsed": 0,
+            "model": "xiaomi/neohorse-1.5-flash-preview",
+            "score": {
+              "breakdown": [
+                {
+                  "dimension": "strategy",
+                  "max": 20,
+                  "reasons": [
+                    "命中 main 策略",
+                    "路由原因 strategy-main"
+                  ],
+                  "score": 20,
+                  "status": "good"
+                },
+                {
+                  "dimension": "memory",
+                  "max": 20,
+                  "reasons": [
+                    "未命中可见记忆"
+                  ],
+                  "score": 12,
+                  "status": "watch"
+                },
+                {
+                  "dimension": "tooling",
+                  "max": 20,
+                  "reasons": [
+                    "本轮无工具调用"
+                  ],
+                  "score": 12,
+                  "status": "watch"
+                },
+                {
+                  "dimension": "capability",
+                  "max": 20,
+                  "reasons": [
+                    "未发生能力 fallback"
+                  ],
+                  "score": 14,
+                  "status": "watch"
+                },
+                {
+                  "dimension": "delivery",
+                  "max": 20,
+                  "reasons": [
+                    "无运行警告"
+                  ],
+                  "score": 20,
+                  "status": "good"
+                }
+              ],
+              "grade": "good",
+              "max": 100,
+              "score": 78
+            },
+            "strategyProfile": "main",
+            "toolsUsed": 0,
+            "warnings": 0
+          },
+          "capabilities": {
+            "agentId": "default",
+            "agentName": "default"
+          },
+          "memory": {
+            "blocks": [
+              {
+                "blockType": "user-directives",
+                "chars": 0,
+                "count": 0,
+                "injected": false,
+                "source": "directive-memory-packer",
+                "trigger": "session_start"
+              },
+              {
+                "blockType": "user-memory",
+                "chars": 0,
+                "count": 0,
+                "injected": false,
+                "source": "memory-packer",
+                "trigger": "session_start"
+              },
+              {
+                "blockType": "memory_index",
+                "chars": 0,
+                "count": 0,
+                "injected": false,
+                "source": "light-memory-index",
+                "trigger": "memory_index_empty"
+              }
+            ],
+            "mode": "auto"
+          },
+          "score": {
+            "breakdown": [
+              {
+                "dimension": "strategy",
+                "max": 20,
+                "reasons": [
+                  "命中 main 策略",
+                  "路由原因 strategy-main"
+                ],
+                "score": 20,
+                "status": "good"
+              },
+              {
+                "dimension": "memory",
+                "max": 20,
+                "reasons": [
+                  "未命中可见记忆"
+                ],
+                "score": 12,
+                "status": "watch"
+              },
+              {
+                "dimension": "tooling",
+                "max": 20,
+                "reasons": [
+                  "本轮无工具调用"
+                ],
+                "score": 12,
+                "status": "watch"
+              },
+              {
+                "dimension": "capability",
+                "max": 20,
+                "reasons": [
+                  "未发生能力 fallback"
+                ],
+                "score": 14,
+                "status": "watch"
+              },
+              {
+                "dimension": "delivery",
+                "max": 20,
+                "reasons": [
+                  "无运行警告"
+                ],
+                "score": 20,
+                "status": "good"
+              }
+            ],
+            "grade": "good",
+            "max": 100,
+            "score": 78
+          },
+          "strategy": {
+            "adaptive": true,
+            "complexity": {
+              "level": "moderate",
+              "score": 50,
+              "signals": [
+                "jev_intent:file_task",
+                "jev_confidence:0.97",
+                "needs_clarification:0.80",
+                "needs_vision:0.04",
+                "high_stakes:0.08"
+              ]
+            },
+            "decisionReason": "strategy-main",
+            "effortLevel": "high",
+            "model": "neohorse-1.5-flash-preview",
+            "profile": "main",
+            "provider": "xiaomi",
+            "reason": "使用 main 任务策略",
+            "requestedModel": "neohorse-1.5-flash-preview",
+            "requestedProvider": "xiaomi"
+          }
+        }
+      },
+      "modelDecision": {
+        "billingMode": "payg",
+        "capabilityNeeds": [
+          "tool-use",
+          "code",
+          "search",
+          "artifact"
+        ],
+        "complexityScore": 50,
+        "costPolicy": "neutral",
+        "fallbackFrom": null,
+        "providerHealthSnapshot": {
+          "consecutiveErrors": 0,
+          "errorRate": 0,
+          "lastErrorAt": 0,
+          "lastSuccessAt": 1795125594670,
+          "latencyP50": 1506,
+          "latencyP95": 2053,
+          "provider": "xiaomi",
+          "sampledAt": 1795125594842,
+          "status": "healthy"
+        },
+        "providerIdentity": {
+          "endpoint": "https://tokenrhythm.studio/v1",
+          "protocol": "openai",
+          "provider": "xiaomi",
+          "transportLabel": "OpenAI-compatible"
+        },
+        "reason": "strategy-main",
+        "requestedModel": "neohorse-1.5-flash-preview",
+        "requestedProvider": "xiaomi",
+        "resolvedModel": "neohorse-1.5-flash-preview",
+        "resolvedProvider": "xiaomi",
+        "role": null,
+        "speedPolicy": "normal",
+        "strategyProfile": "main",
+        "strategyReason": "使用 main 任务策略",
+        "strategySummary": "任务策略选择主模型，平衡速度和质量。",
+        "taskClass": "artifact",
+        "taskComplexity": {
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.97",
+            "needs_clarification:0.80",
+            "needs_vision:0.04",
+            "high_stakes:0.08"
+          ]
+        },
+        "timestamp": 1795125594842,
+        "toolPolicy": "runtime-checked",
+        "toolStrategy": {
+          "mcpToolCount": 0,
+          "programmaticToolCalling": "available",
+          "programmaticToolCount": 13,
+          "tokenSavings": {
+            "basis": {
+              "fields": [
+                "name",
+                "description",
+                "inputSchema"
+              ],
+              "previewToolCount": 8,
+              "source": "tool-spec-local-estimate",
+              "toolCount": 13
+            },
+            "detail": "估算值：这 13 个工具的名称、说明和参数若写进普通对话上下文，约占 5173 tokens；本轮服务商用量已回传：输入 2507 / 输出 725 tokens；真实账单以服务商用量为准。",
+            "measurement": {
+              "providerReportedSavings": false,
+              "savingsSource": "tool-spec-local-estimate",
+              "usageSource": "model-response-usage"
+            },
+            "providerUsage": {
+              "inputTokens": 2507,
+              "outputTokens": 725,
+              "source": "model-response-usage",
+              "totalTokens": 3232
+            },
+            "savedTokens": 5173,
+            "status": "estimated"
+          },
+          "toolNamesPreview": [
+            "AskUserQuestion",
+            "Edit",
+            "Glob",
+            "Grep",
+            "ListDirectory",
+            "Read",
+            "Write",
+            "cancel_task"
+          ],
+          "visibleToolCount": 13
+        },
+        "turnId": "c9c5c8f6-e0f6-45e2-bce0-c51b086f5503"
+      },
+      "role": "assistant",
+      "thinking": "The three files were re-read, but the tool returned \"already shown\" and the digests are identical to…[truncated 2050]",
+      "timestamp": 1795125598719,
+      "visibility": "active"
+    }
+  ]
+}

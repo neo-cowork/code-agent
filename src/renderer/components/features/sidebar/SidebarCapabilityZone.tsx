@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useEffect, useMemo } from 'react';
-import { Clock3, BookOpen, Boxes, FolderKanban } from 'lucide-react';
+import { Clock3, BookOpen, Boxes, FolderKanban, MonitorSmartphone } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -17,17 +17,18 @@ import { interpolatePlural } from '../../../i18n/interpolate';
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, showCapabilityHub, showLibraryPanel, showProjectSpacePage, expertDetailRoleId, openCapabilityHub, openProjectSpacePage, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  const { showCronCenter, showLocalOpsPanel, showCapabilityHub, showLibraryPanel, showProjectSpacePage, expertDetailRoleId, openCapabilityHub, openProjectSpacePage, openLocalOpsPanel, setShowCronCenter, setShowLibraryPanel } = useAppStore();
   // 二级页迁入右侧内容区后，返回语义 = 侧栏直接切换，所以这三行要能读出「我现在在哪」。
   // 专家详情是能力中心的下钻页，归到能力中心一栏亮。
   const activeRow = expertDetailRoleId || showCapabilityHub ? 'hub'
     : showLibraryPanel ? 'library'
     : showCronCenter ? 'automation'
     : showProjectSpacePage ? 'projects'
+    : showLocalOpsPanel ? 'localOps'
     : null;
-  const rowClass = (key: 'hub' | 'library' | 'automation' | 'projects') => (
+  const rowClass = (key: 'hub' | 'library' | 'automation' | 'projects' | 'localOps') => (
     `group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors ${
-      activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
+      activeRow === key ? 'bg-zinc-700/60 text-zinc-100' : 'hover:bg-zinc-800/70'
     }`
   );
   const jobs = useCronStore((state) => state.jobs);
@@ -132,6 +133,20 @@ export const SidebarCapabilityZone: React.FC = () => {
         </span>
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.automation}
+        </span>
+      </button>
+      {/* 本机操作入口：登录与否都在（桌面/浏览器授权不应藏在账号菜单或浏览器溢出菜单里） */}
+      <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
+        type="button"
+        onClick={() => openLocalOpsPanel('desktop')}
+        data-testid="sidebar-capability-local-ops"
+        aria-current={activeRow === 'localOps' ? 'page' : undefined}
+        title={cz.localOpsSubtitle}
+        className={rowClass('localOps')}
+      >
+        <MonitorSmartphone className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+        <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+          {t.sidebar.menuLocalOps}
         </span>
       </button>
       {/* 诊断问题徽标行：仅启动静默快检有 fail 项时出现，全绿不打扰 */}

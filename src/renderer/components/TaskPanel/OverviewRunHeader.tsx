@@ -70,7 +70,7 @@ export const OverviewRunHeader: React.FC = () => {
   const interrupt = useRunControlStore((state) => state.actions?.interrupt);
   const sessionTitle = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
-    // 原始存储标题原样传入；本地化（[Schedule]→[定时]）在 buildOverviewRunHeaderModel 内做
+    // 原始存储标题原样传入；本地化在 buildOverviewRunHeaderModel 内做
     return session?.title ?? null;
   });
 
@@ -157,6 +157,15 @@ export const OverviewRunHeader: React.FC = () => {
           </GhostButton>
         )}
       </div>
+      {model.subtitle && (
+        <div
+          data-testid="overview-run-header-subtitle"
+          className="truncate px-0.5 pl-4 text-[11px] text-zinc-400"
+          title={model.subtitle}
+        >
+          {model.subtitle}
+        </div>
+      )}
       {phaseLine && (
         <div
           data-testid="overview-run-header-phase"

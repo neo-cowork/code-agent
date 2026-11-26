@@ -197,6 +197,18 @@ export interface ToolContext {
   currentToolCallId?: string;
 }
 
+/**
+ * Host 在本 run 首次直接驱动某 app 界面的工具调用上附加的结构化披露
+ * （N-CUA-HOST-GUI-DISCLOSURE）：与模型是否开口无关，host 在调用派发前自己说一句。
+ * 只带稳定 code + app 名，句子文案在 renderer i18n（zh/en），host 不落用户文案。
+ */
+interface GuiTakeoverDisclosure {
+  /** 稳定 code，renderer 据此取词条。 */
+  code: 'gui_takeover';
+  /** 目标应用显示名（host 侧解析：cua 反查 / targetApp / tell 目标，不采信模型自报）。 */
+  app: string;
+}
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -226,6 +238,9 @@ export interface ToolCall {
 
   /** 可选的预期成果（用于失败诊断和未来 UI 增强） */
   expectedOutcome?: string;
+
+  /** 本 run 首次直接驱动该 app GUI 的调用：host 派发前附加，随消息持久化。 */
+  guiTakeoverDisclosure?: GuiTakeoverDisclosure;
 }
 
 export interface ToolLiveOutput {
@@ -248,6 +263,8 @@ export interface ToolResult {
   success: boolean;
   output?: string;
   error?: string;
+  /** Display text for a failure whose error contains model guidance. */
+  userMessage?: string;
   outputPath?: string; // Explicit path for file-producing tools (preferred over regex extraction)
   duration?: number;
   metadata?: Record<string, unknown>; // 工具返回的元数据（如 imagePath, imageBase64 等）

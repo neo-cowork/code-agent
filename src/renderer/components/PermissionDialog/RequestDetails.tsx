@@ -6,6 +6,8 @@ import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
+import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
+import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
 import { redactCredentialText } from '@shared/security/secretPatterns';
@@ -18,6 +20,7 @@ import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
 import { describeApproval } from './describeApproval';
+import { describeRoleSettingChange } from './roleSettingRows';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -156,6 +159,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         {request.tool === 'calendar_delete_event' && (
           <p className="text-xs leading-5 text-zinc-400" data-testid="calendar-delete-note">{labels.writeback.calendarDeleteNote}</p>
         )}
+        {request.tool === 'reminders_delete' && (
+          <p className="text-xs leading-5 text-zinc-400" data-testid="reminders-delete-note">{labels.writeback.remindersDeleteNote}</p>
+        )}
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
             boundary={getPermissionBoundary(request.boundary.id, {
@@ -190,7 +196,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath pathDisplay={details.pathDisplay} />}
 
       {/* 命令 */}
       {details.command && (
@@ -253,7 +259,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic')
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
-            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
+            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">
+              {(kind === 'role_setting' && describeRoleSettingChange(details as unknown as Record<string, unknown>, t, language)) || details.preview.summary}
+            </div>
           )}
           {kind === 'web_action' && webActionRows(details.preview.diff).map((row, index) => (
             <DetailItem
@@ -264,7 +272,11 @@ export function RequestDetails({ request }: RequestDetailsProps) {
                 : row.value}
             />
           ))}
-          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action' && (
+          {details.connectorAccess && details.preview.type === 'generic' && catalogConnectorParamRows(details.preview.diff, language).map((row, index) => (
+            <DetailItem key={`${index}-${row.label ?? ''}`} label={row.label ?? ''} value={row.value} />
+          ))}
+          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action'
+            && !(details.connectorAccess && details.preview.type === 'generic') && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>
@@ -421,6 +433,7 @@ interface DetailItemProps {
   label: string;
   value: string;
   isPath?: boolean;
+  pathDisplay?: NonNullable<PermissionRequest['details']['pathDisplay']>;
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
@@ -468,15 +481,16 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
-function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
-  const { t } = useI18n();
+function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
+  const { t, language } = useI18n();
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   // 所有 DetailItem 的值只在这一处统一脱敏；title 始终使用脱敏值，打开原文也不泄到 tooltip。
   const redactedValue = redactCredentialText(value);
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
-  const rawDisplayValue = isPath ? formatFilePath(visibleValue) : visibleValue;
+  const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
+  const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatFilePath(visibleValue)) : visibleValue;
 
   const lines = rawDisplayValue.split('\n');
   const shouldFold = Boolean(
@@ -512,7 +526,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsi
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={redactedValue}
+        title={isPath && humanPath !== visibleValue ? humanPath : redactedValue}
       >
         {displayValue}
       </div>

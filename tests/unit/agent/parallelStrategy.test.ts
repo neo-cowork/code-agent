@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { classifyToolCalls } from '../../../src/host/agent/toolExecution/parallelStrategy';
+import { classifyToolCalls, toolBatchLabel } from '../../../src/host/agent/toolExecution/parallelStrategy';
 import type { MCPToolAnnotations } from '../../../src/host/mcp/types';
 import type { ToolCall } from '../../../src/shared/contract';
 import {
@@ -108,5 +108,35 @@ describe('shared conflict table drives the static segmenter', () => {
         ? [[row.left.toolName], [row.right.toolName]]
         : [[row.left.toolName, row.right.toolName]]);
     }
+  });
+});
+
+describe('toolBatchLabel（N-FIX-PROGRESS-STEP-RAW-TOOL-NAME）', () => {
+  const cases: Array<[string, string, string]> = [
+    ['calendar', '正在查看日历', 'Checking Calendar'],
+    ['reminders', '正在查看提醒事项', 'Checking Reminders'],
+    ['mail', '正在查看邮件', 'Checking Mail'],
+    ['calendar_create_event', '正在创建日程', 'Creating an event'],
+    ['mystery_tool', '正在执行操作', 'Working on it'],
+    ['', '正在执行操作', 'Working on it'],
+    ['read_file', '正在读取文件', 'Reading a file'],
+  ];
+  it.each(cases)('%s 不外露工具 id', (name, zh, en) => {
+    expect(toolBatchLabel(name, 1, false, 'zh')).toBe(zh);
+    expect(toolBatchLabel(name, 1, false, 'en')).toBe(en);
+    for (const text of [zh, en]) {
+      if (name) expect(text).not.toContain(name);
+      expect(text).not.toContain('tool_running');
+    }
+    expect(toolBatchLabel(name, 1, false, 'en')).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('mcp 工具、批量、研究抓取都是人话', () => {
+    expect(toolBatchLabel('mcp__x__y', 1, false, 'zh')).toBe('正在使用外部工具');
+    expect(toolBatchLabel('mcp__x__y', 1, false, 'en')).toBe('Using an external tool');
+    expect(toolBatchLabel('calendar', 3, false, 'zh')).toBe('正在同时执行 3 项操作');
+    expect(toolBatchLabel('calendar', 3, false, 'en')).toBe('Running 3 actions at once');
+    expect(toolBatchLabel('web_fetch', 1, true, 'zh')).toBe('正在抓取详情');
+    expect(toolBatchLabel('web_fetch', 1, true, 'en')).toBe('Fetching details');
   });
 });

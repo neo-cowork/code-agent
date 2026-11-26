@@ -313,17 +313,21 @@ function normalizeBuiltinDefinition(definition: string): string {
   return definition.replace(/\r\n/g, '\n').trimEnd();
 }
 
-async function loadFrontmatterVisual(roleId: string): Promise<RoleVisual> {
+function getRoleDefinitionPath(roleId: string): string {
+  return path.join(getAgentsMdDir().user, `${roleId}.md`);
+}
+
+async function loadRoleDefinition(definitionPath: string): Promise<string | null> {
   try {
-    return parseAgentMdVisual(await fs.readFile(path.join(getAgentsMdDir().user, `${roleId}.md`), 'utf-8'));
+    return await fs.readFile(definitionPath, 'utf-8');
   } catch {
-    return {};
+    return null;
   }
 }
 
 async function resolveVisual(roleId: string): Promise<RoleVisual> {
   // 内置角色的编译期身份优先，用户编辑 agent.md 不会伪装或覆盖预设展示。
-  return getBuiltinRoleVisual(roleId) ?? await loadFrontmatterVisual(roleId);
+  return getBuiltinRoleVisual(roleId) ?? parseAgentMdVisual(await loadRoleDefinition(getRoleDefinitionPath(roleId)) ?? '');
 }
 
 async function handleList(): Promise<RolePanelEntry[]> {
@@ -333,15 +337,21 @@ async function handleList(): Promise<RolePanelEntry[]> {
   const entries: RolePanelEntry[] = [];
   for (const roleId of roleIds) {
     const agent = agents.get(roleId);
+    // Restore can put the definition back before the registry watcher reloads.
+    const definition = agent ? null : await loadRoleDefinition(getRoleDefinitionPath(roleId));
+    const parsed = definition ? parseAgentMd(definition, `${roleId}.md`) : null;
+    const localAgent = parsed?.id === roleId ? parsed : null;
     const memories = await listScopedMemories({ scope: 'role', roleId });
     const history = await loadRoleHistory(roleId, 1);
-    const source = agent
-      ? (builtinRoleIdSet.has(roleId) ? 'builtin' : agent.source)
+    const source = agent || localAgent
+      ? (builtinRoleIdSet.has(roleId) ? 'builtin' : agent?.source ?? 'user')
       : 'orphan';
-    const visual = await resolveVisual(roleId);
+    const visual = agent
+      ? await resolveVisual(roleId)
+      : getBuiltinRoleVisual(roleId) ?? parseAgentMdVisual(definition ?? '');
     entries.push({
       roleId,
-      description: agent?.description ?? '',
+      description: agent?.description ?? localAgent?.description ?? '',
       source,
       memoryCount: memories.length,
       lastWork: history.length > 0 ? sanitizeLastWork(history[history.length - 1]) || null : null,
@@ -357,13 +367,8 @@ async function handleList(): Promise<RolePanelEntry[]> {
 }
 
 async function handleDetail(roleId: string): Promise<RolePanelDetail> {
-  const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
-  let definition: string | null;
-  try {
-    definition = await fs.readFile(definitionPath, 'utf-8');
-  } catch {
-    definition = null;
-  }
+  const definitionPath = getRoleDefinitionPath(roleId);
+  const definition = await loadRoleDefinition(definitionPath);
 
   const [memories, history, proactivity] = await Promise.all([
     listScopedMemories({ scope: 'role', roleId }),
@@ -841,6 +846,25 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
       return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
     }
     return { success: true, data: await getFirstWakeSnapshot(roleId) };
+  },
+  wakeLedgerGet: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (typeof roleId !== 'string' || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const { readRoleWakeFunnel } = await import('../services/roleAssets/roleWakeLedger');
+    return { success: true, data: await readRoleWakeFunnel(roleId) };
+  },
+  wakeLedgerRecent: async (_ctx, payload) => {
+    const { roleId, limit } = (payload ?? {}) as RoleIdPayload & { limit?: unknown };
+    if (typeof roleId !== 'string' || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const requested = typeof limit === 'number' && Number.isInteger(limit) && limit > 0
+      ? Math.min(limit, ROLE_PROACTIVITY.WAKE_LEDGER_MAX_ROWS)
+      : ROLE_PROACTIVITY.WAKE_LEDGER_RECENT_ROWS;
+    const { readRecentWakeDecisions } = await import('../services/roleAssets/roleWakeLedgerRecent');
+    return { success: true, data: await readRecentWakeDecisions(roleId, requested) };
   },
   // --- 每日醒来的外部增量提议卡（N-ROLE-WAKE-FIND-WORK） ---
   wakeProposalsList: async (_ctx, payload) => {

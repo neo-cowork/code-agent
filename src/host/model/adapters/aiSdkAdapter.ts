@@ -75,6 +75,7 @@ import {
 } from '../providers/shared';
 import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { getHostUiLocale, getHostUiSurface } from '../../config/hostUiLocale';
 import { logger, makeAiSdkFetch } from './aiSdkFetch';
 import {
   isInferenceClientTimeoutError,
@@ -85,6 +86,7 @@ import {
 } from './inferenceRetryNotify';
 import { buildVendorCompatSettings, resolveAiSdkProviderOptions, resolveAiSdkReasoning } from './aiSdkVendorCompat';
 import { buildAiSdkPrompt, type AiSdkPromptShape } from './aiSdkPromptBuilder';
+import { createB2DedupGate, withB2ContinuationHint, type B2DedupGate } from './aiSdkStreamResumeDedup';
 import { normalizeAnthropicBaseUrl, resolveAdapterProtocol } from './aiSdkProtocol';
 import {
   buildStreamResponse,
@@ -209,7 +211,7 @@ function resolveModel(
         apiKey: req.apiKey,
         // transformRequestBody is applied inside the fetch wrapper (it is not a
         // native createOpenAICompatible option); includeUsage/headers are native.
-        fetch: makeAiSdkFetch(config.provider, vendor.transformRequestBody),
+        fetch: makeAiSdkFetch(config.provider, vendor.transformRequestBody, { dropRejectedReasoningEffort: true }),
         ...vendor,
       })(config.model);
     }
@@ -836,6 +838,8 @@ async function streamViaAiSdk(params: {
   let badBodyRetriesUsed = 0;
   // 续接 attempt 的 accumulator 断点态 seed（见 seedAccumulatorFromBreakpoint）；null = 全新累积器。
   let resumeSeed: StreamAccumulator | null = null;
+  // B2 已保留（已落库展示）的文本，跨多次断流累计；非空时续答请求带续写提示并做开头去重。
+  let b2KeptText = '';
   // 断流 attempt 已上报 usage 的累积（刀 3 合并记账）：成功时并入最终 usage = Σ attempts。
   let usageFromBrokenAttempts: StreamUsageTotal | undefined;
   const snapshotInterval = options?.snapshotIntervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS;
@@ -865,6 +869,14 @@ async function streamViaAiSdk(params: {
         });
       }
     }
+    let b2Dedup: B2DedupGate | null = null;
+    if (b2KeptText && !accResumedFromBreakpoint) {
+      attemptPrompt = withB2ContinuationHint(attemptPrompt, b2KeptText);
+      b2Dedup = createB2DedupGate(b2KeptText, ({ reason, commonChars, keptChars }) => {
+        const log = reason === 'restated-trimmed' ? logger.info : logger.warn;
+        log.call(logger, `[AiSdkAdapter] B2 续答开头去重 reason=${reason} commonChars=${commonChars} keptChars=${keptChars}${reason === 'restated-trimmed' ? ` trimmedChars=${commonChars}` : ''}`);
+      });
+    }
     let emittedOutput = false;
     let lastEstimateAt = 0;
     let lastSnapshotAt = 0;
@@ -882,6 +894,29 @@ async function streamViaAiSdk(params: {
         isFinal,
       };
       onSnapshot(snapshot);
+    };
+
+    const emitText = (delta: string): void => {
+      if (acc.lastPartType !== 'text') {
+        acc.contentParts.push({ type: 'text', text: '' });
+        acc.lastPartType = 'text';
+      }
+      const lastPart = acc.contentParts[acc.contentParts.length - 1];
+      if (lastPart?.type === 'text') lastPart.text += delta;
+      acc.content += delta;
+      acc.charCount += delta.length;
+      emittedOutput = true;
+      onStream({ type: 'text', content: delta });
+      const now = Date.now();
+      if (now - lastEstimateAt > TOKEN_ESTIMATE_INTERVAL_MS) {
+        lastEstimateAt = now;
+        onStream({ type: 'token_estimate', inputTokens: 0, outputTokens: Math.ceil(acc.charCount / 4) });
+      }
+    };
+    // B2 去重暂扣的开头文本在流结束 / 工具调用前定案放行，保证 text 先于 tool_call 入 contentParts。
+    const flushDedup = (): void => {
+      const tail = b2Dedup?.finish();
+      if (tail) emitText(tail);
     };
 
     // 首字节 / inactivity 看门狗：AI SDK 流式默认无超时，旧 sseStream 路径有
@@ -929,25 +964,13 @@ async function streamViaAiSdk(params: {
       for await (const part of result.stream as AsyncIterable<TextStreamPart<ToolSet>>) {
         // 收到任意事件即重置为 inactivity 窗口（首个事件顺带解除 first-byte 窗口）。
         armWatchdog(inactivityMs, 'stream inactivity');
+        if (part.type === 'tool-input-start' || part.type === 'tool-call') flushDedup();
         switch (part.type) {
           case 'text-delta': {
-            const delta = part.text;
+            if (part.text) emittedOutput = true; // 暂扣中的文本也算已出字：断流仍走续接预算而非首字节前重试
+            const delta = b2Dedup ? b2Dedup.push(part.text) : part.text;
             if (!delta) break;
-            if (acc.lastPartType !== 'text') {
-              acc.contentParts.push({ type: 'text', text: '' });
-              acc.lastPartType = 'text';
-            }
-            const lastPart = acc.contentParts[acc.contentParts.length - 1];
-            if (lastPart?.type === 'text') lastPart.text += delta;
-            acc.content += delta;
-            acc.charCount += delta.length;
-            emittedOutput = true;
-            onStream({ type: 'text', content: delta });
-            const now = Date.now();
-            if (now - lastEstimateAt > TOKEN_ESTIMATE_INTERVAL_MS) {
-              lastEstimateAt = now;
-              onStream({ type: 'token_estimate', inputTokens: 0, outputTokens: Math.ceil(acc.charCount / 4) });
-            }
+            emitText(delta);
             break;
           }
           case 'reasoning-delta': {
@@ -1006,6 +1029,7 @@ async function streamViaAiSdk(params: {
         }
       }
 
+      flushDedup();
       stopWatchdog();
       // 正常完成：发 usage + complete（对齐 sseStream），落最终 snapshot，累积成 ModelResponse。
       healthMonitor.recordSuccess(config.provider, Date.now() - startTime, { model: config.model });
@@ -1107,6 +1131,7 @@ async function streamViaAiSdk(params: {
           // await：调用方在 stream_break 分支里先落库断点 partial——落库完成前不进退避
           // 与重发，续答终稿不可能抢在 partial 前面写入（PR #1833 复审 Important）。
           await onStream({ type: 'stream_break', error: msg });
+          b2KeptText += acc.content;
           logger.info(`[AiSdkAdapter] B2 诚实分段：断点 partial（${acc.charCount} 字符）交调用方落库，续答另起新消息 (${reconnectsUsed}/${reconnectMax})`);
         }
         // 退避复用 computeRetryBackoffMs（base 1s + ±25% jitter），续接场景封顶 4s（ADR D4：
@@ -1134,7 +1159,7 @@ async function streamViaAiSdk(params: {
       healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal), model: config.model, error: err });
       const finalErr = toBadSuccessBodyUserError(effectiveErr);
       if (!signal?.aborted) {
-        onStream({ type: 'error', error: summarizeModelErrorForUser(finalErr instanceof Error ? finalErr.message : msg), ...(code ? { errorCode: code } : {}) });
+        onStream({ type: 'error', error: summarizeModelErrorForUser(finalErr instanceof Error ? finalErr.message : msg, undefined, getHostUiLocale(), getHostUiSurface()), ...(code ? { errorCode: code } : {}) });
       }
       logInferenceFailure(effectiveErr, 'streamText', config, messages);
       throw finalErr;

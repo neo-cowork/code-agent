@@ -292,6 +292,27 @@ describe('applyToolExecutionEvent', () => {
     });
   });
 
+  it.each([0, undefined])('keeps the host disclosure when a tool start reconciles a streaming placeholder (index %s)', (_index) => {
+    const guiTakeoverDisclosure = { code: 'gui_takeover' as const, app: 'Keynote' };
+    const call = {
+      name: 'Bash',
+      arguments: { command: `osascript -e 'tell application "Keynote" to activate'` },
+    };
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current', [{ ...call, id: 'pending_0', _streaming: true }])],
+    });
+
+    applyToolExecutionEvent({
+      type: 'tool_call_start',
+      data: { ...call, id: 'tool-real', _index, turnId: 'turn-current', guiTakeoverDisclosure },
+      sessionId: 'session-current',
+    }, deps);
+
+    expect(state.messages[0].toolCalls).toEqual([
+      { ...call, id: 'tool-real', _streaming: false, guiTakeoverDisclosure },
+    ]);
+  });
+
   it('does not bind a nested same-name start without an index to main-turn placeholders', () => {
     const firstCall: ToolCall = {
       id: 'pending-browser-1',

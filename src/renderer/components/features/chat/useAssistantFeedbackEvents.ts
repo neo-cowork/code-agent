@@ -50,7 +50,8 @@ export function useAssistantFeedbackEvents(
         }));
         return;
       }
-      if (eventType === 'message_delta' || eventType === 'tool_call_start'
+      if (eventType === 'message_delta' || eventType === 'stream_chunk'
+        || eventType === 'stream_tool_call_start' || eventType === 'tool_call_start'
         || eventType === 'tool_call_end' || eventType === 'permission_request') {
         setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
           type: eventType === 'message_delta' ? 'model_delta' : 'run_live',

@@ -1,11 +1,13 @@
 import Database from 'better-sqlite3';
 vi.unmock('better-sqlite3');
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import type { ConfigService } from '../../../src/host/services/core/configService';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
@@ -13,9 +15,11 @@ const h = vi.hoisted(() => ({
   manager: undefined as unknown,
   db: undefined as unknown as Database.Database,
   repository: undefined as unknown as SessionRepository,
-  variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed',
+  variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed' | 'markup_only' | 'hang' | 'denied',
   events: [] as AgentEvent[],
   pageOutput: '',
+  conclusion: '',
+  release: undefined as undefined | (() => void),
 }));
 const storage = {
   addMessageToSession: async (sessionId: string, message: Message) => {
@@ -38,8 +42,22 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
     constructor(private readonly options: { onEvent: (event: AgentEvent) => Promise<void> }) {}
     setSessionId() {}
     setWorkspaceScopeAuthority() {}
-    getMessages() { return h.variant === 'no_conclusion' ? [] : [{ role: 'assistant', content: '已查看首页。' }]; }
+    async cancel() { h.release?.(); }
+    getMessages() {
+      if (h.variant === 'no_conclusion') return [];
+      if (h.variant === 'denied') return [
+        { id: 'a-tools', role: 'assistant', content: '', timestamp: 1, toolCalls: [{ id: 'w1', name: 'Write', arguments: {} }] },
+        { id: 't-res', role: 'tool', content: '', timestamp: 2, toolResults: [{
+          toolCallId: 'w1', success: false, error: 'denied', metadata: { hostReason: { code: HostReasonCode.PermissionDeniedByUser } },
+        }] },
+        { id: 'a-final', role: 'assistant', content: '写入被拒绝。', timestamp: 3 },
+      ];
+      if (h.variant === 'markup_only') return [{ role: 'assistant', content: h.conclusion }];
+      return [{ role: 'assistant', content: '已查看首页。' }];
+    }
     async sendMessage() {
+      if (h.variant === 'hang') await new Promise<void>((resolve) => { h.release = resolve; });
+      if (h.variant === 'hang' || h.variant === 'denied') return;
       await this.options.onEvent({ type: 'tool_call_start', data: {
         id: 'browser-1', name: 'Browser', arguments: { action: 'navigate', url: 'https://baike.baidu.com/item/%E9%B9%88%E9%B9%95' },
       } } as AgentEvent);
@@ -65,6 +83,7 @@ function rows(): Message[] {
 }
 let center: SessionCommandCenter;
 let manager: TaskManager;
+const wakeForegroundBrain = vi.fn();
 beforeEach(() => {
   h.db = new Database(':memory:');
   applyTestSessionSchema(h.db);
@@ -81,11 +100,12 @@ beforeEach(() => {
   manager = new TaskManager();
   h.manager = manager;
   manager.initialize({ configService: {} as ConfigService, onAgentEvent: (_sessionId, event) => { h.events.push(event); } });
-  center = new SessionCommandCenter(manager, { wakeForegroundBrain: vi.fn() });
+  wakeForegroundBrain.mockClear();
+  center = new SessionCommandCenter(manager, { wakeForegroundBrain });
 });
 afterEach(() => { center?.dispose(); h.db?.close(); });
 
-async function stop(variant: typeof h.variant) {
+async function stop(variant: typeof h.variant, replay = true) {
   h.variant = variant;
   manager.emitAgentEventForSession('session-stop', { type: 'message', data: {
     id: 'foreground-reply', role: 'assistant', content: '正在整理你的周报，已保留第一部分。', timestamp: 1,
@@ -100,14 +120,25 @@ async function stop(variant: typeof h.variant) {
   if (result.outcome === 'requires_choice') throw new Error('unexpected admission result');
   await vi.waitFor(() => expect(rows().some((m) => m.metadata?.backgroundTaskResult)).toBe(true));
   // Replay the same terminal event: must not create a second visible note.
-  manager.emit('task_error', { type: 'task_error', sessionId: 'session-stop', data: { taskId: result.task.id, error: 'duplicate' } });
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  // handleTaskEvent writes task.stopped before settle's terminal guard, so a replay
+  // mutates the in-memory kind even though the persisted note stays the first one.
+  if (replay) {
+    manager.emit('task_error', { type: 'task_error', sessionId: 'session-stop', data: { taskId: result.task.id, error: 'duplicate' } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   return rows();
 }
 
 describe('background stop delivery through SessionCommandCenter + TaskManager persistence', () => {
   it.each(['step_cap', 'error', 'no_conclusion'] as const)('%s persists one info note without overwriting an in-flight foreground reply', async (kind) => {
     const messages = await stop(kind);
+    if (kind === 'error') {
+      expect(wakeForegroundBrain).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ stopped: expect.objectContaining({ kind }) }), 'failed',
+      );
+    } else {
+      expect(wakeForegroundBrain).not.toHaveBeenCalled();
+    }
     expect(messages.find((m) => m.id === 'foreground-reply')?.content).toBe('正在整理你的周报，已保留第一部分。');
     expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
     const notes = messages.filter((m) => m.metadata?.backgroundTaskStopped);
@@ -159,8 +190,101 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     expect(rows().filter((m) => m.role === 'assistant')).toHaveLength(0);
   });
 
+  it('registry agent cancelled through cancelSession gets one plain cancelled line and no wake', async () => {
+    const registry = new BackgroundSubagentRegistry();
+    const onComplete = vi.fn();
+    let finish!: () => void;
+    const run = new Promise<SubagentResult>((resolve) => {
+      finish = () => resolve({ success: false, output: '', error: 'aborted', toolsUsed: [], iterations: 1 });
+    });
+    const id = registry.spawn(() => run, { sessionId: 'session-stop', title: '百科摘要', abort: () => finish(), onComplete });
+    const fired = registry.cancelSession('session-stop');
+    expect(fired.map((f) => f.agentId)).toEqual([id]);
+    await registry.await(id);
+    const notes = rows().filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      id: `background-task-stopped-${id}`, role: 'system', content: '「百科摘要」：这个后台任务已取消。',
+      metadata: { backgroundTaskStopped: { taskId: id, kind: 'cancelled' } },
+    });
+    expect(onComplete).not.toHaveBeenCalled();
+    console.log(`registry cancelled: ${JSON.stringify(notes[0])}`);
+  });
+
+  it('keeps the wake when the stop note could not be delivered', async () => {
+    const write = vi.spyOn(storage, 'addMessageToSession').mockImplementation(async (sessionId, message) => {
+      if (message.metadata?.backgroundTaskStopped) throw new Error('stop note write failed');
+      h.repository.addMessage(sessionId, message);
+    });
+    try {
+      await stop('step_cap');
+      expect(rows().filter((message) => message.metadata?.backgroundTaskStopped)).toHaveLength(0);
+      expect(wakeForegroundBrain).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: expect.any(String), status: 'failed' }), 'failed',
+      );
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it('a manual cancel closes the chat with one cancelled line and does not wake the model', async () => {
+    h.variant = 'hang';
+    const result = await center.spawn({
+      sessionId: 'session-stop', title: '百科摘要', shortName: '百科摘要', laneKey: 'baike', submissionKey: 'baike-cancel',
+      prompt: '在后台打开百度百科', options: { mode: 'normal', maxIterations: 3 },
+      workspaceScope: createWorkspaceScope('project-stop', [{ sourceId: 'root', path: '/tmp/stop-project', role: 'primary', access: 'read_write' }]),
+    });
+    if (result.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    await vi.waitFor(() => expect(h.release).toBeDefined());
+    await center.cancel('session-stop', result.task.id);
+    await vi.waitFor(() => expect(rows().some((m) => m.metadata?.backgroundTaskStopped)).toBe(true));
+    const notes = rows().filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      id: `background-task-stopped-${result.task.id}`, role: 'system',
+      content: '「百科摘要」：这个后台任务已取消。',
+      metadata: { backgroundTaskStopped: { taskId: result.task.id, kind: 'cancelled' } },
+    });
+    expect(rows().find((m) => m.metadata?.backgroundTaskResult)?.content).toContain('已取消');
+    expect(wakeForegroundBrain).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'cancelled' }), 'cancelled');
+    console.log(`cancelled: ${JSON.stringify(notes[0])}`);
+  });
+
+  it('a user-declined task closes the chat with the declined sentence', async () => {
+    const messages = await stop('denied', false);
+    const notes = messages.filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].content).toBe('「百科摘要」：你拒绝了这一步，任务已停止。');
+    expect(notes[0].metadata?.backgroundTaskStopped).toMatchObject({ kind: 'cancelled' });
+    expect(messages.find((m) => m.metadata?.backgroundTaskResult)?.metadata?.backgroundTaskResult).toMatchObject({ status: 'cancelled' });
+    console.log(`declined: ${JSON.stringify(notes[0])}`);
+  });
+
   it('does not announce a normal completion as stopped', async () => {
     const messages = await stop('completed');
     expect(messages.filter((m) => m.metadata?.backgroundTaskStopped)).toHaveLength(0);
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a markup-only browser conclusion unfinished through the task_completed event', async () => {
+    h.conclusion = '<tool_call><function=Browser><parameter=action>type</parameter><parameter=targetRef>tref_snapshot_example_23</parameter><parameter=text>Tauri</parameter></function></tool_call>';
+    const messages = await stop('markup_only', false);
+    const task = center.list('session-stop')[0];
+    expect(task).toMatchObject({ status: 'failed', stopped: { kind: 'no_conclusion' } });
+    expect(task.detail).toContain('没有留下最终结果');
+    expect(task.detail).toContain('继续');
+    expect(task.detail).toContain('最后停留在页面「鹈鹕_百度百科」');
+    expect(task.detail).not.toMatch(/tool_call|function=|targetRef/);
+    const card = messages.find((m) => m.metadata?.backgroundTaskResult);
+    expect(card?.metadata?.backgroundTaskResult).toMatchObject({ status: 'failed' });
+    expect(card?.content).toContain('已失败');
+    expect(card?.content).toContain('没有留下最终结果');
+    expect(card?.content).toContain('继续');
+    expect(card?.content).not.toMatch(/tool_call|function=|targetRef/);
+    const notes = messages.filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].metadata?.backgroundTaskStopped).toMatchObject({ kind: 'no_conclusion' });
+    expect(notes[0].content).toContain('最后停留在页面「鹈鹕_百度百科」');
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
   });
 });

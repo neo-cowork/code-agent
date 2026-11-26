@@ -30,6 +30,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import type { Language, Translations } from '../../../i18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
+import { projectArtifactKindLabel } from '../../../utils/projectArtifactKind';
 
 export interface SidebarProjectDrawerSession {
   id: string;
@@ -86,18 +87,6 @@ function getGoalStatusLabel(status: SidebarProjectGoalMeta['status'], t: Transla
   }
 }
 
-function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Translations): string {
-  const k = t.sidebarProject.artifactKind;
-  switch (kind) {
-    case 'process-output':
-      return k.processOutput;
-    case 'process-log':
-      return k.processLog;
-    default:
-      return k[kind] ?? kind;
-  }
-}
-
 function getProjectStatusLabel(status: ProjectStatus, t: Translations): string {
   const p = t.sidebarProject;
   if (status === 'idle') return p.statusIdle;
@@ -121,7 +110,7 @@ function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.Reac
 
 function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translations, language: 'zh' | 'en'): string {
   return [
-    getArtifactKindLabel(artifact.kind, t),
+    projectArtifactKindLabel(artifact.kind, t.sidebarProject.artifactKind),
     artifact.toolName?.trim(),
     artifact.sessionTitle ? getDisplaySessionTitle(artifact.sessionTitle, language) : undefined,
   ].filter(Boolean).join(' · ');

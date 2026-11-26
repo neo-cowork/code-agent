@@ -6,9 +6,9 @@
 // Text that does not match a host template is model-authored and passes through.
 // ============================================================================
 
-export type CronEventDecisionTextLanguage = 'zh' | 'en';
+type CronEventDecisionTextLanguage = 'zh' | 'en';
 
-export type CronEventDecisionTextKey =
+type CronEventDecisionTextKey =
   | 'channelChatRule'
   | 'channelAnyChatRule'
   | 'mailRule'
@@ -26,8 +26,13 @@ export type CronEventDecisionTextKey =
   | 'observeIntercepted'
   | 'observeActionIntercepted'
   | 'channelReplyTool'
+  | 'replyEventTool'
   | 'noOutboundAction'
   | 'runQuiet'
+  | 'prefilterSkipped'
+  | 'prefilterUnavailable'
+  | 'prefilterBodyUnavailable'
+  | 'shutdownAbandoned'
   | 'runReported';
 
 type TextParams = Readonly<Record<string, string | number>>;
@@ -58,6 +63,14 @@ const TEMPLATES: readonly DecisionTextTemplate[] = [
     legacyStored: ['channel reply'],
     zh: '通道回复',
     en: 'Channel reply',
+  },
+  {
+    // reply_to_event 的台账工具名（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：host 存原始
+    // 工具名，renderer 反查本表把它翻成用户可读动作名，不裸奔英文内部工具名。
+    key: 'replyEventTool',
+    stored: 'reply_to_event',
+    zh: '回复事件消息',
+    en: 'Event reply',
   },
   {
     key: 'channelChatRule',
@@ -150,6 +163,30 @@ const TEMPLATES: readonly DecisionTextTemplate[] = [
     nested: ['why'],
   },
   {
+    key: 'prefilterSkipped',
+    stored: 'skipped by prefilter: {why}',
+    zh: '预筛跳过：{why}',
+    en: 'Skipped by the pre-check: {why}',
+  },
+  {
+    key: 'prefilterUnavailable',
+    stored: 'prefilter could not judge this batch ({cause}); ran it unfiltered',
+    zh: '预筛没能判断这批消息（{cause}），已原样交给自动化处理',
+    en: 'The pre-check could not judge this batch ({cause}), so it was handled unfiltered',
+  },
+  {
+    key: 'prefilterBodyUnavailable',
+    stored: 'prefilter skipped: could not read the email body',
+    zh: '没能读取邮件正文，已跳过预筛，直接交给自动化处理',
+    en: 'The email body could not be read, so the pre-check was skipped and the email was handled directly',
+  },
+  {
+    key: 'shutdownAbandoned',
+    stored: 'shutdown abandoned: the app stopped before this event was handled',
+    zh: '应用在处理这个事件之前停止了',
+    en: 'The app stopped before this event was handled',
+  },
+  {
     key: 'runFailedWithCause',
     stored: 'run {status}: {cause}',
     zh: '运行未完成（{status}）：{cause}',
@@ -215,8 +252,33 @@ function localizedStatus(status: string, language: CronEventDecisionTextLanguage
   return statuses[status] ?? status;
 }
 
-/** Localize a host-authored row; unmatched model-authored text is returned verbatim. */
+const INTERNAL_IDENTIFIER_PATTERN = /`?\breply_to_event\b`?|`?\bmail_send\b`?|\bobserve(?:[- ]only)?\s*(?:mode|模式)|\bauto\s*(?:mode|模式)/gi;
+
+const INTERNAL_IDENTIFIER_LABELS: Readonly<Record<string, { zh: string; en: string }>> = {
+  reply_to_event: { zh: '回复事件消息', en: 'event reply' },
+  mail_send: { zh: '发送邮件', en: 'send mail' },
+  observemode: { zh: '仅观察模式', en: 'observe-only mode' },
+  automode: { zh: '自动模式', en: 'auto mode' },
+};
+
+/** Replace internal tool/mode identifiers in model-authored text with user-facing labels (single pass, idempotent). */
+export function scrubInternalIdentifiers(text: string, language: CronEventDecisionTextLanguage): string {
+  return text.replace(INTERNAL_IDENTIFIER_PATTERN, (match) => {
+    const lower = match.toLowerCase().replace(/`/g, '');
+    const key = lower.startsWith('observe')
+      ? 'observemode'
+      : lower.startsWith('auto') ? 'automode' : lower;
+    return INTERNAL_IDENTIFIER_LABELS[key][language];
+  });
+}
+
+/** Localize a host-authored row; model-authored text only has internal identifiers scrubbed. */
 export function localizeDecisionText(text: string, language: CronEventDecisionTextLanguage): string {
+  const host = localizeHostDecisionText(text, language);
+  return host === null ? scrubInternalIdentifiers(text, language) : host;
+}
+
+function localizeHostDecisionText(text: string, language: CronEventDecisionTextLanguage): string | null {
   for (const { template, regex, names } of MATCHERS) {
     const match = regex.exec(text);
     if (!match) continue;
@@ -229,5 +291,5 @@ export function localizeDecisionText(text: string, language: CronEventDecisionTe
     });
     return render(template[language], params);
   }
-  return text;
+  return null;
 }

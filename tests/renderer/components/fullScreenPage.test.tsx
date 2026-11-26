@@ -9,12 +9,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FullScreenPage, FullScreenPageHeader } from '../../../src/renderer/components/features/shared/FullScreenPage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
-vi.mock('@shared/keybindings/defaults', () => ({
+import { useServerConnectionStore } from '../../../src/renderer/stores/serverConnectionStore';
+
+vi.mock('@shared/keybindings/defaults', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/shared/keybindings/defaults')>(),
   getCurrentKeybindingPlatform: () => 'darwin',
 }));
 
 afterEach(() => {
   cleanup();
+  useServerConnectionStore.getState().setStatus('ok');
+  vi.unstubAllGlobals();
   useAppStore.setState({ sidebarCollapsed: false });
 });
 
@@ -33,6 +38,19 @@ describe('FullScreenPage 外壳契约', () => {
     expect(el.getAttribute('data-page-variant')).toBe('inline');
     expect(el.className).not.toContain('fixed');
     expect(el.className).toContain('flex-1');
+  });
+
+  it('the overlay banner takes over the top inset only while a Tauri banner is present', () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    render(<FullScreenPage testId="probe">x</FullScreenPage>);
+    expect(screen.getByTestId('probe').classList.contains('pt-7')).toBe(true);
+    expect(screen.queryByTestId('server-connection-banner')).toBeNull();
+  });
+
+  it('inline pages leave outage presentation to the app banner', () => {
+    useServerConnectionStore.getState().setStatus('unavailable');
+    render(<FullScreenPage variant="inline">x</FullScreenPage>);
+    expect(screen.queryByTestId('server-connection-banner')).toBeNull();
   });
 
   it('header 省略 onClose 时不画返回按钮', () => {

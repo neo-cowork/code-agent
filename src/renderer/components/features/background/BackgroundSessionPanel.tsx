@@ -17,17 +17,20 @@ import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-r
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
 import { useTaskStore } from '../../../stores/taskStore';
 import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutcomes';
+import { deleteIncompleteFileNames } from '../../../utils/agentFailureCopy';
 import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
 import { IconButton } from '../../primitives';
 import { interpolatePlural } from '../../../i18n/interpolate';
+import { DeleteIncompleteActions } from './DeleteIncompleteActions';
 
 interface BackgroundTaskLineLabels {
   /** 终态词：统一取 outcomeWords（与任务面板同一词表） */
   words: { completed: string; failed: string; cancelled: string; failedTool: string; warnings: string };
   maxIterations: string;
+  deleteIncomplete: string;
 }
 
 /**
@@ -45,6 +48,7 @@ function resolveBackgroundTaskStatusLine(
   const isRunning = session.status === 'running' && terminal !== 'cancelled-by-user';
   if (terminal === 'cancelled-by-user') return { isRunning, line: labels.words.cancelled };
   const message = session.completionMessage;
+  if (message === BACKGROUND_TASK_DELETE_INCOMPLETE) return { isRunning: false, line: labels.deleteIncomplete };
   if (message === RUN_ERROR_CODE_MAX_ITERATIONS) return { isRunning: false, line: labels.maxIterations };
   if (message) return { isRunning: false, line: message };
   const words: Partial<Record<typeof terminal, string>> = {
@@ -71,6 +75,8 @@ function formatBackgroundDuration(startedAt: number, now: number, labels: Durati
 
 interface BackgroundSessionItemProps {
   session: BackgroundSessionInfo;
+  /** 显示用主名：会话 store 里的实时标题优先，host 快照标题兜底 */
+  title: string;
   onForeground: () => void;
   onStop: () => void;
   onClear: () => void;
@@ -82,6 +88,7 @@ interface BackgroundSessionItemProps {
 
 const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
   session,
+  title,
   onForeground,
   onStop,
   onClear,
@@ -90,7 +97,6 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
   stopAria,
   clearAria,
 }) => {
-  const { language } = useI18n();
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-badge-info" />,
     completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
@@ -102,7 +108,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
     <div
       data-testid="background-session-item"
       data-status={session.status}
-      className="flex items-center gap-1 bg-zinc-700 rounded-lg pr-1"
+      className="flex flex-wrap items-center gap-1 bg-zinc-700 rounded-lg pr-1"
     >
       <button
         onClick={onForeground}
@@ -113,7 +119,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
         {statusIcon}
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-zinc-200 truncate">
-            {getDisplaySessionTitle(session.title, language)}
+            {title}
           </div>
           <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
             <HumanizedText text={line} />
@@ -148,6 +154,17 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
           onClick={onClear}
         />
       )}
+      {session.status === 'failed' && session.completionMessage === BACKGROUND_TASK_DELETE_INCOMPLETE && (
+        <div className="basis-full px-2 pb-1">
+          <DeleteIncompleteActions
+            key={session.startedAt}
+            sessionId={session.sessionId}
+            attemptId={`${session.sessionId}-${session.startedAt}`}
+            leftoverPaths={session.leftoverPaths}
+            openSession
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -155,6 +172,12 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
 export const BackgroundSessionPanel: React.FC = () => {
   const { backgroundSessions, moveToForeground, stopBackgroundSession, dismissBackgroundSession } = useSessionStore();
   const { t, language } = useI18n();
+  const liveSessions = useSessionStore((state) => state.sessions);
+  // 实时标题：智能标题落地 / 用户改名后，host 快照里的标题是旧的
+  const titleOf = (session: BackgroundSessionInfo): string => (
+    (session.completionMessage === BACKGROUND_TASK_DELETE_INCOMPLETE ? deleteIncompleteFileNames(session.leftoverPaths) : undefined)
+    ?? getDisplaySessionTitle(liveSessions.find((item) => item.id === session.sessionId)?.title || session.title, language)
+  );
   // 前台已判定停止、但后台条目还没被 host 收尾时，行里的词先跟终态走（只改词，不动 Stop/Clear 按钮）
   const sessionStates = useTaskStore((state) => state.sessionStates);
   const stepOutcomes = useBackgroundStepOutcomes(backgroundSessions);
@@ -178,7 +201,9 @@ export const BackgroundSessionPanel: React.FC = () => {
     minutes: t.backgroundPanel.durationMinutes,
     hours: t.backgroundPanel.durationHours,
   };
+  const incomplete = t.outcomeWords['delete-incomplete'].detail;
   const lineLabels = {
+    deleteIncomplete: t.chat.delegationReceipt.failureDetail.replace('{status}', incomplete.label).replace('{reason}', incomplete.reason),
     words: {
       completed: t.outcomeWords.completed.timeline.label,
       failed: t.outcomeWords['failed-unknown'].timeline.label,
@@ -247,13 +272,14 @@ export const BackgroundSessionPanel: React.FC = () => {
                 <BackgroundSessionItem
                   key={session.sessionId}
                   session={session}
+                  title={titleOf(session)}
                   onForeground={() => moveToForeground(session.sessionId)}
                   onStop={() => void stopBackgroundSession(session.sessionId)}
                   onClear={() => void dismissBackgroundSession(session.sessionId)}
                   line={isRunning ? formatBackgroundDuration(session.startedAt, now, durationLabels) : line}
-                  foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
-                  stopAria={t.backgroundPanel.stopAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
-                  clearAria={t.backgroundPanel.clearAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
+                  foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', titleOf(session))}
+                  stopAria={t.backgroundPanel.stopAria.replace('{title}', titleOf(session))}
+                  clearAria={t.backgroundPanel.clearAria.replace('{title}', titleOf(session))}
                 />
               );
             })}

@@ -11,14 +11,22 @@
 //   recover-noentry — user never returns: green probe registered, no entry call
 //   recover-timeout — user returns, probe stays red, ENV_RESUME_TIMEOUT_MS elapses (time-warped, see below)
 //   recover-write   — sideEffect fixture through entry (a): write tool must not re-execute
+//   park-mail       — real mail_draft refused (-1743) → env_blocked park
+//   park-mail-continuing — grant turns green; hold inside the continued turn before its first model call
+//   recover-mail    — kill before grant: restart, user returns, probe red then green → one draft
+//   recover-mail-granted — kill after grant, before resume: restart with the grant already in place → one draft
 import http from 'node:http';
 import { harness } from '../unit/host/runtime/envResumeHarness';
 import { registerEnvResumeContinuer } from '../../src/host/runtime/envResumeWaiter';
 import { DurableRecoveryDispatcher } from '../../src/host/runtime/durableRecoveryDispatcher';
+import { NativeRecoveryHost } from '../../src/host/runtime/nativeRecoveryHost';
+import { createLogger } from '../../src/host/services/infra/logger';
 
-const [mode, workspace, file] = process.argv.slice(2);
+const [mode, workspace, file, crashPoint] = process.argv.slice(2);
 if (!workspace || !file) throw new Error('mode, workspace and database are required');
 const sideEffect = mode.endsWith('-write');
+const mail = mode.startsWith('park-mail') || mode.startsWith('recover-mail');
+const continuingCrash = crashPoint === 'park-mail-continuing';
 
 /** Fixture-only time warp for recover-timeout: delays >= 100s scale by 1/100 so the
  * 120s ENV_RESUME_TIMEOUT_MS deadline fires in ~1.2s real time (no production override). */
@@ -85,29 +93,79 @@ async function returnViaDomain(cwd: string): Promise<void> {
 }
 
 if (mode.startsWith('park')) {
-  const fixture = await harness(workspace, file, sideEffect);
-  await fixture.park();
-  process.stdout.write(`READY ${process.pid}\n`);
+  const holdBeforeResumedTurn = async () => {
+    const envelope = await fixture.repository.get('env-run');
+    console.log('INSIDE_CONTINUATION', JSON.stringify(envelope));
+    console.log('KILL_SESSION', JSON.stringify({ status: fixture.sessions.getSession('env-session')?.status, ...fixture.mailSaved() }));
+    if (envelope?.status !== 'running' || fixture.mailSaved().saved !== 0) throw new Error('did not reach the live continuation before saving');
+    process.stdout.write(`READY ${process.pid}\n`);
+    await new Promise<never>(() => {});
+  };
+  const fixture: Awaited<ReturnType<typeof harness>> = await harness(workspace, file, sideEffect, false, mail, continuingCrash ? holdBeforeResumedTurn : undefined);
+  if (continuingCrash) {
+    let grant = false;
+    registerEnvResumeContinuer(async () => fixture.continueRun(), () => async () => grant ? 'green' : 'red');
+    await fixture.park();
+    fixture.green();
+    grant = true;
+  } else {
+    await fixture.park();
+    process.stdout.write(`READY ${process.pid}\n`);
+  }
   setInterval(() => {}, 1_000);
 } else {
   if (mode === 'recover-timeout') warpLongTimeouts();
-  const fixture = await harness(workspace, file, sideEffect);
+  const fixture = await harness(workspace, file, sideEffect, false, mail);
+  if (mode === 'recover-mail-granted') fixture.green();
   let probeCalls = 0;
-  let probeState: 'red' | 'green' = mode === 'recover-noentry' ? 'green' : 'red';
+  let probeState: 'red' | 'green' = mode === 'recover-noentry' || mode === 'recover-mail-granted' ? 'green' : 'red';
   // Continuer keeps the fixture's proven registration shape (continueParkedDurableRun with
   // the harness recovery ports); registerAgentContinueRoute's own registration is exercised
   // in-process by envResumePark.test.ts and sessionDomainHandler.envResume.test.ts. The
   // production session-return ENTRY below is what this child is under test for.
   registerEnvResumeContinuer(async () => fixture.continueRun(), () => () => { probeCalls++; return Promise.resolve(probeState); });
+  if (continuingCrash) {
+    const [
+      { runStartupMaintenance }, { hydrateApprovalGatesAtBoot }, { PendingApprovalRepository },
+      { MemoryRepository }, { PermissionDecisionRepository }, { ToolExecutionEventRepository },
+    ] = await Promise.all([
+      import('../../src/host/services/core/database/startupMaintenance'),
+      import('../../src/host/agent/parkedApprovalHydration'),
+      import('../../src/host/services/core/repositories/PendingApprovalRepository'),
+      import('../../src/host/services/core/repositories/MemoryRepository'),
+      import('../../src/host/services/core/repositories/PermissionDecisionRepository'),
+      import('../../src/host/services/core/repositories/ToolExecutionEventRepository'),
+    ]);
+    const approvals = new PendingApprovalRepository(fixture.db);
+    runStartupMaintenance({
+      db: fixture.db, sessionRepo: fixture.sessions, pendingApprovalRepo: approvals,
+      memoryRepo: new MemoryRepository(fixture.db),
+      permissionDecisionRepo: new PermissionDecisionRepository(fixture.db),
+      toolExecutionEventRepo: new ToolExecutionEventRepository(fixture.db),
+      logger: createLogger('EnvResumeFixture'), step: () => {},
+    });
+    console.log('BOOT_SESSION', JSON.stringify({ status: fixture.sessions.getSession('env-session')?.status }));
+    console.log('BOOT_APPROVALS', JSON.stringify(hydrateApprovalGatesAtBoot(approvals, Date.now(), {
+      durableRunRepository: fixture.repository,
+      loadSessionMessages: () => fixture.messages(),
+      resolveWorkingDirectory: () => workspace,
+      resolveSessionOriginKind: () => null,
+    })));
+    console.log('BOOT_ENVELOPE', JSON.stringify(await fixture.repository.get('env-run')));
+  }
   const plans = await fixture.registry.recoverDurable(Date.now() + 120_001);
-  const dispatcher = new DurableRecoveryDispatcher();
+  const dispatcher = new DurableRecoveryDispatcher({
+    onBackgroundResult: (results) => console.log('STARTUP_BACKGROUND_RESULT', JSON.stringify(results)),
+  });
   let recoveredAutomatically = 0;
-  dispatcher.registerEngineHandler({ name: 'env-startup-observer', engineKind: 'native', recover: async () => { recoveredAutomatically++; return { status: 'recovered', reason: 'unexpected startup recovery' }; } });
+  const native = new NativeRecoveryHost(fixture.registry, fixture.ports).createHandler();
+  dispatcher.registerEngineHandler({ ...native, recover: async (...args) => { recoveredAutomatically++; return native.recover(...args); } });
   console.log('STARTUP_DISPATCH', JSON.stringify(await dispatcher.dispatch(plans, Date.now() + 120_001)));
   await sleep(1_100);
   console.log('STARTUP_PARK', JSON.stringify(await fixture.repository.get('env-run')));
   console.log('STARTUP_AUTO_CONTINUES', fixture.counts().resumes, 'RECOVERY_HANDLER_CALLS', recoveredAutomatically);
-  if (fixture.counts().resumes || recoveredAutomatically || plans.length !== 1 || !plans[0].resumeBlocked) throw new Error('startup automatically continued');
+  const startupStayedParked = fixture.counts().resumes === 0 && recoveredAutomatically === 0 && plans.length === 1 && plans[0].resumeBlocked;
+  if (!continuingCrash && !startupStayedParked) throw new Error('startup automatically continued');
   const userMessageCount = () => fixture.messages().filter((message) => message.role === 'user').length;
 
   if (mode === 'recover-noentry') {
@@ -132,9 +190,11 @@ if (mode.startsWith('park')) {
       console.log('AFTER_MANUAL', JSON.stringify(await fixture.repository.get('env-run')));
       if ((await fixture.repository.get('env-run'))?.status !== 'completed') throw new Error('manual continue after timeout failed');
     } else {
-      await sleep(mode === 'recover-repeat' ? 2_300 : 1_300); // red poll ticks before the environment is fixed
-      if (probeCalls < 1) throw new Error('probe never polled while red');
-      if ((await fixture.repository.get('env-run'))?.status !== 'waiting') throw new Error('run continued before green');
+      if (mode !== 'recover-mail-granted') { // the grant is already in place there: the first probe tick resumes
+        await sleep(mode === 'recover-repeat' ? 2_300 : 1_300); // red poll ticks before the environment is fixed
+        if (probeCalls < 1) throw new Error('probe never polled while red');
+        if ((await fixture.repository.get('env-run'))?.status !== 'waiting') throw new Error('run continued before green');
+      }
       if (mode === 'recover-repeat') {
         if (probeCalls < 2 || probeCalls > 3) throw new Error(`repeat case poll count ${probeCalls} is not single-loop ticks`);
         if (waiterLines.filter((line) => line.includes('armed on session return')).length !== 1) throw new Error('repeat case armed more than one loop');
@@ -143,6 +203,21 @@ if (mode.startsWith('park')) {
       await waitFor(async () => ((await fixture.repository.get('env-run'))?.status === 'completed' ? true : undefined), 15_000);
       const envelope = await fixture.repository.get('env-run');
       console.log('AFTER_GREEN', JSON.stringify(envelope));
+      if (mail) {
+        const results = fixture.messages().filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
+        const saves = results.filter((result) => result.success && result.toolCallId === 'env-call-2').length;
+        console.log('MAIL_DRAFT', JSON.stringify({ ...fixture.mailSaved(), saves, parkedResult: results.find((result) => result.toolCallId === 'env-call')?.error }));
+        if (continuingCrash) {
+          console.log('AFTER_RETURN', JSON.stringify({
+            sessionStatus: fixture.sessions.getSession('env-session')?.status, runStatus: envelope?.status,
+            userMessages: userMessageCount(), probeCalls, armLogs: waiterLines.length,
+            subjects: fixture.mailSubjects(), seenRuns: fixture.db.prepare('SELECT run_id FROM durable_runs').pluck().all(),
+          }));
+          fixture.dump();
+          if (!startupStayedParked) throw new Error('startup did not leave the environment continuation parked for session return');
+        }
+        if (saves !== 1 || fixture.mailSaved().saved !== 1) throw new Error('expected exactly one saved draft');
+      }
       if (envelope?.status !== 'completed' || fixture.counts().resumes !== 1) throw new Error('green did not continue same run exactly once');
       if (userMessageCount() !== 1) throw new Error(`expected exactly one user message, saw ${userMessageCount()}`);
       if (mode === 'recover-write') {
@@ -159,7 +234,7 @@ if (mode.startsWith('park')) {
 
   console.log('PROBE_CALLS', probeCalls);
   for (const line of waiterLines) console.log('WAITER_LOG', line);
-  fixture.dump();
+  if (!continuingCrash) fixture.dump();
   await dispatcher.shutdown(); fixture.close();
   // Some imported application services own lazy timers; this fixture owns the process.
   process.exit(0);

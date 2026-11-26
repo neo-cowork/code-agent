@@ -29,6 +29,7 @@ import type {
   ToolCall,
 } from '@shared/contract';
 import { isHostReasonPayload } from '@shared/contract';
+import { EnvAssistNoticeSchema } from '@shared/contract/envAssistSchema';
 import type {
   AssistantMessagePayload,
   MessageDeltaPayload,
@@ -41,6 +42,7 @@ import type {
   StreamTextPayload,
   TurnIdPayload,
 } from './streamEventTypes';
+import { resolveModelFallbackTarget } from '../../../components/features/chat/fallbackNotice';
 
 const MODEL_DECISION_REASONS = new Set(Object.keys({
   'user-selected': true,
@@ -670,13 +672,19 @@ export function normalizeUserMessagePayload(data: unknown): UserMessagePayload |
   };
 }
 
-/** 宿主广播的 role:'system' 落库消息（有 id 有正文）；其余形状返回 null。 */
-export function normalizeSystemMessagePayload(data: unknown): Message | null {
-  if (!isRecord(data) || data.role !== 'system') return null;
+/** Host-owned rows that have their own timeline position, outside the assistant draft. */
+export function normalizeStandaloneMessagePayload(data: unknown): Message | null {
+  if (!isRecord(data)) return null;
   const id = getStringField(data, 'id');
   const content = getStringField(data, 'content');
   if (!id || content === undefined) return null;
-  return data as unknown as Message;
+  if (data.role === 'system') return data as unknown as Message;
+  if (data.role !== 'assistant' || !id.startsWith('env-assist:') || !isRecord(data.metadata)) return null;
+
+  const timestamp = getNumberField(data, 'timestamp');
+  const notice = EnvAssistNoticeSchema.safeParse(data.metadata.envAssist);
+  if (timestamp === undefined || !notice.success || !notice.data.parkedToolCallId || id !== `env-assist:${notice.data.id}`) return null;
+  return { id, role: 'assistant', content, timestamp, metadata: { ...data.metadata, envAssist: notice.data } };
 }
 
 export function normalizeMessageDeltaPayload(data: unknown): MessageDeltaPayload | null {
@@ -764,12 +772,30 @@ function normalizeContentParts(value: unknown): Message['contentParts'] | undefi
   return parts.length > 0 ? parts : undefined;
 }
 
+function normalizeAssistantHandoffMetadata(value: unknown): AssistantMessagePayload['metadata'] {
+  if (!isRecord(value)) return undefined;
+  const correlation = isRecord(value.correlation) ? value.correlation : {};
+  const turnId = getStringField(correlation, 'turnId');
+  const traceId = getStringField(correlation, 'traceId');
+  const preview = isRecord(value.backgroundTaskPreannounce) ? value.backgroundTaskPreannounce : {};
+  const text = getStringField(preview, 'text');
+  const run = turnId && traceId ? { turnId, traceId } : undefined;
+  if (!run && !text) return undefined;
+  return {
+    ...(run ? { correlation: run } : {}),
+    ...(text ? { backgroundTaskPreannounce: {
+      text, title: getStringField(preview, 'title'), toolCallId: getStringField(preview, 'toolCallId'),
+    } } : {}),
+  };
+}
+
 export function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayload | null {
   if (!isRecord(data)) return null;
   const toolCalls = normalizeToolCalls(data.toolCalls);
   const artifacts = normalizeArtifacts(data.artifacts);
   const contentParts = normalizeContentParts(data.contentParts);
   const modelDecision = normalizeModelDecisionPayload(data.modelDecision);
+  const metadata = normalizeAssistantHandoffMetadata(data.metadata);
   return {
     ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
@@ -781,6 +807,7 @@ export function normalizeAssistantMessagePayload(data: unknown): AssistantMessag
     ...(contentParts ? { contentParts } : {}),
     ...(artifacts ? { artifacts } : {}),
     ...(modelDecision ? { modelDecision } : {}),
+    ...(metadata ? { metadata } : {}),
   };
 }
 
@@ -871,8 +898,9 @@ export function normalizeModelFallbackPayload(data: unknown): ModelFallbackPaylo
   if (!isRecord(data)) return null;
   const reason = getStringField(data, 'reason');
   const from = getStringField(data, 'from');
-  const to = getStringField(data, 'to');
-  if (!reason || !from || !to) return null;
+  // 链耗尽的事件没有 `to`（exhausted: true）；旧 host 的 zh 字面量 '未切换' 在此映射回 exhausted。
+  const target = resolveModelFallbackTarget({ to: data.to, exhausted: data.exhausted });
+  if (!reason || !from || (!target.to && target.exhausted !== true)) return null;
   const category = getStringField(data, 'category');
   const strategy = getStringField(data, 'strategy');
   const tried = normalizeModelFallbackTraceSteps(data.tried);
@@ -883,7 +911,8 @@ export function normalizeModelFallbackPayload(data: unknown): ModelFallbackPaylo
   return {
     reason,
     from,
-    to,
+    ...(target.to ? { to: target.to } : {}),
+    ...(target.exhausted ? { exhausted: true } : {}),
     ...(category ? { category } : {}),
     ...(strategy && MODEL_FALLBACK_STRATEGIES.has(strategy as ModelFallbackStrategy)
       ? { strategy: strategy as ModelFallbackStrategy }

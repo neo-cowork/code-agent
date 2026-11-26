@@ -825,8 +825,6 @@ describe('macOS release fail-closed gates', () => {
     // （#663 棘轮 / #671 组件崩 / #681 i18n 断言过期），三次 PR 门都是绿的。
     // 这条断言防的是"下次有人为了省 CI 时长把它悄悄摘掉"——摘可以，但要摘得见光。
     const parsed = readWorkflow('.github/workflows/swarm-ci.yml');
-    // 2026-09-05：这一步已从 smoke 搬到分片的 unit job（N-CI-SHARD）。门守的是「renderer /
-    // design 在 PR 门的 vitest 子集里」，不是「它待在哪个 job」——所以跨 job 找，
     // 别让一次合理的搬家把这条断言变成假红（或更糟：被人顺手删掉）。
     const subsetStep = Object.values(parsed.jobs ?? {})
       .flatMap((job) => job?.steps ?? [])
@@ -836,6 +834,8 @@ describe('macOS release fail-closed gates', () => {
     expect(subsetStep?.run).toContain('tests/renderer');
     // 整目录参数包含 design、根级和未来新增目录；子目录点名不能冒充整目录覆盖。
     expect(subsetStep?.run).toMatch(/npx vitest run tests\/unit\s+tests\/renderer(?:\s|$)/);
+    expect(subsetStep?.run).toContain('tests/shared tests/agent tests/main tests/wrappers tests/services tests/channels');
+    expect(subsetStep?.run).toContain('tests/tools tests/web tests/artifacts tests/utils tests/integration');
     // 一侧目录搬走/清空时，另一侧仍能让 Vitest 非零；分别查真实目录，不能只守参数字面量。
     for (const directory of ['tests/unit', 'tests/renderer']) {
       const hasTests = readdirSync(resolve(repoRoot, directory), { recursive: true, withFileTypes: true })

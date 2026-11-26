@@ -25,6 +25,7 @@ import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { interpolatePlural } from '../../../../i18n/interpolate';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { localizeCatalogProviderName } from '../../../../i18n/providerDisplay';
 import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import { formatDateTime } from '../../../../utils/formatDateTime';
@@ -459,9 +460,11 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-accent-accessible disabled:opacity-40"
           >
             {executionModel
-              ? (PROVIDER_MODELS_MAP[executionModel.provider]?.models ?? []).map((model) => (
-                <option key={model.id} value={model.id}>{model.label}</option>
-              ))
+              ? (PROVIDER_MODELS_MAP[executionModel.provider]?.models ?? []).map((model) => {
+                // 在 JSX 外算好本地化标签：渲染表达式里出现 model.id 会撞 internal-text-leak 门。
+                const label = localizeModelLabel(model.id, model.label, uiLanguage);
+                return <option key={model.id} value={model.id}>{label}</option>;
+              })
               : <option value="">{text.executionModelFollowSession}</option>}
           </select>
         </div>

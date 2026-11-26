@@ -202,10 +202,10 @@ describe('上传中的提交不丢（FB-579）', () => {
     const ref = createRef<ChatInputHandle>();
     const { container } = render(<ChatInput ref={ref} onSend={onSend} />);
 
-    // 超限文件：processFile 返回 null（失败），走真实失败分支而非 mock 掉判定
-    const bigFile = new File(['x'], 'big.txt', { type: 'text/plain' });
-    Object.defineProperty(bigFile, 'size', { value: 10 * 1024 * 1024 + 1 });
-    pickFile(container, bigFile);
+    // 上传后才失败的文件（docx 抽取失败）：processFile 返回 null，走真实失败分支而非 mock 掉判定
+    // （超限文件现在在上传前就被拒，到不了慢上传这一步）
+    vi.spyOn(ipcService, 'extractDocxHtml').mockResolvedValue(null);
+    pickFile(container, new File(['x'], 'broken.docx'));
     typeDraft(ref, TEXT);
     clickSend();
     expect(uploadStatus()!.getAttribute('data-pending-send')).toBe('true');

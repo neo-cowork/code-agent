@@ -91,6 +91,7 @@ export const renderHumanPipeZh = {
       switchDetails: '切换详情',
       fromModel: '原模型',
       currentModel: '现用模型',
+      notSwitched: '未切换',
       source: '来源',
       name: '名称',
       protocol: '连接方式',
@@ -102,6 +103,7 @@ export const renderHumanPipeZh = {
       toolsDisabled: '部分工具暂不可用',
       hiddenTools: '受影响的工具',
       rawReason: '原始原因',
+      technicalDetails: '技术详情',
       strategies: {
         provider: '自动换用备用模型',
         capability: '自动换用支持当前任务的模型',
@@ -223,6 +225,7 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
       switchDetails: 'Switch details',
       fromModel: 'Original model',
       currentModel: 'Current model',
+      notSwitched: 'Not switched',
       source: 'Source',
       name: 'Name',
       protocol: 'Connection',
@@ -234,6 +237,7 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
       toolsDisabled: 'Some tools are temporarily unavailable',
       hiddenTools: 'Affected tools',
       rawReason: 'Original reason',
+      technicalDetails: 'Technical details',
       strategies: {
         provider: 'Automatically switched to a backup model',
         capability: 'Automatically selected a model that supports this task',

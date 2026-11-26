@@ -79,11 +79,12 @@ describe('dev build-info install gate', () => {
     );
     const lines = script.split('\n');
     const guardLine = lines.findIndex((line) => line.startsWith('refuse_if_tauri_slot_in_use '));
-    const killLine = lines.findIndex((line) => line.startsWith('pkill -f "$APP_NAME.app/Contents/MacOS/"'));
+    const terminateLine = lines.findIndex((line) => line.startsWith('  terminate_confirmed_tauri_slot_instances'));
     // 护栏必须排在杀实例/重装之前：任何槽都可能被爸或别的会话在用，先杀再装等于把人踢下线。
     expect(guardLine, 'refuse_if_tauri_slot_in_use 调用行').toBeGreaterThan(0);
-    expect(killLine, 'pkill 行').toBeGreaterThan(0);
-    expect(killLine, `pkill(${killLine}) 必须在护栏(${guardLine})之后`).toBeGreaterThan(guardLine);
+    expect(script).not.toMatch(/\b(?:pkill|killall)\b/);
+    expect(terminateLine, '按已确认 PID 终止实例的调用行').toBeGreaterThan(guardLine);
+    expect(lines[terminateLine - 1]).toBe('if [ "${NEO_INSTALL_FORCE:-0}" = "1" ]; then');
     expect(script).toContain('source "$SCRIPT_DIR/lib/tauri-slot-process-guard.sh"');
     expect(lines[guardLine]).toContain('"/Applications/$APP_NAME.app" "$DEV_APP_WEB_PORT"');
     expect(guardLibrary).toContain('pgrep -x "$process_name"');

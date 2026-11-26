@@ -35,11 +35,11 @@ import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 
 // Import refactored modules
-import type {
-  AgentLoopConfig,
-} from '../../agent/loopTypes';
+import type { AgentLoopConfig } from '../../agent/loopTypes';
 import { classifyToolCalls, executeOrderedSegments, toolBatchLabel } from '../../agent/toolExecution/parallelStrategy';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
+import { trimIdentifierArgs } from '../../tools/trimIdentifierArgs';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
 import { minimalCallExample } from './toolArgsMinimalCall';
 import { ToolArgsRepairGate, buildRepairExhaustedMessage } from './toolArgsRepairGate';
@@ -96,7 +96,7 @@ import { materializeRunWorkDirectoryOnce, shouldMaterializeWorkDirectoryForTool 
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
-import { extractToolStepTarget } from '../toolStepTarget';
+import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from '../toolStepTarget';
 import { computerUseObservedTarget } from '../../plugins/builtin/computerUse/computerUseObservedTarget';
 import { decodeUtf8 } from '../../utils/decodeText';
 
@@ -266,18 +266,19 @@ export class ToolExecutionEngine {
         getToolSearchService().markToolCalled(entry.toolCall.name, this.ctx.sessionId);
         const parallel = batchSize > 1;
         this.runFinalizer.emitTaskProgress('tool_running', toolBatchLabel(
-          entry.toolCall.name,
-          batchSize,
-          this.ctx.turn.researchModeActive,
+          entry.toolCall.name, batchSize, this.ctx.turn.researchModeActive, getHostUiLocale(),
         ), {
           tool: entry.toolCall.name,
           toolIndex: entry.index,
           toolTotal: toolCalls.length,
+          toolCallId: entry.toolCall.id,
           target: computerUseObservedTarget(entry.toolCall.name, entry.toolCall.arguments, {
             sessionId: this.ctx.sessionId,
             turnId: this.ctx.turn.currentTurnId,
             agentId: this.ctx.agentId,
-          }) ?? extractToolStepTarget(entry.toolCall.arguments),
+          }) ?? extractToolStepTarget(entry.toolCall.arguments, entry.toolCall.name),
+          action: extractToolStepAction(entry.toolCall.arguments),
+          description: bashStepDescription(entry.toolCall.name, entry.toolCall.arguments),
           ...(parallel
             ? { parallel: true }
             : { progress: Math.round((entry.index / toolCalls.length) * 100) }),
@@ -615,6 +616,8 @@ export class ToolExecutionEngine {
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
     toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
+    // 路径键 + command 首尾空白只在模型输入边界裁一次（正文字段保持逐字节）
+    trimIdentifierArgs(toolCall.arguments, { includeCommand: true });
 
     // Schema validation gate — 在真实 dispatch 前用工具自身 inputSchema 校验
     // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
@@ -839,7 +842,7 @@ export class ToolExecutionEngine {
           abortSignal: toolAbortController.signal,
           forceFinalResponse: this.ctx.control.forceFinalResponse.bind(this.ctx.control),
           deniedToolNames: this.ctx.deniedToolNames,
-          allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
+          allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace, requestToolNames: this.ctx.turn.requestToolNames,
           // strict skill 流程面透传：让执行层兜底闸与组装层同一语义（FB-327），
           // 边界内工具（如 propose_role）不被前台白名单在派发时二次拦截。
           skillBoundaryAllowedTools: canonicalStrictBoundaryToolNames(this.ctx.turn.skillToolBoundary),
@@ -892,8 +895,8 @@ export class ToolExecutionEngine {
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: normalizedResult.success,
-        output: normalizedResult.output,
-        error: normalizedResult.error,
+        output: normalizedResult.output, error: normalizedResult.error,
+        ...(normalizedResult.userMessage !== undefined ? { userMessage: normalizedResult.userMessage } : {}),
         outputPath: normalizedResult.outputPath,
         duration: Date.now() - startTime,
         metadata: { ...normalizedResult.metadata, fromCache: normalizedResult.fromCache ?? false },
@@ -990,6 +993,7 @@ export class ToolExecutionEngine {
           toolCall,
           startTime,
           (content) => this.injectFileConsistencyGuard(content),
+          true,
         );
         langfuse.endSpan(toolSpanId, {
           success: false,
@@ -1173,7 +1177,7 @@ export class ToolExecutionEngine {
       watchdog.stop();
       if (settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled() })) {
         // The run parks with no tool result, so the card is the only thing the user sees: publish it from the blocker.
-        // ponytail: synthetic not_authorized result — only Apple-events blockers park today (envBlockForToolFailure).
+        // ponytail: synthetic not_authorized result — calendar and mail_draft park today (envBlockForToolFailure); the card target comes from the blocker.
         await publishEnvAssistToolNotice({ toolName: toolCall.name, result: { success: false, metadata: { code: 'not_authorized' } }, sessionId: this.ctx.sessionId, runId: this.ctx.runId, parkedToolCallId: peekEnvBlockedNote(this.ctx.runId)?.toolCallId, onEvent: this.ctx.onEvent })
           .catch((cardError: unknown) => logger.warn('Env-assist card for a parked run failed to publish', { toolCallId: toolCall.id, error: cardError instanceof Error ? cardError.message : String(cardError) }));
       }

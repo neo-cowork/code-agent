@@ -373,10 +373,10 @@ export function buildLightMemoryIssuePreview(health: LightMemoryHealthReport, t:
   const issues: string[] = [];
   if (!health.indexExists && health.totalFiles > 0) issues.push(t.knowledgeMemory.healthIssueIndexMissing);
   if (health.indexTooLong) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueIndexTooLong, health.indexLineCount));
-  for (const filename of health.missingInIndex.slice(0, 3)) issues.push(t.knowledgeMemory.healthIssueMissingInIndex.replace('{filename}', filename));
-  for (const filename of health.orphanInIndex.slice(0, 3)) issues.push(t.knowledgeMemory.healthIssueOrphanInIndex.replace('{filename}', filename));
-  for (const item of health.invalidFrontmatter.slice(0, 3)) issues.push(`${item.filename}: ${item.reason}`);
-  for (const item of health.unreadableFiles.slice(0, 2)) issues.push(`${item.filename}: ${item.reason}`);
+  if (health.missingInIndex.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueMissingInIndex, health.missingInIndex.length));
+  if (health.orphanInIndex.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueOrphanInIndex, health.orphanInIndex.length));
+  if (health.invalidFrontmatter.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueInvalidFrontmatter, health.invalidFrontmatter.length));
+  if (health.unreadableFiles.length > 0) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueUnreadableFiles, health.unreadableFiles.length));
   for (const item of health.duplicateNames.slice(0, 2)) issues.push(t.knowledgeMemory.healthIssueDuplicateName.replace('{value}', item.value));
   for (const item of health.duplicateDescriptions.slice(0, 2)) issues.push(t.knowledgeMemory.healthIssueDuplicateDescription.replace('{value}', item.value));
   return issues.slice(0, 5);

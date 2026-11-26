@@ -1,5 +1,6 @@
 import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 import { CHOOSE_FOLDER_ENTRY_LABEL } from '@shared/i18n/chooseFolderEntry';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 // ============================================================================
 // 侧边栏导航域词条（Sidebar / features/sidebar 各组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / chatTranscript.ts 先例）。
@@ -19,7 +20,7 @@ export const sidebarZh = {
 
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.zh,
-    scheduleSessionPrefix: '[定时]',
+    scheduleSessionPrefix: cronSessionTitlePrefixes.zh.schedule,
     heartbeatSessionPrefix: '[心跳]',
     // 顶部 / 搜索
     newTask: '新任务',
@@ -45,6 +46,7 @@ export const sidebarZh = {
     createProjectSubmit: '创建',
     createProjectFailed: '创建项目失败，请重试',
     createSessionFailedPrefix: '新建会话失败：',
+    sessionProjectUnavailable: '这个协作空间已归档或已删除，不能在里面新建会话。',
     confirm: '确定',
     openSearch: '搜索会话',
     searchPlaceholder: '搜索会话…',
@@ -68,6 +70,14 @@ export const sidebarZh = {
     searchingMessageContent: '搜索消息内容中…',
     noStatusSessions: '当前没有{label}会话',
     noMatchedSessions: '这片星域没有信号',
+    archivedToast: '已归档「{title}」',
+    searchIncludeArchived: '包含已归档',
+    searchArchivedHint: '可能还有已归档的匹配项，打开「包含已归档」查看。',
+    archivedBadge: '已归档',
+    restoreSession: '恢复',
+    archivedSessionsHeading: '已归档会话',
+    noArchivedSessions: '没有已归档的会话',
+    loadMoreArchived: '加载更多已归档会话',
     searchFailed: '搜索没有成功，请稍后再试一次',
     statusMatchFallback: '匹配',
     // 分页（加载更早的历史会话）
@@ -104,6 +114,7 @@ export const sidebarZh = {
     signedOutSettings: '设置',
     accountUnreachable: '暂时无法连接，账号状态尚未确认',
     connectionRetry: '重试',
+    reSignIn: '重新登录',
     modelLoading: '正在加载模型…',
     skipSignInSetup: '先不登录，去配置模型/通道',
     // 数据集标记 toast
@@ -125,6 +136,7 @@ export const sidebarZh = {
       librarySubtitle: '任务产出与上传的文件，可带进对话',
       capabilityHub: '能力中心',
       capabilityHubSubtitle: '专家 · 技能 · 连接器',
+      localOpsSubtitle: '电脑操作与授权 · 浏览器',
       doctorIssues: { one: '{count} 项检查未通过', other: '{count} 项检查未通过' },
       doctorIssuesSubtitle: '点击查看完整诊断',
     },
@@ -243,6 +255,7 @@ export const sidebarZh = {
     forceExpandedAria: '{name} 保持展开，{reason}',
     keepExpanded: '保持展开',
     unfinishedCount: '{count} 个未完成',
+    folderMissing: '文件夹已不存在',
     // ⋯ 菜单项不带项目名（2026-07-28 拍板）：244px 侧栏里带名字的长文案必折两行，
     // 菜单高度翻倍往下盖会话行。菜单容器自身 aria-label 已是「{name} 更多操作」，
     // 读屏进菜单先播项目名，逐项再重复一遍纯属冗余。
@@ -397,9 +410,9 @@ export const sidebarZh = {
   },
   sidebarSession: {
     unread: '未读',
-    waitingPermissionApp: '等你批准：操作《{app}》',
-    waitingPermission: '等你批准',
-    waitingInput: '等你确认',
+    waitingPermissionApp: `${WAITING_ON_USER_LABELS.zh.approval}：操作《{app}》`,
+    waitingPermission: WAITING_ON_USER_LABELS.zh.approval,
+    waitingInput: WAITING_ON_USER_LABELS.zh.question,
     importedFromClaudeCode: 'Claude Code 历史',
     importedFromCodex: 'Codex 历史',
     forkedFrom: '分支任务，源任务：{sessionId}',
@@ -428,7 +441,7 @@ export const sidebarEn: typeof sidebarZh = {
 
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.en,
-    scheduleSessionPrefix: '[Schedule]',
+    scheduleSessionPrefix: cronSessionTitlePrefixes.en.schedule,
     heartbeatSessionPrefix: '[Heartbeat]',
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
@@ -447,6 +460,7 @@ export const sidebarEn: typeof sidebarZh = {
     createProjectSubmit: 'Create',
     createProjectFailed: 'Failed to create project. Try again.',
     createSessionFailedPrefix: 'Failed to create session: ',
+    sessionProjectUnavailable: 'This Space was archived or deleted, so a new session cannot be created there.',
     confirm: 'Confirm',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
@@ -469,6 +483,14 @@ export const sidebarEn: typeof sidebarZh = {
     searchingMessageContent: 'Searching message content…',
     noStatusSessions: 'No {label} sessions right now',
     noMatchedSessions: 'No signals in this sector',
+    archivedToast: 'Archived "{title}"',
+    searchIncludeArchived: 'Include archived',
+    searchArchivedHint: 'There may be archived matches. Turn on "Include archived" to see them.',
+    archivedBadge: 'Archived',
+    restoreSession: 'Restore',
+    archivedSessionsHeading: 'Archived sessions',
+    noArchivedSessions: 'No archived sessions',
+    loadMoreArchived: 'Load more archived sessions',
     searchFailed: 'Search didn\'t go through. Please try again.',
     statusMatchFallback: 'Matched',
     // Pagination (loading older history sessions)
@@ -502,6 +524,7 @@ export const sidebarEn: typeof sidebarZh = {
     signedOutSettings: 'Settings',
     accountUnreachable: "Can’t reach the service right now. Account status is unconfirmed.",
     connectionRetry: 'Retry',
+    reSignIn: 'Sign in again',
     modelLoading: 'Loading model…',
     skipSignInSetup: 'Skip sign-in and set up a model or channel',
     markedAsDataset: 'Marked as {role}',
@@ -520,6 +543,7 @@ export const sidebarEn: typeof sidebarZh = {
       librarySubtitle: 'Project assets · pin into chats',
       capabilityHub: 'Capability Hub',
       capabilityHubSubtitle: 'Experts · Skills · Connectors',
+      localOpsSubtitle: 'Computer control & permissions · browser',
       doctorIssues: { one: '{count} check failing', other: '{count} checks failing' },
       doctorIssuesSubtitle: 'Click to open full diagnostics',
     },
@@ -632,6 +656,7 @@ export const sidebarEn: typeof sidebarZh = {
     forceExpandedAria: '{name} stays expanded — {reason}',
     keepExpanded: 'Stay expanded',
     unfinishedCount: '{count} unfinished',
+    folderMissing: 'Folder no longer exists',
     openConsole: 'Open project console',
     collapseDetails: 'Collapse project details',
     expandDetails: 'Expand project details',
@@ -784,8 +809,8 @@ export const sidebarEn: typeof sidebarZh = {
   sidebarSession: {
     unread: 'Unread',
     waitingPermissionApp: 'Approve: "{app}"',
-    waitingPermission: 'Waiting for your approval',
-    waitingInput: 'Waiting for you',
+    waitingPermission: WAITING_ON_USER_LABELS.en.approval,
+    waitingInput: WAITING_ON_USER_LABELS.en.question,
     importedFromClaudeCode: 'Claude Code history',
     importedFromCodex: 'Codex history',
     forkedFrom: 'Forked task, source task: {sessionId}',

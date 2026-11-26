@@ -1,4 +1,5 @@
 import { executeSingleSpawnAgent } from './spawnSingleAgent';
+import { withWorkdirPrefix } from '../workdirPrefix';
 // ============================================================================
 // Spawn Agent — execute helpers
 // Gen 7: Multi-Agent capability
@@ -296,7 +297,7 @@ async function executeParallelAgents(
       id: taskId,
       role: agent.role,
       name: displayNames[index],
-      task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
+      task: withWorkdirPrefix(cwd, agent.task),
       systemPrompt,
       tools,
       maxIterations: getAgentMaxIterations(agentConfig),
@@ -644,6 +645,20 @@ ${agentSummaries}${coordSession ? '\n\n---\n\n' + coordSession.synthesize() : ''
         metadata: {
           cost: aggregation.totalCost,
           tokensUsed: totalTokensUsed,
+          // 每个助手各自的真实结局：整批 success:false 不能把已完成的助手也读成失败。
+          helperOutcomes: tasks.map((task) => {
+            const taskResult = resultByTaskId.get(task.id);
+            const success = taskResult?.success === true;
+            return {
+              name: task.name ?? task.role,
+              success,
+              ...(success ? {} : {
+                failureCode: taskResult?.failureCode ?? inferAgentFailureCode({
+                  error: taskResult?.error ?? result.errors.find((entry) => entry.taskId === task.id)?.error,
+                }),
+              }),
+            };
+          }),
           ...runScope,
         },
       };

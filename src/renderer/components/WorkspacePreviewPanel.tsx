@@ -19,7 +19,7 @@ import {
   type WorkbenchPreset,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
-import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useI18n } from '../hooks/useI18n';
 import { useAppStore } from '../stores/appStore';
@@ -38,6 +38,7 @@ import {
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 import { getProjectArtifacts } from '../services/projectClient';
+import { projectArtifactKindLabel } from '../utils/projectArtifactKind';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { DeliverableCardList } from './features/chat/MessageBubble/DeliverableCardList';
 import { buildDeliverableCardFromWorkspaceItem } from '../utils/deliverables';
@@ -62,15 +63,6 @@ const KIND_TITLE_ARTIFACTS: ReadonlySet<ProjectArtifactKind> = new Set([
   'mermaid',
   'question_form',
 ]);
-
-function projectArtifactKindLabel(
-  kind: ProjectArtifactKind,
-  labels: ReturnType<typeof useI18n>['t']['sidebarProject']['artifactKind'],
-): string {
-  if (kind === 'process-output') return labels.processOutput;
-  if (kind === 'process-log') return labels.processLog;
-  return labels[kind] ?? kind;
-}
 
 export function projectArtifactDisplayTitle(
   artifact: Pick<ProjectArtifact, 'kind' | 'title'>,

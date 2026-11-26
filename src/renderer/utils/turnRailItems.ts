@@ -7,6 +7,7 @@
 import type { RoleLabels } from '../stores/roleLabelsStore';
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import { extractUserRequest } from '@shared/utils/turnScaffold';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 import { roleEditReceiptZh } from '../i18n/roleEditReceipt';
 import { formatEditRoleUserPrompt } from './formatEditRoleUserPrompt';
 
@@ -50,6 +51,26 @@ export function getTurnFinalTextNode(turn: TraceTurn, isVoiceTurn: boolean): Tra
   return null;
 }
 
+/**
+ * 记忆芯片只挂在这一轮的一个节点上。优先本轮结论（与折叠槽同一条），且它的
+ * turnQuality 确有按条注入的记忆；否则取最后一条带记忆的 assistant_text
+ * （正文还没落地时芯片先挂在那里，正文出现后挪到结论上）。没有则不渲染。
+ * 模型迭代的 correlation.turnId 每段不同，不能当去重键。
+ */
+export function getTurnChipOwnerId(
+  turn: TraceTurn,
+  isVoiceTurn: boolean,
+  nodeUsedMemory: (node: TraceNode) => boolean,
+): string | null {
+  const finalText = getTurnFinalTextNode(turn, isVoiceTurn);
+  if (finalText && nodeUsedMemory(finalText)) return finalText.id;
+  for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
+    const node = turn.nodes[index];
+    if (node.type === 'assistant_text' && nodeUsedMemory(node)) return node.id;
+  }
+  return null;
+}
+
 function previewText(content: string | undefined, max: number): string {
   const collapsed = (content ?? '').replace(/\s+/g, ' ').trim();
   if (collapsed.length <= max) return collapsed;
@@ -66,9 +87,14 @@ export function buildTurnRailItems(
   roleLabels?: RoleLabels,
 ): TurnRailItem[] {
   const projectPrompt = (raw: string | undefined) => (
-    raw ? formatEditRoleUserPrompt(extractUserRequest(raw), editRolePromptTemplate, roleLabels) : raw
+    raw ? formatEditRoleUserPrompt(stripLegacyTeamRecipeSeed(extractUserRequest(raw)), editRolePromptTemplate, roleLabels) : raw
   );
-  return turns.filter((turn) => !turn.standalone).map((turn) => ({
+  // 旧主理人 brief 行展示为空：该轮没有可预览的用户原话，从轨道里去掉（原文非空才算，空 prompt 的语音/附件轮照旧保留）
+  const isLegacySeedTurn = (turn: TraceTurn) => {
+    const raw = getTurnUserNode(turn)?.content;
+    return Boolean(raw) && stripLegacyTeamRecipeSeed(extractUserRequest(raw as string)) === '';
+  };
+  return turns.filter((turn) => !turn.standalone && !isLegacySeedTurn(turn)).map((turn) => ({
     turnId: turn.turnId,
     turnNumber: turn.turnNumber,
     prompt: previewText(projectPrompt(getTurnUserNode(turn)?.content), PROMPT_PREVIEW_MAX),

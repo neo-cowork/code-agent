@@ -117,7 +117,9 @@ export class AgentRunController {
    */
   private shouldBroadcastAfterStreamClosed(event: string): boolean {
     if (this.canWriteSSE() || this.deps.mirrorToBroadcast) return false;
-    return event === 'surface_execution' || event === 'permission_request';
+    // suggestions_update 在 run() 收线之后才由快模型返回。直连响应已经 end，
+    // 不补广播的话打开着的页面永远等不到回复后的建议芯片。
+    return event === 'surface_execution' || event === 'permission_request' || event === 'suggestions_update';
   }
 
   emitSSE(event: string, data: unknown): void {
@@ -175,7 +177,7 @@ export class AgentRunController {
         notificationService.retractNeedsInput(data.id);
         return;
       }
-      const notice = buildApprovalNotification(typeof data.tool === 'string' ? data.tool : undefined);
+      const notice = buildApprovalNotification(typeof data.tool === 'string' ? data.tool : undefined, undefined, this.deps.sessionId);
       notificationService.notifyNeedsInput({
         sessionId: this.deps.sessionId,
         ...notice,
@@ -229,7 +231,7 @@ export class AgentRunController {
       // 而后台 lane 的审批（含沙箱升级确认）可以在那之后才抛——批处理器 destroy 后
       // emit 是静默丢弃。收线后的 permission_request 绕过批处理器直发：流已关时走
       // shouldBroadcastAfterStreamClosed 的补播通道进全局广播，卡必须到得了 renderer。
-      if (event.type === 'permission_request' && this.runSettled) {
+      if ((event.type === 'permission_request' || event.type === 'suggestions_update') && this.runSettled) {
         this.emitSSE(event.type, event.data);
       } else {
         this.agentSSEBatcher.emit(event);

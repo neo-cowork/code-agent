@@ -2,6 +2,7 @@
 // RoleDetailPage - 角色详情（设置页与专家面板共用）
 // ============================================================================
 
+import { stripKeywordsTail } from './memoryDescriptionDisplay';
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
@@ -13,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { IPC_DOMAINS } from "@shared/ipc";
+import { ROLE_PROACTIVITY } from "@shared/constants";
 import { sanitizeTopicList } from "@shared/roleTopicList";
 import type {
   RolePanelDetail,
@@ -396,10 +398,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             ) : null}
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {memory.description}
-          </div>
-          <div className="mt-0.5 text-[10px] text-zinc-600">
-            {memory.filename}
+            {stripKeywordsTail(memory.description)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -492,6 +491,13 @@ const PROACTIVITY_LEVELS: RoleProactivityLevel[] = [
   "realtime",
 ];
 
+/** 每日简报 cadence（秒 分 时 * * *）里的钟点；解析不了就落回默认每日简报的钟点。 */
+function dailyBriefClock(cadence: string | undefined): string {
+  const parse = (cron: string | undefined) => /^0 (\d{1,2}) (\d{1,2}) \* \* \*$/.exec(cron ?? "");
+  const match = parse(cadence) ?? parse(ROLE_PROACTIVITY.DAILY_BRIEF_CRON);
+  return match ? `${match[2].padStart(2, "0")}:${match[1].padStart(2, "0")}` : "";
+}
+
 const ProactivitySelector: React.FC<{
   roleId: string;
   current: RoleProactivityConfig;
@@ -547,7 +553,9 @@ const ProactivitySelector: React.FC<{
               >
                 {option.label}
               </div>
-              <div className="mt-0.5 text-xs text-zinc-500">{option.hint}</div>
+              <div className="mt-0.5 text-xs text-zinc-500">
+                {option.hint.replace("{time}", dailyBriefClock(current.cadence))}
+              </div>
             </div>
           </button>
         );

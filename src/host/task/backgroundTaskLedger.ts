@@ -81,6 +81,7 @@ export class BackgroundTaskLedger {
       durationMs: input.durationMs ?? existing?.durationMs,
       progress: cloneProgress(input.progress ?? existing?.progress),
       failure: cloneFailure(input.failure ?? existing?.failure),
+      leftoverPaths: input.leftoverPaths ?? existing?.leftoverPaths,
       metadata: cloneMetadata(input.metadata ?? existing?.metadata),
       events: existing?.events.map(cloneTaskEvent) ?? [],
       outputRefs: existing?.outputRefs.map(cloneOutputRef) ?? [],
@@ -411,7 +412,9 @@ function cloneProgress(progress?: TaskProgress): TaskProgress | undefined {
   return progress
     ? {
       ...progress,
+      ...(progress.guiDisclosures ? { guiDisclosures: progress.guiDisclosures.map((entry) => ({ ...entry })) } : {}),
       lastToolStep: progress.lastToolStep ? { ...progress.lastToolStep } : undefined,
+      bashSteps: progress.bashSteps ? progress.bashSteps.map((step) => ({ ...step })) : undefined,
       lastToolFailure: progress.lastToolFailure ? { ...progress.lastToolFailure } : undefined,
     }
     : undefined;
@@ -426,6 +429,7 @@ function cloneTask(task: Task): Task {
     ...task,
     progress: cloneProgress(task.progress),
     failure: cloneFailure(task.failure),
+    leftoverPaths: task.leftoverPaths?.slice(),
     metadata: cloneMetadata(task.metadata),
     events: task.events.map(cloneTaskEvent),
     outputRefs: task.outputRefs.map(cloneOutputRef),

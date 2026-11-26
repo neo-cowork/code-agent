@@ -55,19 +55,31 @@ export const TaskProgressSchema: z.ZodType<TaskProgress> = z.object({
   total: z.number().optional(),
   percent: z.number().optional(),
   label: z.string().optional(),
+  guiDisclosures: z.array(z.object({ app: z.string(), callId: z.string() })).optional(),
   lastToolStep: z.object({
     tool: z.string(),
     toolIndex: z.number().optional(),
     toolTotal: z.number().optional(),
     target: z.string().optional(),
+    action: z.string().optional(),
+    description: z.string().optional(),
+    callId: z.string().optional(),
+    notRun: z.boolean().optional(),
     at: z.number(),
   }).optional(),
+  bashSteps: z.array(z.object({
+    description: z.string().optional(),
+    command: z.string(),
+    callId: z.string().optional(),
+    notRun: z.boolean().optional(),
+  })).optional(),
   lastToolFailure: z.object({
     tool: z.string(),
     code: z.string(),
     alternatives: z.string().optional(),
     at: z.number(),
   }).optional(),
+  failedToolCalls: z.number().optional(),
 });
 
 export const TaskFailureSchema: z.ZodType<TaskFailure> = z.object({

@@ -101,6 +101,8 @@ describe('sensitive sandbox paths', () => {
     expect(isProtectedWritePath(path.join(dataDir, 'hooks', 'hooks.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'session-permission-modes.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'exec-policy.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(dataDir, 'task-output-directories.json'), opts)).toBe(true);
+    expect(isProtectedWritePath(path.join(home, CONFIG_DIR_NEW, 'task-output-directories.json'), { homeDir: home, projectRoot: project, env: {} })).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'permissions.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(dataDir, 'mcp.json'), opts)).toBe(true);
     expect(isProtectedWritePath(path.join(project, CONFIG_DIR_NEW, 'exec-policy.json'), opts)).toBe(true);

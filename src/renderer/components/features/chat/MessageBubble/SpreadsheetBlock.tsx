@@ -13,6 +13,7 @@ import {
 import { sanitizeUserData } from '@shared/livePreview/localityFeedback';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolate } from '../../../../i18n/interpolate';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ interface SheetData {
   rows: unknown[][];
   rowCount: number;
   rangeStart?: SheetRangeStart;
+  headerless?: boolean;
 }
 
 interface SpreadsheetSpec {
@@ -73,6 +75,7 @@ function isSheetData(value: unknown): value is SheetData {
     && value.rows.every(Array.isArray)
     && typeof value.rowCount === 'number'
     && (rangeStart === undefined || isSheetRangeStart(rangeStart))
+    && (value.headerless === undefined || typeof value.headerless === 'boolean')
   );
 }
 
@@ -325,6 +328,9 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
   const selectedStats = selectedColumns.length === 1
     ? getColumnStats(allRows, selectedColumns[0], columnTypes[selectedColumns[0]], statsLabels)
     : '';
+  const { rowUnit, columnUnit, singleRowUnit, singleColumnUnit, columns } = t.generativeUI;
+  const displayedRowUnit = sheet.headerless && totalRows === 1 ? singleRowUnit : rowUnit;
+  const displayedColumnUnit = sheet.headerless ? (headers.length === 1 ? singleColumnUnit : columns) : columnUnit;
 
   return (
     <div className="my-3 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-lg">
@@ -336,7 +342,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
             {parsedSpec.title || sheet.name || t.generativeUI.spreadsheet}
           </span>
           <span className="text-xs text-zinc-500">
-            {totalRows} {t.generativeUI.rowUnit} · {headers.length} {t.generativeUI.columnUnit}
+            {totalRows} {displayedRowUnit} · {headers.length} {displayedColumnUnit}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -418,7 +424,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                     const isNum = typeof value === 'number';
                     // A1 引用走共享口径：DocEdit 会照着这个引用直接改源文件，
                     // 换算只能有一份，验收脚本和单测都从同一个函数取。
-                    const cellRef = sheetCellRef(dataRowIndex, ci, sheet.rangeStart);
+                    const cellRef = sheetCellRef(dataRowIndex, ci, sheet.rangeStart, sheet.headerless);
                     const isCellSelected = filePath != null && selectedCell === cellRef;
 
                     return (
@@ -428,7 +434,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                         className={`px-3 py-1 border-r border-zinc-700/30 truncate max-w-[200px] ${
                           isCellSelected ? 'bg-cyan-500/20 outline outline-1 outline-[var(--badge-info-border)]' : isSelected ? 'bg-blue-500/5' : ''
                         } ${filePath != null ? 'cursor-pointer' : ''} ${isNum ? 'text-right tabular-nums text-zinc-300' : 'text-zinc-400'}`}
-                        title={filePath != null ? `${cellRef} · ${formatCellValue(value)}（点选定点反馈）` : formatCellValue(value)}
+                        title={filePath != null ? interpolate(t.generativeUI.cellFeedbackTitle, { ref: cellRef, value: formatCellValue(value) }) : formatCellValue(value)}
                       >
                         {formatCellValue(value)}
                       </td>
@@ -448,7 +454,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
             // sheetName 必传：DocEdit 的 getWorksheet 在缺省时会默默取第一张表，
             // 多 sheet 工作簿里用户点的是第 2 张表、改的却是第 1 张。
             anchor={{ kind: 'sheet', filePath, cell: selectedCell, sheetName: sheet?.name }}
-            locationLabel={`单元格 ${selectedCell}`}
+            locationLabel={interpolate(t.generativeUI.cellLabel, { ref: selectedCell })}
           />
         </div>
       )}

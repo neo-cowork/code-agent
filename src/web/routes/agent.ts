@@ -1,4 +1,4 @@
-import { watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
+import { noteFirstModelRequestPhase, watchFirstModelRequest } from '../../host/agent/runtime/firstModelRequestWatch';
 import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
@@ -71,10 +71,12 @@ import type {
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { generateMessageId } from '../../shared/utils/id';
+import { buildSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
-import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
+import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
+import { settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -117,6 +119,7 @@ import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../hos
 import {
   isPlannedSessionWorkDirectory,
   maybeDivertCollidingSessionWorkDirectory,
+  needsWorkspaceModelTitleForDeliverable,
   maybeReplanSessionWorkDirectory,
   planSessionWorkDirectory,
 } from '../../host/config/sessionWorkDirectory';
@@ -271,10 +274,6 @@ async function tryGetSharedCLISessionManager(): Promise<AgentSessionManagerLike 
   } catch {
     return null;
   }
-}
-
-function buildSessionTitle(prompt: string): string {
-  return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
 }
 
 function toWorkbenchMetadata(context?: ConversationEnvelopeContext): MessageMetadata | undefined {
@@ -693,35 +692,39 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const workDirReservations = needsWorkDirReservations && dbAvailable && !sessionPreflightReadFailed
       ? await listSessionWorkDirectoryReservations({ exceptSessionId: sessionId })
       : [];
+    const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
+    let firstRunNoFolderSession = false;
     if (!resolvedProject) {
-      // 无文件夹会话分两档（N-DELIVERABLE-WORKDIR-DEFAULT）：新会话（preflight 时零历史
-      // 消息——本轮 user message 要到下方 SSE 之后的 pre-persist 才落库，此处读到的就是
-      // 首轮前状态）首轮**规划**按会话产出子目录 任务_MMDD_<标题> 并经下方回写粘住；
-      // 已有消息的存量会话保持扁平默认目录，既有文件永不挪动。
-      // 懒开（N-DELIVERABLE-WORKDIR-LAZY）：首轮只算路径不落盘，纯问答会话不产生任何
-      // 目录；到首个非只读工具派发前（toolExecutionEngine）或外部引擎 preflight 才补 mkdir。
-      // 只在「确知零消息且目录选择粘得住」（preflight 读成功、持久化健康态明确可写、
-      // 且会话行已经存在）时才规划新目录：读失败/行不存在/运行期降级都保持扁平默认。
-      // 持久化健康态的 durable 字段在 degraded 时会保留历史值，所以同时检查 status；
-      // 否则 readonly/quick_check 失败会被误判为可持久化，每轮各开一个 任务_x-N 目录。
+      // 无文件夹首轮只规划路径，首次非只读工具或外部引擎 preflight 才 mkdir。
+      // 只给健康持久态且确知零历史的会话规划；不能粘住目录时继续用扁平默认目录。
       const persistenceHealth = getPersistenceHealth();
       const persistenceIsDurable = persistenceHealth.durable === true
         && (persistenceHealth.status === 'available' || persistenceHealth.status === 'recovered');
-      const firstRunNoFolderSession = dbAvailable
+      firstRunNoFolderSession = dbAvailable
         && !sessionPreflightReadFailed
         && persistenceIsDurable
         && persistedSession !== null
         && !persistedSession.workingDirectory?.trim()
         && !persistedSessionHasMessages(persistedSession);
+      const deferWorkspaceTitle = firstRunNoFolderSession && !isExternalAgentEngine(selectedEngine.kind)
+        && !body.goal && !prompt.trimStart().startsWith('/')
+        && !needsWorkspaceModelTitleForDeliverable(prompt);
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('workspace_planning');
       try {
         resolvedProject = firstRunNoFolderSession
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            deferModelTitle: deferWorkspaceTitle,
+            askTitle: async (titlePrompt, signal) => {
+              const { quickTask, isQuickModelAvailable } = await import('../../host/model/quickModel');
+              return isQuickModelAvailable() ? quickTask(titlePrompt, undefined, signal) : undefined;
+            },
             attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
+        if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_run_setup');
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       } catch (error) {
         if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
@@ -775,7 +778,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     }
 
-    const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
     const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
     // 写边界预检（identity 快照缺失/变化、Source 未信任）fail-closed 抛 ProjectSourceTrustError：
     // 在写 SSE 之前收口成可确认的 422（renderer 出「确认并重发」入口）；其余错误原样
@@ -797,11 +799,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
       if (transport.connectedClient) {
-        res.status(422).json({
-          error: 'Project folder needs trust confirmation',
-          code: 'PROJECT_SOURCE_TRUST',
-          kind: error.kind,
-        });
+        res.status(422).json(error.toHttpBody());
         return;
       }
       throw error;
@@ -834,6 +832,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     // 外部引擎把 resolvedProject 当子进程 cwd，缺失会被 assertWorkspaceCwd 硬拒
     // （"must exist"）——懒开目录对它们没有「等首个写工具」的余地，preflight 落盘。
+    if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_workspace_materialization');
     if (isExternalAgentEngine(selectedEngine.kind) && resolvedProject) {
       await materializeRunWorkDirectoryOnce(resolvedProject, { sessionId });
     }
@@ -898,6 +897,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let externalDurableLifecycle: Awaited<ReturnType<typeof durableRunLifecycle.start>>['externalLifecycle'];
     let runCorrelationId: string;
     try {
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_durable_run_start');
       const started = await durableRunLifecycle.start();
       runHandle = started.runHandle;
       externalDurableLifecycle = started.externalLifecycle;
@@ -994,6 +994,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // 「Failed to persist session status running」WARN（基线实测 3/3 个新会话各一条）。
     // 行确认缺失就不在这里写：新会话的 running 在建行之后补写；老会话/读失败/降级态
     // 维持原地点写不变。终态写路径（interrupted/completed/error）不在此列，照旧原样写。
+    if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_running_status');
     if (!sessionRowMissingAtPreflight) {
       await runController.updateSessionStatus('running');
     }
@@ -1020,6 +1021,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 只有 model 和 provider 都未显式给出才读 session override（audit R1-MED2：
       // 半显式 body（只传 model）不能拿 override 的 provider 拼成杂交配置，
       // 例如显式 deepseek-chat + 持久化 zhipu override → zhipu/deepseek-chat）。
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_model_override');
       if (!effectiveModel && !effectiveProvider) {
         const { getModelSessionState } = await import('../../host/session/modelSessionState');
         const { rehydrateModelOverrideFromSession } = await import('../../host/session/modelOverridePersistence');
@@ -1041,9 +1043,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
       }
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cli_imports');
       const { createCLIAgent } = await import('../../cli/adapter');
       const { createAgentLoop, createRunToolExecutor } = await import('../../cli/bootstrap');
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_workspace_backfill');
       // 首轮生效值补写（只补空）：working_directory 为空的会话每次重开都按
       // 上面的解析链重解析，而 context.workingDirectory 来自 renderer 全局
       // workspace 值（随其他会话切目录漂移）→ 同一会话隔天 <env> 目录漂移。
@@ -1239,6 +1243,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw new Error('Native run is missing its RunContext or RunHandle');
       }
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cli_agent_init');
       const agent = await createCLIAgent({
         project: resolvedProject,
         model: effectiveModel,
@@ -1246,6 +1251,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         json: true,
       });
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_agent_config');
       const config = agent.getConfig();
       if (body.historyVisibility) config.historyVisibility = body.historyVisibility;
       // disableAutoAgent 透传（对照桌面 orchestrator options.disableAutoAgent 的扇出禁用）：
@@ -1333,6 +1339,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 选中/专家声明的连接器未就绪：每轮首个模型输出前发一次 connector_required（renderer 出连接卡）。
       // web 路径不应用专家声明的连接器，仅用已解析的 preferredAgentId 做事件口径。
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_connector_check');
       const connectorRequired = await resolveConnectorRequiredForTurn(
         preferredAgentId ? { agentOverrideId: preferredAgentId } : undefined,
         body.context,
@@ -1361,7 +1368,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       config.thinkingEnabled = body.thinkingEnabled ?? true;
       if (body.effortLevel !== undefined) config.effortLevel = body.effortLevel;
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_history_load');
       const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_turn_config');
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
         config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
@@ -1428,7 +1437,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       // 只发文件时没有文字可做标题：退回首个附件名，不能落空串。
-      const titleSource = visiblePrompt.trim() || requestAttachments[0]?.name || visiblePrompt;
+      // 截图/图片批注带的隐藏 <appshot> 块不是标题材料：先剥掉再取，剥空（纯截图）才退到附件名。
+      const draftTitle = buildSessionTitle(visiblePrompt, requestAttachments[0]?.name);
       const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
@@ -1517,7 +1527,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         },
       )?.turnSystemContext ?? capabilityContextLines;
       // FB-523：桌面主链不经 appService.sendMessage，/init-memory 等内置命令在此展开（仅模型面）
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_slash_expand');
       const slashExpandedPrompt = await expandSlashPromptForModel(visiblePrompt, resolvedProject);
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_loop_setup');
       const modelFacePrompt = missingAttachmentContext.length > 0
         ? wrapWithTurnSystemContext(missingAttachmentContext, slashExpandedPrompt)
         : slashExpandedPrompt;
@@ -1575,6 +1587,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
       }, messages, sessionId, undefined, runToolExecutor, runContext, runHandle.traceContext);
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_run_attach');
       await runHandle.attach({
         cancel: (reason) => {
           // Abort the loop before releasing its approval wait. A stopped run must
@@ -1590,11 +1603,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
       // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_session_title');
       if (isNewSession && body.historyVisibility !== 'meta') {
         const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
-          const title = buildSessionTitle(titleSource);
-          broadcastSSE('session:updated', { sessionId, updates: { title } });
+          broadcastSSE('session:updated', { sessionId, updates: { title: draftTitle } });
           broadcastSSE('session:list-updated', undefined);
         }
       }
@@ -1605,9 +1618,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       let userMsgPrePersistedDb = false;
       let userMsgPrePersistedSupabase = false;
 
+      if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_user_message_persist');
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
-        title: buildSessionTitle(titleSource),
+        title: draftTitle,
         // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
         // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
         // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）
@@ -1646,13 +1660,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       try {
         const sb = await getSupabaseForSession();
         if (sb) {
+          if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cloud_session_row_sync');
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(titleSource),
+            title: draftTitle,
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
+          if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cloud_user_message_insert');
           await sb.supabase.from('messages').insert({
             id: msgId,
             session_id: sessionId,
@@ -1663,6 +1679,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             updated_at: Date.now(),
             source_device_id: 'web',
           });
+          if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_cloud_user_message_done');
           userMsgPrePersistedSupabase = true;
         }
       } catch (err) {
@@ -1683,7 +1700,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         });
         await sessionStore.commitTurn({
           sessionId,
-          title: buildSessionTitle(titleSource),
+          title: draftTitle,
           modelConfig: runModelConfig,
           historyLength: history.length,
           userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1715,7 +1732,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       const { assistantMsgId } = await sessionStore.commitTurn({
         sessionId,
-        title: buildSessionTitle(titleSource),
+        title: draftTitle,
         modelConfig: runModelConfig,
         historyLength: history.length,
         userMessagePrePersistedDb: userMsgPrePersistedDb,
@@ -1743,13 +1760,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // task_complete / agent 终态分支）：每个终态都要收——只认 completed 时，max-step
       // 撞顶（error 事件带 MAX_ITERATIONS code）/失败/取消轮会把面板和侧栏 spinner
       // 挂在 running 永不收线（2026-10-11 验收实测 12/22 分钟不落，reload 后依旧）。
-      if (getBackgroundTaskManager().isInBackground(sessionId)) {
+      const backgroundManager = getBackgroundTaskManager();
+      const isBackground = backgroundManager.isTaskRunning(sessionId);
+      const leftoverPaths = takeApprovedRmLeftovers(sessionId, runContext.runId, 'web',
+        isBackground && finalStatus === 'completed');
+      if (isBackground) {
         const errorData = runController.lastTerminalErrorData;
-        await settleBackgroundRun(getBackgroundTaskManager(), sessionId, resolveBackgroundRunSettlement({
+        await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext.runId, {
           status: finalStatus,
+          leftoverPaths,
           errorMessage: typeof errorData?.message === 'string' ? errorData.message : undefined,
           errorCode: typeof errorData?.code === 'string' ? errorData.code : undefined,
-        }));
+        });
       }
 
       await durableRunLifecycle.markSuccess({ finalStatus });
@@ -1769,11 +1791,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           await syncSupabaseSessionRow(sb, {
             sessionId,
             isNewSession,
-            title: buildSessionTitle(titleSource),
+            title: draftTitle,
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
-          const sessionsTable = sb.supabase.from('sessions');
           // Insert user message (skip if pre-persisted)
           if (!userMsgPrePersistedSupabase) {
             await sb.supabase.from('messages').insert({
@@ -1802,13 +1823,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               source_device_id: 'web',
             });
           }
-          // 更新会话标题（第一轮消息时）
-          if (isNewSession) {
-            await sessionsTable.update({
-              title: buildSessionTitle(titleSource),
-              updated_at: Date.now(),
-            }).eq('id', sessionId);
-          }
+          // 首轮标题只在 syncSupabaseSessionRow 以 insert-if-absent 写入；这里不再用截断档覆盖已回写的智能标题。
         }
       } catch (sbErr) {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
@@ -1830,10 +1845,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      getBackgroundTaskManager().markFailed(
-        sessionId,
-        resolveBackgroundRunSettlement({ status: 'error', errorMessage: message }).message,
-      );
+      const backgroundManager = getBackgroundTaskManager();
+      if (backgroundManager.isTaskRunning(sessionId)) {
+        await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext?.runId, { status: 'error', errorMessage: message });
+      }
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
       const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);
@@ -1865,6 +1880,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
+      if (runContext) takeApprovedRmLeftovers(sessionId, runContext.runId, 'web', false);
       // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线只清本 run 自己的（无 runId/agentId
       // 身份）挂起审批；后台任务/子代理 lane 的审批消费方还活着，机器拒绝会让「批准后后台任务
       // 继续」变成不可能，卡也会跟着变成点了就 unknown_request 的死卡。还留着后台审批的岛
@@ -1968,7 +1984,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
   });
 
-  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory);
+  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory, queuedInputDrain.handleReleasedSession);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

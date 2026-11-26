@@ -5,6 +5,8 @@
 import { permissionVocabularyEn } from './permissionVocabulary';
 
 export const enSettingsCore = {
+    pageLoadFailed: 'This settings page can’t load right now.',
+    reloadPage: 'Reload',
     tabs: {
       general: 'Permissions & security',
       model: 'General model',
@@ -206,6 +208,8 @@ export const enSettingsCore = {
         unknownDescription: 'You can check in System Settings whether notifications are on.',
         openSettings: 'Open system settings',
         openSettingsFailed: 'Unable to open System Settings. Open Notifications manually.',
+        deniedNotice: 'System notifications are turned off, so task alerts will not pop up',
+        deniedNoticeAction: 'Turn on',
       },
       permissions: {
         readOnlyLookups: {

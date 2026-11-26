@@ -39,6 +39,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
+import { sessionReplayBackgroundTasks } from '../utils/sessionReplayContext';
 import { cronRunAggregatesByTaskId, useCronRunGroups } from '../hooks/useCronRunGroups';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
@@ -52,6 +53,7 @@ import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarAccountStatus } from './features/sidebar/SidebarAccountStatus';
 import { useSidebarSearchShortcut } from './features/sidebar/useSidebarSearchShortcut';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
+import { ArchiveUndoToast } from './features/sidebar/ArchiveUndoToast';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
 import {
@@ -563,7 +565,6 @@ export const Sidebar: React.FC = () => {
       t,
     ],
   );
-
   const hasAnySessions = sessions.length > 0;
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
@@ -654,9 +655,9 @@ export const Sidebar: React.FC = () => {
 
   const handleSelectSearchSession = async (sessionId: string) => {
     try {
-      if (sessionId !== currentSessionId) {
-        await switchSession(sessionId);
-      }
+      // 走带「命中跳转」的选择路径：先种 pendingSearchJump（消息节点高亮 / 找不到时打开会话内搜索），
+      // 再切会话；此前弹窗里点命中只切会话，跳转与兜底都不会发生。
+      await handleSelectSession(sessionId);
     } finally {
       closeSearchDialog();
     }
@@ -774,7 +775,7 @@ export const Sidebar: React.FC = () => {
           滚动条/右轨对齐的完整推导随之迁走，见该文件头注释。） */}
       <SidebarSessionList
         groups={workspaceGroupedSessions}
-        // 云标点亮（第三波预留接口）：本机存在已绑云身份的空间时，协同空间节头亮云图标
+        // 云标点亮（第三波预留接口）：本机存在已绑云身份的空间时，协作空间节头亮云图标
         cloudBadge={Object.values(projectMetaById).some((meta) => Boolean(meta.cloudProjectId))}
         isLoading={isLoading}
         hasAnySessions={hasAnySessions}
@@ -931,7 +932,7 @@ export const Sidebar: React.FC = () => {
           sessionTitle={replayDialog.sessionTitle}
           replay={replayDialog.replay}
           workflowRuns={Object.values(workflowRuns).filter((run) => run.sessionId === replayDialog.sessionId)}
-          backgroundTasks={durableBackgroundTasks.filter((task) => task.sessionId === replayDialog.sessionId)}
+          backgroundTasks={sessionReplayBackgroundTasks(durableBackgroundTasks, replayDialog.sessionId)}
           evidence={replayEvidenceBySessionId.get(replayDialog.sessionId) ?? []}
           trajectorySummary={trajectoryQualityBySessionId[replayDialog.sessionId]}
           onUpdateTrajectoryDatasetRole={handleUpdateTrajectoryCollection}
@@ -991,12 +992,10 @@ export const Sidebar: React.FC = () => {
         <UndoToast
           message={interpolatePlural(sb.deletedCount, pendingDelete.ids.length)}
           onUndo={undoDelete}
-          onDismiss={() => {
-            // timer 已经在 softDelete 中设置了，这里是视觉消失后的回调
-            // 不需要额外操作，confirmDelete 由 timer 触发
-          }}
+          onDismiss={() => {}} // confirmDelete 由 softDelete 的 timer 触发
         />
       )}
+      <ArchiveUndoToast />
     </div>
   );
 };

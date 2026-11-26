@@ -73,9 +73,25 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     refreshDetail();
   }, [refreshDetail]);
 
+  const project = detail?.project ?? null;
+  const headerState = project?.cloudProjectId ? 'cloud'
+    : project?.spacePromotedAt != null ? 'promotedLocal' : 'plain';
+  const promotionCopy = headerState === 'promotedLocal' ? {
+    button: ps.promoteToCloudLocal,
+    title: ps.promoteToCloudLocalTitle,
+    body: ps.promoteToCloudLocalConfirm,
+    submit: ps.promoteToCloudLocalSubmit,
+    success: ps.promoteToCloudLocalSuccess,
+  } : {
+    button: ps.promoteToCloud,
+    title: ps.promoteTitle,
+    body: ps.promoteConfirm,
+    submit: ps.promoteSubmit,
+    success: ps.promoteSuccess,
+  };
+
   // 邀请码 Modal：页头「邀请」按钮与右栏成员卡「邀请」入口共用同一实例（别复制两份逻辑）
   const inviteModal = useProjectSpaceInvite();
-  // 升级确认弹层（cloudProjectId 为空时页头按钮文案「升级为协同空间」）
   const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false);
   const [promoteBusy, setPromoteBusy] = useState(false);
   const handlePromoteToCloud = async () => {
@@ -84,7 +100,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     try {
       await promoteToCloudSpace(projectId);
       setPromoteConfirmOpen(false);
-      toast.success(ps.promoteSuccess);
+      toast.success(promotionCopy.success);
       refreshDetail();
     } catch (error) {
       // fail-loud：host 返回的 error.message 已是人话，toast 直接展示真因
@@ -108,7 +124,6 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
     setTab('assets');
   };
 
-  const project = detail?.project ?? null;
   const activityStatus = project
     ? deriveProjectActivityStatus({
       status: project.status,
@@ -151,14 +166,14 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
             leftIcon={<UserPlus className="h-3.5 w-3.5" />}
             data-testid="project-space-invite-open"
             onClick={() => {
-              if (project.cloudProjectId) {
+              if (headerState === 'cloud') {
                 inviteModal.open(projectId);
               } else {
                 setPromoteConfirmOpen(true);
               }
             }}
           >
-            {project.cloudProjectId ? ps.invite : ps.promoteToCloud}
+            {headerState === 'cloud' ? ps.invite : promotionCopy.button}
           </SecondaryButton>
         ) : undefined}
       />
@@ -235,19 +250,19 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
       <Modal
         isOpen={promoteConfirmOpen}
         onClose={() => setPromoteConfirmOpen(false)}
-        title={ps.promoteTitle}
+        title={promotionCopy.title}
         size="sm"
         footer={(
           <ModalFooter
             onCancel={() => setPromoteConfirmOpen(false)}
             onConfirm={() => { void handlePromoteToCloud(); }}
-            confirmText={ps.promoteSubmit}
+            confirmText={promotionCopy.submit}
             confirmDisabled={promoteBusy}
           />
         )}
       >
         <p className="text-sm leading-6 text-zinc-400" data-testid="project-space-invite-promote-modal">
-          {ps.promoteConfirm}
+          {promotionCopy.body}
         </p>
       </Modal>
     </>

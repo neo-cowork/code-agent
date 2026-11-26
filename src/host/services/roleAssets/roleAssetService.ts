@@ -7,7 +7,7 @@
 //   角色和记忆是户口，实例是上班。
 //
 // 职责：
-// - 角色绑定检测：roles/<roleId>/ 目录存在 → 持久角色（约定优于配置，agent 定义零改动）
+// - 角色绑定检测：roles/<roleId>/ 或与注册 ID 一致的用户 agents/<roleId>.md → 持久角色（核心 agent 文件除外）
 // - 三层记忆读写：角色记忆 / 项目记忆（全局记忆由现有 Light Memory 负责，不动）
 // - 注入块构建：实例化时把角色记忆索引 + 项目记忆索引 + 最近履历拼进 system prompt
 // - 履历写入：产物清单（不记任务记产物，设计 §4.3）
@@ -15,10 +15,14 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getAgentsMdDir } from '../../config/configPaths';
+import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
+import { isCoreAgent } from '../../agent/hybrid/coreAgents';
 import { createLogger } from '../infra/logger';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import { admitStrictUntrustedText } from '../../security/inputSanitizer';
 import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
+import { plainEvidenceText } from '../../../shared/plainEvidenceText';
 import {
   getRoleDir,
   getRoleMemoriesDir,
@@ -78,27 +82,51 @@ export interface RoleHistoryEntry {
 // 角色绑定检测（设计 §4.2）
 // ----------------------------------------------------------------------------
 
-/**
- * 检测一个 agent 是否为持久化角色：roles/<roleId>/ 目录存在即是。
- * agents/*.md 定义一个字都不改；删掉目录就降回普通瞬时 agent。
- */
+/** 判断角色是否在持久化角色集合中，不创建资产目录。 */
 export async function isPersistentRole(roleId: string): Promise<boolean> {
-  if (!isSafeRoleId(roleId)) return false;
-  try {
-    const stat = await fs.stat(getRoleDir(roleId));
-    return stat.isDirectory();
-  } catch {
-    return false;
-  }
+  return isSafeRoleId(roleId) && (await findPersistentRoles(roleId)).length > 0;
 }
 
-/** 列出所有持久化角色 ID（roles/ 下的子目录名） */
+/** 列出 roles/ 子目录和有效的用户 agents/*.md；核心 agent 文件不单独纳入。 */
 export async function listPersistentRoles(): Promise<string[]> {
+  return findPersistentRoles();
+}
+
+async function findPersistentRoles(onlyRoleId?: string): Promise<string[]> {
+  const matches = (id: string) =>
+    (onlyRoleId === undefined || id === onlyRoleId) && isSafeRoleId(id);
+
+  const rolesRoot = getRolesRootDir();
+  const roleEntries = await fs.readdir(rolesRoot, { withFileTypes: true }).catch(() => []);
+  const roleIds = new Set(roleEntries.filter((entry) => entry.isDirectory() && matches(entry.name))
+    .map((entry) => entry.name));
+  if (onlyRoleId !== undefined && roleIds.has(onlyRoleId)) return [onlyRoleId];
+
+  const root = await fs.lstat(rolesRoot).catch(() => undefined);
+  if (root?.isSymbolicLink()) return [...roleIds].sort();
+
+  const agentsDir = getAgentsMdDir().user;
+  const agentEntries = await fs.readdir(agentsDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of agentEntries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    const id = entry.name.slice(0, -'.md'.length);
+    if (!matches(id) || isCoreAgent(id) || roleIds.has(id)) continue;
+    if (await isPersistentAgentFile(agentsDir, entry.name, id)) roleIds.add(id);
+  }
+  return [...roleIds].sort();
+}
+
+async function isPersistentAgentFile(agentsDir: string, filename: string, roleId: string): Promise<boolean> {
+  // A newly admitted agent can write role assets later. Keep it out if its asset path is a symlink.
+  const assetDir = await fs.lstat(getRoleDir(roleId)).catch(() => undefined);
+  if (assetDir?.isSymbolicLink()) return false;
   try {
-    const entries = await fs.readdir(getRolesRootDir(), { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const content = await fs.readFile(path.join(agentsDir, filename), 'utf-8');
+    const agent = parseAgentMd(content, filename);
+    // The filename ID must also be the registry ID used for wake and memory.
+    return agent?.id === roleId;
   } catch {
-    return [];
+    return false;
   }
 }
 
@@ -340,7 +368,8 @@ function formatRoleHistoryLine(entry: RoleHistoryEntry): string {
   const summary = flattenHistoryText(entry.summary).slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
   let line = `- ${entry.date} | ${label} | ${summary}`;
   if (entry.why) line += `${HISTORY_WHY_SEP}${flattenHistoryText(entry.why)}`;
-  if (entry.evidence) line += `${HISTORY_EVIDENCE_SEP}${flattenHistoryText(entry.evidence)}`;
+  const evidence = entry.evidence ? plainEvidenceText(entry.evidence) : '';
+  if (evidence) line += `${HISTORY_EVIDENCE_SEP}${evidence}`;
   return line;
 }
 
@@ -353,7 +382,7 @@ function parseRoleHistoryLine(raw: string): RoleHistoryEntry | null {
   let why: string | undefined;
   const evidenceIdx = body.lastIndexOf(HISTORY_EVIDENCE_SEP);
   if (evidenceIdx !== -1) {
-    evidence = flattenHistoryText(body.slice(evidenceIdx + HISTORY_EVIDENCE_SEP.length)) || undefined;
+    evidence = plainEvidenceText(body.slice(evidenceIdx + HISTORY_EVIDENCE_SEP.length)) || undefined;
     body = body.slice(0, evidenceIdx);
   }
   const whyIdx = body.lastIndexOf(HISTORY_WHY_SEP);

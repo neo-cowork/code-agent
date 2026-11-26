@@ -1,5 +1,6 @@
 import { detectScreenshotFailureCause } from '../../permissions/envAssist/screenshotFailureCause';
 import { isAppleEventsDenied } from '../../connectors/native/appleScriptFailure';
+import { containsAppleScriptCommand } from '../../permissions/shellDesktopAutomation';
 
 const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
 
@@ -197,7 +198,7 @@ export function diagnoseSandboxDenial(input: {
 
   const deniedPath = readSandboxDeniedPath(input.failureText);
   return deniedPath
-    ? `沙盒拒绝：${deniedPath}（沙盒只允许写 ${input.workingDirectory ?? '工作目录'} 与临时目录）`
+    ? `沙盒拒绝：${deniedPath}（沙盒只允许写 ${input.workingDirectory ?? '工作目录'} 与临时目录）。原文件内容没有被改动。下一步：请用户在对话里确认要写入这个位置（或写明「输出目录：路径」），也可以先把文件写到工作目录内再交付。`
     : '沙盒拒绝了工作目录外的写入';
 }
 
@@ -222,8 +223,6 @@ export interface BashFailureDiagnosticsInput {
 // are ambiguous; only the wording or the unambiguous AX code -25211 counts.
 const ACCESSIBILITY_DENIAL_PATTERN = /(?<!\d)-25211(?!\d)|not allowed assistive access|not allowed to send keystrokes/i;
 const SCREENCAPTURE_COMMAND_PATTERN = /(?:^|[\s;&|(`/])screencapture\b/;
-// `osa(?:script)`: the static no-prompt scan flags the bare tool name in this module.
-const OSASCRIPT_COMMAND_PATTERN = /(?:^|[\s;&|(`/])osa(?:script)\b/;
 
 /**
  * One 诊断 line naming the System Settings page when macOS privacy (TCC)
@@ -238,7 +237,7 @@ function diagnoseTccDenial(input: {
 }): string | undefined {
   if (input.platform !== 'darwin') return undefined;
   const usesScreencapture = SCREENCAPTURE_COMMAND_PATTERN.test(input.command);
-  const usesOsascript = OSASCRIPT_COMMAND_PATTERN.test(input.command);
+  const usesOsascript = containsAppleScriptCommand(input.command);
   if (!usesScreencapture && !usesOsascript) return undefined;
   const cause = detectScreenshotFailureCause({ platform: input.platform, env: input.env, message: input.failureText });
   if (cause.kind === 'ssh_session_no_gui') return undefined;
@@ -306,6 +305,23 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
   }
 
   return diagnostics;
+}
+
+/** TCC hint for a COMPLETED command (exit 0 via `; echo`, `|| true`, `2>&1 | tail`): matches stdout+stderr. */
+export function diagnoseCompletedBashTcc(input: {
+  command: string;
+  stdout?: string;
+  stderr?: string;
+  platform?: string;
+  env?: Record<string, string | undefined>;
+}): string[] {
+  const line = diagnoseTccDenial({
+    command: input.command,
+    failureText: [input.stdout, input.stderr].filter(Boolean).join('\n'),
+    platform: input.platform ?? process.platform,
+    env: input.env ?? process.env,
+  });
+  return line ? [line] : [];
 }
 
 export function appendFailureDiagnostics(message: string, diagnostics: string[]): string {

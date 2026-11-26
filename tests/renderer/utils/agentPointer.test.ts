@@ -308,7 +308,7 @@ describe('buildAgentPointerEvent', () => {
       tone: 'computer',
       phase: 'read',
       coordSpace: 'surfacePreview',
-      targetLabel: 'with screenshot',
+      targetLabel: '附截图',
     });
     expect(event?.point?.unit).toBe('percent');
   });

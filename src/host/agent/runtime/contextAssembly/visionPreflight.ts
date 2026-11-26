@@ -23,14 +23,6 @@ type RunEngineInference = (
   options?: InferenceOptions,
 ) => Promise<RouterModelResponse>;
 
-function messageHasImageParts(message: ModelMessage | undefined): boolean {
-  return Boolean(
-    message &&
-    Array.isArray(message.content) &&
-    message.content.some((part) => part.type === 'image')
-  );
-}
-
 export function contentHasImageParts(content: ModelMessage['content']): content is MessageContent[] {
   return Array.isArray(content) && content.some((part) => part.type === 'image');
 }
@@ -38,39 +30,11 @@ export function contentHasImageParts(content: ModelMessage['content']): content 
 function replaceImagesWithVisionSummary(
   messages: ModelMessage[],
   targetMessageIndex: number,
-  summary: string,
-  visionModel: string,
+  summary: MessageContent,
 ): ModelMessage[] {
-  return messages.map((message, messageIndex) => {
-    if (messageIndex !== targetMessageIndex) return message;
-    if (!Array.isArray(message.content)) return message;
-
-    let removedImages = 0;
-    const content = message.content.filter((part) => {
-      if (part.type !== 'image') return true;
-      removedImages += 1;
-      return false;
-    });
-
-    if (removedImages === 0) return message;
-
-    return {
-      ...message,
-      content: [
-        ...content,
-        {
-          type: 'text',
-          text: [
-            `[视觉预处理结果]`,
-            `模型: ${visionModel}`,
-            `图片数量: ${removedImages}`,
-            summary.trim(),
-            `[/视觉预处理结果]`,
-          ].join('\n'),
-        },
-      ],
-    };
-  });
+  return messages.map((message, index) => index === targetMessageIndex && contentHasImageParts(message.content)
+    ? { ...message, content: [...message.content.filter((part) => part.type !== 'image'), summary] }
+    : message);
 }
 
 function buildVisionPreflightMessages(
@@ -113,8 +77,7 @@ export async function preflightImagesForMainModel(
 ): Promise<ModelMessage[] | null> {
   const lastUserMessageIndex = modelMessages.findLastIndex((message) => message.role === 'user');
   const lastUserMessage = modelMessages[lastUserMessageIndex];
-  if (!messageHasImageParts(lastUserMessage)) return null;
-  if (!lastUserMessage) return null;
+  if (!lastUserMessage || !contentHasImageParts(lastUserMessage.content)) return null;
 
   const preflightConfig: ModelConfig = {
     ...fallbackConfig,
@@ -133,12 +96,16 @@ export async function preflightImagesForMainModel(
   const summary = (response.content || response.thinking || '').trim();
   if (!summary) return null;
 
-  return replaceImagesWithVisionSummary(
-    modelMessages,
-    lastUserMessageIndex,
-    summary,
-    preflightConfig.model || 'vision-model',
-  );
+  return replaceImagesWithVisionSummary(modelMessages, lastUserMessageIndex, {
+    type: 'text',
+    text: [
+      '[视觉预处理结果]',
+      `模型: ${preflightConfig.model || 'vision-model'}`,
+      `图片数量: ${lastUserMessage.content.filter((part) => part.type === 'image').length}`,
+      summary,
+      '[/视觉预处理结果]',
+    ].join('\n'),
+  });
 }
 
 export interface VisionPreflightRunResult {
@@ -147,6 +114,13 @@ export interface VisionPreflightRunResult {
   hadCandidates: boolean;
   attempts: VisionPreflightAttempt[];
 }
+
+// Reuse only the summary. Each inference still assembles fresh tool results and user text.
+const successfulPreflights = new WeakMap<ContextAssemblyCtx['runtime'], {
+  traceId: string;
+  sourceMessageId: string;
+  summary: MessageContent;
+}>();
 
 /**
  * 依次尝试每个识图候选（同 provider 优先 → 其它已配 Key 的 provider），直到某个成功
@@ -159,9 +133,18 @@ export async function runVisionPreflightCandidates(
   visionCandidates: ModelConfig[],
   userRequestText: string,
   runInference: RunEngineInference,
+  sourceMessageId?: string,
 ): Promise<VisionPreflightRunResult> {
   const hadCandidates = visionCandidates.length > 0;
   const attempts: VisionPreflightAttempt[] = [];
+  const lastUserIndex = modelMessages.findLastIndex((message) => message.role === 'user');
+  const traceId = ctx.runtime.stats?.traceId;
+  const cached = successfulPreflights.get(ctx.runtime);
+  if (sourceMessageId && traceId && cached?.sourceMessageId === sourceMessageId && cached.traceId === traceId
+    && contentHasImageParts(modelMessages[lastUserIndex]?.content ?? '')) {
+    modelMessages = replaceImagesWithVisionSummary(modelMessages, lastUserIndex, cached.summary);
+    return { modelMessages, succeeded: true, hadCandidates, attempts };
+  }
   for (const visionConfig of visionCandidates) {
     try {
       const preflightMessages = await preflightImagesForMainModel(
@@ -175,6 +158,11 @@ export async function runVisionPreflightCandidates(
         'vision_preflight_used',
         formatVisionPreflightNotice(readPreviewHealthLocale()),
       );
+      const content = preflightMessages[lastUserIndex]?.content;
+      const summary = Array.isArray(content) ? content.at(-1) : undefined;
+      if (sourceMessageId && traceId && summary) {
+        successfulPreflights.set(ctx.runtime, { traceId, sourceMessageId, summary });
+      }
       return { modelMessages: preflightMessages, succeeded: true, hadCandidates, attempts };
     } catch (error) {
       attempts.push(classifyAndLogVisionPreflightFailure(visionConfig.provider, visionConfig.model, error));

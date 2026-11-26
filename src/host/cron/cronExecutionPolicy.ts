@@ -1,7 +1,7 @@
-import { Cron } from 'croner';
 import { CRON_AGENT_TYPES, CRON_GUARDRAILS } from '../../shared/constants';
 import type { CronJobAction, CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
 import { isRoleBoundCronJob } from '../../shared/cronRoleBinding';
+import { cronScheduleMinimumIntervalSeconds, everyScheduleIntervalSeconds } from '../../shared/cronScheduleInterval';
 import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import {
   createScopedCostLimit,
@@ -43,17 +43,6 @@ export function computeCronFireJitterMs(
   return Math.floor(rand() * windowMs);
 }
 
-function everyScheduleIntervalSeconds(schedule: CronJobDefinition['schedule']): number | undefined {
-  if (schedule.type !== 'every') return undefined;
-  const multiplier = {
-    seconds: 1,
-    minutes: 60,
-    hours: 60 * 60,
-    days: 24 * 60 * 60,
-  }[schedule.unit];
-  return schedule.interval * multiplier;
-}
-
 /**
  * every 调度 → cron 表达式。小时/天级任务的分钟位用 jobId 哈希的稳定错峰值，
  * 不再全部落在 :00（整点扎堆源头）；同一任务重启后分钟不变（jobId 持久）。
@@ -73,22 +62,6 @@ export function intervalToCron(interval: number, unit: string, jobId: string): s
       throw new Error('Unsupported interval unit "weeks"; cron day-of-week syntax cannot express every N weeks.');
     default:
       return `0 */${interval} * * * *`; // Default to minutes
-  }
-}
-
-function cronScheduleMinimumIntervalSeconds(schedule: CronJobDefinition['schedule']): number | undefined {
-  if (schedule.type !== 'cron') return undefined;
-  const probe = new Cron(schedule.expression, { timezone: schedule.timezone, paused: true });
-  try {
-    const runs = probe.nextRuns(16);
-    let minimum: number | undefined;
-    for (let index = 1; index < runs.length; index++) {
-      const gap = (runs[index].getTime() - runs[index - 1].getTime()) / 1000;
-      minimum = minimum === undefined ? gap : Math.min(minimum, gap);
-    }
-    return minimum;
-  } finally {
-    probe.stop();
   }
 }
 

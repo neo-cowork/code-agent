@@ -3,7 +3,8 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
-import { classifyCronFailure } from '../../../src/shared/utils/cronFailureClassification';
+import { classifyCronFailure, cronFailureSourceText } from '../../../src/shared/utils/cronFailureClassification';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
 import {
   CRON_CLOUD_UNAVAILABLE_MESSAGE_EN,
   CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
@@ -17,6 +18,7 @@ import {
 import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../../src/shared/utils/cronRuntimeNotReady';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 
 const GLM_WITH_FLUSH = [
@@ -108,6 +110,7 @@ describe('cron failure notification copy', () => {
     ['auth', '401 Unauthorized: incorrect api key'],
     ['network', 'fetch failed'],
     ['cloud-down', CRON_CLOUD_UNAVAILABLE_MESSAGE_EN],
+    ['runtime-starting', CRON_RUNTIME_NOT_READY_MESSAGE_EN],
     ['other', 'something exploded in the runner'],
   ] as const;
 
@@ -264,6 +267,7 @@ describe('CronExecutionDetail 人话失败', () => {
     ['429 Too Many Requests', '服务商暂时限流，下次运行会自动再试', '立即重跑'],
     ['request timed out', '这次运行超时被停了', '立即重跑'],
     ['fetch failed', '暂时连不上模型服务', '立即重跑'],
+    [CRON_RUNTIME_NOT_READY_MESSAGE_EN, 'Neo 刚启动还没准备好，这次运行没能开始。', '立即重跑'],
     ['401 Unauthorized: incorrect api key', '模型账号没通过授权（密钥错误或已过期）', '检查账号设置'],
     ['something exploded in the runner', '运行失败', null],
   ] as const)('详情下一步：%s', (error, sentence, action) => {
@@ -378,5 +382,71 @@ function sentenceFor(
   if (kind === 'auth') return copy.failureAuth;
   if (kind === 'network') return copy.failureNetwork;
   if (kind === 'cloud_unavailable') return copy.failureCloudUnavailable;
+  if (kind === 'runtime_starting') return copy.failureRuntimeStarting;
   return copy.failureOther;
 }
+
+describe('项目文件夹信任失败（N-FIX-CRON-RUN-ERROR-TRUST-RAW-ENGLISH-PATH）', () => {
+  const storedMarker = cronFailureSourceText(
+    new ProjectSourceTrustError('identity_changed', '/Users/someone/work/notes-proj'),
+  );
+
+  it.each([
+    ['zh', '项目文件夹“notes-proj”已被替换，请重新选择并确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。'],
+    ['en', "Project folder “notes-proj” has been replaced. Re-select and confirm it. Open the project's settings, re-confirm the folder, then run again."],
+  ] as const)('%s：主句与展开的技术详情都是文件夹名 + 下一步，没有路径和英文原句', (language, sentence) => {
+    expect(storedMarker).toBe('PROJECT_SOURCE_TRUST:identity_changed:notes-proj');
+    useAppStore.setState({ language });
+    render(<CronExecutionDetail execution={execution(storedMarker)} />);
+    const technical = screen.getByTestId('cron-failure-technical') as HTMLDetailsElement;
+    technical.open = true;
+    expect(screen.getByTestId('cron-failure-sentence').textContent).toBe(sentence);
+    expect(technical.querySelector('pre')?.textContent).toBe(sentence);
+    const visible = screen.getByTestId('cron-failure-plain').textContent ?? '';
+    expect(visible).not.toContain('/Users/');
+    expect(visible).not.toContain('Project Source');
+    expect(visible).not.toContain('PROJECT_SOURCE_TRUST');
+    expect(screen.queryByTestId('cron-failure-action')).toBeNull();
+  });
+
+  it.each([
+    ['source_missing', '找不到项目文件夹“notes-proj”。它可能已被移动或删除。'],
+    ['not_trusted', '此项目文件夹尚未获得信任，请在项目设置中确认。'],
+  ] as const)('zh：%s 的原因句', (kind, reason) => {
+    useAppStore.setState({ language: 'zh' });
+    render(<CronExecutionDetail execution={execution(`PROJECT_SOURCE_TRUST:${kind}:notes-proj`)} />);
+    expect(screen.getByTestId('cron-failure-sentence').textContent)
+      .toBe(`${reason}请打开项目设置，重新确认这个文件夹，然后再运行一次。`);
+  });
+
+  it('存量行：英文原句 + 绝对路径照样显示成文件夹名人话', () => {
+    useAppStore.setState({ language: 'zh' });
+    render(<CronExecutionDetail execution={execution('Project Source trust identity changed: /Users/x/proj')} />);
+    const sentence = '项目文件夹“proj”已被替换，请重新选择并确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。';
+    expect(screen.getByTestId('cron-failure-sentence').textContent).toBe(sentence);
+    const visible = screen.getByTestId('cron-failure-plain').textContent ?? '';
+    expect(visible).not.toContain('/Users/');
+    expect(visible).not.toContain('Project Source');
+  });
+
+  // 文件夹名是用户在访达里起的名字：带 $&、$`、$' 时不能被当成替换模式展开（运行记录与事件决策共用这一句）。
+  it('文件夹名里有 $&、$`、$\' 时原样显示', () => {
+    useAppStore.setState({ language: 'zh' });
+    const folder = 'a$&b$`c$\'d';
+    const marker = cronFailureSourceText(new ProjectSourceTrustError('identity_changed', `/Users/someone/work/${folder}`));
+    expect(marker).toBe(`PROJECT_SOURCE_TRUST:identity_changed:${folder}`);
+    render(<CronExecutionDetail execution={execution(marker)} />);
+    expect(screen.getByTestId('cron-failure-sentence').textContent)
+      .toBe(`项目文件夹“${folder}”已被替换，请重新选择并确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。`);
+  });
+
+  it('系统通知：通用人话，不点文件夹名', () => {
+    const zh = translateCronOsNotification({
+      code: 'CRON_FAILURE',
+      title: '任务失败 - [定时] 整理笔记',
+      body: '定时任务失败：项目文件夹需要重新确认。',
+      failureKind: 'project_trust',
+    }, cronCenterZh.cronCenter, 'zh');
+    expect(zh.body).toBe('项目文件夹需要重新确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。');
+  });
+});

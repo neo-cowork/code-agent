@@ -18,12 +18,14 @@ import { createLogger } from '../services/infra/logger';
 import { SESSION_SEARCH } from '../../shared/constants';
 import type { CrossSessionSearchProjectScope } from '../../shared/ipc/types';
 import type { Message } from '../../shared/contract';
+import { stripLegacyTeamRecipeSeed } from '../../shared/utils/legacyTeamRecipeDisplay';
 import {
   SessionLocalCache,
   CachedSession,
   CachedMessage,
   getDefaultCache,
 } from './localCache';
+import { extractToolOutputText, searchRoleRank } from './searchToolText';
 
 const logger = createLogger('SessionSearch');
 
@@ -54,7 +56,7 @@ export interface SessionSearchFtsSource {
       role?: string;
       limitCap?: number;
       shortQueryFallback?: boolean;
-      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
     }
   ): SessionSearchFtsHit[];
   countSessionMessagesFts(
@@ -63,7 +65,7 @@ export interface SessionSearchFtsSource {
       sessionIds?: string[];
       role?: string;
       shortQueryFallback?: boolean;
-      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
     }
   ): { matches: number; sessions: number };
   getMessages(sessionId: string, limit?: number): Message[];
@@ -98,7 +100,7 @@ export interface SearchOptions {
   /** Sort direction */
   sortOrder?: 'asc' | 'desc';
   /** FTS 路径：在 SQL 层（LIMIT 之前）只召回未删除、未归档、归属匹配的会话 */
-  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
 }
 
 /**
@@ -116,13 +118,20 @@ export interface SearchMatch {
 }
 
 /**
+ * 命中消息：FTS 路径可返回 role:'tool' 的工具输出行（缓存里没有 tool 行）
+ */
+type SearchResultMessage = Omit<CachedMessage, 'role'> & {
+  role: CachedMessage['role'] | 'tool';
+};
+
+/**
  * Individual search result
  */
 export interface SearchResult {
   /** Session ID */
   sessionId: string;
   /** Message containing the match */
-  message: CachedMessage;
+  message: SearchResultMessage;
   /** Message index in session */
   messageIndex: number;
   /** Conversation turn number containing this message, when inferable */
@@ -160,7 +169,7 @@ function calculateRelevance(
   content: string,
   query: string,
   matches: SearchMatch[],
-  message: CachedMessage
+  message: SearchResultMessage
 ): number {
   let score = 0;
 
@@ -314,7 +323,7 @@ function findMatches(
 /**
  * Check if message passes date filter
  */
-function passesDateFilter(message: CachedMessage, options: SearchOptions): boolean {
+function passesDateFilter(message: SearchResultMessage, options: SearchOptions): boolean {
   if (options.startDate) {
     const startTime = typeof options.startDate === 'number'
       ? options.startDate
@@ -343,6 +352,11 @@ function isRuntimeSupplementMessage(message: CachedMessage): boolean {
   if (message.role !== 'user') return false;
   const workbench = getWorkbenchMetadata(message);
   return workbench?.runtimeInputMode === 'supplement';
+}
+
+/** 参与匹配/相关度/摘要的文本：用户消息先剥掉旧组队配方前缀（legacyTeamRecipeDisplay.ts，与气泡同一口径）；返回的 message 保持原样 */
+function getSearchableText(message: SearchResultMessage): string {
+  return message.role === 'user' ? stripLegacyTeamRecipeSeed(message.content) : message.content;
 }
 
 export function inferConversationTurnNumbers(messages: CachedMessage[]): Array<number | undefined> {
@@ -397,7 +411,10 @@ function compareSearchResults(
       comparison = a.relevance - b.relevance;
   }
 
-  return sortOrder === 'desc' ? -comparison : comparison;
+  const ordered = sortOrder === 'desc' ? -comparison : comparison;
+  // 同相关度：用户写的内容排在工具长输出之前
+  if (ordered === 0) return searchRoleRank(a.message.role) - searchRoleRank(b.message.role);
+  return ordered;
 }
 
 /**
@@ -521,17 +538,17 @@ function searchSessionsViaFts(
     // 命中消息超出回填窗口时，用 FTS 行兜底构造结果（跳转走 messageId，
     // messageIndex = -1 由 renderer 按「位置未知」展示），保证老消息可达。
     let messageIndex = session.messages.findIndex((m) => m.id === hit.messageId);
-    let message: CachedMessage;
+    let message: SearchResultMessage;
     let turnNumber: number | undefined;
     if (messageIndex >= 0) {
       message = session.messages[messageIndex];
       turnNumber = turnNumbers[messageIndex];
     } else {
-      if (hit.role !== 'user' && hit.role !== 'assistant' && hit.role !== 'system') continue;
+      if (hit.role !== 'user' && hit.role !== 'assistant' && hit.role !== 'system' && hit.role !== 'tool') continue;
       message = {
         id: hit.messageId,
         role: hit.role,
-        content: hit.content,
+        content: hit.role === 'tool' ? extractToolOutputText(hit.content) : hit.content,
         timestamp: hit.timestamp,
       };
       messageIndex = -1;
@@ -540,7 +557,8 @@ function searchSessionsViaFts(
 
     if (!passesDateFilter(message, options)) continue;
 
-    const matches = findMatches(message.content, query, {
+    const text = getSearchableText(message);
+    const matches = findMatches(text, query, {
       caseSensitive: false,
       useRegex: false,
       includeContext,
@@ -548,7 +566,7 @@ function searchSessionsViaFts(
     // FTS 命中但子串定位失败（大小写折叠差异等边界），保守跳过
     if (matches.length === 0) continue;
 
-    const relevance = calculateRelevance(message.content, query, matches, message);
+    const relevance = calculateRelevance(text, query, matches, message);
     if (relevance < minRelevance) continue;
 
     sessionsWithMatches.add(hit.sessionId);
@@ -560,7 +578,7 @@ function searchSessionsViaFts(
       turnNumber,
       matches,
       relevance,
-      snippet: generateSnippet(message.content, matches),
+      snippet: generateSnippet(text, matches),
     });
   }
 
@@ -673,8 +691,10 @@ export function searchSessions(
       if (role && message.role !== role) continue;
       if (!passesDateFilter(message, options)) continue;
 
+      const text = getSearchableText(message);
+
       // Find matches
-      const matches = findMatches(message.content, query, {
+      const matches = findMatches(text, query, {
         caseSensitive,
         useRegex,
         includeContext,
@@ -683,11 +703,11 @@ export function searchSessions(
       if (matches.length === 0) continue;
 
       // Calculate relevance
-      const relevance = calculateRelevance(message.content, query, matches, message);
+      const relevance = calculateRelevance(text, query, matches, message);
       if (relevance < minRelevance) continue;
 
       // Generate snippet
-      const snippet = generateSnippet(message.content, matches);
+      const snippet = generateSnippet(text, matches);
 
       sessionsWithMatches.add(sessionId);
 

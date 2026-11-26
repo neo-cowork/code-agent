@@ -57,13 +57,34 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
         };
       }
 
+      // 第 4 个参数是审批卡「改一改再确认」带回来的 updatedArgs（PermissionCard 只在
+      // 'allow' 时追加）。这条链曾静默丢掉它：卡上改过的内容进不了工具调用（FB-2606）。
+      // 非 plain object 一律拒收且不动挂起请求——它仍可被正常裁决。
+      const rawUpdatedArgs = args[3];
+      if (rawUpdatedArgs !== undefined && rawUpdatedArgs !== null
+          && (typeof rawUpdatedArgs !== 'object' || Array.isArray(rawUpdatedArgs))) {
+        logger.warn('Permission response rejected: updatedArgs is not a plain object', {
+          requestId,
+          response,
+          sessionId,
+        });
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_UPDATED_ARGS',
+            message: `Permission response for ${requestId} carried an invalid updatedArgs payload`,
+          },
+        };
+      }
+      const updatedArgs = (rawUpdatedArgs ?? undefined) as Record<string, unknown> | undefined;
+
       const targetSessionId = sessionId || getCurrentSessionId();
       const foregroundOutcome = targetSessionId
-        ? deliverForegroundPermissionResponse(targetSessionId, requestId, response)
+        ? deliverForegroundPermissionResponse(targetSessionId, requestId, response, updatedArgs)
         : undefined;
       if (foregroundOutcome !== undefined) {
         if (foregroundOutcome === 'delivered') {
-          logger.info('Permission response delivered (web foreground)', { requestId, response, sessionId: targetSessionId });
+          logger.info('Permission response delivered (web foreground)', { requestId, response, sessionId: targetSessionId, edited: Boolean(updatedArgs) });
           return { success: true, data: { requestId, sessionId: targetSessionId, source: 'foreground-permission-island' } };
         }
         logger.warn('Permission response not delivered (web foreground)', {
@@ -82,11 +103,11 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
       }
 
       const outcome: PermissionDeliveryOutcome = targetSessionId
-        ? getTaskManager().handlePermissionResponse(targetSessionId, requestId, response)
+        ? getTaskManager().handlePermissionResponse(targetSessionId, requestId, response, updatedArgs)
         : 'no_session';
 
       if (outcome === 'delivered') {
-        logger.info('Permission response delivered (web)', { requestId, response, sessionId: targetSessionId });
+        logger.info('Permission response delivered (web)', { requestId, response, sessionId: targetSessionId, edited: Boolean(updatedArgs) });
         return { success: true, data: { requestId, sessionId: targetSessionId, source: 'task-manager' } };
       }
 
@@ -110,7 +131,12 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
 
       // 停车审批的宿主已随进程重启消失：幸存行接手给台账单发执行器（批准执行一次 /
       // 拒绝落 denied 结果），其余照旧 fail-closed 拒绝并从待办收口。
-      const resumed = await resumeSurvivingParkedApproval({ requestId, response });
+      // 带着改过的参数来的应答绝不能走恢复：恢复路径重放的是台账里的原始 args，
+      // 用户的编辑会无声丢回原始内容（fail-open）。停车审批没有编辑口，fall through
+      // 到死行收口 / 未送达失败。
+      const resumed = updatedArgs
+        ? { handled: false as const }
+        : await resumeSurvivingParkedApproval({ requestId, response });
       if (resumed.handled) {
         logger.info('Parked approval resumed from message ledger (web)', {
           requestId,

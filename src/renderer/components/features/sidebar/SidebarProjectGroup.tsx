@@ -134,6 +134,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   }, [menuOpen]);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
+  const newSessionDirectory = group.projectId ? projectMeta?.primaryPath : group.path;
   const summary = buildSidebarProjectSummary({
     group,
     backgroundSessionMap,
@@ -152,7 +153,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     unfinishedCount: summary.unfinishedCount,
   };
   const expansionView = resolveSidebarGroupExpansionView({
-    persistedExpanded: isWorkspaceExpanded(expandedWorkspaces, group.key),
+    // 未分类组无组头：旧版本可能持久化过「已收起」，此处恒视为展开，否则行容器带 collapsed 态且无入口恢复。
+    persistedExpanded: group.isUncategorized || isWorkspaceExpanded(expandedWorkspaces, group.key),
     signals: groupExpansionSignals,
     isCollapsing: Boolean(collapsingWorkspaces[group.key]),
     displayName: summary.displayName,
@@ -167,7 +169,9 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       protectionLabel: p.keepExpanded,
     },
   });
-  const expanded = expansionView.isVisibleExpanded;
+  // 快速对话层的合成未分类组：层头已是同名标题与唯一折叠控件，组头整行不渲染、会话行直挂层头下。
+  const hideHeader = group.isUncategorized;
+  const expanded = hideHeader || expansionView.isVisibleExpanded;
   const summaryLine = formatSidebarProjectSummaryLine({
     summary,
     isUncategorized: group.isUncategorized,
@@ -199,12 +203,13 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     <div
       data-sidebar-group-phase={expansionView.phase}
     >
+      {!hideHeader && (
       <div
-        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-950 text-left hover:bg-zinc-800/40 transition-colors`}
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-[var(--sidebar-bg)] text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
       >
-        {/* 组头底色制度（批P 第五波③）：非选中组头不给常驻底色——bg-zinc-950 是栏面本色
-            （App 侧栏列同一块面），只为 sticky 覆盖滚过的会话行，肉眼读作无底色；
+        {/* 组头底色制度（批P 第五波③）：非选中组头不给常驻底色——--sidebar-bg 是栏面本色
+            （App 侧栏列同一块面；浅色下 zinc-950 是纯白，会读成选中条），只为 sticky 覆盖滚过的会话行，肉眼读作无底色；
             抬色（zinc-800/900）只属 hover 与选中行。修前 bg-zinc-900 是 6 月侧栏还是
             zinc-900 底时的遗留，07-27 侧栏换 zinc-950 后它就成了可见的常驻色块。 */}
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
@@ -230,6 +235,14 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         >
           <IconComponent className="w-4 h-4 shrink-0 text-zinc-400" />
           <span className="truncate text-[13px] font-medium leading-5 text-zinc-200">{summary.displayName}</span>
+          {summary.folderMissing && (
+            <span
+              data-testid="sidebar-folder-missing"
+              className="shrink-0 text-[11px] font-medium leading-5 text-mark-warning"
+            >
+              {p.folderMissing}
+            </span>
+          )}
           <ChevronRight
             className={`w-3 h-3 shrink-0 text-zinc-500 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${
               expanded ? 'rotate-90' : ''
@@ -254,7 +267,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             底色跟分组头同步（2026-07-29：默认 zinc-950 与侧栏底色齐平，hover 才提亮到
             zinc-900）——盖住行内内容靠的是不透明底色，底色错一拍就会露出一条异色补丁。
             右侧 2px inset 让最右新建图标中心与会话行 trailing 状态轴（rowRight - 14px）重合。 */}
-        <div className="absolute right-0.5 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-950 pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
+        <div className="absolute right-0.5 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-[var(--sidebar-bg)] pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
         {!group.isUncategorized && (
           <>
           <div className="relative" ref={menuRef}>
@@ -344,7 +357,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             type="button"
             aria-label={p.newSessionIn.replace('{name}', summary.displayName)}
             title={p.newSessionIn.replace('{name}', summary.displayName)}
-            onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
+            onClick={(e) => handleNewWorkspaceChat(e, group.key, newSessionDirectory, group.projectId)}
             disabled={isCreatingSession || (creatingWorkspaceKey !== null && creatingWorkspaceKey !== group.key)}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:opacity-50"
           >
@@ -367,13 +380,14 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           />
         )}
       </div>
+      )}
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail
           projectId={group.projectId}
           meta={projectMeta}
           fallbackSessionCount={group.sessions.length}
           onOpenArtifactSession={handleOpenProjectArtifactSession}
-          onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path); }}
+          onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, newSessionDirectory, group.projectId); }}
           onMetaChange={(update) => {
             const projectId = group.projectId;
             if (!projectId) return;
@@ -405,7 +419,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             setProjectDrawerKey(null);
           }}
           onStartGoal={async (goal) => {
-            await handleStartProjectGoal(goal, group.key, group.path);
+            await handleStartProjectGoal(goal, group.key, newSessionDirectory, group.projectId);
             setProjectDrawerKey(null);
           }}
           onOpenGoalSession={async (sessionId) => {
@@ -417,7 +431,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             setProjectDrawerKey(null);
           }}
           onNewSession={async () => {
-            await createWorkspaceChat(group.key, group.path);
+            await createWorkspaceChat(group.key, newSessionDirectory, group.projectId);
             setProjectDrawerKey(null);
           }}
           onRenameProject={group.projectId

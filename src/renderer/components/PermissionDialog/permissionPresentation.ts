@@ -1,9 +1,11 @@
 import type { Translations } from '../../hooks/useI18n';
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
 import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { PermissionRequestReason } from '@shared/contract';
 import type { RmCommandTargets } from '@shared/rmCommandTargets';
 import { parseRmTargets } from '@shared/rmCommandTargets';
@@ -13,11 +15,6 @@ import { interpolatePlural } from '../../i18n/interpolate';
 
 function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
-}
-
-function basename(target: string): string {
-  const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
-  return normalized.split('/').pop() || target;
 }
 
 /**
@@ -38,9 +35,21 @@ function isDeviceOrSpecialPath(target: string): boolean {
   return false;
 }
 
-function compactFileTarget(target: string): string {
+function compactFileTarget(target: string, p: Translations['decisionCard']['permission']): string {
   const redacted = redactCredentialText(target);
-  return isDeviceOrSpecialPath(redacted) ? redacted : basename(redacted);
+  if (isDeviceOrSpecialPath(redacted)) return redacted;
+
+  const normalized = redacted.replace(/\\/g, '/');
+  const withoutTrailingSlashes = normalized.replace(/\/+$/u, '');
+  const withoutTrailingDots = withoutTrailingSlashes.replace(/(?:\/+\.)+$/u, '');
+  const name = withoutTrailingDots.split('/').pop();
+  if (!/^(?:\/|[a-z]:)/iu.test(normalized)) {
+    if (!name || name === '.') return p.targetCurrentFolder;
+    if (name === '..') {
+      return /^(?:\.\/+)*\.\.$/u.test(withoutTrailingDots) ? p.targetParentFolder : withoutTrailingDots;
+    }
+  }
+  return name || (withoutTrailingSlashes ? '/' : redacted);
 }
 
 function isOutsideWorkspace(request: PermissionRequest): boolean {
@@ -107,8 +116,8 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   const p = t.decisionCard.permission;
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
-  const compactTarget = target ? compactFileTarget(target) : undefined;
-  const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
+  const compactTarget = target ? compactFileTarget(target, p) : undefined;
+  const qualifier = isOutsideWorkspace(request) ? p.workspaceOutsideQualifier : '';
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
     && !isDeletionRequest(request)
@@ -176,7 +185,7 @@ function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets,
   return '';
 }
 
-export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
+export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
@@ -192,6 +201,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     || fileTarget(request)
     || parsedRmTargets.targets[0];
   const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
+  // 写入类后果句里的上传 / 临时目录路径用位置词显示（含 .. 的路径原样）；删除后果句保持原口径。
+  const humanTarget = target ? humanizeToolPath(redactCredentialText(target), language, request.details.pathDisplay) : undefined;
+  const writeTarget = humanTarget && safeTarget && humanTarget !== redactCredentialText(target ?? '') ? humanTarget : safeTarget;
   const deletion = isDeletionRequest(request);
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
@@ -207,24 +219,25 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   ) {
     // Append 直写穿透：内容送达设备、节点保留；其余写类工具是原子替换，节点本身被换下。
     if (request.tool === 'Append') {
-      return p.consequenceDeviceAppend.replace('{target}', safeTarget ?? p.targetFallback);
+      return p.consequenceDeviceAppend.replace('{target}', writeTarget ?? p.targetFallback);
     }
     const copy = isOutsideWorkspace(request) ? p.consequenceDeviceOutside : p.consequenceDevice;
-    return copy.replace('{target}', safeTarget ?? p.targetFallback);
+    return copy.replace('{target}', writeTarget ?? p.targetFallback);
   }
   if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
     return p.consequenceUncertainWriteTarget;
   }
   if (request.boundary?.id === 'file.external_read') {
-    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target) : p.targetFallback);
+    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target, p) : p.targetFallback);
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside
-      .replace('{target}', safeTarget ?? p.targetFallback)
+      .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'network' || request.type === 'mcp') {
-    const endpoint = request.details.connectorAccess?.connectorName
+    const connector = request.details.connectorAccess;
+    const endpoint = (connector && catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName))
       || request.details.url
       || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
@@ -232,7 +245,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   if (request.type === 'file_write' || request.type === 'file_edit') {
     return p.consequenceWrite
-      .replace('{target}', safeTarget ?? p.targetFallback)
+      .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'command' || request.type === 'dangerous_command') {

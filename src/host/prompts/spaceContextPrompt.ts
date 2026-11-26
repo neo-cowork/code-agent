@@ -63,7 +63,7 @@ export function renderSpaceContextPrompt(snapshot: SpaceContextSnapshot): string
     listBlock('selected_connectors', snapshot.connectors),
     listBlock('selected_automations', snapshot.automations),
     '',
-    `You are working in the collaboration space "${escapeXml(snapshot.name)}".`,
+    `You are working in the Space "${escapeXml(snapshot.name)}".`,
     'The experts, skills, connectors, and automations above are the capabilities configured for this space.',
     'Prefer these configured capabilities when they fit the request, and treat produced artifacts as belonging to this space.',
     '</collaboration_space_context>',

@@ -15,6 +15,7 @@ import { DEFAULT_MODELS, MODEL_API_ENDPOINTS } from '../../../src/shared/constan
 import {
   resolveProviderBaseUrl,
   resolveProviderApiKey,
+  resolveZhipuVisionFallbackBaseUrl,
 } from '../../../src/host/model/providers/providerResolution';
 
 // configService 单例：adapter 模式（trustConfigKey:false）会查它，受控返回。
@@ -72,7 +73,10 @@ describe('resolveProviderBaseUrl', () => {
       expect(resolveProviderBaseUrl(cfg('zhipu', model, { baseUrl: 'https://explicit.test/v4' })))
         .toBe('https://explicit.test/v4');
     }
-    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5'))).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    // coding-flag 模型（glm-5 / glm-4.7）同样跟随设置里填的地址
+    for (const model of ['glm-5', 'glm-4.7']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe('http://127.0.0.1:9988/v4');
+    }
   });
 
   it('简单 OpenAI 兼容 provider 用 config.baseUrl || ENDPOINTS[provider]', () => {
@@ -157,12 +161,26 @@ describe('resolveProviderBaseUrl', () => {
     expect(resolveProviderBaseUrl(cfg('zhipu', quick))).toBe(MODEL_API_ENDPOINTS.zhipu);
   });
 
-  it('zhipu free 仍允许 config.baseUrl 覆盖；coding 端点固定不被 config.baseUrl 覆盖', () => {
+  it('zhipu coding-flag 模型（glm-5/glm-4.7）改为跟随用户填的 baseUrl（旧断言「coding 端点固定」会把官方 coding 地址改走第三方中转导致 401，已替换）；留空仍走默认 coding 端点', () => {
     expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4-flash', { baseUrl: 'https://z.test/v4' })))
       .toBe('https://z.test/v4');
-    // coding 分支镜像 zhipuProvider：直接返回 codingBaseUrl，忽略 config.baseUrl
-    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5', { baseUrl: 'https://z.test/v4' })))
-      .toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    // config.baseUrl 优先，末尾斜杠被裁掉
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5', { baseUrl: 'https://z.test/v4/' })))
+      .toBe('https://z.test/v4');
+    // 无 config.baseUrl 时取设置里的值
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4' },
+    } } });
+    for (const model of ['glm-5', 'glm-4.7']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+    }
+    // 两处都留空 → 默认 coding 端点；非 coding 的 glm-4.6v / free 的 glm-4-flash 不变
+    mockGetSettings.mockReturnValue({});
+    for (const model of ['glm-5', 'glm-4.7']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    }
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4.6v'))).toBe(MODEL_API_ENDPOINTS.zhipu);
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-4-flash'))).toBe(MODEL_API_ENDPOINTS.zhipuOfficial);
   });
 
   it('moonshot kimi-k2.5 用专用端点（可被 KIMI_K25_API_URL 覆盖），其余用 moonshot 端点', () => {
@@ -292,5 +310,43 @@ describe('resolveProviderApiKey — typesafe service key', () => {
     expect(resolveProviderApiKey(typesafe({ apiKey: 'cfg-key' }))).toBe('kc-quoted');
     mockGetServiceApiKey.mockReturnValue(undefined);
     expect(resolveProviderApiKey(typesafe({ apiKey: 'cfg-key' }))).toBe('');
+  });
+});
+
+describe('resolveZhipuVisionFallbackBaseUrl', () => {
+  it('设置留空时回落到默认 coding 端点', () => {
+    mockGetSettings.mockReturnValue({});
+    expect(resolveZhipuVisionFallbackBaseUrl()).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+  });
+
+  it('设置里是出厂 paas 默认地址时等同留空（建卡种的默认值不是用户自定义）', () => {
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: MODEL_API_ENDPOINTS.zhipu },
+    } } });
+    expect(resolveZhipuVisionFallbackBaseUrl()).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+    // 带尾斜杠的同款也等同留空
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: `${MODEL_API_ENDPOINTS.zhipu}/` },
+    } } });
+    expect(resolveZhipuVisionFallbackBaseUrl()).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+  });
+
+  it('用户自定义地址逐字跟随（含端口与尾斜杠裁剪）', () => {
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4/' },
+    } } });
+    expect(resolveZhipuVisionFallbackBaseUrl())
+      .toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: 'http://127.0.0.1:9988/v4' },
+    } } });
+    expect(resolveZhipuVisionFallbackBaseUrl()).toBe('http://127.0.0.1:9988/v4');
+  });
+
+  it('用户显式选官方端点时跟随官方地址', () => {
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: MODEL_API_ENDPOINTS.zhipuOfficial },
+    } } });
+    expect(resolveZhipuVisionFallbackBaseUrl()).toBe(MODEL_API_ENDPOINTS.zhipuOfficial);
   });
 });

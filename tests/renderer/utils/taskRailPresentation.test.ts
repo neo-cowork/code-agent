@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveTaskRailView } from '../../../src/renderer/utils/taskRailPresentation';
-import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
+import type { RunUiState, TaskRecord } from '../../../src/renderer/types/runWorkbench';
 
 function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
@@ -198,5 +198,40 @@ describe('deriveTaskRailView', () => {
     expect(view.completed).toBe(1);
     expect(view.total).toBe(2);
     expect(view.taskCount).toBe(3);
+  });
+
+  it('waiting_approval label follows UI language via the shared copy source', () => {
+    const run = { identity: { sessionId: 's', turnId: 't', runId: 'r', streamRunId: null, status: 'waiting_approval' }, status: 'waiting_approval', phase: '' } as unknown as RunUiState;
+    const task = makeTask({ title: '' });
+    expect(deriveTaskRailView(task, run).title).toBe('等你确认');
+    expect(deriveTaskRailView(task, run, 'en').title).toBe('Needs your approval');
+  });
+});
+
+describe('background task title localisation', () => {
+  const bg = (id: string, title: string, source: TaskRecord['source'] = 'delegate_task'): TaskRecord =>
+    makeTask({ id, title, source, scope: 'global', steps: [{ title: '运行中', status: 'in_progress' }] });
+
+  it('zh: English delegate_task title becomes 助手 in simple mode and checklist mode', () => {
+    const task = bg('a', 'Summarize contract_q3.pdf into a weekly report');
+    expect(deriveTaskRailView(task, null).title).toBe('助手');
+    const checklist = makeTask({
+      title: 'Summarize contract_q3.pdf into a report', source: 'delegate_task', scope: 'session',
+      steps: [{ title: 's1', status: 'pending' }, { title: 's2', status: 'pending' }],
+    });
+    const view = deriveTaskRailView(checklist, null);
+    expect(view.mode).toBe('checklist');
+    expect(view.title).toBe('助手');
+  });
+
+  it('zh: a ledger-numbered displayTitle wins; a lone task is plain 助手', () => {
+    expect(deriveTaskRailView({ ...bg('a', 'Summarize the first report now'), displayTitle: '助手 2' }, null).title).toBe('助手 2');
+    expect(deriveTaskRailView(bg('a', 'Summarize the first report now'), null).title).toBe('助手');
+  });
+
+  it('en: Chinese delegate_task title becomes Background assistant; other sources keep title', () => {
+    expect(deriveTaskRailView(bg('a', '提炼合同关键条款'), null, 'en').title).toBe('Background assistant');
+    expect(deriveTaskRailView(bg('a', 'Summarize the report now', 'user'), null).title).toBe('Summarize the report now');
+    expect(deriveTaskRailView(bg('a', '提炼合同关键条款', 'user'), null, 'en').title).toBe('提炼合同关键条款');
   });
 });

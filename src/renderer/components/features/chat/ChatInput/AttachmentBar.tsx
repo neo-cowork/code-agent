@@ -8,6 +8,7 @@ import type { ArchiveManifest, MessageAttachment, AttachmentCategory, Presentati
 import { IconButton } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { interpolatePlural } from '../../../../i18n/interpolate';
+import { pdfPageSentence } from './pdfPageSentence';
 
 export interface AttachmentBarProps {
   /** 附件列表 */
@@ -72,7 +73,7 @@ const AttachmentItem: React.FC<{
       return interpolatePlural(t.chatInput.attachFolderFiles, att.folderStats.totalFiles);
     }
     if (att.category === 'pdf' && att.pageCount) {
-      return interpolatePlural(t.chatInput.attachPages, att.pageCount);
+      return pdfPageSentence(t.chatInput, att.pageCount);
     }
     if (att.category === 'presentation') {
       const summary = parseJson<PresentationSummary>(att.pptJson);

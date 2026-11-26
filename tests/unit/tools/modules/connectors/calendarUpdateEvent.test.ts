@@ -61,6 +61,10 @@ beforeEach(() => {
 
 describe('calendarUpdateEventModule (native)', () => {
   describe('schema', () => {
+    it('documents that a start-only update keeps the duration', () => {
+      expect(calendarUpdateEventModule.schema.description).toContain('keeps its duration');
+    });
+
     it('has correct metadata', () => {
       expect(calendarUpdateEventModule.schema.name).toBe('calendar_update_event');
       expect(calendarUpdateEventModule.schema.category).toBe('mcp');

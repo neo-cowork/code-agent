@@ -1,3 +1,4 @@
+import { getInferenceCache } from '../../../src/host/model/inferenceCache';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
@@ -11,6 +12,7 @@ import type { Connector } from '../../../src/host/connectors/base';
 
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, request: IPCRequest) => Promise<IPCResponse>>(),
+  getSession: vi.fn(async (_sessionId: string) => ({} as object | null)),
   logError: vi.fn(),
   logWarn: vi.fn(),
   chat: vi.fn(async (..._a: unknown[]) => ({ content: '{"name":"日报"}' as string | undefined })),
@@ -37,6 +39,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../../../src/host/platform', () => ({
   ipcHost: { handle: (ch: string, fn: (event: unknown, request: IPCRequest) => Promise<IPCResponse>) => h.handlers.set(ch, fn) },
 }));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => ({ getSession: h.getSession }) }));
 vi.mock('../../../src/host/cron/cronService', () => ({ getCronService: () => h.service }));
 vi.mock('../../../src/host/model/modelRouter', () => ({
   ModelRouter: class {
@@ -55,6 +58,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: h.logWarn, error: h.logError, debug: vi.fn() }),
 }));
 
+import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
+import { clearScheduleDraftRequest, registerScheduleDraftRequest } from '../../../src/host/cron/scheduleDraftRequests';
 import { registerCronHandlers } from '../../../src/host/ipc/cron.ipc';
 
 const call = (action: string, payload?: unknown) =>
@@ -67,6 +72,48 @@ beforeEach(() => {
   h.settings.models.default = '';
   h.settings.models.providers = {};
   registerCronHandlers();
+});
+
+describe('attended schedule drafts through the cron IPC route', () => {
+  const sessionId = 'schedule-draft-session';
+  const input = { name: 'Inventory review' };
+  function register() {
+    const { request, result } = registerScheduleDraftRequest(sessionId, 'Review inventory every two minutes', new AbortController().signal);
+    return { ref: { sessionId, requestId: request.requestId }, result };
+  }
+
+  afterEach(() => clearScheduleDraftRequest(sessionId));
+
+  it('keeps the shown draft out of the job list until explicit confirmation and creates it only once', async () => {
+    const { ref, result } = register();
+    expect(await call('getScheduleDraftRequest', { sessionId })).toMatchObject({ success: true, data: { ...ref, state: 'requested' } });
+    expect(await call('ackScheduleDraft', { ...ref, status: 'prepared', draft: input })).toEqual({ success: true, data: true });
+    expect(await call('ackScheduleDraft', { ...ref, status: 'shown' })).toEqual({ success: true, data: true });
+    expect(await result).toBe('shown');
+    expect(h.service.createJob).not.toHaveBeenCalled();
+
+    const confirmations = await Promise.all([
+      call('createJob', { ...input, scheduleDraftRequest: ref }),
+      call('createJob', { ...input, scheduleDraftRequest: ref }),
+    ]);
+    expect(confirmations.filter(({ success }) => success)).toHaveLength(1);
+    expect(h.service.createJob).toHaveBeenCalledExactlyOnceWith(input);
+    expect(await call('getScheduleDraftRequest', { sessionId })).toEqual({ success: true, data: null });
+  });
+
+  it('rejects a missing or inaccessible session and invalidates a discarded draft', async () => {
+    const { ref, result } = register();
+    h.getSession.mockResolvedValueOnce(null);
+    expect(await call('getScheduleDraftRequest', { sessionId })).toEqual({ success: true, data: null });
+    h.getSession.mockResolvedValueOnce(null);
+    expect(await call('ackScheduleDraft', { ...ref, status: 'prepared', draft: input })).toEqual({ success: true, data: false });
+    expect(await call('ackScheduleDraft', { ...ref, status: 'discarded' })).toEqual({ success: true, data: true });
+    expect(await result).toBe('discarded');
+    expect(await call('createJob', { ...input, scheduleDraftRequest: ref })).toMatchObject({
+      success: false, error: { code: 'SCHEDULE_DRAFT_UNAVAILABLE' },
+    });
+    expect(h.service.createJob).not.toHaveBeenCalled();
+  });
 });
 
 describe('任务管理委派', () => {
@@ -147,6 +194,58 @@ describe('generateFromPrompt', () => {
     expect(req.messages[0].role).toBe('system');
     expect(req.messages[0].content).toContain('【当前时间】');
     expect(req.messages[0].content).toContain('"restatement"');
+  });
+
+  it('language=en/zh 追加 restatement 语言指令；缺省或非法值不追加；提示词带「不写运行时间」规则', async () => {
+    const system = async (payload: Record<string, unknown>) => {
+      h.chat.mockClear();
+      h.chat.mockResolvedValueOnce({ content: '{"name":"x"}' });
+      await call('generateFromPrompt', { prompt: 'x', ...payload });
+      return (h.chat.mock.calls[0][0] as { messages: Array<{ content: string }> }).messages[0].content;
+    };
+    const en = await system({ language: 'en' });
+    expect(en).toContain('write restatement.what and restatement.notifyWhen in English');
+    expect(en).toContain('不得提及任务多久运行一次或何时运行');
+    expect(await system({ language: 'zh' })).toContain('in Chinese');
+    expect(await system({})).not.toContain('Language:');
+    expect(await system({ language: 'fr' })).not.toContain('Language:');
+  });
+
+  it('en 界面：首次回复复述含中文 → 同请求重试一次并返回英文结果；英文首答只调一次；无 language 不重试', async () => {
+    const zhReply = '{"name":"x","restatement":{"what":"\u68c0\u67e5\u65b0\u5e16\u5b50","notifyWhen":"\u6709\u65b0\u5e16\u5b50\u65f6\u901a\u77e5"}}';
+    const enReply = '{"name":"x","restatement":{"what":"Checks for new posts","notifyWhen":"A new post appears"}}';
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply }).mockResolvedValueOnce({ content: enReply });
+    const retried = await call('generateFromPrompt', { prompt: 'x', language: 'en' });
+    expect(h.chat).toHaveBeenCalledTimes(2);
+    // 重试请求必须换 InferenceCache key，否则进程内缓存会回放首次的中文结果
+    const [first, second] = [h.chat.mock.calls[0][0], h.chat.mock.calls[1][0]] as Array<{ messages: never; provider: never; model: never; maxTokens: number }>;
+    const cache = getInferenceCache();
+    const keyOf = (r: typeof first) => cache.computeKey(r.messages, { provider: r.provider, model: r.model, maxTokens: r.maxTokens } as never, [], undefined);
+    expect(keyOf(second)).not.toBe(keyOf(first));
+    expect(retried).toEqual({ success: true, data: JSON.parse(enReply) });
+
+    // 重试仍是中文：原样返回重试结果（不在 host 里改写 notifyWhen）
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply }).mockResolvedValueOnce({ content: zhReply });
+    expect(await call('generateFromPrompt', { prompt: 'x', language: 'en' })).toEqual({ success: true, data: JSON.parse(zhReply) });
+    expect(h.chat).toHaveBeenCalledTimes(2);
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: enReply });
+    await call('generateFromPrompt', { prompt: 'x', language: 'en' });
+    expect(h.chat).toHaveBeenCalledTimes(1);
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply });
+    await call('generateFromPrompt', { prompt: 'x' });
+    expect(h.chat).toHaveBeenCalledTimes(1);
+
+    h.chat.mockClear();
+    h.chat.mockResolvedValueOnce({ content: zhReply });
+    await call('generateFromPrompt', { prompt: 'x', language: 'zh' });
+    expect(h.chat).toHaveBeenCalledTimes(1);
   });
 
   it('未配置默认模型时 generateFromPrompt 仍用出厂 provider/model', async () => {
@@ -513,5 +612,21 @@ describe('generateFromPrompt recurring machine timezone', () => {
       h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule }) });
       expect(await call('generateFromPrompt', { prompt: '整理邮件' })).toEqual({ success: true, data: { schedule } });
     });
+  });
+});
+
+describe('generateFromPrompt event limits in the generation prompt', () => {
+  it('channel and mail bullets teach prefilter + maxRunsPerHour with the constants range', async () => {
+    h.chat.mockResolvedValueOnce({ content: '{"name":"x"}' });
+    await call('generateFromPrompt', { prompt: '盯着发布群，只处理催款的，每小时最多 10 次' });
+    const system = (h.chat.mock.calls.at(-1)?.[0] as { messages: Array<{ content: string }> }).messages[0].content;
+    const channel = system.split('\n').find((line) => line.startsWith('- 事件监听'))!;
+    const mail = system.split('\n').find((line) => line.startsWith('- 邮件监听'))!;
+    for (const line of [channel, mail]) {
+      expect(line).toContain('"prefilter"');
+      expect(line).toContain('"maxRunsPerHour"');
+      expect(line).toContain(`${CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR}-${CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR}`);
+      expect(line).toContain(String(CRON_EVENT_TRIGGER.MAX_PREFILTER_CHARS));
+    }
   });
 });

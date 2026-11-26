@@ -47,7 +47,7 @@ describe('foreground user request on an undecided calendar prompts directly', ()
   it('foreground + undecided → one direct dialog, the same call re-runs and succeeds (no card)', async () => {
     const result = await run({ foregroundToolFace: true });
     expect(mocks.grant).toHaveBeenCalledTimes(1);
-    expect(mocks.grant).toHaveBeenCalledWith('call-1');
+    expect(mocks.grant).toHaveBeenCalledWith('call-1', expect.any(AbortSignal));
     expect(result.success).toBe(true);
     expect(result.output).toContain('Work');
   });

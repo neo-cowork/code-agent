@@ -1,4 +1,4 @@
-import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels';
+import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels'; import { authZh } from './auth';
 // ============================================================================
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
@@ -6,12 +6,13 @@ import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh 
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
-import { attachmentPreviewZh } from './attachmentPreview';
+import { attachmentPreviewZh } from './attachmentPreview'; import { chatImageAnnotateZh } from './chatImageAnnotate';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
-import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder';
+import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder'; import { cronWakeCadenceZh } from './cronWakeCadence';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
+import { cronScheduleEstimateZh } from './cronScheduleEstimate';
 import { deliveryExperienceZh } from './deliveryExperience';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
@@ -21,7 +22,7 @@ import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { serverConnectionZh } from './serverConnection';
-import { envAssistZh } from './envAssist';
+import { envAssistZh } from './envAssist'; import { guiTakeoverZh } from './guiTakeover';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -62,7 +63,7 @@ import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
 
 export const zh = {
-  ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
+  ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh, ...authZh,
   ...imageNarrationZh, ...mermaidZh,
   ...voiceAuditZh, ...memorySourceZh,
   ...capabilityHubZh,
@@ -601,7 +602,7 @@ export const zh = {
       engineCountLabel: 'Engine 数量',
       engineCountCaption: 'Codex / Claude',
       // 引擎行
-      remoteDefaultLabel: '远程默认',
+      remoteDefaultLabel: '远程默认：',
       localDefaultLabel: '本机默认选择',
       modelSelectableSummary: { one: '{enabled}/{total} 个模型可选', other: '{enabled}/{total} 个模型可选' },
       loading: '正在读取模型目录…',
@@ -944,15 +945,14 @@ export const zh = {
   ...expertZh,
 
   ...teamZh,
-  ...rolePackZh,
-  ...knowledgeMemoryZh,
+  ...rolePackZh, ...knowledgeMemoryZh,
   ...chatTranscriptZh,
-  ...attachmentPreviewZh,
+  ...attachmentPreviewZh, ...chatImageAnnotateZh,
   ...chatInputZh,
   ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
-  ...cronCenterZh, ...cronWorkingFolderZh,
+  ...cronScheduleEstimateZh, ...cronCenterZh, ...cronWorkingFolderZh, ...cronWakeCadenceZh,
   ...previewWorkspaceZh,
   ...deliveryExperienceZh,
   ...modalPrimitivesZh,
@@ -961,7 +961,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
-  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh,
+  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh, guiTakeover: guiTakeoverZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,
@@ -1078,7 +1078,7 @@ export const zh = {
     cost: { label: 'Cost', description: '查看当前会话的 token 用量和成本' },
     agents: { label: 'Agent 列表', description: '查看历史 Agent 记录' },
     hooks: { label: 'Hooks', description: '查看 Hook 配置' },
-    permissions: { label: 'Permissions', description: '查看安全决策链状态' },
+    permissions: { label: '权限', description: '查看安全决策链状态' },
     model: { label: '模型', description: '查看或切换当前模型' },
     compact: { label: '压缩上下文', description: '手动触发上下文压缩' },
     config: { label: '配置', description: '查看当前配置' },

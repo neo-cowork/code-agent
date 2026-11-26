@@ -8,6 +8,7 @@ export enum AgentFailureCode {
   ToolUnavailable = 'tool-unavailable',
   InvalidArguments = 'invalid-arguments',
   BudgetExhausted = 'budget-exhausted',
+  StepCapReached = 'step-cap-reached',
   Timeout = 'timeout',
   ParentGone = 'parent-gone',
   CancelledByUser = 'cancelled-by-user',
@@ -117,6 +118,10 @@ export function inferAgentFailureCode(input: {
   }
   if (normalized.includes('cancel') || normalized.includes('abort') || message.includes('取消')) {
     return AgentFailureCode.CancelledByUser;
+  }
+  // 只剩错误原文的消费方（检查器工具行）仍要能归到步数上限。执行器返回点本身带 StepCapReached。
+  if (normalized.includes('max iterations reached')) {
+    return AgentFailureCode.StepCapReached;
   }
   if (normalized.includes('budget') || normalized.includes('max token')) {
     return AgentFailureCode.BudgetExhausted;

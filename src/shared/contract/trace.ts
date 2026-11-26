@@ -22,6 +22,7 @@ export interface TraceNode {
     name: string;
     args: Record<string, unknown>;
     result?: string;
+    userMessage?: string;
     success?: boolean;
     duration?: number;
     outputPath?: string;
@@ -39,6 +40,8 @@ export interface TraceNode {
     stepLabel?: import('./tool').ToolStepLabelKey;
     targetContext?: import('./tool').ToolCallTargetContext;
     expectedOutcome?: string;
+    /** host 在派发前附加的 GUI 接管披露（随消息持久化，重放同渲染）。 */
+    guiTakeoverDisclosure?: import('./tool').ToolCall['guiTakeoverDisclosure'];
   };
   reasoning?: string;
   thinking?: string;

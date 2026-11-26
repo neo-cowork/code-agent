@@ -656,6 +656,23 @@
         },
         "expectedOutcome": {
           "type": "string"
+        },
+        "guiTakeoverDisclosure": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "const": "gui_takeover"
+            },
+            "app": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "app"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -685,6 +702,9 @@
           "type": "string"
         },
         "error": {
+          "type": "string"
+        },
+        "userMessage": {
           "type": "string"
         },
         "outputPath": {
@@ -1194,6 +1214,9 @@
             "startedByAutomation": {
               "type": "boolean"
             },
+            "startedByFirstWake": {
+              "type": "boolean"
+            },
             "scheduledTaskName": {
               "type": "string"
             },
@@ -1232,6 +1255,16 @@
             },
             "standingGrantTarget": {
               "type": "string"
+            },
+            "commandGrantTarget": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "browserSessionGrant": {
               "type": "object",
@@ -4335,6 +4368,9 @@
         "to": {
           "type": "string"
         },
+        "exhausted": {
+          "type": "boolean"
+        },
         "category": {
           "type": "string"
         },
@@ -4368,8 +4404,7 @@
       },
       "required": [
         "reason",
-        "from",
-        "to"
+        "from"
       ],
       "additionalProperties": false
     },
@@ -4712,12 +4747,16 @@
         "sessionId": {
           "type": "string"
         },
+        "requestId": {
+          "type": "string"
+        },
         "description": {
           "type": "string"
         }
       },
       "required": [
         "sessionId",
+        "requestId",
         "description"
       ],
       "additionalProperties": false

@@ -8,10 +8,11 @@ import {
   withRunTraceContext,
 } from '../../../src/host/telemetry/runTraceContext';
 
+const loggerInfo = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),
-    info: vi.fn(),
+    info: loggerInfo,
     warn: vi.fn(),
     error: vi.fn(),
   }),
@@ -44,42 +45,32 @@ describe('StreamHandler', () => {
     });
   });
 
-  it('marks turn_start and runtime diagnostics as meta for hidden loop history', () => {
+  it('keeps runtime diagnostics out of the reasoning stream and writes them to the log', () => {
     const ctx = {
       modelConfig: { provider: 'test-provider', model: 'test-model' },
       onEvent: vi.fn(),
       historyVisibility: 'meta',
-      stats: RunStatsState.forTest({ pendingRuntimeDiagnostics: ['diagnostic detail'], traceId: 'trace-1' } as never),
+      stats: RunStatsState.forTest({
+        pendingRuntimeDiagnostics: ['并行判断降级：fallback: GROQ_API_KEY not configured (confidence 0%)'],
+        traceId: 'trace-1',
+      } as never),
       turn: TurnState.forTest({ messageDeltaSeq: 99, toolsUsedInTurn: ['old-tool'] }),
       goalTracker: { getGoalCheckpoint: vi.fn().mockReturnValue(null) },
     };
-    const runFinalizer = {
-      emitTaskProgress: vi.fn(),
-      emitTaskStats: vi.fn(),
-    };
-    const langfuse = {
-      startSpan: vi.fn(),
-    };
+    const runFinalizer = { emitTaskProgress: vi.fn(), emitTaskStats: vi.fn() };
     const handler = new StreamHandler(ctx as any, { injectSystemMessage: vi.fn() } as any, runFinalizer as any);
 
-    handler.setupIteration(1, 'check', langfuse as any);
+    handler.setupIteration(1, 'check', { startSpan: vi.fn() } as any);
 
     expect(ctx.onEvent).toHaveBeenCalledWith({
       type: 'turn_start',
-      data: expect.objectContaining({
-        turnId: expect.any(String),
-        iteration: 1,
-        isMeta: true,
-      }),
+      data: expect.objectContaining({ turnId: expect.any(String), iteration: 1, isMeta: true }),
     });
-    expect(ctx.onEvent).toHaveBeenCalledWith({
-      type: 'stream_reasoning',
-      data: expect.objectContaining({
-        content: expect.stringContaining('diagnostic detail'),
-        turnId: expect.any(String),
-        isMeta: true,
-      }),
-    });
+    const leaked = ctx.onEvent.mock.calls.filter(([event]) =>
+      event.type === 'stream_reasoning'
+      && (event.data.content.includes('[runtime]') || event.data.content.includes('API_KEY')));
+    expect(leaked).toEqual([]);
+    expect(loggerInfo).toHaveBeenCalledWith(expect.stringContaining('[RuntimeDiagnostic] 并行判断降级：fallback: GROQ_API_KEY not configured'));
   });
 
   it('enters a turn-scoped child context when the iteration begins', async () => {

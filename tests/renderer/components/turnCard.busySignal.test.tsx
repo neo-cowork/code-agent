@@ -115,10 +115,11 @@ describe('TurnCard busy signal', () => {
     expect(getStreamingCarets()).toHaveLength(0);
   });
 
-  it('durable 回合已启动且尚无首 token 时，轮头如实显示等待模型', () => {
+  it('durable 回合已启动且尚无首 token 时，由单行「正在思考」独占信号', () => {
     render(<TurnCard turn={makeTurn([])} />);
 
-    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · \d+s$/);
+    expect(screen.queryByText('信号传输中，正在等待模型回响…')).toBeNull();
     expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
     expect(screen.queryByTestId('tool-running')).toBeNull();
     expect(getStreamingCarets()).toHaveLength(0);
@@ -254,7 +255,7 @@ describe('TurnCard failed phase fallback', () => {
   it('does not display a completed header while waiting for the first token', () => {
     render(<TurnCard turn={makeTurn([])} />);
     expect(screen.queryByTestId('turn-run-header')).toBeNull();
-    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · \d+s$/);
   });
 });
 
@@ -275,8 +276,10 @@ describe('TurnCard live approval status', () => {
       expect(screen.queryByText(/正在发送消息|Sending message|深空巡航/)).toBeNull();
       act(() => useAppStore.setState({ pendingPermissionRequest: null, pendingPermissionSessionId: null }));
       expect(screen.queryByLabelText(languages[language].chat.waitingApproval)).toBeNull();
-      if (completed) expect(screen.getByTestId('streaming-preparation-indicator')).not.toBeNull();
-      else expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+      // 审批结束后回合在等模型：已完成工具无可见步骤行时，由单行「正在思考」独占信号，不再叠加「正在整理回复」。
+      expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+      if (completed) expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考|^Thinking/);
+      else expect(screen.queryByTestId('thinking-digest')).toBeNull();
     });
   }
 });

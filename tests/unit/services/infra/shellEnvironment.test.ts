@@ -30,8 +30,10 @@ function writeCache(input: {
 } = {}): string {
   const cachePath = join(tempDataDir, 'cache', 'shell-environment.json');
   mkdirSync(join(tempDataDir, 'cache'), { recursive: true });
+  // Default schemaVersion must match SHELL_ENV_CACHE_SCHEMA_VERSION in
+  // shellEnvironment.ts (2 since the cache started filtering secrets).
   writeFileSync(cachePath, JSON.stringify({
-    schemaVersion: input.schemaVersion ?? 1,
+    schemaVersion: input.schemaVersion ?? 2,
     platform: process.platform,
     shell: input.shell ?? '/bin/zsh',
     capturedAt: '2026-07-14T00:00:00.000Z',
@@ -119,11 +121,14 @@ describe('shellEnvironment', () => {
     expect(diagnostics.source).toBe('captured');
     expect(diagnostics.path).toBe('/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin');
     expect(diagnostics.degraded).toBe(false);
+    // In-memory environment keeps the secret (Claude auth inheritance needs it).
     expect(getShellEnvironmentValue('SECRET_TOKEN')).toBe('hidden');
     expect(JSON.stringify(diagnostics)).not.toContain('SECRET_TOKEN');
     expect(JSON.stringify(diagnostics)).not.toContain('hidden');
+    // The on-disk cache must NOT contain the secret — neither the key nor the value.
     const cachePath = join(tempDataDir, 'cache', 'shell-environment.json');
-    expect(JSON.parse(readFileSync(cachePath, 'utf8')).environment.SECRET_TOKEN).toBe('hidden');
+    expect(JSON.parse(readFileSync(cachePath, 'utf8')).environment.SECRET_TOKEN).toBeUndefined();
+    expect(readFileSync(cachePath, 'utf8')).not.toContain('hidden');
     expect(statSync(cachePath).mode & 0o777).toBe(0o600);
   });
 
@@ -205,5 +210,191 @@ describe('shellEnvironment', () => {
     expect(diagnostics.fallbackApplied).toBe(true);
     expect(diagnostics.path).toContain('/opt/homebrew/bin');
     expect(diagnostics.path).toContain('/usr/local/bin');
+  });
+
+  it('writes a first-run cache without secret keys or credential-bearing values, keeping PATH and clean proxy', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    process.env.PATH = '/usr/bin:/bin';
+    const fakeSecrets: Record<string, string> = {
+      XIAOMI_API_KEY: 'fake-xiaomi-value-a1',
+      VOLC_ACCESSKEY: 'fake-volc-access-a2',
+      VOLC_SECRETKEY: 'fake-volc-secret-a3',
+      TAVILY_API_KEYS: 'fake-tavily-multi-a4',
+      TENCENTCLOUD_SECRET_ID: 'fake-secret-id-a5',
+    };
+    execSyncMock.mockReturnValue([
+      'PATH=/opt/homebrew/bin:/usr/bin:/bin',
+      'HOME=/Users/test',
+      'SHELL=/bin/zsh',
+      'LANG=en_US.UTF-8',
+      'HTTPS_PROXY=http://alice:corp-pw@proxy.internal:8080',
+      'HTTP_PROXY=http://proxy.internal:3128',
+      ...Object.entries(fakeSecrets).map(([key, value]) => `${key}=${value}`),
+      '',
+    ].join('\n'));
+
+    const { loadShellEnvironment, getShellEnvironmentValue } = await loadModule();
+    loadShellEnvironment();
+
+    const cachePath = join(tempDataDir, 'cache', 'shell-environment.json');
+    const rawCache = readFileSync(cachePath, 'utf8');
+    const parsed = JSON.parse(rawCache).environment as Record<string, string>;
+
+    // Raw cache text contains none of the fake secret VALUES…
+    for (const value of Object.values(fakeSecrets)) {
+      expect(rawCache).not.toContain(value);
+    }
+    // …nor the password embedded in the proxy URL.
+    expect(rawCache).not.toContain('corp-pw');
+    // …and none of the secret KEYS (substring match: SECRET_ID is gone too).
+    for (const key of Object.keys(fakeSecrets)) {
+      expect(parsed[key]).toBeUndefined();
+      expect(rawCache).not.toContain(key);
+    }
+    // Proxy with userinfo is dropped, credential-free proxy survives.
+    expect(parsed.HTTPS_PROXY).toBeUndefined();
+    expect(parsed.HTTP_PROXY).toBe('http://proxy.internal:3128');
+    // PATH and locale-style values survive.
+    expect(parsed.PATH).toBe('/opt/homebrew/bin:/usr/bin:/bin');
+    expect(parsed.LANG).toBe('en_US.UTF-8');
+    // File mode stays 0600.
+    expect(statSync(cachePath).mode & 0o777).toBe(0o600);
+    // In-memory environment still exposes the secrets after a fresh capture.
+    expect(getShellEnvironmentValue('XIAOMI_API_KEY')).toBe('fake-xiaomi-value-a1');
+    expect(getShellEnvironmentValue('TAVILY_API_KEYS')).toBe('fake-tavily-multi-a4');
+  });
+
+  it('rejects a legacy plaintext cache (schemaVersion 1) and overwrites it with a filtered capture', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    process.env.PATH = '/usr/bin:/bin';
+    const cachePath = writeCache({
+      schemaVersion: 1,
+      environment: { PATH: '/cached/bin:/usr/bin', XIAOMI_API_KEY: 'fake-legacy-secret-b1' },
+    });
+    execSyncMock.mockReturnValue('PATH=/fresh/bin:/usr/bin\nHOME=/Users/test\n');
+
+    const { loadShellEnvironment, getShellEnvironmentValue } = await loadModule();
+    loadShellEnvironment();
+
+    // Path proof: legacy cache rejected → synchronous capture branch ran.
+    expect(execSyncMock).toHaveBeenCalledOnce();
+    expect(execFileMock).not.toHaveBeenCalled();
+    expect(getShellEnvironmentValue('HOME')).toBe('/Users/test');
+
+    // Observable proof: the file on disk afterwards has no fake value.
+    const rawCache = readFileSync(cachePath, 'utf8');
+    expect(rawCache).not.toContain('fake-legacy-secret-b1');
+    expect(rawCache).not.toContain('XIAOMI_API_KEY');
+    expect(JSON.parse(rawCache).schemaVersion).toBe(2);
+    expect(JSON.parse(rawCache).environment.PATH).toBe('/fresh/bin:/usr/bin');
+  });
+
+  it('keeps secrets in memory but writes a filtered file when the background refresh applies', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    process.env.PATH = '/usr/bin:/bin';
+    const cachePath = writeCache({
+      environment: { PATH: '/cached/bin:/usr/bin', HTTP_PROXY: 'http://proxy.internal:3128' },
+    });
+    let refreshCallback: ((error: Error | null, stdout: string, stderr: string) => void) | undefined;
+    execFileMock.mockImplementation((_file, _args, _options, callback) => {
+      refreshCallback = callback;
+      return {};
+    });
+
+    const { loadShellEnvironment, getShellEnvironmentValue, getShellPathDiagnostics } = await loadModule();
+    loadShellEnvironment();
+
+    refreshCallback?.(null, [
+      'PATH=/fresh/bin:/usr/bin',
+      'ANTHROPIC_API_KEY=fake-anthropic-refresh-c1',
+      'HTTPS_PROXY=http://bob:refresh-pw@proxy.internal:8080',
+      '',
+    ].join('\n'), '');
+
+    // In-memory: the refreshed secret is available (Claude auth inheritance)…
+    expect(getShellEnvironmentValue('ANTHROPIC_API_KEY')).toBe('fake-anthropic-refresh-c1');
+    // …and no synchronous re-capture is spawned: the background refresh
+    // already made the in-memory environment fresh.
+    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(getShellPathDiagnostics().path).toBe('/fresh/bin:/usr/bin:/bin');
+
+    // On disk: the refreshed cache file is filtered too.
+    const rawCache = readFileSync(cachePath, 'utf8');
+    expect(rawCache).not.toContain('fake-anthropic-refresh-c1');
+    expect(rawCache).not.toContain('ANTHROPIC_API_KEY');
+    expect(rawCache).not.toContain('refresh-pw');
+    const parsed = JSON.parse(rawCache).environment as Record<string, string>;
+    // The refresh replaces the environment wholesale with the fresh capture.
+    expect(parsed.PATH).toBe('/fresh/bin:/usr/bin');
+    // Proxy with userinfo is dropped by the refresh path as well.
+    expect(parsed.HTTPS_PROXY).toBeUndefined();
+  });
+
+  it('cache hit: first secret read re-captures synchronously so Claude auth is inherited immediately', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    process.env.PATH = '/usr/bin:/bin';
+    const cachePath = writeCache({
+      environment: { PATH: '/cached/bin:/usr/bin', HOME: '/cached/home' },
+    });
+    // Background refresh stays in flight (callback never invoked).
+    execFileMock.mockImplementation((_file, _args, _options) => ({}));
+    execSyncMock.mockReturnValue([
+      'PATH=/fresh/bin:/usr/bin',
+      'HOME=/Users/test',
+      'ANTHROPIC_API_KEY=fake-anthropic-recapture-r1',
+      'CLAUDE_CODE_OAUTH_TOKEN=fake-oauth-recapture-r1',
+      '',
+    ].join('\n'));
+
+    const { loadShellEnvironment, getShellEnvironmentValue } = await loadModule();
+    loadShellEnvironment();
+
+    // Boot used the cache: no synchronous shell spawn during startup.
+    expect(execSyncMock).not.toHaveBeenCalled();
+    // Claude Code engine call BEFORE the background refresh callback lands:
+    // the first read must trigger one synchronous re-capture so auth keys
+    // (rc-file-only on Finder launches) are in memory right away.
+    expect(getShellEnvironmentValue('ANTHROPIC_API_KEY')).toBe('fake-anthropic-recapture-r1');
+    expect(execSyncMock).toHaveBeenCalledOnce();
+    expect(execSyncMock).toHaveBeenCalledWith("/bin/zsh -i -l -c 'env'", expect.any(Object));
+    expect(getShellEnvironmentValue('CLAUDE_CODE_OAUTH_TOKEN')).toBe('fake-oauth-recapture-r1');
+    // The re-capture is latched: further reads do not spawn another shell.
+    expect(execSyncMock).toHaveBeenCalledOnce();
+    // Fresh non-secret values replace the cached ones in memory.
+    expect(getShellEnvironmentValue('HOME')).toBe('/Users/test');
+
+    // The re-capture persists through the same filter: no secret on disk…
+    const rawCache = readFileSync(cachePath, 'utf8');
+    expect(rawCache).not.toContain('fake-anthropic-recapture-r1');
+    expect(rawCache).not.toContain('fake-oauth-recapture-r1');
+    expect(rawCache).not.toContain('ANTHROPIC_API_KEY');
+    // …while the fresh PATH replaces the cached one.
+    expect(JSON.parse(rawCache).environment.PATH).toBe('/fresh/bin:/usr/bin');
+  });
+
+  it('keeps cached values when the synchronous re-capture for reads fails, retrying only once', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    writeCache({ environment: { PATH: '/cached/bin', KEEP_ME: 'yes' } });
+    execFileMock.mockImplementation((_file, _args, _options, callback) => {
+      callback(new Error('refresh failed'), '', '');
+      return {};
+    });
+    execSyncMock.mockImplementation(() => {
+      throw new Error('recapture failed');
+    });
+
+    const { loadShellEnvironment, getShellEnvironmentValue } = await loadModule();
+    loadShellEnvironment();
+
+    expect(getShellEnvironmentValue('KEEP_ME')).toBe('yes');
+    expect(getShellEnvironmentValue('KEEP_ME')).toBe('yes');
+    // One bounded re-capture attempt, not a 5s synchronous stall per read on
+    // a broken login shell.
+    expect(execSyncMock).toHaveBeenCalledOnce();
   });
 });

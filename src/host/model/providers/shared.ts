@@ -25,6 +25,7 @@ export {
 import { parseGeminiStreamChunk } from './wrappers/geminiWrapper';
 import { narrateCuaToolCall } from '../../mcp/cuaNarration';
 import { extractToolCallMeta } from './toolCallMeta';
+import { modelVisibleToolOutput } from '../../tools/toolResultMessageContent';
 
 export { logger, safeJsonParse } from './providerRuntime';
 
@@ -352,12 +353,12 @@ export function convertToOpenAIMessages(
     }
     // 结构化工具结果(role='tool' + toolResults[])：ConversationRuntime 把多个 tool results 合并到
     // 单条 Message,但 OpenAI 协议要求每个 tool_call_id 一条独立 tool message,这里展开。
-    const aggregatedResults = (m as { toolResults?: Array<{ toolCallId: string; output?: string; error?: string }> }).toolResults;
+    const aggregatedResults = (m as { toolResults?: Array<{ toolCallId: string; output?: string; error?: string; metadata?: Record<string, unknown> }> }).toolResults;
     if (m.role === 'tool' && Array.isArray(aggregatedResults) && aggregatedResults.length > 0) {
       return aggregatedResults.map((r) => ({
         role: 'tool' as const,
         tool_call_id: normalizeToolCallId(r.toolCallId),
-        content: r.output ?? r.error ?? '',
+        content: modelVisibleToolOutput(r),
       }));
     }
     // 结构化工具结果（role='tool' + toolCallId 顶层单数）

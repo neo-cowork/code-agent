@@ -6,6 +6,7 @@ import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SidebarSessionItem } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 import { loadPlaywrightChromium } from '../../../src/host/agent/runtime/browser/playwrightRuntime';
+import { waitForGlobalCss } from '../fixtures/waitForGlobalCss';
 
 interface AxisGeometry {
   rowCenterY: number;
@@ -101,6 +102,10 @@ describe('SidebarSessionItem 归档按钮双轴几何', () => {
       + '</main></body></html>',
       { waitUntil: 'networkidle' },
     );
+
+    // networkidle can return before the Tailwind stylesheet is compiled/applied under load;
+    // never measure an unstyled DOM.
+    await waitForGlobalCss(page);
 
     const screenshotDir = process.env.ARCHIVE_ALIGNMENT_SCREENSHOT_DIR;
     if (screenshotDir) {

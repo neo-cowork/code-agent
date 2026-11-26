@@ -12,6 +12,7 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useSessionStore } from '../../../../../stores/sessionStore';
 import { isPreviewable } from '../../../../../utils/previewable';
 import {
   formatBrowserComputerActionArguments,
@@ -29,7 +30,8 @@ import type { Citation } from '@shared/contract/citation';
 import type { LibraryEvidenceProjection } from '@shared/contract/library';
 import { projectLibraryEvidence } from '../../../../../services/libraryClient';
 import {
-  humanizeToolError,
+  humanizeToolError, localizeToolUserMessage,
+  isRemindersReadAuthorizationFailure,
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
@@ -169,15 +171,17 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const [loadingLibraryEvidence, setLoadingLibraryEvidence] = useState(false);
   const openPreview = useAppStore((state) => state.openPreview);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.rendererHumanPipe.toolDetails;
 
-  // 报错说人话：识别得了的错误（如搜索源额度耗尽）给一行摘要 + 去设置入口，原始报错折叠。
-  // metadata.code 命中登记表的门（如工作台范围拦截）优先用 code 文案，正则降为兜底。
-  const humanError = result && !result.success
-    ? humanizeToolError(result.error, name, t, result.metadata)
-    : null;
+  const userMessage = result?.userMessage === undefined ? undefined : localizeToolUserMessage(result.userMessage, t);
+  const displayError = userMessage ?? result?.error;
   const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
+  const humanError = userMessage === undefined
+    ? result && !result.success ? humanizeToolError(displayError, name, t, result.metadata) : null
+    : { summary: stripAnsiCodes(userMessage), detail: structuredHostReason ? humanizeToolError(undefined, name, t, result?.metadata)?.detail : undefined };
+  const remindersReadDenied = isRemindersReadAuthorizationFailure(name, result?.metadata);
+  const errorDetail = humanError?.detail ?? (userMessage !== undefined || remindersReadDenied ? undefined : copy.genericErrorDetail);
 
   const isEditFile = name === 'Edit';
   // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一聚合 old/new；legacy 平铺不变
@@ -206,7 +210,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
     ? mediaAssets.find((asset) => asset.role === 'output') || mediaAssets[0]
     : undefined;
   const generatedFileResult = extractGeneratedFile(toolCall);
-  const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall);
+  const safeBrowserComputerResult = formatBrowserComputerActionResultDetails(toolCall, language);
   const browserComputerNextSteps = getBrowserComputerNextSteps(toolCall, copy);
   // 通用失败工具的可点 action（复制错误 + 从此重试）。浏览器/Computer 类有自己的
   // 只读 recovery actions，这里只兜底其余工具，避免两套 action 行重复。
@@ -214,6 +218,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const interruptionPlaceholder = isToolInterruptionPlaceholder(result?.error);
   const showGenericErrorActions = browserComputerNextSteps.length === 0
     && toolErrorActions.show
+    && !remindersReadDenied
     && !interruptionPlaceholder;
 
   const canPreviewCreated = isPreviewable(createdFilePath);
@@ -354,9 +359,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
               )}
               {showGenericErrorActions && (
                 <GenericToolErrorActions
-                  errorText={structuredHostReason
+                  errorText={structuredHostReason && userMessage === undefined
                     ? [humanError?.summary, humanError?.detail].filter(Boolean).join('\n')
-                    : stripAnsiCodes(toolErrorActions.errorText)}
+                    : stripAnsiCodes(userMessage ?? toolErrorActions.errorText)}
                   canRetry={toolErrorActions.canRetry}
                   messageId={mediaContext?.messageId}
                   copy={copy}
@@ -367,9 +372,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   <div className="font-medium text-badge-warning/90">
                     {humanError?.summary ?? copy.genericErrorSummary}
                   </div>
-                  {(humanError?.detail ?? copy.genericErrorDetail) && (
+                  {errorDetail && (
                     <div className="mt-1 text-badge-warning/60">
-                      {humanError?.detail ?? copy.genericErrorDetail}
+                      {errorDetail}
                     </div>
                   )}
                   {humanError?.settingsHint && (
@@ -381,7 +386,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       {copy.settingsHint}
                     </button>
                   )}
-                  {!interruptionPlaceholder && !structuredHostReason && (
+                  {userMessage === undefined && !interruptionPlaceholder && !structuredHostReason && !remindersReadDenied && (
                     <>
                       <button
                         type="button"
@@ -392,22 +397,22 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       </button>
                       {showRawError && (
                         <pre className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-800/50 bg-gray-900/50 p-2 text-[11px] text-zinc-500">
-                          {stripAnsiCodes(result.error || '')}
+                          {stripAnsiCodes(displayError || '')}
                         </pre>
                       )}
                     </>
                   )}
                 </div>
-              ) : (!safeBrowserComputerResult && !result.error && result.output !== null && typeof result.output === 'object') ? (
+              ) : (!safeBrowserComputerResult && userMessage === undefined && !displayError && result.output !== null && typeof result.output === 'object') ? (
                 // 对象/数组型 output（非字符串日志）走 JSON 语法高亮
                 <JsonHighlight code={JSON.stringify(result.output, null, 2)} error={!result.success} />
               ) : (
                 <CappedResultBody
                   text={
-                    safeBrowserComputerResult
-                      ? stripAnsiCodes(safeBrowserComputerResult)
-                      : result.error
-                        ? stripAnsiCodes(result.error)
+                    userMessage !== undefined || (!safeBrowserComputerResult && displayError)
+                      ? stripAnsiCodes(displayError ?? '')
+                      : safeBrowserComputerResult
+                        ? stripAnsiCodes(safeBrowserComputerResult)
                         : typeof result.output === 'string'
                           ? replaceCompletenessWarningInOutput(
                             name,
@@ -530,9 +535,11 @@ export function getBrowserComputerNextSteps(
       sourceToolName: toolCall.name,
       sourceArgs: toolCall.arguments,
       run: async () => {
+        const conversationId = useSessionStore.getState().currentSessionId;
         const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession', {
           url: 'about:blank',
           provider: 'system-chrome-cdp',
+          ...(conversationId ? { conversationId } : {}),
         });
         if (response?.success) {
           return {

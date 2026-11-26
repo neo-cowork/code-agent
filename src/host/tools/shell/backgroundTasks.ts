@@ -11,7 +11,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { getUserConfigDir } from '../../config/configPaths';
 import { BASH } from '../../../shared/constants';
 import { quote } from 'shell-quote';
-import { parseShellCommand } from '../../security/commandParse';
+import { getLiteralCopyMoveOperands, parseShellCommand } from '../../security/commandParse';
+import { getBackgroundTaskUiLanguage } from '../../config/backgroundTaskLocale';
+import type { HostUiLocale } from '../../config/hostUiLocale';
+import {
+  BACKGROUND_COMMAND_TITLE,
+  formatBackgroundFileActionTitle,
+  isEnglishBackgroundFileActionTitle,
+  isForeignBackgroundTaskTitle,
+} from '../../../shared/backgroundTaskTitle';
 
 // ============================================================================
 // Constants
@@ -355,6 +363,31 @@ function registerBackgroundTaskProcess(
 const NAME_MAX = 40;
 const SETUP_COMMANDS = new Set(['cd', 'export', 'set', 'source', '.', 'echo', 'printf']);
 
+function sandboxCommand(args: string[]): string {
+  let index = 0;
+  while (index < args.length && args[index].startsWith('-')) {
+    const flag = args[index++];
+    if (flag === '--') break;
+    if (['-f', '-p', '-D'].includes(flag)) index++;
+  }
+  return quote(args.slice(index));
+}
+
+function fileActionTitle(command: string, language: HostUiLocale, depth = 0): string {
+  if (depth > 4) return '';
+  const parsed = parseShellCommand(command);
+  if (parsed.parsingFailed) return '';
+  const action = parsed.executions.find(({ program }) => !SETUP_COMMANDS.has(path.posix.basename(program.replaceAll('\\', '/'))));
+  if (!action) return '';
+  const verb = path.posix.basename(action.program.replaceAll('\\', '/'));
+  if (verb === 'sandbox-exec') return fileActionTitle(sandboxCommand(action.args), language, depth + 1);
+  if (verb !== 'cp' && verb !== 'mv') return '';
+  const operands = getLiteralCopyMoveOperands(verb, action.args);
+  const [source, destination] = operands.map((operand) => path.posix.basename(operand.replaceAll('\\', '/')));
+  if (!source || !destination) return '';
+  return formatBackgroundFileActionTitle(verb, source, destination, language, NAME_MAX);
+}
+
 function shortTarget(command: string, depth = 0): string {
   if (depth > 4) return '';
   const url = command.match(/\bhttps?:\/\/[^\s'"<>;|&\\]+/i);
@@ -367,15 +400,7 @@ function shortTarget(command: string, depth = 0): string {
   for (const { program, args } of parseShellCommand(command).executions) {
     const base = path.posix.basename(program.replaceAll('\\', '/'));
     if (SETUP_COMMANDS.has(base)) continue;
-    if (base === 'sandbox-exec') {
-      let index = 0;
-      while (index < args.length && args[index].startsWith('-')) {
-        const flag = args[index++];
-        if (flag === '--') break;
-        if (['-f', '-p', '-D'].includes(flag)) index++;
-      }
-      return shortTarget(quote(args.slice(index)), depth + 1);
-    }
+    if (base === 'sandbox-exec') return shortTarget(sandboxCommand(args), depth + 1);
     // A title must never contain command syntax, even for an unparseable script.
     if (/^[\p{L}\p{N}_.+-]+$/u.test(base)) return base.slice(0, NAME_MAX);
   }
@@ -384,16 +409,23 @@ function shortTarget(command: string, depth = 0): string {
 
 /**
  * One user-readable name for a background shell/PTY task: the model's Bash `description`
- * when usable (single line, <= 60 chars), else a short human target derived from the command
- * (URL => host[:port], otherwise the executable basename). Never the raw command line;
- * the full command lives in `displayCommand`.
+ * when it is short, single-line and in the UI language. Otherwise derive a purpose or short
+ * target from the command, then fall back to a generic title in the UI language.
  */
-export function resolveBackgroundTaskName(description: unknown, command: string): string {
+export function resolveBackgroundTaskName(
+  description: unknown, command: string, language = getBackgroundTaskUiLanguage(),
+): string {
   if (typeof description === 'string') {
     const trimmed = description.trim();
-    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60) return trimmed;
+    if (trimmed && !/[\r\n]/.test(trimmed) && trimmed.length <= 60
+      && !isForeignBackgroundTaskTitle(trimmed, language)) {
+      if (language === 'zh' && isEnglishBackgroundFileActionTitle(trimmed)) {
+        return fileActionTitle(command, language) || trimmed;
+      }
+      return trimmed;
+    }
   }
-  return shortTarget(command) || 'Background task';
+  return fileActionTitle(command, language) || shortTarget(command) || BACKGROUND_COMMAND_TITLE[language];
 }
 
 /**

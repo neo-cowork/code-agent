@@ -9,7 +9,15 @@ import { useSessionStore, type SessionFilter } from './sessionStore';
 import { useSurfaceExecutionStore } from './surfaceExecutionStore';
 import type { SidebarSessionTier } from '../utils/sidebarSessionTiers';
 import { createLogger } from '../utils/logger';
+import { languages } from '../i18n';
+import {
+  findSessionAfterRemoval,
+  getSidebarGroupKeyForSession,
+  UNCATEGORIZED_WORKSPACE_KEY,
+} from '../utils/workspaceGrouping';
 import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
+
+import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
 
 const logger = createLogger('SessionUIStore');
 
@@ -18,6 +26,8 @@ async function deleteSession(id: string): Promise<void> {
   if (!response?.success) {
     throw new Error(response?.error?.message || 'Failed to delete session');
   }
+  // 乐观移除早于落库（softDelete 5 秒后才删）：落库后再通知侧栏空空间目录重拉。
+  notifyProjectSpaceList('sessions');
   // 终态留影的内存半跟会话一起删（盘上那一半由 host 会话删除收敛点负责）
   useSurfaceExecutionStore.getState().clearConversation(id);
   // 已删会话的未发送草稿（含 base64 附件）不再占 localStorage 配额
@@ -34,6 +44,7 @@ export type TrajectoryReviewFilter = 'all' | 'pending' | 'reviewed';
 export interface PendingDelete {
   ids: string[];
   timer: ReturnType<typeof setTimeout> | null;
+  replacement?: Promise<boolean>;
 }
 
 export interface PendingSessionSearchJump {
@@ -195,6 +206,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       const prevIds = [...pendingDelete.ids];
       set({ pendingDelete: null });
       (async () => {
+        if (pendingDelete.replacement && !await pendingDelete.replacement) return;
         for (const id of prevIds) {
           try {
             await deleteSession(id);
@@ -213,19 +225,57 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     }, 5000);
 
     useSessionStore.setState({ sessions: remainingSessions });
-    set({ pendingDelete: { ids, timer } });
+    let pending: PendingDelete = { ids, timer };
+    set({ pendingDelete: pending });
 
     const { currentSessionId } = useSessionStore.getState();
     if (currentSessionId && idsSet.has(currentSessionId)) {
-      if (remainingSessions.length > 0) {
-        sessionStore.switchSession(remainingSessions[0].id);
+      const deletedCurrent = sessions.find((session) => session.id === currentSessionId);
+      const neighbour = deletedCurrent && findSessionAfterRemoval(sessions, currentSessionId, idsSet);
+      if (neighbour) {
+        void sessionStore.switchSession(neighbour.id);
       } else {
-        // 与 deleteSession/archiveSession 的末会话路径一致：回到 draft 时清掉
-        // per-session agent / workbench 选择，避免上个会话的专家残留在 draft 里
-        // 被下一次 createSession 的 inheritCurrent 写进新会话（ux-round2 20e）。
-        useAppStore.getState().syncActiveAgentForSession(null);
-        useAppStore.getState().syncWorkbenchForSession(null);
-        useSessionStore.setState({ currentSessionId: null, messages: [] });
+        const appStore = useAppStore.getState();
+        appStore.syncActiveAgentForSession(null);
+        appStore.syncWorkbenchForSession(null);
+        if (deletedCurrent && getSidebarGroupKeyForSession(deletedCurrent) !== UNCATEGORIZED_WORKSPACE_KEY) {
+          const replacement = (async () => {
+            try {
+              const session = await sessionStore.createSession(languages[appStore.language].sidebar.newSessionTitle, {
+                workingDirectory: deletedCurrent.workingDirectory ?? null,
+                projectId: deletedCurrent.projectId,
+              });
+              if (session) return true;
+            } catch (error) {
+              logger.error('Failed to create a replacement after deleting the open session', error);
+            }
+
+            // Keep the original conversation if it still has no replacement.
+            // The create action already surfaces the error.
+            if (get().pendingDelete === pending) {
+              clearTimeout(timer);
+              set({ pendingDelete: null });
+            }
+            const otherPendingIds = new Set(get().pendingDelete?.ids);
+            const live = useSessionStore.getState();
+            const visibleIds = new Set(live.sessions.map((session) => session.id));
+            const restored = sessions.filter(({ id }) =>
+              idsSet.has(id) && !otherPendingIds.has(id) && !visibleIds.has(id));
+            useSessionStore.setState({
+              sessions: [...live.sessions, ...restored].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+            });
+            if (live.currentSessionId === currentSessionId) {
+              const currentApp = useAppStore.getState();
+              currentApp.syncActiveAgentForSession(currentSessionId, { metadata: deletedCurrent.metadata });
+              currentApp.syncWorkbenchForSession(currentSessionId);
+            }
+            return false;
+          })();
+          pending = { ...pending, replacement };
+          set({ pendingDelete: pending });
+        } else {
+          useSessionStore.setState({ currentSessionId: null, messages: [] });
+        }
       }
     }
 
@@ -248,6 +298,9 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
     if (!pendingDelete) return;
 
     if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
+    if (pendingDelete.replacement) {
+      if (!await pendingDelete.replacement || get().pendingDelete !== pendingDelete) return;
+    }
 
     // Snapshot and clear atomically to prevent race with concurrent softDelete
     const idsToDelete = [...pendingDelete.ids];

@@ -10,11 +10,11 @@
 // 而 webServer 给它的 `getAppService()` 恒为 null ⇒ 生产上必抛 "Agent not initialized"。
 // 第 5 个用例专门钉这一点：Map 里预置一个「一被调到就抛」的旧 handler，安装后必须绕开它。
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { installPermissionResponseHandler } from '../../../src/web/webPermissionResponseHandler';
 import { initTaskManager, type TaskManager } from '../../../src/host/task/TaskManager';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
-import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
+import { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import type { PendingDevPermissionRequest } from '../../../src/web/routes/dev';
 import type { PermissionAskResult } from '../../../src/shared/contract';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
@@ -22,6 +22,11 @@ import {
   registerForegroundPermissionIsland,
   unregisterForegroundPermissionIsland,
 } from '../../../src/web/foregroundPermissionRegistry';
+
+// 只替换会话库读取（数据层）；审批中继链路（TaskManager / orchestrator / 权限岛 / web handler）全真
+vi.mock('../../../src/host/task/backgroundTaskSessionContext', () => ({
+  getBackgroundTaskSessionContext: async () => null,
+}));
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown | Promise<unknown>;
 type IpcResult = { success: boolean; data?: unknown; error?: { code: string; message: string } };
@@ -242,5 +247,167 @@ describe('审批响应投递链路（web 路径）', () => {
       island.drainPendingPermissions();
       unregisterForegroundPermissionIsland(sessionId, island);
     }
+  });
+
+  describe('审批卡上改过的参数（updatedArgs）随响应送达', () => {
+    const edited = { title: 'Quarterly review (final)' };
+    const invoke4 = (requestId: string, response: string, sessionId: string, updatedArgs?: unknown) =>
+      handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, requestId, response, sessionId, updatedArgs) as Promise<IpcResult>;
+    const infoText = () => JSON.stringify(logger.info.mock.calls);
+
+    function makeIsland() {
+      return new OrchestratorPermissionIsland({
+        getSettings: configServiceStub.getSettings as never,
+        isDevModeAutoApproveEnabled: () => false,
+        getExecutionTopology: () => 'main',
+        hasApprovalUi: () => true,
+        onEvent: () => {},
+      });
+    }
+
+    it('前台岛路径：4 参应答让等待中的 Promise 带着 updatedArgs 放行，日志 edited:true', async () => {
+      const sessionId = 'sess-edit-fg';
+      const island = makeIsland();
+      registerForegroundPermissionIsland(sessionId, island);
+      install();
+      try {
+        const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+        await Promise.resolve();
+        const requestId = island.listPendingRequests()[0]!.id;
+        await expect(invoke4(requestId, 'allow', sessionId, edited)).resolves.toMatchObject({
+          success: true,
+          data: { source: 'foreground-permission-island' },
+        });
+        await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user', updatedArgs: edited });
+        expect(infoText()).toContain('Permission response delivered (web foreground)');
+        expect(infoText()).toContain('"edited":true');
+      } finally {
+        island.drainPendingPermissions();
+        unregisterForegroundPermissionIsland(sessionId, island);
+      }
+    });
+
+    it('TaskManager 路径：4 参应答让等待中的 Promise 带着 updatedArgs 放行，日志 edited:true', async () => {
+      const sessionId = 'sess-edit-tm';
+      const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+      install();
+      const approval = requestPermission(orchestrator)({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
+      await Promise.resolve();
+      const [requestId] = pendingIds(orchestrator);
+      await expect(invoke4(requestId, 'allow', sessionId, edited)).resolves.toMatchObject({
+        success: true,
+        data: { source: 'task-manager' },
+      });
+      await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user', updatedArgs: edited });
+      expect(infoText()).toContain('Permission response delivered (web)');
+      expect(infoText()).toContain('"edited":true');
+    });
+
+    it("'allow_session' + updatedArgs 仍 fail-closed", async () => {
+      const sessionId = 'sess-edit-session';
+      const island = makeIsland();
+      registerForegroundPermissionIsland(sessionId, island);
+      install();
+      try {
+        const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+        await Promise.resolve();
+        const requestId = island.listPendingRequests()[0]!.id;
+        await invoke4(requestId, 'allow_session', sessionId, edited);
+        await expect(approval).resolves.toMatchObject({ approved: false, denialSource: 'fail-closed' });
+      } finally {
+        island.drainPendingPermissions();
+        unregisterForegroundPermissionIsland(sessionId, island);
+      }
+    });
+
+    it('没有第 4 参时正常批准；无效参数拒绝且请求仍可裁决，日志 edited:false', async () => {
+      const sessionId = 'sess-edit-none';
+      const island = makeIsland();
+      registerForegroundPermissionIsland(sessionId, island);
+      install();
+      try {
+        for (const bad of [undefined, 'x', ['a']]) {
+          const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+          await Promise.resolve();
+          const requestId = island.listPendingRequests()[0]!.id;
+          const result = await invoke4(requestId, 'allow', sessionId, bad);
+          if (bad !== undefined) {
+            expect(result).toMatchObject({ success: false, error: { code: 'INVALID_UPDATED_ARGS' } });
+            expect(island.listPendingRequests().map((request) => request.id)).toContain(requestId);
+            await invoke4(requestId, 'allow', sessionId);
+          }
+          await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
+        }
+        expect(infoText()).toContain('"edited":false');
+        expect(infoText()).not.toContain('"edited":true');
+      } finally {
+        island.drainPendingPermissions();
+        unregisterForegroundPermissionIsland(sessionId, island);
+      }
+    });
+  });
+
+  describe('后台 helper 的审批按 requestId 找属主，不信调用方的会话 id（FB-1408）', () => {
+    const ownerSession = 'sess-owner';
+    const otherSession = 'sess-other';
+    let releaseRun: () => void;
+    let run: Promise<void>;
+
+    beforeEach(async () => {
+      const hold = new Promise<void>((resolve) => { releaseRun = resolve; });
+      vi.spyOn(AgentOrchestrator.prototype, 'sendMessage').mockImplementation(() => hold);
+      run = taskManager.startBackgroundTask('bg-task-1', ownerSession, 'run in background');
+      await vi.waitFor(() => {
+        expect((taskManager as unknown as { backgroundRuns: Map<string, unknown> }).backgroundRuns.has('bg-task-1')).toBe(true);
+      });
+      install();
+    });
+
+    afterEach(async () => {
+      releaseRun();
+      await run;
+      vi.restoreAllMocks();
+    });
+
+    /** 后台 lane 的审批：sessionId 为 null（与真机日志一致），经真登记入口挂起 */
+    async function raiseBackgroundApproval() {
+      const background = (taskManager as unknown as {
+        backgroundRuns: Map<string, { orchestrator: AgentOrchestrator }>;
+      }).backgroundRuns.get('bg-task-1')!;
+      const approval = requestPermission(background.orchestrator)({
+        type: 'command', tool: 'Bash', sessionId: null, reason: 'bg',
+      });
+      await vi.waitFor(() => expect(pendingIds(background.orchestrator)).toHaveLength(1));
+      const requestId = pendingIds(background.orchestrator)[0];
+      // 属主登记由 permission_request 事件的异步落库路径完成；等它到位再点，对应真机「用户看到卡之后才点」
+      await vi.waitFor(() => {
+        const owners = (taskManager as unknown as { backgroundPermissionOwners: Map<string, string> }).backgroundPermissionOwners;
+        expect(owners.get(requestId)).toBe('bg-task-1');
+      });
+      return { approval, requestId };
+    }
+
+    it('调用方没带会话 id、服务端「当前会话」是别的会话 → 仍送达并放行', async () => {
+      const { approval, requestId } = await raiseBackgroundApproval();
+      currentSessionId = otherSession;
+      const result = await invoke(requestId, 'allow');
+      expect(result).toMatchObject({ success: true });
+      await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    });
+
+    it('调用方带了错误的会话 id → 仍送达并放行', async () => {
+      const { approval, requestId } = await raiseBackgroundApproval();
+      const result = await invoke(requestId, 'allow', otherSession);
+      expect(result).toMatchObject({ success: true });
+      await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    });
+
+    it('未知 requestId 仍不送达（与修复前一致）', async () => {
+      await raiseBackgroundApproval();
+      currentSessionId = otherSession;
+      const result = await invoke('no-such-request', 'allow');
+      expect(result.success).toBe(false);
+      expect(['PENDING_PERMISSION_NOT_FOUND', 'NO_ACTIVE_ORCHESTRATOR']).toContain(result.error?.code);
+    });
   });
 });

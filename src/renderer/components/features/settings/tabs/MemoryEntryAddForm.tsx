@@ -4,8 +4,8 @@ import type { MemoryEntry, MemoryEntryCreateResult } from '@shared/contract/memo
 import { Button, Select, Textarea } from '../../../primitives';
 import { MEMORY_ENTRY_ADD_COPY } from '../../../../i18n/memoryEntryAdd';
 
-type AddKind = 'user' | 'feedback' | 'project' | 'reference';
-const ADD_KINDS: AddKind[] = ['user', 'feedback', 'project', 'reference'];
+type AddKind = 'user' | 'feedback' | 'project' | 'people' | 'reference';
+const ADD_KINDS: AddKind[] = ['user', 'feedback', 'project', 'people', 'reference'];
 
 interface SubmitResponse {
   success: boolean;

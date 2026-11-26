@@ -6,9 +6,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, Eye, Zap } from 'lucide-react';
-import type { CronEventDecision, CronJobDefinition } from '@shared/contract';
+import type { CronEventDecision, CronEventStats, CronJobDefinition } from '@shared/contract';
 import { resolveCronEventActionMode } from '@shared/cronEventActionMode';
-import { localizeDecisionText } from '@shared/cronEventDecisionText';
+import { localizeDecisionText, scrubInternalIdentifiers } from '@shared/cronEventDecisionText';
 import { cronClient } from '../../../services/cronClient';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -16,6 +16,7 @@ import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { Button } from '../../primitives/Button';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { copyPathToClipboard } from '../../../utils/platform';
+import { cronDecisionFailureReason } from './cronFailureNotice';
 
 /** 决策行底色：「本会执行」是观察期要用户过目的，高亮。 */
 function decisionRowClass(decision: CronEventDecision['decision']): string {
@@ -38,6 +39,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   const mode = resolveCronEventActionMode(job) ?? 'observe';
   const [decisions, setDecisions] = useState<CronEventDecision[]>([]);
   const [modeChange, setModeChange] = useState<{ from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null>(null);
+  const [stats, setStats] = useState<CronEventStats | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -55,6 +57,10 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
       .then(() => cronClient.getEventActionModeChange(job.id))
       .then((entry) => { if (!cancelled) setModeChange(entry ?? null); })
       .catch(() => { if (!cancelled) setModeChange(null); });
+    Promise.resolve()
+      .then(() => cronClient.getEventStats(job.id))
+      .then((value) => { if (!cancelled) setStats(value ?? null); })
+      .catch(() => { if (!cancelled) setStats(null); });
     return () => { cancelled = true; };
   }, [job.id, job.updatedAt]);
 
@@ -88,7 +94,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   };
 
   const renderRow = (row: CronEventDecision, testId: string) => {
-    const reason = localizeDecisionText(row.reason, language);
+    const reason = cronDecisionFailureReason(row.reason, language);
     const rule = row.matchedRule ? localizeDecisionText(row.matchedRule, language) : undefined;
     const time = formatDateTime(row.createdAt, language);
     const copyButton = (value: string, valueTestId: string) => (
@@ -129,7 +135,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
               {copy.ruleLabel.replace('{rule}', rule)}
             </div>
           )}
-          {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
+          {row.summary && <div className="mt-1 truncate text-zinc-300">{scrubInternalIdentifiers(row.summary, language)}</div>}
         </div>
         <details className="mt-2 border-t border-zinc-800/80 pt-2" data-testid="cron-event-decision-details">
           <summary className="cursor-pointer select-none text-zinc-500 hover:text-zinc-300">{copy.details}</summary>
@@ -190,6 +196,14 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
           </Button>
         )}
       </div>
+      {stats && (stats.prefilterCalls > 0 || stats.heldByCap > 0) && (
+        <div className="mt-2 text-xs text-zinc-400" data-testid="cron-event-stats-line">
+          {t.cronCenter.eventLimits.statsLine
+            .replace('{calls}', String(stats.prefilterCalls))
+            .replace('{skipped}', String(stats.prefilterSkipped))
+            .replace('{held}', String(stats.heldByCap))}
+        </div>
+      )}
       {switchError && <div className="mt-2 text-xs text-badge-danger" role="alert">{switchError}</div>}
       {modeChange && (
         <div className="mt-2 text-xs text-zinc-500" data-testid="cron-action-mode-change">

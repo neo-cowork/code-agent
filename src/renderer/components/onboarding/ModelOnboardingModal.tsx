@@ -1,4 +1,7 @@
 import { getProviderDisplayName } from '../../i18n/settingsVocabulary';
+import { createLogger } from '../../utils/logger';
+
+const logger = createLogger('ModelOnboarding');
 // ============================================================================
 // ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步，
 // 其后紧跟「连上你平时用的工具」连接器步与「随时开口」绑键卡：这两个后置卡
@@ -55,6 +58,7 @@ import {
   type OnboardingStep,
   type OnboardingTranslations,
 } from './modelOnboarding';
+import { buildDefaultModelSettingsUpdate } from '../features/settings/tabs/ModelSettings.helpers';
 import { VoiceHotkeyOnboardingStep } from './VoiceHotkeyOnboardingStep';
 import { ConnectorsOnboardingStep } from './ConnectorsOnboardingStep';
 
@@ -131,7 +135,7 @@ function getOnboardingEngineStatus(
       if (source.authState === 'needs_login') {
         return {
           detail: s.cliNeedsLoginUnverifiedDetail,
-          badge: s.badgeNeedsLogin,
+          badge: s.badgeComingSoon,
         };
       }
       return {
@@ -442,14 +446,20 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
           // Keep the generic label for an unusual but already validated URL.
         }
       }
+      // FB-1800 同源问题在首启向导的复现：运行时的代码/文件/产物任务走 taskStrategy
+      // profiles.main，不跟随默认模型指针。保存前先读最新 settings，交给
+      // buildDefaultModelSettingsUpdate 在 main 档指向运行时不可用（无 key）的 provider
+      // 时一并接管；读取失败仅告警并按 undefined 继续，保存本身不受阻。
+      let latestSettings: AppSettings | undefined;
+      try {
+        latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+      } catch (settingsReadError) {
+        logger.warn('Failed to read latest settings before onboarding save; task main slot left untouched', {
+          error: settingsReadError instanceof Error ? settingsReadError.message : String(settingsReadError),
+        });
+      }
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        models: {
-          default: selectedProvider,
-          defaultProvider: selectedProvider,
-          providers: {
-            [selectedProvider]: selection.providerSettings,
-          },
-        },
+        ...buildDefaultModelSettingsUpdate(selectedProvider, selection.providerSettings, latestSettings),
         onboarding: {
           completedAt: Date.now(),
           defaultEngine: 'native',

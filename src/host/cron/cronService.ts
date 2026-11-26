@@ -41,8 +41,7 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { executeCronAgentAction } from './cronAgentAction';
-import { attachCronRunCost, createCronRunCostMeterForExecution, readCronRunCostUsd } from './cronRunCostMeter';
-import { addCronRunCostUsd } from '../../shared/cronRunLedger';
+import { applyCronRunOutcome, attachCronRunCost, createCronRunCostMeterForExecution, markWakeFlatFee } from './cronRunCostMeter';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
@@ -709,8 +708,8 @@ export class CronService implements Disposable {
    */
   getStats(): CronServiceStats {
     const allJobs = Array.from(this.jobs.values());
-    const allExecutions = Array.from(this.executions.values()).flat();
-
+    // 执行统计读 DB 权威窗（getRecentExecutions 同源同默认 50 条，与「运行记录」tab 一致）：重启后 this.executions 为空曾显示 0%。只读不写回：连败停机仍只看本进程尾部。
+    const allExecutions = this.getRecentExecutions();
     const successfulExecutions = allExecutions.filter((e) => e.status === 'completed').length;
     const failedExecutions = allExecutions.filter((e) => e.status === 'failed').length;
 
@@ -902,13 +901,13 @@ export class CronService implements Disposable {
         execution.result = await this.cloudRuntime.runJob(definition);
         execution.status = 'completed';
       } else {
-        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock);
+        const result = await this.executeAction(definition, definition.action, definition.timeout ?? undefined, execution.id, eventPayloadBlock, trigger);
         if (isCronAgentActionResult(result)) {
           execution.sessionId = result.sessionId;
         }
         execution.status = 'completed';
         execution.result = result;
-        execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(result));
+        applyCronRunOutcome(execution, result);
         if (definition.action.type !== 'agent') {
           await this.deliverCronResult(definition, result, execution.id);
         }
@@ -916,7 +915,7 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
-      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(error));
+      applyCronRunOutcome(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 
       if (failureKind === 'capacity-wait') {
@@ -1027,7 +1026,10 @@ export class CronService implements Disposable {
     action: CronJobAction,
     timeout?: number,
     executionId?: string,
-    eventPayloadBlock?: string
+    eventPayloadBlock?: string,
+    // 事件 run 的 trigger（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：agent 分支据此把
+    // host 绑定的回复目的地登记进会话；其余分支不消费。
+    eventTrigger?: CronExecutionTrigger
   ): Promise<unknown> {
     switch (action.type) {
       case 'shell': {
@@ -1049,7 +1051,7 @@ export class CronService implements Disposable {
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
           deliverCronResult: (job, result, execId, gate) => this.deliverCronResult(job, result, execId, gate),
           recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
-        }, definition, action, executionId, eventPayloadBlock, timeout);
+        }, definition, action, executionId, eventPayloadBlock, timeout, eventTrigger);
       }
 
       case 'webhook': {
@@ -1097,7 +1099,7 @@ export class CronService implements Disposable {
           + ` startedAt=${wakeStartedAt} completedAt=${new Date().toISOString()}`
           + (wakeResult.skipReason ? `: ${wakeResult.skipReason}` : ''),
         );
-        return wakeCostUsd > 0 ? { ...wakeResult, costUsd: wakeCostUsd } : wakeResult;
+        return wakeCostUsd > 0 ? { ...wakeResult, costUsd: wakeCostUsd } : markWakeFlatFee(wakeResult);
       }
 
       default:
@@ -1148,18 +1150,18 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock);
+      const result = await this.executeAction(current, current.action, current.timeout ?? undefined, execution.id, eventPayloadBlock, execution.trigger);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
       execution.status = 'completed';
       execution.result = result;
-      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(result));
+      applyCronRunOutcome(execution, result);
     } catch (error) {
       execution.status = 'failed';
       execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
-      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(error));
+      applyCronRunOutcome(execution, error);
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
       if (classifyCronFailure(execution.error) === 'permanent' || classifyCronFailure(execution.error) === 'login-wall') return;
 

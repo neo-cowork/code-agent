@@ -42,6 +42,7 @@ export type MemoryEntryKind =
   | 'user'
   | 'feedback'
   | 'project'
+  | 'people'
   | 'reference'
   | 'session'
   | 'pattern';
@@ -258,6 +259,8 @@ export interface MemoryEntry {
   status: MemoryEntryStatus;
   /** Replacement entry, when an archive was superseded by a newer memory. */
   deprecatedBy?: string | null;
+  /** Light Memory filename replaced when this candidate is adopted. */
+  supersedes?: string | null;
   kind: MemoryEntryKind;
   scope: MemoryEntryScope;
   title: string;
@@ -294,9 +297,86 @@ export interface MemoryMirrorRebuildResult {
   skipped: Array<{ filename: string; reason: string }>;
 }
 
+// ----------------------------------------------------------------------------
+// 自动整理历史（N-MEM-CONSOLIDATION-HISTORY-UNDO）
+// ----------------------------------------------------------------------------
+
+/** 一次整理里的一组合并：来源卡片 + 合并产物卡片（名字已解析成人话，非文件名）。 */
+export interface MemoryTidyMergeView {
+  sources: Array<{ filename: string; name: string }>;
+  result: { filename: string; name: string; summary: string };
+}
+
+/** 一次整理里被降级的冲突卡片。restorable=false 表示记录里没存原文，只能看不能自动还原。 */
+export interface MemoryTidyConflictView {
+  source: { filename: string; name: string };
+  reason: string;
+  restorable: boolean;
+}
+
+/** 设置页「最近整理」列表的一行（同一次运行的多行流水已按 auditId 合并，取终态）。 */
+export interface MemoryTidyRunView {
+  auditId: string;
+  at: number;
+  outcome: 'pending' | 'applied' | 'failed' | 'no-op' | 'skipped';
+  reason: string;
+  mergeCount: number;
+  conflictCount: number;
+  /** 本次整理净收起的记忆条数（before.fileCount - after.fileCount）。 */
+  netPutAway: number;
+  merges: MemoryTidyMergeView[];
+  conflicts: MemoryTidyConflictView[];
+  restored: boolean;
+  restoredAt: number | null;
+  /** 是否可以一键恢复原样。 */
+  restorable: boolean;
+  /** restorable=false 时的原因 code（renderer 按 code 出人话文案）。 */
+  blockedCode?: 'already-restored' | 'not-applied' | 'snapshot-missing';
+}
+
+/** 最近一次演练（开关关着时的定时检查）会改什么的预览。 */
+export interface MemoryTidyPreviewView {
+  at: number;
+  wouldChangeNothing: boolean;
+  reason: string;
+  merges: MemoryTidyMergeView[];
+  conflicts: MemoryTidyConflictView[];
+}
+
+export interface MemoryTidyHistoryResult {
+  /** 最近的真实整理记录，新在前。 */
+  runs: MemoryTidyRunView[];
+  /** 最近一次演练的预览；从未演练过为 null。 */
+  preview: MemoryTidyPreviewView | null;
+}
+
+export interface MemoryTidyRestoreRequest {
+  auditId: string;
+}
+
+/** 恢复被拒绝的原因 code（稳定 code，renderer 翻译；不往 UI 抛异常；仅本文件 MemoryTidyRestoreResult 引用）。 */
+type MemoryTidyRestoreRefusal =
+  | 'run-not-found'
+  | 'not-applied'
+  | 'already-restored'
+  | 'snapshot-missing'
+  | 'source-file-missing'
+  | 'restore-failed';
+
+export interface MemoryTidyRestoreResult {
+  ok: boolean;
+  /** ok=false 时的拒绝原因；ok=true 时缺省。 */
+  code?: MemoryTidyRestoreRefusal;
+  /** 英文诊断明细（日志/排查用，不是用户文案）。 */
+  message?: string;
+  restoredAt?: number;
+  /** 恢复中途失败时已改过、未回滚的文件（host 日志同步记录）。 */
+  changedFiles?: string[];
+}
+
 export interface MemoryEntryCreateRequest {
   content?: string;
-  /** 仅 user / feedback / project / reference；其余由 host 拒绝 */
+  /** 仅 user / feedback / project / people / reference；其余由 host 拒绝 */
   kind?: string;
   projectPath?: string | null;
 }
@@ -345,6 +425,8 @@ export interface MemoryPackRequest {
   maxItems?: number;
   perItemCharLimit?: number;
   totalCharBudget?: number;
+  /** 有可用 query token 时，只保留带 query-match 的候选（自动注入用；默认关，memoryPack IPC 不变）。 */
+  requireQueryMatch?: boolean;
 }
 
 export interface PackedMemoryItem {
@@ -508,6 +590,23 @@ export interface MemoryLearnedEvent {
 /**
  * 记忆确认请求（用于用户确认学习到的记忆）
  */
+/** 确认卡的一行内容：只带值与「已知形状」，不带任何工具名/参数名；措辞由 renderer 按语言出。 */
+export type MemoryConfirmViewItem =
+  | { kind: 'remember'; text: string }
+  | { kind: 'description'; text: string }
+  | { kind: 'name'; text: string }
+  | { kind: 'replaces' }
+  | { kind: 'delete'; title: string }
+  | { kind: 'command'; text: string }
+  | { kind: 'path'; text: string }
+  | { kind: 'body'; text: string }
+  | { kind: 'change'; from: string; to: string }
+  | { kind: 'line'; text: string };
+
+export interface MemoryConfirmView {
+  items: MemoryConfirmViewItem[];
+}
+
 export interface MemoryConfirmRequest {
   /** 请求 ID */
   id: string;
@@ -519,6 +618,8 @@ export interface MemoryConfirmRequest {
   type: string;
   /** directive = 用户明确拍板的规则；memory = 普通个性化记忆 */
   authority?: 'directive' | 'memory';
+  /** directive 确认卡的结构化内容（语言中立）；缺省时 renderer 回退显示 content */
+  view?: MemoryConfirmView;
   /** 置信度 */
   confidence: number;
   /** 时间戳 */

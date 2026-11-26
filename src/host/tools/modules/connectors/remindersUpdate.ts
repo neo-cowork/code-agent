@@ -2,6 +2,9 @@
 // RemindersUpdate (P0-6.3 Batch 5 — connectors: native ToolModule rewrite)
 // ============================================================================
 
+import { stripReminderRowIds } from '../../../../shared/utils/connectorReceiptText';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type {
   ToolHandler,
   ToolModule,
@@ -13,8 +16,10 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
+import { remindersUpdateNoChangeError } from './remindersApprovalDetails';
+import { normalizeReminderCreateTime } from '../../reminderCreateTime';
 import { captureReminderBefore } from './undoMetadata';
 
 async function executeRemindersUpdate(
@@ -29,6 +34,13 @@ async function executeRemindersUpdate(
   if (typeof args.reminder_id !== 'string' || args.reminder_id.length === 0) {
     return { ok: false, error: 'reminder_id must be a non-empty string', code: 'INVALID_ARGS' };
   }
+  // 空更新（没带任何有效变更字段）在审批前拒绝：覆盖审批被预授/跳过的轮次，别等连接器兜底。
+  const noChangeError = remindersUpdateNoChangeError(args);
+  if (noChangeError) {
+    return { ok: false, error: noChangeError, code: 'INVALID_ARGS' };
+  }
+  const reminderTime = normalizeReminderCreateTime(schema.name, args);
+  if (!reminderTime.ok) return reminderTime;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
@@ -45,6 +57,8 @@ async function executeRemindersUpdate(
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'change'), code: 'NOT_INITIALIZED' };
   }
 
+  const locale = getHostUiLocale();
+  const { separator, reminders: copy, appleScriptFailure } = getHostConnectorCopy(locale);
   try {
     const undoMetadata = await captureReminderBefore(connector, args);
     const result = await connector.execute('update_reminder', args);
@@ -55,7 +69,7 @@ async function executeRemindersUpdate(
       completed: boolean;
     };
     ctx.logger.debug('reminders_update', { id: reminder.id, list: reminder.list });
-    const output = `已更新提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+    const output = `${copy.updated}${separator.trimEnd()}\n- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
 
     return {
       ok: true,
@@ -73,10 +87,10 @@ async function executeRemindersUpdate(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已更新提醒：${reminder.title}`,
+          name: `${copy.updated}${separator}${reminder.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
-          preview: output.slice(0, 500),
+          preview: stripReminderRowIds(output).slice(0, 500),
           metadata: {
             connector: 'reminders',
             action: 'update_reminder',
@@ -95,9 +109,13 @@ async function executeRemindersUpdate(
       ctx.logger,
       schema.name,
     );
+    const title = typeof args.title === 'string' ? args.title.trim() : '';
+    const failureName = title ? `${copy.updateFailed}${separator}${title}` : copy.updateFailed;
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure) : undefined;
     return {
       ok: false,
       error: failure,
+      ...(userMessage ? { userMessage } : {}),
       meta: {
         action: 'update_reminder',
         connector: 'reminders',
@@ -109,7 +127,8 @@ async function executeRemindersUpdate(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'update_reminder',
-          name: `更新提醒失败：${String(args.title ?? args.reminder_id)}`,
+          name: failureName,
+          ...(userMessage ? { preview: `${failureName}${separator}${userMessage}` } : {}),
           error: failure,
           metadata: { connector: 'reminders', id: args.reminder_id, title: args.title },
         }),

@@ -174,12 +174,29 @@ describe('ADR-059 声明式文字前台边界', () => {
 });
 
 describe('withSessionCommandCenterBrain', () => {
-  it.each([false, true])('no-file-noun budget uses only the previous stop marker: %s', stopped => {
+  it.each([
+    ['How are you?', false, 'default', 8],
+    ['Create a PPTX', false, 'deliverable', 30],
+    ['按这个大纲出三张样张', false, 'default', 8],
+    ['按这个大纲出三张样张', true, 'continuation', 30],
+  ] as const)('logs the ordinary foreground rule for %s (previous stop=%s): %s', (prompt, stopped, rule, cap) => {
     const info = vi.fn();
-    const cap = stopped ? 30 : 8;
-    expect(resolveForegroundBrainTurnBudget('按这个大纲出三张样张', stopped, undefined, { info })).toBe(cap);
+    expect(resolveForegroundBrainTurnBudget(prompt, stopped, undefined, { info })).toBe(cap);
     expect(info).toHaveBeenCalledExactlyOnceWith(
-      `Foreground brain budget rule=${stopped ? 'continuation' : 'default'} cap=${cap} maxIterations=${cap}`,
+      `Foreground brain budget rule=${rule} cap=${cap} maxIterations=${cap}`,
+    );
+  });
+
+  it.each([
+    ['', false, 30, 8],
+    ['Create a PPTX', false, 30, 8],
+    ['Continue', true, 30, 8],
+    ['', false, 3, 3],
+  ] as const)('uses the bg-return marker for %j (previous stop=%s), clamping %i to %i', (prompt, stopped, requested, expected) => {
+    const info = vi.fn();
+    expect(resolveForegroundBrainTurnBudget(prompt, stopped, requested, { info }, 'bg-return')).toBe(expected);
+    expect(info).toHaveBeenCalledExactlyOnceWith(
+      `Foreground brain budget rule=bg-return cap=8 maxIterations=${expected}`,
     );
   });
 
@@ -355,6 +372,21 @@ describe('getTextForegroundToolNamesForPrompt — 文件交付扩展', () => {
     }
   });
 
+  it('表格阅读或改写轮把 ExcelAutomate 放进前台面，生成卡与普通轮不放', () => {
+    const readPrompt = '工作区里有一份物业服务合同的 Excel，帮我说明一下这份合同讲了什么。';
+    const revisePrompt = '把这份物业服务合同的 Excel 里的公式改写一下。';
+    const readFace = getTextForegroundToolNamesForPrompt(readPrompt);
+    const reviseFace = getTextForegroundToolNamesForPrompt(revisePrompt);
+    expect(readFace).toContain('ExcelAutomate');
+    expect(reviseFace).toContain('ExcelAutomate');
+    expect(readFace).not.toContain('Bash');
+    expect(reviseFace).not.toContain('Bash');
+    expect(getTextForegroundToolNamesForPrompt(sheetZh)).not.toContain('ExcelAutomate');
+    expect(getTextForegroundToolNamesForPrompt(sheetEn)).not.toContain('ExcelAutomate');
+    expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
   it('非交付轮的前台面保持基础面不变', () => {
     expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
       .toEqual(getTextForegroundToolNames());
@@ -474,6 +506,17 @@ describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — �
     for (const name of ['Read', 'Write', 'Edit', 'AskUserQuestion']) {
       expect(mail).toContain(name);
     }
+  });
+
+  it.each([
+    '提醒我明天早上九点给阳台的花浇水。',
+    '帮我加个待办，明早九点给阳台的花浇水。',
+    'Remind me tomorrow at 9 AM to water the balcony flowers.',
+  ])('exposes direct reminder creation for %s', (prompt) => {
+    connectorMocks.enabledNative = ['reminders'];
+    getConnectorRegistry().configure(['reminders']);
+
+    expect(getTextForegroundToolNamesForPrompt(prompt)).toContain('reminders_create');
   });
 
   it('withSessionCommandCenterBrain 带 prompt 时把连接器工具写进 allowlist（桌面路）', () => {

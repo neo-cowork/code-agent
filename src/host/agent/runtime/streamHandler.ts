@@ -3,6 +3,8 @@
 // Extracted from ConversationRuntime
 // ============================================================================
 
+import { getHostTurnProgress } from '../../../shared/i18n/hostTurnProgress';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import type {
   ToolCall,
 } from '../../../shared/contract';
@@ -93,14 +95,8 @@ export class StreamHandler {
   private flushRuntimeDiagnostics(): void {
     const diagnostics = this.ctx.stats.drainDiagnostics();
     for (const diagnostic of diagnostics) {
-      this.ctx.onEvent({
-        type: 'stream_reasoning',
-        data: {
-          content: `\n[runtime] ${diagnostic}\n`,
-          turnId: this.ctx.turn.currentTurnId,
-          ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
-        },
-      });
+      // 仅写日志：内部诊断（含 env 变量名、置信度）不得进入用户可见的 reasoning 流
+      logger.info(`[RuntimeDiagnostic] ${diagnostic}`);
     }
   }
 
@@ -146,9 +142,9 @@ export class StreamHandler {
 
     if (this.ctx.turn.researchModeActive) {
       const researchRound = this.ctx.turn.incrementResearchIteration();
-      this.runFinalizer.emitTaskProgress('thinking', `正在搜索 (第${researchRound}轮)`);
+      this.runFinalizer.emitTaskProgress('thinking', getHostTurnProgress(getHostUiLocale()).searching(researchRound));
     } else {
-      this.runFinalizer.emitTaskProgress('thinking', '分析请求中...');
+      this.runFinalizer.emitTaskProgress('thinking', getHostTurnProgress(getHostUiLocale()).thinking);
     }
 
     this.runFinalizer.emitTaskStats(iterations);

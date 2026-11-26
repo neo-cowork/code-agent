@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const authState = vi.hoisted(() => ({ userId: null as string | null }));
+
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({
+    getCurrentUser: () => (authState.userId === null ? null : { id: authState.userId }),
+  }),
+}));
+
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
@@ -78,6 +86,7 @@ describe('project activity aggregation', () => {
   let service: ProjectService;
 
   beforeEach(() => {
+    authState.userId = null;
     db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
     applySchema(db, noopLogger);
@@ -139,5 +148,58 @@ describe('project activity aggregation', () => {
     expect(service.listProjectsWithActivity(false, true).map((project) => project.id)).toEqual([
       'proj_space',
     ]);
+  });
+
+  function seedVisibleSession(
+    id: string,
+    projectId: string,
+    options: { status?: string | null; userId?: string | null; deleted?: boolean } = {},
+  ): void {
+    db.prepare(`
+      INSERT INTO sessions (
+        id, title, model_provider, model_name, project_id, created_at, updated_at,
+        status, user_id, is_deleted
+      ) VALUES (?, ?, 'p', 'm', ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      id,
+      projectId,
+      NOW,
+      NOW,
+      options.status === undefined ? 'idle' : options.status,
+      options.userId ?? null,
+      options.deleted ? 1 : 0,
+    );
+  }
+
+  function visibleCount(projectId: string): number {
+    return service.listProjectsWithActivity(false, true)
+      .find((project) => project.id === projectId)?.visibleSessionCount ?? -1;
+  }
+
+  it('counts a space as empty when its only session is archived or belongs to someone else', () => {
+    seedProject(db, 'proj_space', NOW, NOW + 1);
+    seedVisibleSession('archived-only', 'proj_space', { status: 'archived' });
+    expect(visibleCount('proj_space')).toBe(0);
+
+    seedVisibleSession('other-user', 'proj_space', { userId: 'user-b' });
+    authState.userId = 'user-a';
+    expect(visibleCount('proj_space')).toBe(0);
+
+    seedVisibleSession('mine', 'proj_space', { userId: 'user-a' });
+    expect(visibleCount('proj_space')).toBe(1);
+
+    seedVisibleSession('deleted-mine', 'proj_space', { userId: 'user-a', deleted: true });
+    seedVisibleSession('null-status', 'proj_space', { userId: 'user-a', status: null });
+    expect(visibleCount('proj_space')).toBe(1);
+  });
+
+  it('counts every visible session instead of the loaded page', () => {
+    seedProject(db, 'proj_space', NOW, NOW + 1);
+    authState.userId = 'user-a';
+    for (let index = 0; index < 51; index += 1) {
+      seedVisibleSession(`session-${index}`, 'proj_space', { userId: 'user-a' });
+    }
+    expect(visibleCount('proj_space')).toBe(51);
   });
 });

@@ -16,6 +16,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { AgentFailureCode } from '../../../../shared/contract/agentFailure';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import { withMultiagentMeta } from './resultMeta';
 import { collectAgentSchema } from './collectAgent.schema';
@@ -54,11 +55,16 @@ export async function executeCollectAgent(
   }
   onProgress?.({ stage: 'completing', percent: 100 });
 
-  const icon = { running: '⏳', completed: '✅', failed: '❌' }[handle.status];
-  const lines = [`${icon} [${handle.agentId}] ${handle.status}`];
-  if (handle.status === 'completed' && handle.result) {
+  const status = handle.status === 'failed' && handle.failureCode === AgentFailureCode.CancelledByUser
+    ? 'cancelled'
+    : handle.status;
+  const icon = { running: '⏳', completed: '✅', failed: '❌', cancelled: '⏹' }[status];
+  const lines = [`${icon} [${handle.agentId}] ${status}`];
+  if (status === 'completed' && handle.result) {
     lines.push(`Result: ${handle.result.output}`);
-  } else if (handle.status === 'failed') {
+  } else if (status === 'cancelled') {
+    lines.push('Stopped by the user.');
+  } else if (status === 'failed') {
     lines.push(`Error: ${handle.error ?? 'unknown error'}`);
   } else {
     lines.push('Still running in the background.');
@@ -75,13 +81,13 @@ export async function executeCollectAgent(
     collectAgentSchema.name,
     {
       action: 'collect',
-      status: handle.status,
+      status,
       agentId: handle.agentId,
       declaredOutputs: handle.declaredOutputs,
       result: {
         background: true,
         output: handle.result?.output,
-        error: handle.error,
+        ...(status !== 'cancelled' ? { error: handle.error } : {}),
         ...(handle.result?.missingTools?.length ? { missingTools: handle.result.missingTools } : {}),
       },
     },

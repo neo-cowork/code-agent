@@ -2,7 +2,10 @@
 // ConfirmationGate Tests [E2]
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
   ConfirmationGate,
   getConfirmationGate,
@@ -265,6 +268,117 @@ describe('ConfirmationGate', () => {
     });
 
 
+    it.each(['spawn_agent', 'AgentSpawn'])('%s: parallel preview lists every task and its own permission', (tool) => {
+      const preview = getConfirmationGate().buildPreview(tool, {
+        parallel: true,
+        name: '不能替代全部助手', task: '不能替代全部任务', role: 'coder',
+        agents: [
+          { name: '销售要点', task: `整理 ${WS}/sales.txt`, role: 'explore' },
+          { name: '产品要点', task: `审阅 ${WS}/product.txt`, role: 'explore' },
+          { name: '客服要点', task: `写入 ${WS}/support-summary.md`, role: 'coder' },
+        ],
+      }, { workspaceRoot: WS });
+      expect(preview).toEqual({
+        type: 'generic', summary: '派出 3 个子代理',
+        diff: '销售要点\n任务：整理 ./sales.txt\n权限：只读查看\n\n产品要点\n任务：审阅 ./product.txt\n权限：只读查看\n\n客服要点\n任务：写入 ./support-summary.md\n权限：可修改文件、运行命令',
+      });
+      expect(`${preview?.summary}\n${preview?.diff}`).not.toMatch(/explore|reviewer|coder|不能替代/);
+    });
+
+    it('parallel unnamed agents use the task and redact and limit each block independently', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        parallel: true,
+        agents: [
+          { task: `读取 ${WS}/sales.txt API_KEY=task-secret ${'x'.repeat(250)}`, role: 'explore' },
+          { name: '记录 API_KEY=name-secret', task: `读取 ${WS}-outside/product.txt`, role: 'unknown-role' },
+        ],
+      }, { workspaceRoot: WS });
+      const blocks = preview?.diff?.split('\n\n');
+      expect(preview?.summary).toBe('派出 2 个子代理');
+      expect(blocks).toHaveLength(2);
+      expect(blocks![0].split('\n')[0]).toHaveLength(200);
+      expect(blocks![0].split('\n')[1]).toHaveLength('任务：'.length + 200);
+      expect(blocks![0]).toContain('读取 ./sales.txt');
+      expect(blocks![0]).toContain('权限：只读查看');
+      expect(blocks![1]).toContain(`任务：读取 ${WS}-outside/product.txt`);
+      expect(blocks![1]).toContain('权限：可修改文件、运行命令');
+      expect(preview?.diff).not.toMatch(/task-secret|name-secret|unknown-role/);
+    });
+
+    it.each([{}, { parallel: true, agents: [] }])('missing task with no agents is explicit and logged: %j', (params) => {
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', params);
+        expect(preview).toEqual({
+          type: 'generic', summary: '派出子代理：未说明任务',
+          diff: '任务：未说明任务\n权限：可修改文件、运行命令',
+        });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'),
+          { field: 'params.task' },
+        );
+      } finally { warn.mockRestore(); }
+    });
+
+    it('parallel blank task preserves the named agent and logs its field index', () => {
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', {
+          parallel: true,
+          agents: [{ name: '销售助手', task: '  ', role: 'explore' }, { role: 'coder' }],
+        });
+        expect(preview?.diff).toBe('销售助手\n任务：未说明任务\n权限：只读查看\n\n未说明任务\n任务：未说明任务\n权限：可修改文件、运行命令');
+        for (const field of ['params.agents[0].task', 'params.agents[1].task']) {
+          expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'), { field },
+          );
+        }
+      } finally { warn.mockRestore(); }
+    });
+
+    it.each([undefined, false, 'true'])('agents alone do not select parallel preview: %s', (parallel) => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        parallel, task: '整理销售笔记', role: 'explore', agents: [{ task: '不执行的分支', role: 'coder' }],
+      });
+      expect(preview?.summary).toBe('派出子代理：整理销售笔记');
+      expect(preview?.diff).toBe('任务：整理销售笔记\n权限：只读查看');
+    });
+
+    it.each(['spawn_agent', 'AgentSpawn'])('%s: English parallel copy keeps every task and permission visible', (tool) => {
+      const locale = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue('en');
+      try {
+        const preview = getConfirmationGate().buildPreview(tool, {
+          parallel: true,
+          agents: [
+            { name: 'Sales notes', task: `Read ${WS}/sales.txt`, role: 'explore' },
+            { task: `Write ${WS}/summary.md`, role: 'coder' },
+            { task: ' ', role: 'explore' },
+          ],
+        }, { workspaceRoot: WS });
+        expect(preview).toEqual({
+          type: 'generic', summary: 'Spawn 3 sub-agents',
+          diff: 'Sales notes\nTask: Read ./sales.txt\nPermission: Read-only\n\nWrite ./summary.md\nTask: Write ./summary.md\nPermission: Can modify files and run commands\n\nTask not stated\nTask: Task not stated\nPermission: Read-only',
+        });
+        const tasks = preview?.diff?.split('\n').filter(line => line.startsWith('Task: '));
+        expect(tasks).toHaveLength(3);
+        expect(tasks?.every(line => line.slice('Task: '.length).trim().length > 0)).toBe(true);
+        expect(`${preview?.summary}\n${preview?.diff}`).not.toMatch(/explore|coder|任务|权限/);
+      } finally { locale.mockRestore(); }
+    });
+
+    it('English missing single task remains explicit in summary and details and still warns', () => {
+      const locale = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue('en');
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', { parallel: true, agents: [] });
+        expect(preview?.summary).toContain('Task not stated');
+        expect(preview?.diff).toBe('Task: Task not stated\nPermission: Can modify files and run commands');
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'), { field: 'params.task' },
+        );
+      } finally { warn.mockRestore(); locale.mockRestore(); }
+    });
+
     it('should return generic preview with up to 3 redacted string param diff lines for default tools', () => {
       const preview = gate.buildPreview('custom_tool', {
         query: 'search term',
@@ -279,10 +393,10 @@ describe('ConfirmationGate', () => {
       expect(preview!.diff).toBeDefined();
       const lines = preview!.diff!.split('\n');
       expect(lines).toHaveLength(3);
-      expect(lines[0]).toBe('query: search term');
-      expect(lines[1]).toBe('apiKey: ***REDACTED***');
+      expect(lines[0]).toBe('搜索内容: search term');
+      expect(lines[1]).toBe('详情: ***REDACTED***');
       expect(lines[1]).not.toContain('plain-secret-with-no-recognizable-token-shape');
-      expect(lines[2]).toBe(`longText: ${'a'.repeat(120)}`);
+      expect(lines[2]).toBe(`详情: ${'a'.repeat(120)}`);
       expect(preview!.diff).not.toContain('fourthParam');
     });
 
@@ -293,11 +407,161 @@ describe('ConfirmationGate', () => {
         expect(preview.type).toBe('generic');
       }
     });
+
+    it('reminder previews hide Reminder ID, and calendar previews show UID only when a title is unavailable', () => {
+      const update = gate.buildPreview('reminders_update', {
+        list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'pay electricity', remind_at_ms: 1_763_337_600_000,
+      });
+      const deleted = gate.buildPreview('reminders_delete', {
+        list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'wrong', remind_at_ms: 1,
+      });
+      const calendar = gate.buildPreview('calendar_delete_event', {
+        calendar: 'Work', event_uid: 'cal-opaque', title: 'Review',
+      });
+      expect(update?.diff).not.toContain('Reminder ID');
+      expect(update?.diff).toContain('Title: pay electricity');
+      expect(deleted?.diff).not.toContain('Reminder ID');
+      expect(deleted?.diff).not.toContain('wrong');
+      expect(deleted?.diff).not.toContain('Title:');
+      expect(deleted?.diff).not.toContain('Remind At:');
+      expect(calendar?.diff).toContain('Title: Review');
+      expect(calendar?.diff).not.toContain('cal-opaque');
+      const calendarWithoutTitle = gate.buildPreview('calendar_delete_event', {
+        calendar: 'Work', event_uid: 'cal-opaque',
+      });
+      expect(calendarWithoutTitle?.diff).toContain('UID: cal-opaque');
+    });
   });
 
   // --------------------------------------------------------------------------
   // Singleton
   // --------------------------------------------------------------------------
+  describe('buildPreview generic card plain language', () => {
+    const UUID = '3ab3c0de-1111-4222-8333-444455556666';
+    const withLocale = (loc: 'zh' | 'en', fn: () => void) => {
+      const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(loc);
+      try { fn(); } finally { spy.mockRestore(); }
+    };
+    const excelArgs = {
+      title: 'Sales', sheet_name: 'Sales', theme: 'blue', dry_run: 'false',
+      data: '[["a",1],["b",2]]', output_path: 'exports/sales.xlsx',
+    };
+
+    it('excel_generate (model order): save location kept, no raw keys, zh', () => {
+      withLocale('zh', () => {
+        const diff = getConfirmationGate().buildPreview('excel_generate', excelArgs)?.diff ?? '';
+        expect(diff).toBe('保存到: exports/sales.xlsx\n标题: Sales\n工作表: Sales');
+        expect(diff).not.toMatch(/output_path|sheet_name|theme|dry_run|dry run/);
+      });
+    });
+
+    it('excel_generate: en labels', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('excel_generate', excelArgs)?.diff ?? '';
+        expect(diff).toBe('Save to: exports/sales.xlsx\nTitle: Sales\nSheet: Sales');
+      });
+    });
+
+    it('unknown key uses generic label and keeps value; *_id hidden; true/false hidden', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { dry_run: 'false', task_id: 'abc', flavor: 'mint' })?.diff;
+        expect(diff).toBe('Details: mint');
+      });
+    });
+
+    it('http_request JSON body is still shown (sorted last)', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('http_request', {
+          body: '{"to":"x@y.z"}', method: 'POST', url: 'https://api.example.com/v1',
+        })?.diff ?? '';
+        expect(diff).toContain('{"to":"x@y.z"}');
+        expect(diff.indexOf('Link: https://api.example.com/v1')).toBeLessThan(diff.indexOf('{"to"'));
+      });
+    });
+
+    it('keeps secret redaction', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { api_key: 'sk-secret' })?.diff ?? '';
+        expect(diff).not.toContain('sk-secret');
+        expect(diff).toContain('REDACTED');
+      });
+    });
+
+    it.each([
+      '/tmp/../etc/passwd',
+      '/var/folders/ab/cd/T/../../../etc/passwd',
+      '/private/var/folders/ab/cd/T/../../../etc/passwd',
+      `/Users/x/Library/uploads/${UUID}/../../../etc/hosts`,
+      `/tmp/${UUID}/../../etc/hosts`,
+    ])('traversal path shown unchanged: %s', (p) => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff;
+        expect(diff).toBe(`Save to: ${p}`);
+      });
+    });
+
+    // 上传 / 临时位置词只认真实根：<dataDir>/uploads、os.tmpdir()/code-agent-uploads、os.tmpdir()、/tmp
+    const dataDir = path.join(os.tmpdir(), 'neo-gate-test-data');
+    const upload = (...rest: string[]) => path.join(dataDir, 'uploads', UUID, ...rest);
+    const preview = (p: string) => getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff;
+    const withDataDir = (fn: () => void) => {
+      const prev = process.env.CODE_AGENT_DATA_DIR;
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+      try { fn(); } finally { if (prev === undefined) delete process.env.CODE_AGENT_DATA_DIR; else process.env.CODE_AGENT_DATA_DIR = prev; }
+    };
+
+    it('real upload root, tmpdir and legacy code-agent-uploads root are mapped to place words', () => {
+      withDataDir(() => {
+        withLocale('en', () => {
+          expect(preview(upload('合同', '合同.pdf'))).toBe('Save to: Your uploaded file: 合同/合同.pdf');
+          expect(preview(path.join(os.tmpdir(), 'a', 'sales.xlsx'))).toBe('Save to: Temporary file: a/sales.xlsx');
+          expect(preview(path.join(os.tmpdir(), 'code-agent-uploads', UUID, 's.csv'))).toBe('Save to: Your uploaded file: s.csv');
+          if (process.platform !== 'win32') expect(preview('/tmp/a/sales.xlsx')).toBe('Save to: Temporary file: a/sales.xlsx');
+        });
+        withLocale('zh', () => {
+          expect(preview(upload('合同', '合同.pdf'))).toBe('保存到: 你上传的文件：合同/合同.pdf');
+          expect(preview(path.join(os.tmpdir(), 'sales.csv'))).toBe('保存到: 临时文件：sales.csv');
+        });
+      });
+    });
+
+    it.runIf(process.platform === 'darwin')('/private/var alias of the real tmpdir still matches', () => {
+      withLocale('en', () => {
+        expect(preview(`/private${path.join(os.tmpdir(), 'sales.csv')}`)).toBe('Save to: Temporary file: sales.csv');
+      });
+    });
+
+    it('project path that merely looks like uploads/<uuid>/ keeps its full path (not a chat upload)', () => {
+      withDataDir(() => {
+        for (const p of [`/Users/x/project/uploads/${UUID}/avatar.png`, `/Users/x/Library/uploads/${UUID}/a.png`, `/Users/x/code-agent-uploads/${UUID}/a.png`]) {
+          withLocale('en', () => { expect(preview(p)).toBe(`Save to: ${p}`); });
+          withLocale('zh', () => { expect(preview(p)).toBe(`保存到: ${p}`); });
+        }
+      });
+    });
+
+    it('real run shape: excel_generate saving next to an upload shows no uuid and keeps the save line', () => {
+      const params = { title: '合同金额整理', sheet_name: '金额明细', theme: 'professional', output_path: upload('合同金额整理.xlsx'), data: '[{"金额":12800}]' };
+      withDataDir(() => {
+        withLocale('zh', () => {
+          expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+            .toBe('保存到: 你上传的文件：合同金额整理.xlsx\n标题: 合同金额整理\n工作表: 金额明细');
+        });
+        withLocale('en', () => {
+          expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+            .toBe('Save to: Your uploaded file: 合同金额整理.xlsx\nTitle: 合同金额整理\nSheet: 金额明细');
+        });
+      });
+    });
+
+    it('ancestor /var/folders itself and other paths are not shortened', () => {
+      withLocale('en', () => {
+        expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/var/folders/etc/passwd' })?.diff).toBe('Save to: /var/folders/etc/passwd');
+        expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/etc/passwd' })?.diff).toBe('Save to: /etc/passwd');
+      });
+    });
+  });
+
   describe('Singleton', () => {
     it('should return same instance', () => {
       const a = getConfirmationGate();

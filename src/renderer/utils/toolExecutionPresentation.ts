@@ -1,4 +1,8 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
+import { describeHelperFailureReasons, readHelperOutcomes } from './helperOutcomeCopy';
+import { SCHEDULE_DRAFT_FAILURE } from '@shared/constants/cronErrors';
+import { CONNECTOR_RECONNECT_ZH } from '@shared/i18n/connectorReconnect';
+import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, HostReasonCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -200,6 +204,8 @@ export function resolveToolTerminalOutcomeKey(
       return 'failed-tool';
     case AgentFailureCode.BudgetExhausted:
       return 'failed-budget';
+    case AgentFailureCode.StepCapReached:
+      return 'failed-step-cap';
     case AgentFailureCode.DependencyFailed:
     case AgentFailureCode.DependencyMissing:
     case AgentFailureCode.ParentGone:
@@ -248,6 +254,8 @@ type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
 const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Set([
   'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
   'TOOL_DISABLED_FOR_RUN',
+  'HANDED_OFF_TO_BACKGROUND',
+  'TOOL_BATCH_SKIPPED',
   'WORKBENCH_SCOPE_DENIED',
   'PROJECT_SOURCE_READ_ONLY',
   'RUN_CONTEXT_MISMATCH',
@@ -274,6 +282,10 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'STALE_FILE',
   'READ_DIGEST_MISMATCH',
   'READ_REQUIRED_AFTER_SEARCH',
+  'COMMAND_FAILED',
+  SCHEDULE_DRAFT_FAILURE.GENERATION,
+  SCHEDULE_DRAFT_FAILURE.NOT_SHOWN,
+  SCHEDULE_DRAFT_FAILURE.DISCARDED,
 ]);
 
 /**
@@ -333,6 +345,13 @@ function interpolateCodeCopy(
   });
 }
 
+export function isRemindersReadAuthorizationFailure(
+  toolName: string | undefined,
+  metadata?: Record<string, unknown> | null,
+): boolean {
+  return toolName === 'reminders' && metadata?.code === 'not_authorized' && metadata.accessProbeDenied === true;
+}
+
 /**
  * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
  * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
@@ -344,10 +363,13 @@ function interpolateCodeCopy(
  */
 export function humanizeToolError(
   error: string | undefined,
-  _toolName: string | undefined,
+  toolName: string | undefined,
   t: Translations,
   metadata?: Record<string, unknown> | null,
 ): HumanizedToolError | null {
+  if (isRemindersReadAuthorizationFailure(toolName, metadata)) {
+    return { summary: t.toolErrors.remindersReadDenied };
+  }
   if (isToolInterruptionPlaceholder(error)) {
     const outcome = t.outcomeWords[resolveToolInterruptionPlaceholderOutcomeKey(error)].badge;
     return {
@@ -356,14 +378,24 @@ export function humanizeToolError(
     };
   }
   const hostReason = readHostReasonFromMetadata(metadata);
-  const hostReasonCopy = resolveHostReasonCopy(hostReason, t);
+  // Linux 上每条已执行的命令都带 OS_SANDBOX_DEGRADED（环境说明，不是退出原因）。
+  // 结果码已是 COMMAND_FAILED 时，折叠行和琥珀框说命令失败；沙箱不可用（拒绝执行）仍走 hostReason。
+  const commandResultOutranksSandboxNote = metadata?.code === 'COMMAND_FAILED'
+    && typeof hostReason !== 'string'
+    && hostReason?.code === HostReasonCode.OsSandboxDegraded;
+  const hostReasonCopy = commandResultOutranksSandboxNote
+    ? null
+    : resolveHostReasonCopy(hostReason, t);
   if (hostReasonCopy) {
     const structuredFailureCode = inferAgentFailureCode({
       failureCode: metadata?.failureCode,
       toolResultCode: metadata?.code,
       defaultCode: AgentFailureCode.Unknown,
     });
-    const outcome = structuredFailureCode === AgentFailureCode.Timeout
+    // 审批超时是系统按安全规则收口，不是用户点的拒绝：failureCode 仍是 PermissionDenied，
+    // 要靠 hostReason.code 区分，原因行才不会把超时说成「审批被拒绝」。
+    const approvalTimedOut = typeof hostReason !== 'string' && hostReason?.code === HostReasonCode.PermissionDeniedTimeout;
+    const outcome = structuredFailureCode === AgentFailureCode.Timeout || approvalTimedOut
       ? t.outcomeWords['failed-timeout'].timeline
       : structuredFailureCode === AgentFailureCode.PermissionDenied && metadata?.code !== 'FOREIGN_SLOT_DATA_DIR'
         ? t.outcomeWords['failed-approval-denied'].timeline
@@ -419,7 +451,7 @@ export function humanizeToolError(
   // 结构化 hostReason/failureCode/code 都没命中，才轮到 preflight 这条「历史呈现」兜底
   // ——它读的是自由文本（Bash 里是被执行程序自己的 stdout/stderr），必须排在所有结构化
   // 证据之后，否则一条不相关的程序输出就能顶掉更准确的结构化判断。
-  const preflight = toolPreflightCopy({ name: _toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
+  const preflight = toolPreflightCopy({ name: toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
   if (preflight) return { summary: preflight.action, detail: preflight.reason };
   // 2. 正则兜底（原有分类，逐条不变）
   if (!error?.trim()) return null;
@@ -482,15 +514,15 @@ function mapToolFailureCodeCopy(
 
 /**
  * metadata.code 的裸工程码（ENOENT / INVALID_ARGS / FS_ERROR 这类，host 工具直发、未登记进
- * toolErrors.codes）→ 一句人话 + 下一步（FB-746）。登记表外的全大写码走 generic 兜底句；
- * 翻不动的（数字退出码 / HTTP nnn / 小写杂串）返回 null，调用方保持「错误码 X」原样。
+ * toolErrors.codes）→ 一句人话 + 下一步（FB-746）。登记表外的标识符形错误码走 generic 兜底句；
+ * 数字退出码 / HTTP nnn 返回 null，调用方保持「错误码 X」原样。
  * 原始码仍在展开详情的 error 原文里可见，不丢排错信息。
  */
 function mapRawToolCodeCopy(code: string, t: Translations): string | null {
   const table = t.toolStepHumanize.rawFailureCodes as Record<string, string | undefined>;
   const mapped = table[code];
   if (mapped) return mapped;
-  if (/^[A-Z][A-Z0-9_]*$/.test(code)) return t.toolStepHumanize.rawFailureCodeFallback;
+  if (/^[A-Za-z][A-Za-z0-9_]*$/.test(code)) return t.toolStepHumanize.rawFailureCodeFallback;
   return null;
 }
 
@@ -524,7 +556,24 @@ export function resolveParkedApprovalClosureCopy(
   return localized === null ? null : `${t.toolStepHumanize.notRunPrefix} · ${localized}`;
 }
 
+const connectorMessageKeys = new Map<string, keyof typeof CONNECTOR_RECONNECT_ZH>();
+for (const key of Object.keys(CONNECTOR_RECONNECT_ZH) as Array<keyof typeof CONNECTOR_RECONNECT_ZH>) {
+  connectorMessageKeys.set(CONNECTOR_RECONNECT_ZH[key], key);
+}
+
+export function localizeToolUserMessage(message: string, t: Translations): string {
+  if (message === SCHEDULE_DRAFT_FAILURE.GENERATION
+      || message === SCHEDULE_DRAFT_FAILURE.NOT_SHOWN
+      || message === SCHEDULE_DRAFT_FAILURE.DISCARDED) {
+    return t.toolErrors.codes[message].summary;
+  }
+  if (message === FOREIGN_SLOT_DENIAL_ZH) return t.agentError.hostReasons[HostReasonCode.ForeignDataDir].summary;
+  const key = connectorMessageKeys.get(message);
+  return key === undefined ? message : t.toolErrors.connectorReconnect[key];
+}
+
 export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {
+  if (toolCall.result?.userMessage !== undefined) return localizeToolUserMessage(toolCall.result.userMessage, t);
   const closure = resolveParkedApprovalClosureCopy(toolCall, t);
   if (closure) return closure;
   const result = toolCall.result;
@@ -533,6 +582,9 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   if (isDeclinedSandboxEscalation(metadata)) {
     return t.decisionCard.permission.sandboxEscalationDeclined;
   }
+  const helperOutcomes = toolCall.name === 'spawn_agent' ? readHelperOutcomes(metadata) : undefined;
+  const helperReason = helperOutcomes ? describeHelperFailureReasons(helperOutcomes, t) : null;
+  if (helperReason) return helperReason;
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t, toolCall.name, error);
   if (mappedFailureCode) return mappedFailureCode;
@@ -591,7 +643,7 @@ export function resolveCollapsedFailureSummary(
   toolCall: Pick<ToolCall, 'name' | 'result'>,
   t: Translations,
 ): string | null {
-  if (toolCall.result?.success !== false) return null;
+  if (toolCall.result?.success !== false || toolCall.result.userMessage !== undefined) return null;
   const reason = humanizeToolFailureReason(toolCall, t);
   const error = toolCall.result.error
     || (typeof toolCall.result.output === 'string' ? toolCall.result.output : undefined);
@@ -655,8 +707,8 @@ export function buildToolErrorActions(
   if (!failed) {
     return { show: false, errorText: '', canRetry: false };
   }
-  const errorText = result.error
-    || (typeof result.output === 'string' ? result.output : '');
+  const errorText = result.userMessage ?? (result.error
+    || (typeof result.output === 'string' ? result.output : ''));
   return {
     show: true,
     errorText,

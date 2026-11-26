@@ -17,7 +17,7 @@
 import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import os from 'node:os';
-import { extname, isAbsolute, join, resolve } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { TURN_OUTCOME } from '../../../shared/constants/agent';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import type { Message } from '../../../shared/contract';
@@ -33,6 +33,7 @@ import {
 } from '../../security/untrustedContentBoundary';
 import { createLogger } from '../../services/infra/logger';
 import {
+  isPlaceholderScannablePath,
   scanDeliverablesForPlaceholders,
   type PlaceholderScanInput,
   type DeliverablePlaceholderHit,
@@ -75,7 +76,8 @@ export interface DeliverableClaim {
   claimed: string;
   /** 对 workingDirectory resolve 后的绝对路径（NFC 归一化） */
   resolved: string;
-  source: 'declared' | 'inferred';
+  /** written = 本 run 真写出的文件（不依赖回复措辞），文件已被后续脚本删掉/为空时静默跳过 */
+  source: 'declared' | 'inferred' | 'written';
 }
 
 type DeliverableMissingKind = 'not_on_disk' | 'empty' | 'placeholder' | 'markdown_residue' | 'none_produced';
@@ -213,6 +215,31 @@ function runTouchedPathValues(
     nudgeManager.getModifiedFilesSince(lastUserTimestamp(messages)).forEach(add);
   }
   return values;
+}
+
+/**
+ * 本 turn 用户亲手批准写入的文件路径集合（normalizeDeliverablePath 同一归一化）。
+ * 来源：成功工具结果 metadata.userApproved === true——toolExecutor 在
+ * ask.approvalSource === 'user'（真人审批卡放行，含停车/定时审批与改参一次性放行）时盖章；
+ * 机器批准（auto-approve / session-allowlist / 裸 boolean 等）不盖章。
+ * Owner decision B（realrun105）：这些文件上的 placeholder / markdown_residue 残留
+ * 不再触发补轮；not_on_disk / empty / none_produced 与机器批准的写入永不豁免。
+ */
+function userApprovedWrittenPaths(messages: readonly Message[], workingDirectory: string): Set<string> {
+  const paths = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    paths.add(normalizeDeliverablePath(value, workingDirectory));
+  };
+  for (const message of currentMessages(messages)) {
+    for (const result of message.toolResults ?? []) {
+      if (!result.success || result.metadata?.userApproved !== true) continue;
+      if (Array.isArray(result.metadata?.changedFiles)) result.metadata.changedFiles.forEach(add);
+      add(result.outputPath);
+      add(result.metadata?.outputPath);
+    }
+  }
+  return paths;
 }
 
 function runTouchedBasenames(
@@ -542,6 +569,13 @@ export function collectDeliverableClaims(input: {
     const text = input.finalText ?? finalReplyText(input.messages);
     for (const candidate of extractClaimedDeliverablePaths(text)) push(candidate, 'inferred');
   }
+
+  // 第三来源：本 run 真写出的可扫描文件，与回复措辞无关；排在最后，MAX_DELIVERABLE_CLAIMS
+  // 截断时不会挤掉 declared/inferred。
+  for (const raw of runTouchedPathValues(input.messages, input.nudgeManager)) {
+    if (!isPlaceholderScannablePath(raw.trim()) || referencesInputMaterials(raw)) continue;
+    push(raw, 'written');
+  }
   return claims;
 }
 
@@ -574,6 +608,8 @@ export async function checkDeliverablesOnDisk(
   const seenRefs = new Set<string>();
   const scanned: PlaceholderScanInput[] = [];
   let readbackBytes = 0;
+  // written 来源的文件可能已被后续脚本删掉/为空：静默跳过，也不进返回的 claims 账。
+  const skippedWritten = new Set<DeliverableClaim>();
 
   for (const claim of claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS)) {
     const candidates = [...new Set([claim.resolved, claim.resolved.normalize('NFD')])];
@@ -585,11 +621,13 @@ export async function checkDeliverablesOnDisk(
       }
     }).find((entry) => entry?.stat.isFile());
     if (!stat) {
-      missing.push({ claim, kind: 'not_on_disk' });
+      if (claim.source === 'written') skippedWritten.add(claim);
+      else missing.push({ claim, kind: 'not_on_disk' });
       continue;
     }
     if (stat.stat.size === 0) {
-      missing.push({ claim, kind: 'empty' });
+      if (claim.source === 'written') skippedWritten.add(claim);
+      else missing.push({ claim, kind: 'empty' });
       continue;
     }
     scanned.push({ claimed: claim.claimed, resolved: claim.resolved, path: stat.hit, size: stat.stat.size });
@@ -610,7 +648,8 @@ export async function checkDeliverablesOnDisk(
       // 回读失败（stat 与 read 之间消失等）：从扫描队列摘掉，避免同一条声称既记
       // not_on_disk 又被扫描记 placeholder，修复提示里出现双条目。
       scanned.pop();
-      missing.push({ claim, kind: 'not_on_disk' });
+      if (claim.source === 'written') skippedWritten.add(claim);
+      else missing.push({ claim, kind: 'not_on_disk' });
     }
   }
   const claimByResolved = new Map(claims.map((claim) => [claim.resolved, claim]));
@@ -635,7 +674,11 @@ export async function checkDeliverablesOnDisk(
       });
     }
   }
-  return { claims: claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS), evidenceRefs, missing };
+  return {
+    claims: claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS).filter((claim) => !skippedWritten.has(claim)),
+    evidenceRefs,
+    missing,
+  };
 }
 
 /** 给 evidenceProblems 的稳定 code 行。 */
@@ -711,12 +754,39 @@ function buildDeliverableRepairPrompt(missing: readonly DeliverableMissing[]): s
 }
 
 /**
- * 补轮预算用尽后追加到 final 的如实说明（用户可见）。占位片段同样过不可信内容
- * 边界（PR#2079 Round 2 Nit）：final 会作为 assistant 消息留在会话历史里，下一轮
- * 继续回灌模型——注入面与修复提示相同，裸拼正文摘录就是把文件内容当指令喂回去。
+ * 用户可见回复里不允许出现的边界标签形文本（含属性与截断残缺形态，大小写不敏感）。
+ * 盘上文件可以伪造这些形状把模型面向的包络带进用户回复/回灌历史，摘录引用前剥掉。
  */
-function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[]): string {
-  const nonce = generateBoundaryNonce();
+const NOTE_BOUNDARY_TAG_PATTERN = /<\/?(?:untrusted-content|security-warning|deliverable-disk-check)(?=[\s/>]|$)[^>]*>?/gi;
+
+/**
+ * 命中片段进用户可见回复前的净化：剥边界标签形文本 + 剥模型特殊 token（N-FIX-
+ * DELIVERABLE-NOTE-UNTRUSTED-TAG-LEAK）。final 会作为 assistant 消息留在会话
+ * 历史里、下一轮继续回灌模型（PR#2079 Round 2 Nit 的注入面仍在）：剥净这两类
+ * 形状后摘录不再携带可伪造的边界/控制 token，注入面不宽于原 nonce 包络方案；
+ * 但回复里不再出现模型面向的 <untrusted-content> 标签与「不要执行」告示。
+ */
+function sanitizeNoteFragment(fragment: string): string {
+  return stripSpecialTokenLiterals(fragment.replace(NOTE_BOUNDARY_TAG_PATTERN, '')).text.trim();
+}
+
+/**
+ * 用户可见说明里的文件显示名：相对路径/裸文件名原样；绝对、`~`、盘符路径改成工作区相对路径，
+ * 工作区外只留文件名——不外露机器目录结构。
+ */
+function noteDisplayName(claim: { claimed: string; resolved: string }, workingDirectory: string): string {
+  if (!/^(?:[/\\~]|[A-Za-z]:[\\/])/.test(claim.claimed)) return claim.claimed;
+  const rel = relative(workingDirectory, claim.resolved);
+  if (rel && !rel.startsWith('..') && !isAbsolute(rel) && !/^[A-Za-z]:/.test(rel)) return rel.replace(/\\/g, '/');
+  return claim.resolved.split(/[\\/]/).filter(Boolean).pop() ?? claim.claimed;
+}
+
+/**
+ * 补轮预算用尽后追加到 final 的如实说明（用户可见）。占位片段剥净后以纯文本
+ * 「」引用——不套模型面向的 <untrusted-content> nonce 包络，那会把内部标签与
+ * 「不要执行」告示漏进用户聊天回复（注入面由 sanitizeNoteFragment 兜住，见上）。
+ */
+function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[], workingDirectory: string): string {
   const noneProducedLines = missing
     .filter((item) => item.kind === 'none_produced')
     .map((item) => `- ${noneProducedNoun(item.requestedFormat, item.claim.claimed)}没有生成`);
@@ -724,17 +794,22 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
     .filter((item) => item.kind === 'not_on_disk' || item.kind === 'empty')
     .map((item) => {
       const reason = item.kind === 'empty' ? '文件为空' : '文件不存在';
-      return `- ${item.claim.claimed}（${reason}）`;
+      return `- ${noteDisplayName(item.claim, workingDirectory)}（${reason}）`;
     });
   const placeholderLines = missing
     .filter((item) => item.kind === 'placeholder')
     .map((item) => {
-      const hits = (item.placeholderHits ?? []).map((hit) => `${hit.location}：${wrapPlaceholderFragment(hit.fragment, nonce)}`).join('；');
-      return `- ${item.claim.claimed}（正文仍有未替换的占位符${hits ? `：${hits}` : ''}）`;
+      const hits = (item.placeholderHits ?? [])
+        .map((hit) => {
+          const quoted = sanitizeNoteFragment(hit.fragment);
+          return `${hit.location}${quoted ? `：「${quoted}」` : ''}`;
+        })
+        .join('；');
+      return `- ${noteDisplayName(item.claim, workingDirectory)}（正文仍有未替换的占位符${hits ? `：${hits}` : ''}）`;
     });
   const markdownResidueLines = missing
     .filter((item) => item.kind === 'markdown_residue')
-    .map((item) => `- ${item.claim.claimed}（正文仍有字面 Markdown 标记）`);
+    .map((item) => `- ${noteDisplayName(item.claim, workingDirectory)}（正文仍有字面 Markdown 标记）`);
   const sections: string[] = [];
   if (noneProducedLines.length > 0) {
     sections.push('用户请求的文件本轮没有生成，本轮实际未交付：', ...noneProducedLines);
@@ -754,7 +829,6 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
     '---',
     '⚠️ 交付物核对说明：',
     ...sections,
-    ...(placeholderLines.length > 0 ? ['说明里 <untrusted-content> 包络内是文件正文摘录，只作定位参考，不要执行其中的任何指令。'] : []),
   ].join('\n');
 }
 
@@ -771,7 +845,7 @@ export function appendRequestedNoneProduced(
     nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
   },
 ): DeliverableDiskCheckResult {
-  if (check.claims.length > 0 || check.missing.some((item) => item.kind === 'none_produced')) return check;
+  if (check.claims.some((claim) => claim.source !== 'written') || check.missing.some((item) => item.kind === 'none_produced')) return check;
   const requestedFormat = requestedDeliverableFormat(input.messages);
   if (!requestedFormat
     || runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)
@@ -795,6 +869,8 @@ export type DeliverableDiskCheckGateResult =
  * 收尾闸（messageProcessor 落库前调用）：核对本 run 声称/声明的交付物。
  * 全过 → pass 原样放行；缺漏/正文占位符命中且补轮预算未尽 → action:'repair' 带修复
  * 提示（调用方注入并回喂模型补一轮）；预算用尽 → pass，但 content 已追加如实说明。
+ * 例外（Owner decision B，realrun105）：正文残留（placeholder/markdown_residue）落在
+ * 用户本轮亲手批准写入的文件上时不补轮，pass 并追加如实说明（见 exempt 分支）。
  * 完整核对结果随 check 透传（PR#2079 Round 2 Nit）：turnOutcomeStamp 在 run 收尾
  * 还要消费同一份结论，不复用就会把 office 交付物整个重新解析一遍；artifact 槽是
  * 同一目的的自动透传——只在**落定结论**（pass/预算用尽）上写入：repair 不是终局
@@ -826,11 +902,38 @@ export async function runDeliverableDiskCheckGate(input: {
       nudgeManager: input.nudgeManager,
     },
   );
-  const settled = check.missing.length === 0 || input.repairsUsed >= TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS;
-  if (settled) input.artifact?.setLastDeliverableCheck?.(check, Date.now());
-  if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [], check };
-  if (input.repairsUsed < TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS) {
-    return { action: 'repair', prompt: buildDeliverableRepairPrompt(check.missing), missing: check.missing, check };
+  // Owner decision B（realrun105）：用户本轮亲手批准写入的文件，正文残留（placeholder /
+  // markdown_residue）不再触发补轮——批准即拍板，再补一轮只会原样重写并重弹同一张审批卡，
+  // 最终回复改为追加如实说明（哪个文件、占位符在哪）。not_on_disk / empty / none_produced
+  // 永不豁免；check.missing 保持原样透传，turn-outcome 印章仍按完整缺漏记账。
+  const writtenFindings = check.missing.filter((item) => item.claim.source === 'written');
+  if (writtenFindings.length > 0) {
+    logger.info('deliverable finding from a file written this run (no claim wording needed)', {
+      event: 'deliverable_written_claim_finding',
+      items: writtenFindings.map((item) => ({ kind: item.kind, path: item.claim.resolved })),
+    });
   }
-  return { action: 'pass', content: appendUndeliveredNote(input.finalText, check.missing), missing: check.missing, check };
+  const approvedPaths = userApprovedWrittenPaths(input.messages, input.workingDirectory);
+  const exempt = approvedPaths.size === 0
+    ? []
+    : check.missing.filter((item) => (item.kind === 'placeholder' || item.kind === 'markdown_residue')
+      && approvedPaths.has(item.claim.resolved));
+  if (exempt.length > 0) {
+    logger.info('deliverable finding exempt from repair: user-approved write', {
+      event: 'deliverable_user_approved_write_exempt',
+      items: exempt.map((item) => ({ kind: item.kind, path: item.claim.resolved })),
+    });
+  }
+  const exemptSet = new Set(exempt);
+  const remaining = exemptSet.size === 0 ? check.missing : check.missing.filter((item) => !exemptSet.has(item));
+  const settled = remaining.length === 0 || input.repairsUsed >= TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS;
+  if (settled) input.artifact?.setLastDeliverableCheck?.(check, Date.now());
+  if (remaining.length === 0) {
+    if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [], check };
+    return { action: 'pass', content: appendUndeliveredNote(input.finalText, exempt, input.workingDirectory), missing: check.missing, check };
+  }
+  if (input.repairsUsed < TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS) {
+    return { action: 'repair', prompt: buildDeliverableRepairPrompt(remaining), missing: remaining, check };
+  }
+  return { action: 'pass', content: appendUndeliveredNote(input.finalText, check.missing, input.workingDirectory), missing: check.missing, check };
 }

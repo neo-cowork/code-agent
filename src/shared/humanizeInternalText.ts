@@ -1,4 +1,5 @@
 import { resolveSkillName } from './resolveSkillName';
+import { toolUserLabel } from './utils/toolUserLabel';
 import {
   detectInternalTextLeaks, CATALOG_SLUG_GLOBAL_RE,
   ENGLISH_STATE_REGEXES,
@@ -23,11 +24,11 @@ export interface HumanizedInternalTextResult {
 }
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
-  read_file: { zh: '读取文件', en: 'Read file' },
-  write_file: { zh: '写入文件', en: 'Write file' },
-  edit_file: { zh: '编辑文件', en: 'Edit file' },
+  read_file: { zh: toolUserLabel('read', 'zh'), en: toolUserLabel('read', 'en') },
+  write_file: { zh: toolUserLabel('write', 'zh'), en: toolUserLabel('write', 'en') },
+  edit_file: { zh: toolUserLabel('edit', 'zh'), en: toolUserLabel('edit', 'en') },
   list_directory: { zh: '查看目录', en: 'List directory' },
-  web_fetch: { zh: '读取网页', en: 'Fetch web page' },
+  web_fetch: { zh: toolUserLabel('webfetch', 'zh'), en: toolUserLabel('webfetch', 'en') },
   todo_write: { zh: '更新待办清单', en: 'Update checklist' },
   spawn_agent: { zh: '启动协作助手', en: 'Start helper' },
   agent_message: { zh: '发送协作消息', en: 'Send helper message' },
@@ -36,7 +37,7 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   steer_task: { zh: '调整任务方向', en: 'Steer task' },
   cancel_task: { zh: '停止任务', en: 'Stop task' },
   memory_store: { zh: '保存记忆', en: 'Save memory' },
-  memory_search: { zh: '检索记忆', en: 'Search memory' },
+  memory_search: { zh: toolUserLabel('memorysearch', 'zh'), en: toolUserLabel('memorysearch', 'en') },
   tool_search: { zh: '查找可用工具', en: 'Find available tools' },
   computer_use: { zh: '操作桌面界面', en: 'Control desktop screen' },
   browser_action: { zh: '操作浏览器', en: 'Control browser' },
@@ -134,6 +135,85 @@ const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
       lang === 'en' ? `Active chats: ${count}` : `活跃会话 ${count} 个`,
   },
 ];
+
+const UUID_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_CONTAINED_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const UUID_IN_TEXT_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const PATH_SPAN_DELIMITERS = new Set([
+  '"', "'", '`', '<', '>', '|',
+  ',', ':', ';', '=',
+  '，', '。', '；', '：', '、', '（', '）', '(', ')', '[', ']', '{', '}',
+  '!', '?', '！', '？',
+]);
+const CJK_PROSE_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
+
+function isPathSpanDelimiter(ch: string): boolean {
+  return /\s/.test(ch) || PATH_SPAN_DELIMITERS.has(ch);
+}
+
+/** Prose glued to a path (`保存到/Users/...`) is not part of the path token. */
+function leadingProseOffset(span: string): number {
+  const slash = span.indexOf('/');
+  if (slash <= 0) return 0;
+  let pathAt = slash;
+  if (span.startsWith('…', slash - 1)) pathAt = slash - 1;
+  else if (slash >= 3 && span.slice(slash - 3, slash) === '...') pathAt = slash - 3;
+  const head = span.slice(0, pathAt);
+  return head.length > 0 && CJK_PROSE_RE.test(head) ? pathAt : 0;
+}
+
+/**
+ * A storage path keeps the UUID as a directory (`…/<uuid>/notes.txt` from
+ * formatDisplayPath, or the absolute upload/session path). Collapse that span
+ * to the file name. A last segment that is or contains a UUID is left for the
+ * in-place record replacement. URLs are not filesystem paths.
+ */
+function collapseUuidDirectoryPathSpan(span: string): string {
+  if (span.includes('://') || !span.includes('/')) return span;
+  let path = span;
+  if (path.startsWith('…/')) path = path.slice(2);
+  else if (path.startsWith('.../')) path = path.slice(4);
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+  if (segments.length < 2) return span;
+  const fileName = segments[segments.length - 1] ?? '';
+  const directoryHasUuid = segments.slice(0, -1).some((segment) => UUID_SEGMENT_RE.test(segment));
+  if (!directoryHasUuid) return span;
+  if (UUID_SEGMENT_RE.test(fileName) || UUID_CONTAINED_RE.test(fileName)) return span;
+  return fileName;
+}
+
+function collapseUuidDirectoryPaths(text: string): string {
+  const spans: Array<{ start: number; end: number }> = [];
+  UUID_IN_TEXT_RE.lastIndex = 0;
+  for (const match of text.matchAll(UUID_IN_TEXT_RE)) {
+    const index = match.index ?? 0;
+    let start = index;
+    let end = index + match[0].length;
+    while (start > 0 && !isPathSpanDelimiter(text[start - 1] ?? '')) start -= 1;
+    while (end < text.length && !isPathSpanDelimiter(text[end] ?? '')) end += 1;
+    start += leadingProseOffset(text.slice(start, end));
+    const span = text.slice(start, end);
+    // `:` is a delimiter, so a URL span is `//host/...` and must stay for step 6.
+    if (!span.includes('/') || span.includes('://') || span.startsWith('//')) continue;
+    const previous = spans[spans.length - 1];
+    if (previous && start <= previous.end) {
+      previous.start = Math.min(previous.start, start);
+      previous.end = Math.max(previous.end, end);
+      continue;
+    }
+    spans.push({ start, end });
+  }
+  UUID_IN_TEXT_RE.lastIndex = 0;
+  if (spans.length === 0) return text;
+  let out = '';
+  let cursor = 0;
+  for (const span of spans) {
+    out += text.slice(cursor, span.start);
+    out += collapseUuidDirectoryPathSpan(text.slice(span.start, span.end));
+    cursor = span.end;
+  }
+  return out + text.slice(cursor);
+}
 
 function humanizeMcpToolName(rawName: string, lang: InternalTextLanguage): string {
   const parts = rawName.replace(/^mcp__/, '').split('__').filter(Boolean);
@@ -359,6 +439,9 @@ export function humanizeInternalText(
   next = next.replace(INTERNAL_TOOL_GLOBAL_RE, (token) =>
     humanizeToolToken(token, lang),
   );
+
+  // 5b. Storage paths: drop the UUID directory before step 6 rewrites the id in place.
+  next = collapseUuidDirectoryPaths(next);
 
   // 6. Replace UUIDs, session_ids, call_ids, ou_ids in mixed text
   UUID_GLOBAL_RE.lastIndex = 0;

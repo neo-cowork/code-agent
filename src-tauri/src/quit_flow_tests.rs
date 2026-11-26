@@ -179,6 +179,9 @@ impl Scenario {
         let (_script, root) = crate::resolve_server_script(&handle).expect("server root");
         let (token, _) = TokenGuard::ensure(root);
         let coordinator = Arc::new(QuitCoordinator::new());
+        // 退出看门狗默认 process::exit：任何经生产入口走到退出提交点的场景都不能
+        // 把整个测试二进制杀掉，先换成空实现（看门狗专项用例再覆盖成记录型）。
+        coordinator.watchdog.inject(Arc::new(|_| {}), 1, None);
         app.manage(coordinator.clone());
         Self {
             _app: app,
@@ -233,6 +236,7 @@ impl Scenario {
 
 impl Drop for Scenario {
     fn drop(&mut self) {
+        self.coordinator.watchdog.simulate_process_gone();
         let _ = fs::remove_dir_all(&self.data_dir);
     }
 }
@@ -523,4 +527,199 @@ fn both_background_resident_paths_end_in_the_same_coordinator_state() {
         "all background-resident paths must share one end state: {rows:?}"
     );
     assert_eq!(rows[0].1, (false, false, false, true));
+}
+
+// ---- 退出看门狗 + 待回复 terminate 请求（N-FIX-TRAY-FULLQUIT-SHELL-SPIN-RESIDUAL-FIX）----
+// 全部经生产入口：execute_quit_exit_plan（full_quit 处理体）、handle_exit_requested、
+// run_signal_exit（ctrlc handler 的函数体）、spawn_quit_guard_flow_with。
+// 「主线程卡死」= mock 运行时没有事件循环：app.exit(0) 之后永远没有 RunEvent::Exit，
+// 与现场「窗口/webServer 已没、进程不走」同形。时钟倍率 20：5s 宽限 = 250ms 真实时间。
+
+mod watchdog {
+    use super::*;
+    use crate::exit_watchdog::{exit_deadline, EXIT_WATCHDOG_GRACE};
+    use crate::quit_guard::{quit_exit_plan, QuitAnswerAction};
+
+    const SCALE: u32 = 20;
+
+    struct Probe {
+        exits: Arc<Mutex<Vec<i32>>>,
+        replies: Arc<Mutex<Vec<bool>>>,
+    }
+
+    fn closed_port() -> u16 {
+        TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    }
+
+    fn scenario(body: &'static str, tag: &str) -> (Scenario, Probe) {
+        let s = Scenario::new(body, tag).with_shell_state();
+        let exits = Arc::new(Mutex::new(Vec::new()));
+        let replies = Arc::new(Mutex::new(Vec::new()));
+        let (e, r) = (exits.clone(), replies.clone());
+        s.coordinator.watchdog.inject(
+            Arc::new(move |code| e.lock().unwrap().push(code)),
+            SCALE,
+            Some(Arc::new(move |v| r.lock().unwrap().push(v))),
+        );
+        (s, Probe { exits, replies })
+    }
+
+    fn wait_fired(s: &Scenario, within: Duration) -> Option<(String, Duration)> {
+        let start = Instant::now();
+        while start.elapsed() < within {
+            if let Some(fired) = s.coordinator.watchdog.fired_reason() {
+                return Some(fired);
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        None
+    }
+
+    /// mock 运行时的 `request_exit` 是 unimplemented!()：生产代码走到 `app.exit(0)` 即 panic。
+    /// 到达这一步本身就是「退出已提交、事件循环不再回应」的现场，捕获后继续断言。
+    fn until_app_exit(f: impl FnOnce()) {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        let err = outcome.expect_err("production path must reach app.exit(0) (unimplemented in the mock)");
+        let text = err
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| err.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        assert!(text.contains("not implemented"), "unexpected panic: {text}");
+    }
+
+    fn full_quit(s: &Scenario) {
+        until_app_exit(|| {
+            crate::execute_quit_exit_plan(
+                s.handle.clone(),
+                s.coordinator.clone(),
+                QuitFlowOrigin::TauriExit,
+                quit_exit_plan(QuitAnswerAction::Quit),
+            )
+        });
+    }
+
+    /// 让「停止并退出」意图 POST 失败（连接被拒）→ stop_intent_landed 不置位 → 3s 旧通道。
+    fn break_intent_post() {
+        std::env::set_var("CODE_AGENT_WEB_PORT", closed_port().to_string());
+    }
+
+    #[test]
+    fn deadline_reuses_cleanup_budgets_plus_grace() {
+        assert_eq!(exit_deadline(false), crate::GRACEFUL_SHUTDOWN_TIMEOUT + EXIT_WATCHDOG_GRACE);
+        assert_eq!(exit_deadline(true), crate::resident_host::STOP_INTENT_WAIT + EXIT_WATCHDOG_GRACE);
+        assert_eq!(EXIT_WATCHDOG_GRACE, Duration::from_secs(5));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_full_quit_replies_pending_terminate_request_exactly_once() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(REAL_SERVER_BODY, "wd-a");
+        break_intent_post();
+        // mac_application_should_terminate 返回 TerminateLater 时的现场
+        s.coordinator.mark_terminate_reply_pending();
+        assert!(s.coordinator.begin_request(), "the ⌘Q dialog is still open");
+        full_quit(&s);
+        assert_eq!(*probe.replies.lock().unwrap(), vec![true], "reply true exactly once");
+        assert!(!s.coordinator.terminate_reply_pending());
+        // 随后重入的 ExitRequested（app.exit(0) 的回声）不得二次回复
+        assert_eq!(s.re_enter_exit_requested(), 0);
+        assert_eq!(*probe.replies.lock().unwrap(), vec![true], "still exactly once");
+        s.coordinator.watchdog.simulate_process_gone();
+        eprintln!("[wd-a] replies={:?}", probe.replies.lock().unwrap());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a2_exit_requested_allowed_branch_replies_pending_request() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(REAL_SERVER_BODY, "wd-a2");
+        s.coordinator.mark_terminate_reply_pending();
+        s.coordinator.allow_exit();
+        assert_eq!(s.re_enter_exit_requested(), 0);
+        assert_eq!(*probe.replies.lock().unwrap(), vec![true]);
+        s.coordinator.watchdog.simulate_process_gone();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a3_mac_terminate_exit_now_replies_once_and_arms_watchdog() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(MAINTENANCE_ONLY_BODY, "wd-a3");
+        s.coordinator.mark_terminate_reply_pending();
+        assert!(s.coordinator.begin_request());
+        crate::spawn_quit_guard_flow_with(
+            s.handle.clone(),
+            s.coordinator.clone(),
+            QuitFlowOrigin::MacApplicationTerminate,
+            s.poster(),
+        );
+        let (reason, _) = wait_fired(&s, Duration::from_secs(5)).expect("stuck terminate approval is ended");
+        assert_eq!(reason, "mac_terminate_pending");
+        assert_eq!(*probe.replies.lock().unwrap(), vec![true], "approval replies exactly once");
+        assert_eq!(*probe.exits.lock().unwrap(), vec![1]);
+    }
+
+    #[test]
+    fn b_stuck_main_thread_full_quit_is_ended_by_watchdog_within_grace() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(REAL_SERVER_BODY, "wd-b");
+        break_intent_post();
+        full_quit(&s);
+        assert!(!s.coordinator.stop_intent_landed(), "old 3s channel in force");
+        let (reason, virtual_elapsed) = wait_fired(&s, Duration::from_secs(5)).expect("watchdog must fire");
+        assert_eq!(reason, "full_quit");
+        assert_eq!(*probe.exits.lock().unwrap(), vec![1], "force-exit called once");
+        assert!(virtual_elapsed >= exit_deadline(false), "not before budget+grace: {virtual_elapsed:?}");
+        assert!(
+            virtual_elapsed < exit_deadline(false) + Duration::from_secs(5),
+            "fired within the grace window: {virtual_elapsed:?}"
+        );
+        eprintln!("[wd-b] reason={reason} virtual_elapsed={virtual_elapsed:?}");
+    }
+
+    #[test]
+    fn c_stuck_main_thread_signal_exit_is_ended_with_signal_reason() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(REAL_SERVER_BODY, "wd-c");
+        until_app_exit(|| crate::run_signal_exit(&s.handle, &s.coordinator));
+        let (reason, virtual_elapsed) = wait_fired(&s, Duration::from_secs(5)).expect("watchdog must fire");
+        assert_eq!(reason, "signal");
+        assert_eq!(*probe.exits.lock().unwrap(), vec![1]);
+        assert!(virtual_elapsed < exit_deadline(false) + Duration::from_secs(5), "{virtual_elapsed:?}");
+        eprintln!("[wd-c] reason={reason} virtual_elapsed={virtual_elapsed:?}");
+    }
+
+    #[test]
+    fn d_normal_exit_finishing_in_time_is_not_killed() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(REAL_SERVER_BODY, "wd-d");
+        break_intent_post();
+        full_quit(&s);
+        // 3s（虚拟）后收尸正常结束；deadline 是 8s，此刻不能开火
+        thread::sleep(Duration::from_millis(150));
+        assert!(s.coordinator.watchdog.fired_reason().is_none(), "no fire before the deadline");
+        // 进程正常退出 = 线程随进程消失
+        s.coordinator.watchdog.simulate_process_gone();
+        thread::sleep(Duration::from_millis(700));
+        assert!(s.coordinator.watchdog.fired_reason().is_none(), "no fire after a normal exit");
+        assert!(probe.exits.lock().unwrap().is_empty(), "force-exit never called");
+    }
+
+    #[test]
+    fn e_stop_intent_drain_is_not_killed_at_five_seconds() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (s, probe) = scenario(REAL_SERVER_BODY, "wd-e");
+        full_quit(&s); // 回环服务器确认意图 → stop_intent_landed
+        assert!(s.coordinator.stop_intent_landed(), "intent landed");
+        // 真实 1.2s = 虚拟 24s：已远超 5s 与 3s+5s，但仍在 65s+5s 内
+        thread::sleep(Duration::from_millis(1200));
+        assert!(s.coordinator.watchdog.fired_reason().is_none(), "drain must not be killed early");
+        assert!(probe.exits.lock().unwrap().is_empty());
+        let (reason, virtual_elapsed) = wait_fired(&s, Duration::from_secs(8)).expect("fires once 70s are exhausted");
+        assert_eq!(reason, "full_quit");
+        assert!(virtual_elapsed >= exit_deadline(true), "{virtual_elapsed:?}");
+        eprintln!("[wd-e] fired only at virtual {virtual_elapsed:?} (>= 70s)");
+    }
 }

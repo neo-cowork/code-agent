@@ -2,6 +2,10 @@
 
 Agent Neo 是产品名，`code-agent` 是仓库历史名。这个文件主要给本仓库里的开发协作工具读取，面向浏览者的入口见 `README.md` 和 `docs/architecture/repo-map.md`。
 
+@AGENTS.md
+
+> 上一行把 `AGENTS.md`（给 AI 工人的硬约束：禁改边界、门与提交纪律、开工前检查清单）引进来：Claude Code 目录里有 CLAUDE.md 时不会再单独读 AGENTS.md，所以要显式引用。那些约束只在 AGENTS.md 写一份，本文件不重复。
+
 ## 本地 LLM Wiki
 
 项目知识库采用 Karpathy 模式。它用于本地研究和协作，不要求出现在公开 GitHub 仓库里。操作规范见 `~/.claude/specs/wiki-schema.md`，使用 `/wiki` skill 操作。
@@ -123,185 +127,9 @@ grep -rn "Date.now()" src/host/services/core/repositories/ --include="*.ts"
 
 ## 快速参考
 
-### 发版（官方）= 只推 tag，CI 接管，别本地打包
+发版、本地 dogfood 打包、Dev 测试包多槽（NEO_SLOT）、renderer 热更新、`.env` 读取顺序、本地数据库的完整流程在 `docs/dev/local-dev-reference.md`，要做这几件事时先读它。几条不能踩的线留在这里：
 
-> ⚠️ **正式发版不需要本地 `cargo tauri build`**（踩坑 2026-06-09：白跑 20min 本地构建，还撞本地 syspolicyd EMFILE 把 spctl 卡住）。
-> `git push origin v<version>` 触发 GitHub Actions **「Build and Release」(`.github/workflows/release.yml`)**，自动完成：**双架构 mac 矩阵（arm64 + x64，v0.16.101 起）+ 独立 build-windows job（win32-x64 NSIS，2026-06-11 起）** → mac 走 Developer ID 签名 + 公证 staple、Windows 走 unsigned NSIS + minisign → OSS 上传（versioned 路径，产物按平台+架构命名）→ publish 任务合并三平台 latest.json（darwin-aarch64 + darwin-x86_64 + windows-x86_64）→ GitHub Release → stable 提升（latest.json + release.json 含 `--exe-url` windows 资产）→ Vercel update API。签名/公证全在 CI，绕开本地签名环境问题。x64 侧改动需同步 `build-x64-test.yml`，Windows 侧改动需同步 `build-windows-test.yml`（均为手动测试构建），两者都要同步 `releaseMacosGates.test.ts` 特征断言。
->
-> **Windows leg 要点**：① unsigned NSIS perUser（无 Authenticode 证书，SmartScreen 靠安装指引绕过；更新完整性走 minisign，与证书无关）；② windows leg 失败**不拖死 mac 发版**——publish `if: always() && build-mac 成功`，merge/stable 步骤对缺席的 windows 产物自动降级 mac-only；③ 改 release.yml 前先用预发布 tag（如 `v0.x.y-wintest1`，带 `-` 后缀）空跑验证——prerelease 闸门保证不提升 stable、不抢 latest；④ 真机验收清单见 `docs/architecture/windows-support.md` §5（WebView2 干净机自动装是发版前必验项）；⑤ **shell 安全档**：`commandSafety.ts` 的 `getShellSafetyMode()` 现在**全平台默认 `strict`**（2026-07-16 v0.27.3 收口，此前 win32 默认 `lenient` = 非硬毙命令直接放行、不进审批）。lenient 只剩 `CODE_AGENT_SHELL_SAFETY_MODE=lenient` 显式开启，供朋友测试包用。默认档已被 `tests/security/commandSafety.test.ts` 钉死，别再改回平台分支。
-
-官方发版步骤（源码侧准备，其余 CI 做）：
-```bash
-npm run typecheck && npm version <version> --no-git-tag-version   # 同步 src-tauri/tauri.conf.json 的 version（注意：用字面量改，别用 $1/$2 反向引用脚本，会写坏 JSON）
-# 写 docs/releases/v<version>.md（CI 的 build-stable-release-json 会把它作为 update API 的 releaseNotes）+ 更新 CHANGELOG
-# 发版前只读门：npm run release:security-scan + npx vitest run tests/scripts/{verifyProductionEnv,releaseMacosGates}.test.ts
-git add package.json package-lock.json src-tauri/tauri.conf.json CHANGELOG.md docs/releases/v<version>.md
-git commit -m "chore: release v<version>" && git push origin main
-git tag -a v<version> -m "Release v<version>" && git push origin v<version>   # ← 触发 CI 全流程
-# 验证：curl "https://agentneo.vercel.app/api/update?action=check&version=0.0.0&platform=darwin&channel=stable"
-```
-
-#### 发布说明文案规则（`docs/releases/v<version>.md`，强制）
-
-这份文件会被 CI 直接灌进 **app 内更新弹窗**（`update API releaseNotes` + OSS `latest.json` 的 `notes`），**用户会原样看到**。所以写法是「面向终端用户」，不是 changelog、不是给开发者看的：
-
-- **禁止出现**：PR/issue 编号（`PR #260`）、commit hash、代码标识符（`DesignOutputType` / `slidesGenerator` / `SlideData[]`）、文件/路径名、API/模型内部名（`wanx2.1-imageedit` / `description_edit`）、架构黑话（"单一真源"/"非破坏性版本模型"/"零破坏"）、内部测试术语（dogfood / 对抗审计）。
-- **应该写**：用户**现在能做什么**，用大白话 + 「能…了 / 可以…了」的口吻；每条一句话讲清价值，不讲实现。
-- 结构：`# Agent Neo v<version>` + 日期 + 几条加粗短标题，每条一句用户视角的话。控制在屏幕一眼能扫完，别堆段落。
-- 工程细节（PR、模块、价表、审计证据）写进 `CHANGELOG.md`（面向开发者），**两者分开**：CHANGELOG 可技术，release 说明必须用户向。
-- 反例（不要这样）："设计 tab 按交付媒介分 4 类（`DesignOutputType` UI 聚合零破坏）…引擎抽成 slidesGenerator（SlideData[] 单一真源）"；正例："设计入口更清晰：按你想做什么分成 网页/图/演示稿/视频，进来直接选。"
-
-### 本地 dogfood 打包（仅自测，非发版）——默认走 Dev 测试包
-
-#### 呈现验证默认无槽无头
-
-卡片、logo、排序、文案和新会话 chip 等 renderer 呈现，默认用 worktree 自己的 webServer +
-Playwright headless 验证，不打 Tauri 包、不占 `NEO_SLOT`、不弹有头浏览器：
-
-```bash
-node scripts/verify-slotless.mjs <单号>
-node scripts/verify-shot.mjs "$NEO_VERIFY_URL" /tmp/neo-shot.png --viewport 1440x900 --wait '<selector>'
-node scripts/verify-slotless.mjs --stop "$NEO_VERIFY_DATA_DIR"
-```
-
-脚本从 `~/.ship/secrets/neo-dogfood.env` 读取唯一 dogfood 测试账号并自动登录；凭据缺失或权限不是
-600 时直接退出。只有启动、renderer 热更新、TCC、launchd 空 env、连接器 CLI 登录态和托盘等
-壳级项才进入下方 Dev 槽流程。
-
-**桌面行为验证一律默认 Dev 测试包**（`Agent Neo Dev.app`，8181 + `~/.code-agent-dev`）：与生产包同一构建链同一份代码（只差 identifier/端口/数据目录），Tauri 壳/launchd 空 env/bundle resources 全部真实，且与生产 app 并存同跑、生产 DB 零接触。生产包覆盖安装只在需要验**生产 identifier 的签名/LaunchServices/更新链路**时才用。
-
-**红线：禁止直接执行 `*.app/Contents/MacOS/code-agent-tauri`**（2026-09-25 实录：agent 沙箱里直接 exec 刚构建的 bundle，AppKit 拿不到 WindowServer，`_RegisterApplication` abort，连崩三次弹系统崩溃报告；点 Reopen 只是复崩）。构建产物 `src-tauri/target/release/bundle/macos/*.app` 是中间产物，tauri-install-dev.sh 装完即删——看到它还在 = 还没装，不是"可以直接跑的包"。`~/Downloads/ai/acceptance/*/runtime/` 里的归档快照同样禁跑（同 bundle id 多副本扰乱 LaunchServices 注册，目录里已放 `DO-NOT-RUN.txt`）。构建+安装+启动走单一入口：
-
-```bash
-bash scripts/run-dev-slot.sh [NEO_SLOT]              # 构建+安装+open 一条龙
-bash scripts/run-dev-slot.sh [NEO_SLOT] --open-only  # 只拉起已装的槽
-```
-
-agent 沙箱连 `open` 都拦时（Codex 桌面端等），把脚本末尾打出的 `open` 命令交回爸的终端执行，别在沙箱里重试。
-
-```bash
-# 默认：Dev 测试包（打包+安装 Agent Neo Dev.app，绝不碰生产 Agent Neo.app）
-HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
-# 启动后判定跑在新包上：curl -s http://127.0.0.1:8181/ | grep -oE 'assets/index-[^"]*\.js'
-#   与 app 内 dist/renderer/index.html 引用一致才算
-# ⚠️ .env 读取是「命中第一个就停」：~/.code-agent-dev/.env 存在时不会回退读生产 ~/.code-agent/.env
-#   （2026-07-26 voice spike 实测；Dev 包要用的 key 必须复制进 ~/.code-agent-dev/.env）
-```
-
-**新 worktree 开工先引导构建输入**（2026-08-06 起）：
-
-```bash
-bash scripts/worktree-bootstrap.sh <worktree路径>   # 缺省以主树为源，幂等，可重跑
-# 为什么：node_modules / sidecar 二进制 / dist/native 等都是 gitignored 的，新 worktree 里全缺。
-# 漏 node_modules 时 npx tsx 照跑（它自己去下载），但 vitest/tsc 会给一片假红——先引导再干活。
-# 脚本只软链只读输入、实体拷贝会被构建改写的输入（防写穿透污染主树），绝不写主树。
-```
-
-#### 多个 Dev 测试包并存（NEO_SLOT）
-
-几个 worktree 要同时验各自的包时，用 `NEO_SLOT` 分槽（缺省 = 槽 1 = 历史行为，不用改任何命令）：
-
-```bash
-NEO_SLOT=2 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
-rm -rf ~/.code-agent-dev2/renderer-cache/active
-curl -s http://127.0.0.1:8182/ | grep -oE 'assets/index-[^"]*\.js'
-```
-
-| NEO_SLOT | 安装槽 | identifier | 端口 | 数据目录 |
-|---|---|---|---|---|
-| 1（缺省） | `Agent Neo Dev.app` | `…code-agent.dev` | 8181 | `~/.code-agent-dev` |
-| 2 | `Agent Neo Dev 2.app` | `…code-agent.dev2` | 8182 | `~/.code-agent-dev2` |
-| N（≤9） | `Agent Neo Dev N.app` | `…code-agent.devN` | 8180+N | `~/.code-agent-devN` |
-
-四个维度全部由 identifier 的 `.dev[N]` 后缀派生（Rust `dev_slot()` 是运行时真源，TS 同源实现在
-`src/shared/devSlot.ts`），`npm run tauri:gen-dev-slot-conf` 按 `NEO_SLOT` 生成
-`src-tauri/tauri.dev.slot.conf.json` + `.dev-slot.json`（都 gitignore），安装/冒烟脚本从后者读槽名与端口。
-**槽间不共用**：数据目录、密钥、renderer 缓存都是独立的一套；换槽等于一台新机器，key 要重新配。
-CUA helper 仍只分 production / dev（所有槽共用 dev 那份），槽间各授权一次 TCC。
-
-**槽是共享池，没有归属**：现有的槽谁都可以领来用，用之前抹掉数据目录即可。
-**没有「我的槽」这回事**——包括槽 1，它也是验证池的一员，不是谁的私产。
-
-##### 什么时候**不该**开新槽（2026-08-08 立规）
-
-> **「要干净状态」不是开新槽的理由。**
-> 干净状态 = `rm -rf ~/.code-agent-devN`，bundle id 不变，**TCC 授权原样保留**。
-> 新槽 = 新 bundle identifier = macOS 眼里一个全新的 app = **零授权**，
-> 辅助功能 / 屏幕录制 / 输入监控全要重新手工点一遍，
-> 而弹框上写的是「Agent Neo Dev N 想要…」，跟你正在验的事对不上号，很难反应过来。
-
-**唯一该扩池的理由：需要同时跑多个测试包**（各自独立端口与数据目录，互不打架）。
-池子大小 = 最大并发验证数，不是历史验证次数。
-
-`scripts/gen-dev-slot-conf.ts` 有一道门守着这条：请求一个**这台机器没见过的槽**
-（既没装 app、也没有数据目录）而池里还有可复用的槽时，直接报红并列出可复用的槽 +
-抹数据目录的命令。确实要扩池就显式声明，扩出来的槽**永久保留、别卸**：
-
-```bash
-NEO_SLOT=4 NEO_SLOT_NEW=1 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
-```
-
-（池成员按「已装 app **或** 存在数据目录」取并集判定：抹数据目录不掉出池，卸了 app 也不掉出池
-——TCC 记录按 bundle id 留在系统里，重装不用重新授权。全新机器池为空时放行，不挡第一次构建。）
-
-##### 用完怎么回收
-
-**只清数据目录，不卸 app。** app 卸了下次并发还得重装重授权，留着是零成本的。
-
-```bash
-rm -rf ~/.code-agent-devN          # 释放空间 + 下次直接得到干净状态
-```
-
-数据目录会长得比想象中大（实测槽 1 攒到 813M：`code-agent.db` 393M、
-`managed-browser-profile` 157M、`appshots` 48M）。清之前扫一眼
-`appshots/` `design/` 里有没有别的工单还在引的证据文件。
-
-**dev 包默认关 LTO**：`tauri:package:dev` 默认给 cargo 传 `CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`
-（实测冷构建省 54%，体积只涨 0.5%；LTO 是发版优化，对验行为的测试包是纯浪费）。要验启动性能/时序时
-加 `NEO_DEV_FULL_LTO=1` 切回与发版包同构的 LTO 全开构建：
-
-```bash
-NEO_DEV_FULL_LTO=1 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
-```
-
-**本机已装 sccache 并全局启用**（`~/.cargo/config.toml` 的 `rustc-wrapper`）：新 worktree 的冷构建会
-命中缓存，不用手动配置。缓存落 `~/.cache/sccache`、上限 4 GiB（配置在
-`~/Library/Application Support/Mozilla.sccache/config`）——**默认的 `~/Library/Caches/Mozilla.sccache`
-+ 10 GiB 上限不能用**：那目录会被 macOS 在磁盘压力下清空，而 10 GiB 上限本身就是压力来源。
-
-**cua helper 跨 worktree 缓存**：重签好的 `Agent Neo Computer Use*.app` 落在 repo 根的
-`.tauri-resources.noindex/`（gitignore），每个 worktree 各要一份。现在会自动镜像到
-`~/.cache/agent-neo/cua/`（`NEO_CUA_CACHE_DIR` 可改；**不放 `~/Library/Caches`**——macOS 会在磁盘压力下清空它，2026-08-06 实测被清过一次），新 worktree 首次打包直接从缓存恢复，
-不用再 `fetch-cua-driver.sh` 下载+重签。缓存命中仍校验 bundle id + 版本 + `codesign --verify --strict`，
-不符就照常报错让你去 fetch。
-
-<details><summary>生产包覆盖安装（仅验签名/更新链路时用，会覆盖 /Applications 里的生产 app）</summary>
-
-```bash
-bash scripts/build-audio-capture.sh   # 编译 Swift 音频采集工具（首次 clone 必跑）
-bash scripts/fetch-rtk.sh             # 拉取 rtk sidecar binary（首次 clone 必跑，需要 HTTPS_PROXY）
-bash scripts/fetch-uv.sh              # 拉取 uv sidecar binary（首次 clone 必跑，需要 HTTPS_PROXY）
-bash scripts/fetch-poppler.sh         # 构建 poppler sidecar（首次 clone 必跑，需要 homebrew）
-npm run typecheck && npm version patch --no-git-tag-version
-# 同步 src-tauri/tauri.conf.json 中的 version
-git add package.json package-lock.json src-tauri/tauri.conf.json
-git commit -m "chore: bump version to x.x.x" && git push
-npm run build && npm run build:web && HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri build
-bash scripts/tauri-install.sh   # 安装到 /Applications（必须用脚本，禁止手动 cp）
-```
-
-</details>
-
-**前置条件**: Rust 工具链（`source ~/.cargo/env`）、代理（`HTTPS_PROXY=http://127.0.0.1:7897`）、Xcode Command Line Tools（swiftc）。
-**首次 clone**: 必须先跑 `bash scripts/build-audio-capture.sh` 生成 `scripts/system-audio-capture`，以及 `bash scripts/fetch-rtk.sh` 拉取 `scripts/rtk`、`bash scripts/fetch-uv.sh` 拉取 `scripts/uv`、`bash scripts/fetch-poppler.sh` 构建 `scripts/poppler`（PPT 选页截图用；依赖 homebrew，**它不是 curl 下载**——poppler 上游无 macOS 预编译产物，脚本要捞 dylib 闭包并重定位，自检会真跑一遍多页 PDF），否则 `tauri.conf.json` 的 bundle resources 会找不到文件导致打包失败。
-**安装**: 必须用 `scripts/tauri-install.sh`，它会 rm→cp→清理 DMG 残留卷。手动 `cp -r` 会导致旧文件残留 + Finder 反复弹出 DMG。
-**renderer 热更新与本地打包**: Dev 测试包按 `.dev[N]` bundle id 默认停用 renderer 热更新，直接 `open -a "Agent Neo Dev N"` 会稳定使用 app 内置 renderer，不再需要手工清 `renderer-cache/active` 或给进程注入停用变量。专项验证热更新链路时，用 `CODE_AGENT_ENABLE_RENDERER_HOT_UPDATE=1` 直接启动 app 二进制；下载完成的 bundle 先进入 `<数据目录>/renderer-cache/staged`，只在下一次启动、HTTP 开始 serve 前切到 `active`，不会在当前页面已加载 index.html 后替换懒加载 chunk 目录。生产包仍默认启用，停用开关行为不变。判定方法：`curl -s http://127.0.0.1:<8180|8181>/ | grep -oE 'assets/index-[^"]*\.js'` 对比 app 内 `dist/renderer/index.html` 引用的文件名。
-**⚠️ renderer 端可观测性变量（`VITE_*`）必须放 `src/renderer/.env.local`**: Sentry/PostHog 的 renderer 侧读 `import.meta.env.VITE_SENTRY_DSN`/`VITE_POSTHOG_KEY`，由 Vite **构建期**注入。`vite.config.ts` 设了 `root: 'src/renderer'` 且未设 `envDir`，故 Vite 的 envDir = `src/renderer`——**变量放项目根 `.env` 不生效，必须放 `src/renderer/.env.local`**（实测踩坑 2026-06-07：值随 worktree 删除丢失后，renderer 端 Sentry/PostHog 静默 no-op，前端崩溃收不到，但 node 端正常因其运行时读 `~/.code-agent/.env`）。这三个是 public write-only 值（非 secret），但因 `.env.local` 被 gitignore，换机/重新 clone 后会丢，打包前务必确认：`grep -c '^VITE_SENTRY_DSN' src/renderer/.env.local`（应为 1），并构建后 `grep -rl 'ingest.*sentry.io' dist/renderer/assets/` 确认注入。
-**API Key**: 打包后靠应用内设置管理（SecureStorage），不依赖 `.env`。`.env` 不进 app bundle（避免泄露密钥）。
-**代理 / 环境变量**: webServer 启动时按序读 `~/.code-agent/.env` → 脚本同级 `.env` → 上级 `.env`。打包态走 `~/.code-agent/.env`，开发态走项目根 `.env`。Tauri 由 launchd 启动 env 是空的，海外端点（如 mimo sgp）必须在 `.env` 里写 `HTTPS_PROXY=http://127.0.0.1:7897` 才能走代理。
-**Auto-update**: 首次发布前需 `tauri signer generate` 并将 pubkey 写入 tauri.conf.json。
-
-### 本地数据库
-```
-~/.code-agent/code-agent.db
-```
+- 正式发版只推 tag（`git push origin v<version>`），签名、公证、上传都在 CI 的 `.github/workflows/release.yml`；不要本地 `cargo tauri build`。发布说明写 `docs/releases/v<version>.md`，文案规则见上面那份文档。
+- 本地 dogfood 默认打 Dev 测试包（Agent Neo Dev.app），不碰生产 Agent Neo.app；构建、安装、启动只走 `scripts/run-dev-slot.sh`，新 worktree 先 `bash scripts/worktree-bootstrap.sh <树路径>`。
+- `.env` 读取命中第一个就停：`~/.code-agent-dev/.env` 存在时不会回退读生产 `~/.code-agent/.env`，Dev 包要用的 key 得复制进去。
+- 本地数据库：`~/.code-agent/code-agent.db`。

@@ -53,6 +53,7 @@ vi.mock('../../../src/renderer/utils/osNotification', () => ({
 
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
+    listOutboundDrafts: async () => [],
     listParkedApprovals: vi.fn().mockResolvedValue([]),
     listPendingReview: vi.fn().mockResolvedValue([]),
     countPendingReview: vi.fn().mockResolvedValue(0),
@@ -375,5 +376,21 @@ describe('CronCenterPanel visible-list detail invariant (FB-1428)', () => {
     // 详情必须是通知对应任务，而不是挂载回写把选中清成 null 后回落到的列表第一个任务。
     expect(within(screen.getByTestId('cron-job-detail')).getByRole('heading', { name: '喝水提醒' })).toBeTruthy();
     expect(useCronStore.getState().selectedJobId).toBe('job-water');
+  });
+});
+
+describe('CronCenterPanel 内置维护任务不自动选中', () => {
+  it('全新安装只有内置维护任务：列表显示「还没有自动化任务」，详情为空态，不自动选中', async () => {
+    jobsInBackend = [makeJob({
+      id: 'job-builtin',
+      name: '[Maintenance] Light Memory consolidation',
+      tags: ['light-memory-consolidation'],
+    })];
+    render(<CronCenterPanel onClose={() => undefined} />);
+
+    expect(await screen.findByText('还没有自动化任务')).toBeTruthy();
+    expect(screen.getByTestId('cron-builtin-group-toggle').textContent).toBe('系统自动维护（1）');
+    expectEmptyDetailWithoutActions();
+    expect(useCronStore.getState().selectedJobId).toBeNull();
   });
 });
