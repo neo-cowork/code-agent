@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { compileReadOnlyFileLoop, type ProbeFileLoop } from './readOnlyProbeFileLoop';
-import { compileToolCommand, expandLiteralForLoop, type ProbeToolCommand } from './readOnlyProbeTools';
+import { compileToolCommand, expandLiteralForLoop, type LoopBodyBinding, type ProbeToolCommand } from './readOnlyProbeTools';
 
 type ProbeStream = 'out' | 'err' | 'null';
 
@@ -36,10 +36,14 @@ export type ProbeCommand =
   | ProbeToolCommand
   | { kind: 'noop' }
   | { kind: 'test'; flag: '-e' | '-f' | '-d'; path: string }
+  /** `if <test>; then / else` 的一个分支语句：条件成立与否（negate 取反）决定 cmd 执不执行。 */
+  | { kind: 'when'; test: Extract<ProbeCommand, { kind: 'test' }>; negate: boolean; cmd: ProbeCommand }
   | { kind: 'echo'; text: string; newline: boolean }
   | { kind: 'printf'; text: string }
   | { kind: 'command-v'; name: string }
   | { kind: 'ls'; flags: string[]; paths: string[]; headLines?: number }
+  /** `stat -f <format> <path>…`（macOS BSD 语法，只打印元数据）。 */
+  | { kind: 'stat'; format: string; paths: string[] }
   | { kind: 'cd'; path: string }
   | { kind: 'file-read'; program: 'cat' | 'wc' | 'head'; flags: string[]; paths: string[] }
   | { kind: 'xattr'; paths: string[] }
@@ -69,6 +73,7 @@ const RESERVED_VAR_NAMES = new Set([
 ]);
 const LS_FLAG_CHARS = 'lahAFdtrSpOi@e1ns';
 const MAX_COMMAND_LENGTH = 8000;
+const MAX_STAT_FORMAT = 512;
 // A typed echo-only placeholder: never passed to a shell or interpreted as a path.
 export const PROBE_EXIT_STATUS = '\u0001probe-status\u0001';
 
@@ -89,6 +94,11 @@ const UNQUOTED_FORBIDDEN = new Set(['$', '`', '\\', '(', ')', '{', '}', '*', '?'
 
 function isBlank(ch: string): boolean {
   return ch === ' ' || ch === '\t';
+}
+
+/** 一个未加引号的词到此为止：结尾、空白或命令分隔符。 */
+function isWordEnd(ch: string | undefined): boolean {
+  return ch === undefined || isBlank(ch) || ch === '\n' || ch === ';' || ch === '&' || ch === '|';
 }
 
 function tokenize(src: string, vars: Map<string, string>, home: string): Token[] | null {
@@ -187,6 +197,8 @@ function tokenize(src: string, vars: Map<string, string>, home: string): Token[]
       }
       if (c === '=' && first) return null;
       if (c === '~' && assignName !== undefined && value.length === assignName.length + 1) return null;
+      // 独立的 `[` / `]`（test 的别名 `[ -e x ]`）：只在词首、后面紧跟分隔符时才是字面量，不构成通配符
+      if ((c === '[' || c === ']') && value === '' && isWordEnd(src[i + 1])) { value += c; i++; first = false; continue; }
       if (UNQUOTED_FORBIDDEN.has(c)) return null;
       value += c; i++; first = false;
     }
@@ -432,9 +444,20 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
       if (!rest.length || rest.some((operand) => !operand || operand === '-' || (!endOfFlags && operand.startsWith('-')))) return null;
       return { program, cmd: { kind: 'file-read', program, flags, paths: rest } };
     }
-    case 'test': {
-      if (argv.length !== 2 || !['-e', '-f', '-d'].includes(argv[0]) || argv[1] === '') return null;
-      return { program, cmd: { kind: 'test', flag: argv[0] as '-e' | '-f' | '-d', path: argv[1] } };
+    case 'test':
+    case '[': {
+      // `[ -e|-f|-d <path> ]` 是 test 的别名：只认恰好以 ] 收尾的这一个形状
+      const args = program === '[' ? (argv.length === 3 && argv[2] === ']' ? argv.slice(0, -1) : null) : argv;
+      if (args?.length !== 2 || !['-e', '-f', '-d'].includes(args[0]) || args[1] === '') return null;
+      return { program, cmd: { kind: 'test', flag: args[0] as '-e' | '-f' | '-d', path: args[1] } };
+    }
+    case 'stat': {
+      // 只认 `stat -f <format> <path>…`：只打印元数据；其它旗标、缺省格式不认
+      const format = argv[0] === '-f' ? argv[1] : argv[0]?.startsWith('-f') ? argv[0].slice(2) : undefined;
+      const paths = argv[0] === '-f' ? argv.slice(2) : argv.slice(1);
+      if (format === undefined || format === '' || format.startsWith('-') || format.length > MAX_STAT_FORMAT || /\p{Cc}/u.test(format)
+        || paths.length === 0 || paths.some((operand) => operand === '' || operand.startsWith('-'))) return null;
+      return { program, cmd: { kind: 'stat', format, paths } };
     }
     case 'echo': {
       const e = compileEchoText(argv);
@@ -489,23 +512,64 @@ export interface ProbeCompileContext {
   platform: NodeJS.Platform;
 }
 
+interface ProbeScope {
+  /** 循环体内：允许一层 `if <test>; then …; [else …;] fi`。 */
+  loopBody: boolean;
+  /** 编译期已知值的变量：目前只有绑定值的循环变量，只在双引号里折叠。 */
+  vars: Map<string, string>;
+}
+
+const IF_KEYWORDS = ['then', 'else', 'fi'] as const;
+
 /** 编译；任何一处不能证明只读就返回 null（调用方原样走审批）。 */
 export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileContext): ReadOnlyProbePlan | null {
+  const steps = compileCommand(command, ctx, { loopBody: false, vars: new Map<string, string>() });
+  return steps ? { steps } : null;
+}
+
+function compileCommand(command: string, ctx: ProbeCompileContext, scope: ProbeScope): ProbeStep[] | null {
   if (ctx.platform === 'win32') return null;
   if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0') || command.includes('\u0001')) return null;
   const loop = compileReadOnlyFileLoop(command, ctx.homeDir);
   if (loop) {
     const prefix = loop.prefix ? compileReadOnlyProbePlan(loop.prefix, ctx) : undefined;
     if (loop.prefix && !prefix) return null;
-    return { steps: [...prefix?.steps ?? [], { op: ';', cmd: loop, redirect: { out: 'out', err: 'err' }, program: 'file-loop', source: command,
+    return [...prefix?.steps ?? [], { op: ';', cmd: loop, redirect: { out: 'out', err: 'err' }, program: 'file-loop', source: command,
     extraSources: [...loop.sources, ...(loop.body.some((statement) => statement.kind === 'echo' && statement.parts.some((part) => 'value' in part && part.value === 'bytes')) ? ['wc -c'] : []), ...loop.files.map((file) => `cat ${JSON.stringify(file.path)}`)],
-    }] };
+    }];
   }
-  const looped = expandLiteralForLoop(command, (text) => compileReadOnlyProbePlan(text, ctx));
-  if (looped !== undefined) return looped ? { steps: looped } : null;
-  const tokens = tokenize(command, new Map(), ctx.homeDir);
+  const looped = expandLiteralForLoop(command, (text, binding) => {
+    const steps = binding ? compileLoopBody(text, ctx, binding) : compileCommand(text, ctx, { loopBody: false, vars: new Map<string, string>() });
+    return steps ? { steps } : null;
+  });
+  if (looped !== undefined) return looped;
+  const tokens = tokenize(command, scope.vars, ctx.homeDir);
   if (!tokens) return null;
+  const list = compileStatements(command, tokens, 0, scope);
+  if (!list) return null;
+  // 以 &&/|| 结尾（悬空连接符）不是合法命令
+  const last = tokens[tokens.length - 1];
+  if (last?.type === 'op' && last.op !== ';') return null;
+  return list.steps.length > 0 ? list.steps : null;
+}
 
+/**
+ * 循环体的一次迭代。绑定值不进文本的那条路，原文里留着 `"$p"`，所以另给每个步骤补一份展开后的文本
+ * （循环变量按 shell 单引号规则改写，只供用户规则逐段匹配，从不进分词器）。
+ */
+function compileLoopBody(text: string, ctx: ProbeCompileContext, binding: LoopBodyBinding): ProbeStep[] | null {
+  const vars = binding.expanded ? new Map<string, string>() : new Map([[binding.name, binding.value]]);
+  const steps = compileCommand(text, ctx, { loopBody: true, vars });
+  if (!steps || binding.expanded) return steps;
+  // 整个双引号词就是引用（"$p"）时连同引号一起换掉，剩下的裸引用单独换
+  const ref = new RegExp(`"\\$\\{${binding.name}\\}"|"\\$${binding.name}"|\\$\\{${binding.name}\\}|\\$${binding.name}(?![A-Za-z0-9_])`, 'g');
+  const quoted = `'${binding.value.replaceAll("'", `'\\''`)}'`;
+  const expand = (source: string): string => source.replace(ref, () => quoted);
+  return steps.map((step) => ({ ...step, extraSources: [...(step.extraSources ?? []).map(expand), expand(step.source)] }));
+}
+
+/** 把 tokens[from..] 编成语句列表；在语句起点遇到 stopWords 里的裸关键字就停在它前面；编不了返回 null。 */
+function compileStatements(command: string, tokens: Token[], from: number, scope: ProbeScope, stopWords?: readonly string[]): { steps: ProbeStep[]; stop: number } | null {
   const steps: ProbeStep[] = [];
   let op: ProbeStep['op'] = ';';
   let group: Token[] = [];
@@ -556,8 +620,23 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
     return true;
   };
 
-  for (const t of tokens) {
-    if (t.type !== 'op') { group.push(t); continue; }
+  for (let i = from; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.type !== 'op') {
+      // 语句起点的裸关键字：if 结构的结束词，或循环体内的一层 if
+      if (group.length === 0 && op === ';' && t.type === 'word' && t.word.bare && t.word.assignName === undefined) {
+        const word = t.word.value;
+        if (stopWords?.includes(word)) return { steps, stop: i };
+        if (word === 'if' && scope.loopBody) {
+          const end = compileIf(command, tokens, i, scope, steps);
+          if (end < 0) return null;
+          i = end;
+          continue;
+        }
+      }
+      group.push(t);
+      continue;
+    }
     if (t.op === ';' && group.length === 0) {
       // 允许连续换行 / 末尾分号；`&&`/`||` 之后的换行同样被吞掉
       continue;
@@ -566,7 +645,45 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
     op = t.op;
   }
   if (group.length > 0 && !flush()) return null;
-  // 以 &&/|| 结尾（悬空连接符）不是合法命令
-  if (tokens.length > 0 && tokens[tokens.length - 1].type === 'op' && (tokens[tokens.length - 1] as { op: string }).op !== ';') return null;
-  return steps.length > 0 ? { steps } : null;
+  return { steps, stop: tokens.length };
+}
+
+/**
+ * `if <test>; then <只读语句>; [else <只读语句>;] fi`（只认一层，条件恰好一条 test）。
+ * 压平成「条件成立才执行」的步骤：then 的语句条件成立才跑，else 的语句条件不成立才跑；
+ * 没有 else 时补一条条件不成立才跑的空步，让整段像 shell 一样以 0 结束。返回 fi 的下标；认不出返回 -1。
+ */
+function compileIf(command: string, tokens: Token[], at: number, scope: ProbeScope, steps: ProbeStep[]): number {
+  const keywordAt = (index: number): string | undefined => {
+    const token = tokens[index];
+    return token?.type === 'word' && token.word.bare ? token.word.value : undefined;
+  };
+  const inner: ProbeScope = { loopBody: false, vars: scope.vars };
+  const condition = compileStatements(command, tokens, at + 1, inner, IF_KEYWORDS);
+  // 条件恰好一条 test
+  if (condition?.steps.length !== 1 || keywordAt(condition.stop) !== 'then') return -1;
+  const test = condition.steps[0];
+  const testCommand = test.cmd;
+  if (test.op !== ';' || testCommand.kind !== 'test') return -1;
+  const then = compileStatements(command, tokens, condition.stop + 1, inner, IF_KEYWORDS);
+  if (!then || then.steps.length === 0 || then.steps.some((step) => step.op !== ';')) return -1;
+  let otherwise: ProbeStep[] = [];
+  let end = then.stop;
+  if (keywordAt(end) === 'else') {
+    const other = compileStatements(command, tokens, end + 1, inner, IF_KEYWORDS);
+    if (!other || other.steps.length === 0 || other.steps.some((step) => step.op !== ';')) return -1;
+    otherwise = other.steps;
+    end = other.stop;
+  }
+  // 分支里的 `$?` 取的是条件的退出码，而计划只知道「上一条命令的退出码」：不认
+  const usesExitStatus = (step: ProbeStep): boolean => step.cmd.kind === 'echo' && step.cmd.text.includes(PROBE_EXIT_STATUS);
+  if (keywordAt(end) !== 'fi' || [...then.steps, ...otherwise].some(usesExitStatus)) return -1;
+  const guard = (step: ProbeStep, negate: boolean): ProbeStep => ({
+    op: ';', cmd: { kind: 'when', test: testCommand, negate, cmd: step.cmd }, redirect: step.redirect, program: step.program, source: step.source,
+    extraSources: [test.source, ...step.extraSources ?? []],
+  });
+  steps.push(...then.steps.map((step) => guard(step, false)));
+  steps.push(...(otherwise.length > 0 ? otherwise.map((step) => guard(step, true))
+    : [guard({ op: ';', cmd: { kind: 'noop' }, redirect: { out: 'out', err: 'err' }, program: 'test', source: test.source }, true)]));
+  return end;
 }

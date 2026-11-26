@@ -41,7 +41,7 @@ class ProbeAbort extends Error {}
 const MAX_OUTPUT_CHARS = 256 * 1024;
 const EXEC_TIMEOUT_MS = 5000;
 const SHELL_BUILTINS = new Set(['echo', 'printf', 'test', 'command', 'cd', 'pwd', 'type', 'read', 'true', 'false', 'export', 'unset', 'set', 'exit']);
-const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
+const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami', stat: '/usr/bin/stat' } as const;
 
 // ----------------------------------------------------------------------------
 // 路径授权
@@ -290,8 +290,13 @@ class Runner {
     return 0;
   }
 
-  async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
+  /** 返回该命令的退出码；when 步骤的条件不成立时什么都没执行，返回 null（不动上一条的退出码）。 */
+  async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number | null> {
     switch (cmd.kind) {
+      case 'when': {
+        const ok = (await this.run(cmd.test, redirect)) === 0;
+        return ok === cmd.negate ? null : this.run(cmd.cmd, redirect);
+      }
       case 'cd': {
         const directory = this.need(cmd.path);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
@@ -371,6 +376,14 @@ class Runner {
         return result.exitCode;
       }
       case 'noop': return 0;
+      case 'stat': {
+        // `-f format` 是 macOS BSD 语法（Linux 同形不同义：那是文件系统状态）；其它平台交回审批链
+        if (process.platform !== 'darwin') throw new ProbeAbort('stat unavailable');
+        for (const p of cmd.paths) this.need(p);
+        const res = await runFixed(FIXED_BINARIES.stat, ['-f', cmd.format, '--', ...cmd.paths], this.currentDirectory);
+        this.emit(redirect, res.stdout, res.stderr);
+        return res.exitCode;
+      }
       case 'test': {
         const abs = this.need(cmd.path);
         let ok: boolean;
@@ -490,7 +503,8 @@ export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: Pr
       const cmd = step.cmd.kind === 'echo'
         ? { ...step.cmd, text: step.cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) }
         : step.cmd;
-      status = await runner.run(cmd, step.redirect);
+      const next = await runner.run(cmd, step.redirect);
+      if (next !== null) status = next;
     }
   } catch (err) {
     // PyException 逃出 try 块 = 脚本会以 traceback 退出；ProbeAbort = 无法证明。其余意外同样交回审批链。
