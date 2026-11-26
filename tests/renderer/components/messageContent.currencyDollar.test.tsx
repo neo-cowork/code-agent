@@ -3,6 +3,7 @@ import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
+import { updateStreamingMarkdownBlockState } from '../../../src/renderer/components/features/chat/MessageBubble/streamingMarkdownBlocks';
 
 afterEach(cleanup);
 
@@ -67,4 +68,88 @@ describe('MessageContent currency dollars', () => {
     expect(container.textContent).toBe(streamingText);
     expect(container.querySelectorAll('.katex')).toHaveLength(0);
   });
+
+  it('renders bold around currency dollar when later dollar amounts exist', async () => {
+    const ticketSentence = '合计 **$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。';
+    const { container } = render(<MessageContent content={ticketSentence} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.querySelector('strong')?.textContent).toBe('$124.68');
+    expect(container.textContent).not.toContain('**');
+    expect(container.textContent?.match(/\$/g)).toHaveLength(3);
+    expect(container.querySelectorAll('.katex')).toHaveLength(0);
+  });
+
+  it.each([
+    { content: '**$5**', strongText: '$5' },
+    { content: '**$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。', strongText: '$124.68' },
+    { content: '$5 和 $10', strongText: null },
+    { content: '**$1,234.50**', strongText: '$1,234.50' },
+  ])('renders currency bold cases without literal **: $content', async ({ content, strongText }) => {
+    const { container } = render(<MessageContent content={content} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.textContent).not.toContain('**');
+    expect(container.querySelectorAll('.katex')).toHaveLength(0);
+    if (strongText) {
+      expect(container.querySelector('strong')?.textContent).toBe(strongText);
+    } else {
+      expect(container.querySelector('strong')).toBeNull();
+    }
+  });
+
+  it('keeps streaming blocks consistent with full render for bold currency sentence', async () => {
+    const ticketSentence = '合计 **$124.68**（明细 $124.68 + 销售税 $0.00，已刷卡支付）。';
+    const blockState = updateStreamingMarkdownBlockState(null, ticketSentence);
+    const combined = blockState.blocks.map(b => b.content).join('');
+    const { container } = render(<MessageContent content={combined} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.querySelector('strong')?.textContent).toBe('$124.68');
+    expect(container.textContent).not.toContain('**');
+    expect(() => updateStreamingMarkdownBlockState(null, '合计 **$124.68**（明细 $')).not.toThrow();
+  });
+
+  it.each([
+    { content: '成本$5和$10，其中$x$为税率', bold: null },
+    { content: '合计 **$124.68**（明细 $124.68），其中$x$为税率', bold: '$124.68' },
+  ])('renders only the formula as katex when it follows currency dollars: $content', async ({ content, bold }) => {
+    const { container } = render(<MessageContent content={content} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(katexSources(container)).toEqual(['x']);
+    expect(textOutsideKatex(container)).toBe(content.replace('$x$', '').replace(/\*\*/g, ''));
+    expect(container.querySelector('strong')?.textContent ?? null).toBe(bold);
+  });
+
+  it('renders a currency range as plain text instead of a formula', async () => {
+    const content = '范围$5-$10$';
+    const { container } = render(<MessageContent content={content} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.textContent).toBe(content);
+    expect(container.querySelectorAll('.katex')).toHaveLength(0);
+  });
+
+  it('keeps the formula as katex while its sentence streams in', async () => {
+    const partial = '合计 **$124.68**（明细 $124.68），其中$x';
+    const final = `${partial}$为税率`;
+    const { container, rerender } = render(<MessageContent content={partial} isUser={false} isStreaming />);
+    await waitForMarkdown(container);
+    expect(katexSources(container)).toEqual([]);
+    expect(container.textContent).not.toContain('**');
+    rerender(<MessageContent content={final} isUser={false} isStreaming />);
+    await waitFor(() => expect(katexSources(container)).toEqual(['x']));
+    const streamingText = container.textContent;
+    expect(container.querySelector('strong')?.textContent).toBe('$124.68');
+    rerender(<MessageContent content={final} isUser={false} />);
+    await waitForMarkdown(container);
+    expect(container.textContent).toBe(streamingText);
+    expect(katexSources(container)).toEqual(['x']);
+  });
 });
+
+function katexSources(container: HTMLElement): Array<string | null> {
+  return [...container.querySelectorAll('.katex annotation')].map(node => node.textContent);
+}
+
+function textOutsideKatex(container: HTMLElement): string {
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.katex').forEach(node => node.remove());
+  return clone.textContent ?? '';
+}
