@@ -53,6 +53,27 @@ describe('helper reported not done', () => {
     expect(backgroundTaskFailureCopy(task, t)).toBe(t.backgroundPanel.helperNotDone.failed);
   });
 
+  it.each([
+    ['zh', zh, '工作目录里没有 missing-report.txt 这个文件，复制这一步没有做成', '这个后台任务没有做完：工作目录里没有 missing-report.txt 这个文件，复制这一步没有做成。补上缺少的内容后，可以让我再试一次。'],
+    ['en', en, 'missing-report.txt is not in the workspace, so the copy step did not run', 'This background task is not done: missing-report.txt is not in the workspace, so the copy step did not run. Add what is missing and I can try again.'],
+  ] as const)('a safe helper reason names the failed step on card, rail and panel row in %s', (language, t, reason, sentence) => {
+    useAppStore.setState({ language });
+    const task = helperTask({ failure: { message: 'x', outcome: { status: 'failed', reason } } });
+    expect(deriveDelegationPresentation(delegateCall, [task], [], t)?.failure).toBe(sentence);
+    const [row] = buildAgentRows({ members: [], nodes: [], tasks: [task] });
+    expect(row.failureReason).toBe(sentence);
+    expect(backgroundTaskFailureCopy(task, t)).toBe(sentence);
+  });
+
+  it('a reason in the wrong language or with raw command / stderr falls back to the generic sentence', () => {
+    for (const reason of ['源文件不存在', 'cp missing-report.txt archive/ failed', 'No such file or directory']) {
+      expect(backgroundTaskFailureCopy(helperTask({ failure: { message: 'x', outcome: { status: 'failed', reason } } }), en))
+        .toBe(en.backgroundPanel.helperNotDone.failed);
+    }
+    expect(backgroundTaskFailureCopy(helperTask({ failure: { message: 'x', outcome: { status: 'failed', reason: 'The source file is missing' } } }), zh))
+      .toBe(zh.backgroundPanel.helperNotDone.failed);
+  });
+
   it('partial uses the partial sentence', () => {
     const task = helperTask({ failure: { message: 'x', outcome: { status: 'partial' } } });
     expect(backgroundTaskFailureCopy(task, zh)).toBe(zh.backgroundPanel.helperNotDone.partial);

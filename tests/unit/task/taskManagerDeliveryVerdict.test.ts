@@ -565,9 +565,33 @@ describe('TaskManager background delivery verdict', () => {
       const data = event.data as EventData;
       expect(event.type).toBe('task_error');
       expect(data.outcome).toEqual({ status: 'failed', reason: '源文件不存在' });
-      expect(data.error).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      expect(data.error).toBe('这个后台任务没有做完：源文件不存在。补上缺少的内容后，可以让我再试一次。');
       expect(data.rawDetail).toContain('复制没有做成，源文件不在。');
       expect(JSON.stringify(event.data)).not.toContain(MARKER);
+    });
+
+    it('puts a safe reason in the collapsed sentence, and falls back to the generic sentence for unsafe or wrong-language reasons', async () => {
+      const run = async (reason: string, language: 'zh' | 'en') => {
+        configState.language = language;
+        try {
+          const event = await runBackgroundTask(messages({
+            calls: [{ id: 'read-1', name: 'Read', success: true }],
+            conclusion: `${MARKER}${JSON.stringify({ status: 'failed', reason })}\nbody`,
+          }));
+          return (event.data as EventData).error;
+        } finally {
+          configState.language = 'zh';
+        }
+      };
+      expect(await run('missing-report.txt is not in the workspace', 'en')).toBe(
+        'This background task is not done: missing-report.txt is not in the workspace. Add what is missing and I can try again.',
+      );
+      const genericEn = 'This background task is not done: one of its steps did not work. Add what is missing and I can try again.';
+      // command + stderr + exit code, absolute path, and a Chinese reason in the en UI: none may reach the collapsed sentence
+      expect(await run('cp: /Users/x/missing-report.txt: No such file or directory (exit code 1)', 'en')).toBe(genericEn);
+      expect(await run('cp missing-report.txt archive/ failed', 'en')).toBe(genericEn);
+      expect(await run('源文件不存在', 'en')).toBe(genericEn);
+      expect(await run('The source file is missing', 'zh')).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
     });
 
     it('turns partial into task_error with the partial sentence, in English too', async () => {
@@ -642,7 +666,7 @@ describe('TaskManager background delivery verdict', () => {
       const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-1' })[0];
       expect(ledgerTask.status).toBe('failed');
       expect(ledgerTask.failure?.outcome).toEqual({ status: 'failed', reason: '源文件不存在' });
-      expect(ledgerTask.failure?.message).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      expect(ledgerTask.failure?.message).toBe('这个后台任务没有做完：源文件不存在。补上缺少的内容后，可以让我再试一次。');
       expect(ledgerTask.summary).not.toMatch(/cp |No such file|exit/);
       expect(String(ledgerTask.metadata?.resultMarkdown)).toContain('cp missing-report.txt archive/');
       expect(String(ledgerTask.metadata?.resultMarkdown)).toContain('复制没有做成，源文件不在。');
@@ -654,7 +678,7 @@ describe('TaskManager background delivery verdict', () => {
       for (const surface of [JSON.stringify(row), JSON.stringify(ledgerTask), task.stopped?.content ?? '']) {
         expect(surface).not.toContain(MARKER);
       }
-      expect(task.stopped?.content).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      expect(task.stopped?.content).toBe('这个后台任务没有做完：源文件不存在。补上缺少的内容后，可以让我再试一次。');
       center.dispose();
     });
   });

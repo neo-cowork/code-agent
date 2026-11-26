@@ -267,6 +267,19 @@ function sentClientMessageId(callIndex: number): string {
   return call[1].clientMessageId;
 }
 
+describe('step-count wording on cards that did not finish', () => {
+  it('a failed card does not say "Completed N steps"; a completed card still does', () => {
+    mocks.language = 'en';
+    const failed = render(<DelegationReceipt presentation={{ ...failedCard('task-steps'), stepCount: 1 }} />);
+    expect(failed.container.textContent).toContain('Steps run: 1');
+    expect(failed.container.textContent).not.toContain('Completed 1');
+    failed.unmount();
+    const done = render(<DelegationReceipt presentation={{ ...failedCard('task-steps'), state: 'completed', failure: undefined, stepCount: 3 }} />);
+    expect(done.container.textContent).toContain('Completed 3 steps');
+    mocks.language = 'zh';
+  });
+});
+
 describe('delegation retry id and persisted sent state', () => {
   it('click Retry, unmount, remount: the same failed card stays disabled', () => {
     mocks.sendPrompt.mockImplementation(async (_sentence: string, context?: { clientMessageId?: string }) => {

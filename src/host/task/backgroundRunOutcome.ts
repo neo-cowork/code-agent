@@ -85,7 +85,7 @@ export function resolveBackgroundRunTerminal(input: {
     return {
       type: 'task_error',
       data: {
-        error: formatSessionTaskOutcomeNotDone(locale, reportedNotDone ?? 'failed'),
+        error: formatSessionTaskOutcomeNotDone(locale, reportedNotDone ?? 'failed', outcome?.reason),
         ...(rawDetail ? { rawDetail } : {}),
         ...(outcome ? { outcome } : {}),
       },

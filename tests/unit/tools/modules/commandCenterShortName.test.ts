@@ -132,3 +132,21 @@ describe('session command center mixed-script task names', () => {
     });
   });
 });
+
+describe('delegate_task receipt follows the UI language', () => {
+  const baseTask = { shortName: 'Archive', status: 'running', attempt: 1 };
+  it('en output has no Chinese for started / queued / reused / retry', () => {
+    for (const outcome of ['started', 'queued', 'reused'] as const) {
+      const text = describeDelegateTaskResult(
+        { outcome, task: { ...baseTask, attempt: 2, retryOf: { taskId: 't0', status: 'failed', detail: 'timeout' }, detail: 'working' } } as never,
+        'en',
+      );
+      expect(text).not.toMatch(/[一-鿿]/);
+      expect(text).toContain('Archive');
+    }
+  });
+  it('zh output keeps the established wording', () => {
+    expect(describeDelegateTaskResult({ outcome: 'started', task: { ...baseTask, shortName: '合同' } } as never, 'zh'))
+      .toBe('后台任务「合同」已开始，尚未完成；完成后会在这里告诉你结果。');
+  });
+});
