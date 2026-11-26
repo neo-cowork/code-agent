@@ -116,6 +116,7 @@ const pluralExceptions = [
   { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There are still {count} unsent attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftOneAttachmentOnly when safeAttachments.length === 1; this key only for >= 2' },
   { file: 'src/renderer/i18n/chatInput.ts', text: 'PDF · {count} pages', reason: 'pdfPageSentence (src/renderer/components/features/chat/ChatInput/pdfPageSentence.ts) returns attachPdfOnePage when pageCount === 1 and undefined below 1; attachPdfPages is reached only for pageCount >= 2' },
   { file: 'src/renderer/i18n/decisionCard.ts', text: '{count} times', reason: 'settled-approval summary in src/renderer/components/features/chat/ToolStepGroup.tsx appends settledAllowedFolded only when count > 1' },
+  { file: 'src/renderer/i18n/decisionCard.ts', text: ' ({count} files)', reason: 'fileCountText (src/renderer/components/PermissionDialog/permissionPresentation.ts) returns fileCountOne when count === 1; fileCount is reached only for count >= 2' },
   ...[
     ['src/renderer/i18n/chatTranscript.ts', 'Started {count} agent tasks — {names}'],
     ['src/renderer/i18n/toolStepVerbs.ts', 'Request to start {count} agent tasks — {names}'],

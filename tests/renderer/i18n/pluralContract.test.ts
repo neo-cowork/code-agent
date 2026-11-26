@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { interpolate, interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 import { getSurfaceExecutionTranslations } from '../../../src/renderer/i18n/surfaceExecution';
+import { decisionCardEn } from '../../../src/renderer/i18n/decisionCard';
 import baseline from './fixtures/pluralBaseline.json';
 
 const modules = import.meta.glob('../../../src/renderer/i18n/*.ts', { eager: true }) as Record<string, Record<string, unknown>>;
@@ -121,8 +122,10 @@ describe('plural pair contract (en + zh bundles)', () => {
     const find = (k: string) => pairs.find((p) => keyOf(p) === k)!.value;
     expect(interpolatePlural(find('chatTranscriptEn.chat.delegationReceipt.steps'), 1)).toBe('Completed 1 step');
     expect(interpolatePlural(find('chatTranscriptEn.chat.delegationReceipt.steps'), 2)).toBe('Completed 2 steps');
-    expect(interpolatePlural(find('decisionCardEn.decisionCard.permission.fileCount'), 1)).toBe(' (1 file)');
-    expect(interpolatePlural(find('decisionCardEn.decisionCard.permission.fileCount'), 2)).toBe(' (2 files)');
+    // 审批卡文件数（#4034）用的是专用单数键 fileCountOne，消费方按 count === 1 选键，不是 { one, other } 对。
+    const fileCount = decisionCardEn.decisionCard.permission;
+    expect(fileCount.fileCountOne.replace('{count}', '1')).toBe(' (1 file)');
+    expect(fileCount.fileCount.replace('{count}', '2')).toBe(' (2 files)');
   });
 });
 
