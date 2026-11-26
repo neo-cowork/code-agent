@@ -96,6 +96,7 @@ describe('rule summary', () => {
     expect(await ruleSummary('把上次的报告再补充一下数据来源')).toBe('上次的报告再补充一下数据来源');
     expect(deriveRuleSummaryTitle('帮我把这些销售数据做成表')).toBe('这些销售数据做成表');
     expect(deriveRuleSummaryTitle('把握本周重点')).toBe('把握本周重点');
+    expect(await ruleSummary('把控项目风险清单')).toBe('把控项目风险清单');
   });
   it('strips en boilerplate, never ends with ellipsis, max 20 chars', async () => {
     const out = await ruleSummary('Can you help me draft the weekly report about the release, thanks');

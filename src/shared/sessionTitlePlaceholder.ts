@@ -116,7 +116,7 @@ const FUNCTION_WORDS = new Set([
 ]);
 const CLAUSE_SPLIT = /[，。；：！？,;:!?\n]|\.(?=\s|$)/;
 const REQUEST_BOILERPLATE =
-  /^(?:我把|把(?!握|关|手|柄|戏|脉|守|持)|请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
+  /^(?:我把|把(?!握|关|控|玩|门|头|手|柄|戏|脉|守|持|式|舵|酒|风|稳|子)|请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
 
 function firstLineOf(sourceText: string): string {
   return sourceText.trim().split('\n')[0]?.trim() ?? '';

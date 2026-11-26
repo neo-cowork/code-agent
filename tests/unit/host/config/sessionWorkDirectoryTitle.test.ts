@@ -178,6 +178,9 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
     ['整理 /tmp/a 的会议记录，输出摘要', '任务_1113_untitled'],
     ['整理 /tmp/a 的会议记录，请输出摘要', '任务_1113_输出摘要'],
     ['合同文件夹已经整理好了吗（共 30 份），帮我逐份写摘要', '任务_1113_逐份写摘要'],
+    ['请帮我看看这个报告的结论合理吗（附件在下面）', '任务_1113_看看这个报告的结论合理'],
+    ['检查这个公式对不对（第 3 列）', '任务_1113_检查这个公式对不对'],
+    ['把控项目风险清单（共 12 项）', '任务_1113_把控项目风险清单'],
   ] as const)('rejects a hole next to a particle or a non-task clause: %s', async (userMessage, expected) => {
     expect(path.basename(await planSessionWorkDirectory({ userMessage, now, env }))).toBe(expected);
   });

@@ -185,7 +185,7 @@ const ZH_LEADING_DANGLING_CHARS = new Set(Array.from('的了着过吗呢吧及�
 const ZH_CONTENT_WORDS = new Set(('目的 的确 合同 共同 相同 不同 协同 如同 认同 赞同 陪同 通过 经过 超过 不过 错过 过滤 过期 过程 过去 过往 过渡 '
   + '存在 现在 实在 正在 所在 潜在 核对 校对 比对 派对 面对 针对 应对 相对 绝对 反对 配对 供给 补给 方向 导向 转向 面向 走向 意向 '
   + '行为 作为 认为 成为 称为 视为 参与 普及 涉及 及时 及格 或许 或者 总和 温和 平和 缓和 服从 签到 收到 得到 达到 做到 找到 提到 报到 '
-  + '为了 除了 了解 着手 着重 酒吧').split(' '));
+  + '为了 除了 了解 着手 着重 酒吧 不对').split(' '));
 /** 与 sessionTitlePlaceholder 的 FUNCTION_WORDS 同表：英文名停在/起在这些词上是半截。 */
 const EN_FUNCTION_WORDS = new Set([
   'the', 'a', 'an', 'of', 'to', 'for', 'and', 'or', 'in', 'on', 'at',
@@ -227,7 +227,8 @@ function isFolderTitleFragment(name: string): boolean {
 function acceptableRuleFolderTitle(segment: string, language?: 'zh' | 'en'): string | undefined {
   const derived = deriveRuleSummaryTitle(segment, language, { avoidFragment: true });
   if (hasDanglingHole(derived)) return undefined;
-  const name = sanitizeFolderTitle(derived.replace(REMOVED_TOKEN_RUN, ' '));
+  // 完整问句（结论合理吗）只收掉句末语气词，不当半句；了/的 等仍按悬空拒。
+  const name = sanitizeFolderTitle(derived.replace(REMOVED_TOKEN_RUN, ' ').replace(/(?<=\S{2})[吗呢吧]+$/u, ''));
   if (!name || endsDangling(name) || isFolderTitleFragment(name)
     || startsDangling(name, ZH_LEADING_DANGLING_CHARS, EN_LEADING_DANGLING_WORDS)) return undefined;
   return name;
