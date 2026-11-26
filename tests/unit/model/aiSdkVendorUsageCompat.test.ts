@@ -73,4 +73,17 @@ describe('buildVendorCompatSettings — provider usage compatibility', () => {
       thinking: { type: 'disabled' },
     });
   });
+
+  it('glm-5.3 白名单注入 reasoning_effort:low，同时保留 includeUsage', () => {
+    const zhipu = buildVendorCompatSettings(config('zhipu', 'glm-5.3'));
+    const custom = buildVendorCompatSettings(config('custom-xxx', 'glm-5.3'));
+    expect(zhipu.includeUsage).toBe(true);
+    expect(custom.includeUsage).toBe(true);
+    expect(zhipu.transformRequestBody?.({ model: 'glm-5.3', messages: [] })).toMatchObject({
+      reasoning_effort: 'low',
+    });
+    expect(custom.transformRequestBody?.({ model: 'glm-5.3', messages: [] })).toMatchObject({
+      reasoning_effort: 'low',
+    });
+  });
 });

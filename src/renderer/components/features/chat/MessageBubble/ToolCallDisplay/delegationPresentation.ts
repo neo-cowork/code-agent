@@ -9,7 +9,8 @@ import type { ToolCall } from '@shared/contract';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../../../../../i18n/outcomeWords';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { agentFailureReason, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
+import { agentFailureReason, backgroundTaskFailureCopy, deleteIncompleteFileNames } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import {
   isLastToolFailureVisible,
@@ -29,6 +30,7 @@ interface DelegationReceiptOutput {
 export interface DelegationPresentation {
   state: DelegationReceiptState;
   outcomeKey?: OutcomeKey;
+  leftoverPaths?: readonly string[];
   title: string;
   lastToolStep?: LastToolStep;
   guiDisclosures?: AgentTreeNode['guiDisclosures'];
@@ -210,6 +212,7 @@ function taskFailureCause(task: Task): string | undefined {
 }
 
 function fromTask(task: Task, t: Translations): DelegationPresentation {
+  const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
   const terminal = isTaskTerminalStatus(task.status);
   const state: DelegationReceiptState = !terminal
     ? 'working'
@@ -220,12 +223,15 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
         : 'failed';
   return {
     state,
-    title: displayPaths(backgroundTaskLabel(task, t)),
+    outcomeKey: incomplete ? 'delete-incomplete' : undefined,
+    leftoverPaths: incomplete ? task.leftoverPaths : undefined,
+    title: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
+      ?? displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
     guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
-    stepCount: terminal
+    stepCount: terminal && !incomplete
       ? completedStepCount(task.progress?.lastToolStep, task.progress?.current)
       : undefined,
     outputs: task.outputRefs.flatMap((ref) => {
@@ -236,7 +242,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     memberId: task.id,
     failureCause: state === 'failed' ? taskFailureCause(task) : undefined,
     endedAt: state === 'failed' || state === 'cancelled' ? task.completedAt ?? task.updatedAt : undefined,
-    toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
+    toolFailure: !incomplete && isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
 

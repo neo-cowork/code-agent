@@ -1,6 +1,8 @@
 import type { ToolResult } from '../../protocol/tools';
 import { findConnectorIdForToolName } from '../../../shared/contract/workbenchTools';
-import { CONNECTOR_RECONNECT_ZH } from '../../../shared/i18n/connectorReconnect';
+import { CONNECTOR_EXIT_PREFIX, getConnectorReconnectCopy, getSpecificConnectorStatusCopy } from '../../../shared/i18n/connectorReconnect';
+import type { NativeConnectorDetailCode } from '../../../shared/ipc/types';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ConnectorAvailability');
@@ -15,41 +17,37 @@ interface ConnectorExit {
   userMessage: string;
 }
 
-const RECONNECT_MESSAGE = CONNECTOR_RECONNECT_ZH.reconnect;
-const RECONNECT_EXIT: ConnectorExit = {
-  userMessage: RECONNECT_MESSAGE,
-  error: 'The complete user-facing answer is exactly this single everyday sentence: '
-    + `“${RECONNECT_MESSAGE}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
-    + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to reconnect before trying again; connector authorization cannot be replaced with shell commands or background execution.',
-};
+type ReconnectCopy = ReturnType<typeof getConnectorReconnectCopy>;
 
-function remindersAccessExit(reason: 'status-unchecked' | 'access-probe-denied'): ConnectorExit {
-  const userMessage = reason === 'status-unchecked' ? CONNECTOR_RECONNECT_ZH.remindersUnchecked : CONNECTOR_RECONNECT_ZH.remindersDenied;
+function reconnectExit(userMessage: string): ConnectorExit {
   return {
     userMessage,
-    error: 'The complete user-facing answer is exactly this single everyday sentence: '
-      + `“${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}, action: Check and authorize when prompted). `
+    error: `${CONNECTOR_EXIT_PREFIX}${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
+      + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to reconnect before trying again; connector authorization cannot be replaced with shell commands or background execution.',
+  };
+}
+
+function remindersAccessExit(reason: 'status-unchecked' | 'access-probe-denied', copy: ReconnectCopy): ConnectorExit {
+  const userMessage = reason === 'status-unchecked' ? copy.remindersUnchecked : copy.remindersDenied;
+  return {
+    userMessage,
+    error: `${CONNECTOR_EXIT_PREFIX}${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}, action: Check and authorize when prompted). `
       + 'Keep diagnostic details in the existing structured metadata, outside that sentence. Wait for the user to authorize access before trying again; connector authorization cannot be replaced with shell commands or background execution.',
   };
 }
 
-// 连接器根本没开/没注册时，通用「没读到数据」句不告诉用户日历是关着的，模型也容易转而
-// 用别处数据答「今天没有日程」。这种情形换成点名连接器的版本，并禁止拿别处数据或声称「没有」。
-const NOT_CONNECTED_EXITS = new Map<string, { userMessage: string; empty: string }>([
-  ['calendar', { userMessage: CONNECTOR_RECONNECT_ZH.calendar, empty: 'events' }],
-  ['mail', { userMessage: CONNECTOR_RECONNECT_ZH.mail, empty: 'emails' }],
-  ['reminders', { userMessage: CONNECTOR_RECONNECT_ZH.reminders, empty: 'reminders' }],
-]);
+// A disabled connector is unavailable data, rather than an empty calendar or mailbox.
+const EMPTY_NOUN = { calendar: 'events', mail: 'emails', reminders: 'reminders' } as const;
 
-function notConnectedExit(connectorId: string): ConnectorExit {
-  const copy = NOT_CONNECTED_EXITS.get(connectorId);
-  if (!copy) return RECONNECT_EXIT;
-  const { userMessage, empty } = copy;
+function notConnectedExit(connectorId: string, copy: ReconnectCopy): ConnectorExit {
+  if (connectorId !== 'calendar' && connectorId !== 'mail' && connectorId !== 'reminders') {
+    return reconnectExit(copy.reconnect);
+  }
+  const userMessage = copy[connectorId];
   return {
     userMessage,
-    error: 'The complete user-facing answer is exactly this single everyday sentence: '
-      + `“${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
-      + `Do not answer this question from other sources (for example meeting records or files), and never state that there are no ${empty}. `
+    error: `${CONNECTOR_EXIT_PREFIX}${userMessage}” Translate only that sentence for another user language (navigation: ${ENTRY_EN}). `
+      + `Do not answer this question from other sources (for example meeting records or files), and never state that there are no ${EMPTY_NOUN[connectorId]}. `
       + 'Wait for the user to connect it before trying again; connector authorization cannot be replaced with shell commands or background execution.',
   };
 }
@@ -58,7 +56,12 @@ function notConnectedExit(connectorId: string): ConnectorExit {
 export function withConnectorReconnectGuidance<T>(toolName: string, result: ToolResult<T>): ToolResult<T> {
   const connectorId = findConnectorIdForToolName(toolName);
   if (!connectorId) return result;
-  const status = result.meta?.status as { connected?: boolean; unavailable?: boolean; readiness?: string } | undefined;
+  const status = result.meta?.status as { connected?: boolean; unavailable?: boolean; readiness?: string; detailCode?: NativeConnectorDetailCode } | undefined;
+  const existing = result.meta?.modelGuidance;
+  // The status formatter already supplies the appropriate output, preview and model guidance.
+  if (result.ok && status?.connected === false && typeof existing === 'string' && getSpecificConnectorStatusCopy(status.detailCode)) {
+    return result;
+  }
   const remindersRead = toolName === 'reminders';
   const reason = !result.ok && result.code === 'NOT_INITIALIZED' ? 'not-enabled-or-registered'
     : remindersRead && !result.ok && result.code === 'not_authorized' && result.meta?.accessProbeDenied === true ? 'access-probe-denied'
@@ -68,11 +71,18 @@ export function withConnectorReconnectGuidance<T>(toolName: string, result: Tool
   if (!reason) return result;
   logger.warn('Connector call needs reconnection', { connectorId, toolName, reason });
   const notConnected = reason === 'not-enabled-or-registered' || (reason === 'status-not-connected' && status?.unavailable === true);
-  const exit = reason === 'status-unchecked' || reason === 'access-probe-denied' ? remindersAccessExit(reason)
-    : notConnected ? notConnectedExit(connectorId) : RECONNECT_EXIT;
+  const copy = getConnectorReconnectCopy(getHostUiLocale());
+  const exit = reason === 'status-unchecked' || reason === 'access-probe-denied' ? remindersAccessExit(reason, copy)
+    : notConnected ? notConnectedExit(connectorId, copy) : reconnectExit(copy.reconnect);
   if (result.ok) {
-    if (typeof result.output !== 'string' || hasEntry(result.output)) return result;
-    return { ...result, output: exit.error as T };
+    // 输出只留事实；给模型的指引放 meta.modelGuidance（经 serializeToolResultsForModel 仍进模型 JSON）。
+    if (typeof result.output !== 'string' || (typeof existing === 'string' && hasEntry(existing))) return result;
+    // exit.error 自称「完整答复」：模型侧用它代替事实句（与旧行为一致），界面侧 output 仍只有事实。
+    const artifact = result.meta?.artifact;
+    const updatedArtifact = artifact && typeof artifact === 'object' && 'preview' in artifact
+      ? { ...artifact, preview: exit.userMessage, contentLength: exit.userMessage.length }
+      : artifact;
+    return { ...result, output: exit.userMessage as T, meta: { ...result.meta, ...(updatedArtifact ? { artifact: updatedArtifact } : {}), modelGuidance: exit.error, modelGuidanceReplacesOutput: true } };
   }
   return hasEntry(result.error) ? result : { ...result, ...exit };
 }

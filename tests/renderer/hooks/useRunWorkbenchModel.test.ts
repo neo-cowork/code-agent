@@ -12,6 +12,7 @@ import type { Task } from '../../../src/shared/contract/backgroundTask';
 import { formatBlockDetail, formatTaskStatus } from '../../../src/renderer/components/features/sidebar/sessionReplayFormatters';
 import { languages } from '../../../src/renderer/i18n';
 import { backgroundTaskFailureCopy } from '../../../src/renderer/utils/agentFailureCopy';
+import { deriveTaskRailView } from '../../../src/renderer/utils/taskRailPresentation';
 import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { buildSessionReplayContext } from '../../../src/renderer/utils/sessionReplayContext';
@@ -123,6 +124,23 @@ describe('buildDurableSubagentViews', () => {
 });
 
 describe('buildLedgerTaskRecords', () => {
+  it('projects shell and PTY display titles in the UI language', () => {
+    const description = '把缺失的报告移入归档';
+    const english = 'Copy missing-report.txt into archive in background';
+    const tasks = [
+      makeLedgerTask({ id: 'shell:2', source: 'shell', sessionId: 'session-1', title: english, createdAt: 2 }),
+      makeLedgerTask({ id: 'pty:1', source: 'pty', sessionId: 'session-1', title: english, createdAt: 1 }),
+      makeLedgerTask({ id: 'shell:3', source: 'shell', sessionId: 'session-1', title: description, createdAt: 3 }),
+    ];
+
+    const records = buildLedgerTaskRecords(tasks, 'session-1', 'zh');
+    expect(records.map((record) => record.displayTitle)).toEqual(['后台命令 2', '后台命令 1', description]);
+    expect(records.map((record) => deriveTaskRailView(record).title)).toEqual(['后台命令 2', '后台命令 1', description]);
+    expect(records.map((record) => record.title)).toEqual([english, english, description]);
+    const [englishRecord] = buildLedgerTaskRecords([tasks[2]], 'session-1', 'en');
+    expect(deriveTaskRailView(englishRecord, null, 'en').title).toBe('Background command');
+  });
+
   it.each([
     ['zh', 'shell', '命令未能成功完成', '失败：命令未能成功完成'],
     ['en', 'pty', 'The command did not finish successfully', 'Failed: The command did not finish successfully'],

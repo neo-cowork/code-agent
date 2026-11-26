@@ -6,13 +6,5 @@
   {
     "file": "src/renderer/i18n/capabilityHub.ts",
     "value": "Local commands: runs rec and osascript; the global shortcut is Cmd/Ctrl+`."
-  },
-  {
-    "file": "src/shared/modelErrorDiagnostics.ts",
-    "value": "用 /login <provider> 重新配置 API Key，或用 /model 切换到其他可用模型。"
-  },
-  {
-    "file": "src/shared/modelErrorDiagnostics.ts",
-    "value": "请充值或更换账户；也可以用 /model 切换到其他可用模型。"
   }
 ]

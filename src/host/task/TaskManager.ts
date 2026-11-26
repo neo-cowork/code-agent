@@ -35,6 +35,8 @@ import { getModelSessionState } from '../session/modelSessionState';
 import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
+import { executingBackgroundPrimaryRunId, withBackgroundPrimaryRun } from '../session/backgroundSettlementHold';
+import { generateMessageId } from '../../shared/utils/id';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
@@ -275,7 +277,7 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
-      await wrapper.orchestrator.resumeExistingDurableRun(
+      await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,
         {
@@ -287,7 +289,7 @@ export class TaskManager extends EventEmitter {
         },
         messageMetadata ?? source.metadata,
         clientMessageId ?? source.id,
-      );
+      ));
       if (this.cancellingSessions.has(sessionId)) {
         const currentHandle = this.runRegistry?.get(runId); if (currentHandle && this.runRegistry?.hasDurableOwner(runId)) await this.runRegistry.parkDurable(runId, { reason: 'user_stop' }, currentHandle);
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -302,7 +304,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage, runId);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -1023,6 +1025,9 @@ export class TaskManager extends EventEmitter {
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
   ): Promise<void> {
+    // Preflight can reject before the orchestrator registers its handle. Give that
+    // rejection and the later native loop the same primary identity.
+    const runId = options?.runId?.trim() || `run-${generateMessageId()}`;
     logger.info(`Executing task for session ${sessionId}`);
 
     const requestedModelSpec = options?.modelSpec;
@@ -1046,7 +1051,8 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
 
     try {
-      await wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata, clientMessageId);
+      await withBackgroundPrimaryRun(sessionId, runId, () =>
+        wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata, clientMessageId));
 
       if (this.cancellingSessions.has(sessionId)) {
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -1071,7 +1077,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage, runId);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),
@@ -1296,6 +1302,7 @@ export class TaskManager extends EventEmitter {
       backgroundPermissionOwners: this.backgroundPermissionOwners,
       backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
       messageDeltaAccumulator: this.messageDeltaAccumulator,
+      primaryRunId: executingBackgroundPrimaryRunId(sessionId) ?? this.runRegistry?.getBySessionId(sessionId)?.context.runId,
       isPrimaryRunActive: () => this.getSessionState(sessionId).status === 'running' || this.hasActivePrimaryRun(sessionId),
     }, sessionId, event, snapshot, eventKey);
   }

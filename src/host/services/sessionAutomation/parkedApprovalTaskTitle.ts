@@ -1,5 +1,6 @@
 import type { ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
 import { deriveDelegatedSessionTitle } from '../../tools/modules/delegation/delegatedSessionTitle';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../../shared/telemetryRecovery';
 import { getDatabase } from '../core/databaseService';
 import { createLogger } from '../infra/logger';
 
@@ -18,7 +19,10 @@ export function approvalTaskTitle(sessionId: string | null, payload: Partial<Too
       && message.toolCalls?.some((call) => call.id === toolCallId));
     for (let index = callIndex - 1; index >= 0; index -= 1) {
       const message = messages[index];
-      if (message.role === 'user' && message.content.trim()) return deriveDelegatedSessionTitle(message.content);
+      if (message.role !== 'user') continue;
+      // 标题派生共用恢复提示清洗：只剩提示的消息不算有效正文，继续往前找。
+      const content = stripTelemetryRecoveryNoticeOrResidue(message.content);
+      if (content.trim()) return deriveDelegatedSessionTitle(content);
     }
   } catch {
     logger.warn('Approval task title unavailable');

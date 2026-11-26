@@ -772,12 +772,30 @@ function normalizeContentParts(value: unknown): Message['contentParts'] | undefi
   return parts.length > 0 ? parts : undefined;
 }
 
+function normalizeAssistantHandoffMetadata(value: unknown): AssistantMessagePayload['metadata'] {
+  if (!isRecord(value)) return undefined;
+  const correlation = isRecord(value.correlation) ? value.correlation : {};
+  const turnId = getStringField(correlation, 'turnId');
+  const traceId = getStringField(correlation, 'traceId');
+  const preview = isRecord(value.backgroundTaskPreannounce) ? value.backgroundTaskPreannounce : {};
+  const text = getStringField(preview, 'text');
+  const run = turnId && traceId ? { turnId, traceId } : undefined;
+  if (!run && !text) return undefined;
+  return {
+    ...(run ? { correlation: run } : {}),
+    ...(text ? { backgroundTaskPreannounce: {
+      text, title: getStringField(preview, 'title'), toolCallId: getStringField(preview, 'toolCallId'),
+    } } : {}),
+  };
+}
+
 export function normalizeAssistantMessagePayload(data: unknown): AssistantMessagePayload | null {
   if (!isRecord(data)) return null;
   const toolCalls = normalizeToolCalls(data.toolCalls);
   const artifacts = normalizeArtifacts(data.artifacts);
   const contentParts = normalizeContentParts(data.contentParts);
   const modelDecision = normalizeModelDecisionPayload(data.modelDecision);
+  const metadata = normalizeAssistantHandoffMetadata(data.metadata);
   return {
     ...(getStringField(data, 'id') ? { id: getStringField(data, 'id') } : {}),
     ...(getStringField(data, 'turnId') ? { turnId: getStringField(data, 'turnId') } : {}),
@@ -789,6 +807,7 @@ export function normalizeAssistantMessagePayload(data: unknown): AssistantMessag
     ...(contentParts ? { contentParts } : {}),
     ...(artifacts ? { artifacts } : {}),
     ...(modelDecision ? { modelDecision } : {}),
+    ...(metadata ? { metadata } : {}),
   };
 }
 

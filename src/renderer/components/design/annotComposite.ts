@@ -97,6 +97,8 @@ export async function exportAnnotatedPng(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  // 大图上固定像素的线宽/字号会细得看不见：按原图宽度放大（600px 宽及以下保持原值）。
+  const unit = Math.max(1, naturalW / 600);
   for (const shape of scaledShapes) {
     ctx.strokeStyle = shape.color;
     ctx.fillStyle = shape.color;
@@ -137,13 +139,14 @@ export async function exportAnnotatedPng(
         break;
       }
       case 'rect': {
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * unit;
         ctx.strokeRect(shape.x, shape.y, shape.w, shape.h);
         ctx.lineWidth = 3;
         break;
       }
       case 'text': {
-        ctx.font = '18px sans-serif';
+        ctx.font = `bold ${Math.round(18 * unit)}px sans-serif`;
+        ctx.textBaseline = 'top';
         ctx.fillText(shape.text, shape.x, shape.y);
         break;
       }

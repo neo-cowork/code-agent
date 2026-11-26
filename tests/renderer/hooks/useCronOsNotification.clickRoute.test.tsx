@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
+import { CRON_CONNECTOR_LOST } from '../../../src/shared/constants/cronErrors';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const h = vi.hoisted(() => ({
@@ -8,7 +10,7 @@ const h = vi.hoisted(() => ({
   click: null as null | ((e: { payload: { id: string; sessionId?: string } }) => void),
   unlisten: vi.fn(),
   action: null as null | (() => void),
-  parked: [] as Array<{ sessionId: string; status: string }>,
+  parked: [] as Array<{ sessionId: string; status: string; startedByFirstWake?: boolean }>,
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -90,7 +92,8 @@ describe('notification-clicked 路由', () => {
 
   it.each([
     ['用户自己发起的会话 → 回该会话（卡在聊天里原位）', { id: 'sess-b' }, 'session'],
-    ['定时运行会话 → 运行记录页', { id: 'sess-b', origin: { kind: 'cron' } }, 'runs'],
+    ['定时运行会话 → 运行记录页', { id: 'sess-b', origin: { kind: 'cron', id: 'job-1', name: 'Daily brief' } }, 'runs'],
+    ['专家首次见面 → 回该会话', { id: 'sess-b', origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } } }, 'session'],
   ])('needs-input 有 pending 停车行：%s', async (_n, session, dest) => {
     h.parked = [{ sessionId: 'sess-b', status: 'pending' }];
     const prev = useSessionStore.getState().sessions;
@@ -123,6 +126,30 @@ describe('notification-clicked 路由', () => {
     expect(open).not.toHaveBeenCalled();
     expect(useCronStore.getState().selectedJobId).toBe('job-9');
     expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+
+  it('signed-out connector notification opens only the Connectors tab', async () => {
+    const openCapabilityHub = vi.spyOn(useAppStore.getState(), 'openCapabilityHub');
+    const selectJob = vi.spyOn(useCronStore.getState(), 'selectJob');
+    const previousTab = useAppStore.getState().capabilityHubTab;
+    const previousVisibility = useAppStore.getState().showCapabilityHub;
+    try {
+      await mount();
+      h.show!({
+        ...ask,
+        sessionId: '',
+        jobId: 'job-connector',
+        code: CRON_CONNECTOR_LOST,
+      });
+      await click(ask.id);
+      expect(openCapabilityHub).toHaveBeenCalledExactlyOnceWith('connectors');
+      expect(useAppStore.getState().capabilityHubTab).toBe('connectors');
+      expect(open).not.toHaveBeenCalled();
+      expect(selectJob).not.toHaveBeenCalled();
+      expect(useAppStore.getState().showCronCenter).toBe(false);
+    } finally {
+      useAppStore.setState({ capabilityHubTab: previousTab, showCapabilityHub: previousVisibility });
+    }
   });
 
   it.each([
@@ -175,6 +202,16 @@ describe('notification-clicked 路由', () => {
     expect(useAppStore.getState().cronCenterRunsRequested).toBe(true);
     h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
     await flush();
+  });
+
+  it('cold first-meeting click uses the parked origin before sessions are loaded', async () => {
+    h.parked = [{ sessionId: 'cold-session', status: 'pending', startedByFirstWake: true }];
+    const openRuns = vi.spyOn(useAppStore.getState(), 'openCronCenterRuns');
+    await mount();
+    h.click!({ payload: { id: 'cold-id', sessionId: 'cold-session' } });
+    await flush();
+    expect(open).toHaveBeenCalledExactlyOnceWith('cold-session');
+    expect(openRuns).not.toHaveBeenCalled();
   });
 
   it.each(['none', 'orphaned', 'other-session'])('cold notification-clicked unknown id without matching pending approval (%s) → session', async (kind) => {

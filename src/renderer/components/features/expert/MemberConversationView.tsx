@@ -11,7 +11,7 @@
 // 已有的字段（派到的任务 / 最近动作 / 最终输出 / 用量），不另起 live 子 transcript。
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bot, Clock, Square, Wrench, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
@@ -42,10 +42,54 @@ import { stopSessionAgent } from '../../../utils/stopSessionAgent';
 
 /** 轨迹只回看最近这几条：成员视图是「他现在在干嘛」，不是全量审计日志。 */
 const RUN_TRAIL_LIMIT = 12;
+const LIVE_NODE_STATUSES = new Set(['running', 'running-recovered']);
+const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
-function durationLabel(ms?: number | null): string {
-  if (!ms) return '—';
-  return `${Math.max(1, Math.round(ms / 1000))}s`;
+type MemberDurationCopy = {
+  durationUnderOneSecond: string;
+  durationSeconds: string;
+  durationMinutes: string;
+  durationMinutesSeconds: string;
+};
+
+function formatMemberDuration(ms: number | null | undefined, copy: MemberDurationCopy): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  if (ms < 1000) return copy.durationUnderOneSecond;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) {
+    return copy.durationSeconds.replace('{n}', String(totalSeconds));
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (seconds === 0) {
+    return copy.durationMinutes.replace('{m}', String(minutes));
+  }
+  return copy.durationMinutesSeconds
+    .replace('{m}', String(minutes))
+    .replace('{s}', String(seconds));
+}
+
+function resolvePlainElapsed(
+  plainTask: { durationMs?: number; createdAt?: number; completedAt?: number; updatedAt?: number; status: string } | undefined,
+  plainNode: { createdAt?: number; completedAt?: number } | undefined,
+  now: number,
+): number | null {
+  if (plainTask) {
+    if (typeof plainTask.durationMs === 'number' && Number.isFinite(plainTask.durationMs) && plainTask.durationMs > 0) {
+      return plainTask.durationMs;
+    }
+    if (typeof plainTask.createdAt === 'number' && Number.isFinite(plainTask.createdAt) && plainTask.createdAt > 0) {
+      const terminal = !LIVE_TASK_STATUSES.has(plainTask.status);
+      const endAt = terminal ? (plainTask.completedAt ?? plainTask.updatedAt) : now;
+      if (typeof endAt === 'number' && Number.isFinite(endAt)) {
+        return endAt - plainTask.createdAt;
+      }
+    }
+  }
+  if (plainNode?.createdAt) {
+    return (plainNode.completedAt ?? now) - plainNode.createdAt;
+  }
+  return null;
 }
 
 function timeLabel(timestamp: number): string {
@@ -94,9 +138,6 @@ const StopMemberButton: React.FC<{
     </button>
   );
 };
-
-const LIVE_NODE_STATUSES = new Set(['running', 'running-recovered']);
-const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
@@ -175,7 +216,28 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     [member, plainNode, backgroundTasks, viewingMemberId],
   );
 
-  if ((!snapshot && standalone) || (!member && !plainNode && !plainTask)) return null;
+  const isVisible = !((!snapshot && standalone) || (!member && !plainNode && !plainTask));
+  const isLive = isVisible && (
+    member && agent
+      ? member.status === 'running'
+      : plainNode
+        ? LIVE_NODE_STATUSES.has(plainNode.status)
+        : plainTask
+          ? LIVE_TASK_STATUSES.has(plainTask.status)
+          : false
+  );
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isLive) return undefined;
+    const timer = window.setInterval(() => {
+      setTick((count) => count + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isLive]);
+
+  if (!isVisible) return null;
+
+  const now = Date.now();
 
     // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
     if (!member || !agent) {
@@ -222,8 +284,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     const tokens = plainNode?.budgetSummary.tokensUsed;
     const toolCalls = plainNode?.budgetSummary.toolCalls;
     const cost = plainNode?.budgetSummary.costUsd;
-    const elapsed = plainTask?.durationMs
-      ?? (plainNode?.createdAt ? (plainNode.completedAt ?? Date.now()) - plainNode.createdAt : null);
+    const elapsed = resolvePlainElapsed(plainTask, plainNode, now);
+    const durationText = formatMemberDuration(elapsed, text);
 
     const plainTarget: MemberInputTarget = plainNode
       ? { key: plainNode.id, kind: 'agent', name: plainNode.role, displayName: name, live: LIVE_NODE_STATUSES.has(plainNode.status) }
@@ -305,7 +367,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
                 <Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(toolCalls))}
               </span>
             )}
-            <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{durationLabel(elapsed)}</span>
+            {durationText && (
+              <span data-testid="member-usage-duration" className="inline-flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" aria-hidden />{durationText}
+              </span>
+            )}
             {typeof tokens === 'number' && (
               <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5" />{tokens}</span>
             )}
@@ -319,7 +385,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   }
 
   const tokens = (agent.tokenUsage?.input ?? 0) + (agent.tokenUsage?.output ?? 0);
-  const elapsed = agent.startTime ? (agent.endTime ?? Date.now()) - agent.startTime : null;
+  const elapsed = agent.startTime ? (agent.endTime ?? now) - agent.startTime : null;
+  const durationText = formatMemberDuration(elapsed, text);
 
   // 专家团成员：投递要带 swarm run id（宿主 swarm:send-user-message 按 run 作用域解析）
   const memberRunId = durableDetail?.run.id ?? activeRunId;
@@ -438,7 +505,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
 
         <section data-testid="member-usage" className="flex items-center gap-3 text-[11px] text-zinc-500">
           <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(agent.toolCalls ?? 0))}</span>
-          <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{durationLabel(elapsed)}</span>
+          {durationText && (
+            <span data-testid="member-usage-duration" className="inline-flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" aria-hidden />{durationText}
+            </span>
+          )}
           <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5" />{tokens}</span>
           <span>${(agent.cost ?? 0).toFixed(4)}</span>
         </section>

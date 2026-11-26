@@ -94,6 +94,7 @@ const TYPE_CONFIG: Record<string, Omit<MemoryTypeConfig, 'label'>> = {
   user: { icon: '👤', color: 'text-badge-info' },
   feedback: { icon: '💬', color: 'text-badge-warning' },
   project: { icon: '📁', color: 'text-badge-success' },
+  people: { icon: '🧑', color: 'text-badge-info' },
   reference: { icon: '🔗', color: 'text-badge-accent' },
   unknown: { icon: '📄', color: 'text-zinc-400' },
 };
@@ -830,7 +831,7 @@ export const MemoryTab: React.FC = () => {
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
               [memoryText.files.stats.memoryFiles, String(memorySummary.totalFiles), `${memorySummary.matchedFiles}${memoryText.files.stats.matchSuffix}`],
-              [memoryText.files.stats.types, String(memorySummary.typeCount), `${memoryText.typeLabels.user} / ${memoryText.typeLabels.feedback} / ${memoryText.typeLabels.project} / ${memoryText.typeLabels.reference}`],
+              [memoryText.files.stats.types, String(memorySummary.typeCount), `${memoryText.typeLabels.user} / ${memoryText.typeLabels.feedback} / ${memoryText.typeLabels.project} / ${memoryText.typeLabels.people} / ${memoryText.typeLabels.reference}`],
               [memoryText.files.stats.totalSessions, String(memorySummary.totalSessions), `${memoryText.files.stats.averageDepthPrefix}${memorySummary.averageDepth}`],
               [memoryText.files.stats.active7Days, String(memorySummary.activeDays7), `${memorySummary.recentConversationCount}${memoryText.files.stats.recentSessionsSuffix}`],
             ].map(([label, value, caption]) => (

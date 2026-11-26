@@ -14,13 +14,54 @@ export interface ModelErrorDiagnostic {
   hasFallbackConfigurationIssue?: boolean;
 }
 
+type ModelErrorLocale = 'zh' | 'en';
+type ModelErrorSurface = 'desktop' | 'cli';
+type ActionDiagnosticCode = 'auth_failed' | 'quota_exhausted';
+
+const CLI_COMMAND_PREFIX = '/';
+const CLI_LOGIN_COMMAND = `${CLI_COMMAND_PREFIX}login`;
+const CLI_MODEL_COMMAND = `${CLI_COMMAND_PREFIX}model`;
+
+const DESKTOP_ACTION_SUGGESTIONS = {
+  auth_failed: {
+    zh: '请在设置 → 通用模型中重新填写 API Key，或用输入框右下角的模型按钮切换到其他可用模型。',
+    en: 'Go to Settings → General model to re-enter the API Key, or use the model button at the bottom right of the input to switch models.',
+  },
+  quota_exhausted: {
+    zh: '请充值或更换账户；也可以用输入框右下角的模型按钮切换到其他可用模型。',
+    en: 'Top up or change the account, or use the model button at the bottom right of the input to switch models.',
+  },
+} as const;
+
+const CLI_ACTION_SUGGESTIONS = {
+  auth_failed: {
+    zh: `用 ${CLI_LOGIN_COMMAND} 重新配置 API Key，或用 ${CLI_MODEL_COMMAND} 切换到其他可用模型。`,
+    en: `Use ${CLI_LOGIN_COMMAND} to reconfigure the API Key, or use ${CLI_MODEL_COMMAND} to switch to another available model.`,
+  },
+  quota_exhausted: {
+    zh: `请充值或更换账户；也可以用 ${CLI_MODEL_COMMAND} 切换到其他可用模型。`,
+    en: `Top up or change the account, or use ${CLI_MODEL_COMMAND} to switch to another available model.`,
+  },
+} as const;
+
+function getActionSuggestion(code: ActionDiagnosticCode, locale: ModelErrorLocale, surface: ModelErrorSurface): string {
+  const suggestions = surface === 'cli' ? CLI_ACTION_SUGGESTIONS : DESKTOP_ACTION_SUGGESTIONS;
+  return suggestions[code][locale];
+}
+
 /** 模型服务回了 HTTP 200 但内容不完整（截断/空/网页），已自动重试一次仍失败。 */
-export const INCOMPLETE_RESPONSE_DIAGNOSTIC: ModelErrorDiagnostic = {
-  code: 'incomplete_response',
-  message: '模型服务返回的内容不完整，已自动重试一次仍然失败。',
-  suggestion: '请稍后再试一次；持续失败就在输入框右下角换一个模型。',
-  retryable: true,
-};
+export function incompleteResponseDiagnostic(locale: ModelErrorLocale = 'zh'): ModelErrorDiagnostic {
+  return {
+    code: 'incomplete_response',
+    message: locale === 'en'
+      ? 'The model service returned an incomplete response, and it still failed after one automatic retry.'
+      : '模型服务返回的内容不完整，已自动重试一次仍然失败。',
+    suggestion: locale === 'en'
+      ? 'Try again later; if it keeps failing, switch to a different model.'
+      : '请稍后再试一次；持续失败就在输入框右下角换一个模型。',
+    retryable: true,
+  };
+}
 
 function normalizeMessage(message: string): string {
   return message.trim().replace(/\s+/g, ' ');
@@ -34,11 +75,22 @@ export function getModelErrorStatus(error: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined;
 }
 
-export function classifyModelErrorMessage(message: string, statusCode?: number): ModelErrorDiagnostic | null {
+export function classifyModelErrorMessage(
+  message: string,
+  statusCode?: number,
+  locale: ModelErrorLocale = 'zh',
+  surface: ModelErrorSurface = 'desktop',
+): ModelErrorDiagnostic | null {
   const normalized = normalizeMessage(message);
   const lower = normalized.toLowerCase();
 
-  if (normalized.includes(INCOMPLETE_RESPONSE_DIAGNOSTIC.message)) return INCOMPLETE_RESPONSE_DIAGNOSTIC;
+  // 已包装的终态文案（含历史落库的中文句与英文句）要认回来，但按调用方 locale 重新出文案。
+  if (
+    normalized.includes(incompleteResponseDiagnostic('zh').message)
+    || normalized.includes(incompleteResponseDiagnostic('en').message)
+  ) {
+    return incompleteResponseDiagnostic(locale);
+  }
 
   // 鉴权失败：401/403 或 key/认证类文案（含中文）。不可重试，必须换 key 或换模型。
   const authFailed =
@@ -54,8 +106,10 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (authFailed) {
     return {
       code: 'auth_failed',
-      message: '模型鉴权失败：API Key 无效、已过期或没有权限。',
-      suggestion: '用 /login <provider> 重新配置 API Key，或用 /model 切换到其他可用模型。',
+      message: locale === 'en'
+        ? 'Model authentication failed: the API Key is invalid, expired, or does not have permission.'
+        : '模型鉴权失败：API Key 无效、已过期或没有权限。',
+      suggestion: getActionSuggestion('auth_failed', locale, surface),
       retryable: false,
     };
   }
@@ -75,8 +129,10 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (quotaExhausted) {
     return {
       code: 'quota_exhausted',
-      message: '模型账户余额或配额不足（欠费），请求被拒绝。',
-      suggestion: '请充值或更换账户；也可以用 /model 切换到其他可用模型。',
+      message: locale === 'en'
+        ? 'The model account has insufficient balance or quota, so the request was rejected.'
+        : '模型账户余额或配额不足（欠费），请求被拒绝。',
+      suggestion: getActionSuggestion('quota_exhausted', locale, surface),
       retryable: false,
     };
   }
@@ -93,12 +149,20 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (unsupportedTemperature) {
     return {
       code: 'unsupported_temperature',
-      message: fallbackNotConfigured
-        ? '模型参数不兼容：当前模型只支持默认温度 1；同时中转没有为当前模型配置可用降级。'
-        : '模型参数不兼容：当前模型只支持默认温度 1。',
-      suggestion: fallbackNotConfigured
-        ? '重试会使用默认温度 1；如果仍失败，请切换模型，或在中转侧补上当前模型的 fallback 映射。'
-        : '重试会使用默认温度 1；如果仍失败，请切换到支持自定义温度的模型。',
+      message: locale === 'en'
+        ? (fallbackNotConfigured
+          ? 'Model parameter not supported: this model only accepts the default temperature of 1, and the gateway has no usable fallback configured for it.'
+          : 'Model parameter not supported: this model only accepts the default temperature of 1.')
+        : (fallbackNotConfigured
+          ? '模型参数不兼容：当前模型只支持默认温度 1；同时中转没有为当前模型配置可用降级。'
+          : '模型参数不兼容：当前模型只支持默认温度 1。'),
+      suggestion: locale === 'en'
+        ? (fallbackNotConfigured
+          ? 'Retrying will use the default temperature of 1; if it still fails, switch models, or add a fallback mapping for this model on the gateway side.'
+          : 'Retrying will use the default temperature of 1; if it still fails, switch to a model that supports a custom temperature.')
+        : (fallbackNotConfigured
+          ? '重试会使用默认温度 1；如果仍失败，请切换模型，或在中转侧补上当前模型的 fallback 映射。'
+          : '重试会使用默认温度 1；如果仍失败，请切换到支持自定义温度的模型。'),
       retryable: true,
       ...(fallbackNotConfigured ? { hasFallbackConfigurationIssue: true } : {}),
     };
@@ -117,8 +181,12 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (upstreamUnavailable) {
     return {
       code: 'upstream_unavailable',
-      message: '模型服务暂时不可用：上游网关没能把请求转过去（通常是服务方在抖动或限流）。',
-      suggestion: '稍等几秒重试；持续失败就在输入框右下角换一个模型。',
+      message: locale === 'en'
+        ? 'The model service is temporarily unavailable: the upstream gateway could not forward the request (usually the provider is unstable or rate-limiting).'
+        : '模型服务暂时不可用：上游网关没能把请求转过去（通常是服务方在抖动或限流）。',
+      suggestion: locale === 'en'
+        ? 'Wait a few seconds and retry; if it keeps failing, switch to a different model.'
+        : '稍等几秒重试；持续失败就在输入框右下角换一个模型。',
       retryable: true,
     };
   }
@@ -126,8 +194,12 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   if (fallbackNotConfigured) {
     return {
       code: 'fallback_not_configured',
-      message: '模型降级未配置：中转没有为当前模型配置可用 fallback。',
-      suggestion: '请切换到已配置的模型，或在中转侧补上当前模型的 fallback 映射后重试。',
+      message: locale === 'en'
+        ? 'Model fallback not configured: the gateway has no usable fallback for this model.'
+        : '模型降级未配置：中转没有为当前模型配置可用 fallback。',
+      suggestion: locale === 'en'
+        ? 'Switch to a configured model, or add a fallback mapping for this model on the gateway side, then retry.'
+        : '请切换到已配置的模型，或在中转侧补上当前模型的 fallback 映射后重试。',
       retryable: false,
       hasFallbackConfigurationIssue: true,
     };
@@ -136,10 +208,16 @@ export function classifyModelErrorMessage(message: string, statusCode?: number):
   return null;
 }
 
-export function summarizeModelErrorForUser(message: string, statusCode?: number): string {
-  const diagnostic = classifyModelErrorMessage(message, statusCode);
+export function summarizeModelErrorForUser(
+  message: string,
+  statusCode?: number,
+  locale: ModelErrorLocale = 'zh',
+  surface: ModelErrorSurface = 'desktop',
+): string {
+  const diagnostic = classifyModelErrorMessage(message, statusCode, locale, surface);
   if (diagnostic) {
-    return `${diagnostic.message}\n建议：${diagnostic.suggestion}`;
+    const prefix = locale === 'en' ? 'Suggestion: ' : '建议：';
+    return `${diagnostic.message}\n${prefix}${diagnostic.suggestion}`;
   }
 
   const normalized = normalizeMessage(message);

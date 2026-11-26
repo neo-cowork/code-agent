@@ -6,7 +6,8 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
-import { rememberApprovedRmTargets } from './approvedRmVerifyProbe';
+import { recordApprovedRmSettlementTargets } from '../../session/approvedRmSettlementTargets';
+import { rememberApprovedRmTargets, PRINTF_STATE_WRITE_WORD } from './approvedRmVerifyProbe';
 import { createLogger } from '../../services/infra/logger';
 
 const approvedRmLogger = createLogger('ApprovedRmGrant');
@@ -190,7 +191,14 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
       if (redirected.has(current) && ['true', ':'].includes(program)) return refuse('command_shape:redirect_non_dup');
       if (program === '[' && current.words.at(-1) !== ']') return refuse('command_shape');
       if (current.words.slice(1).some((word) => /[$`]/.test(substitute(word).replaceAll('${?}', '')))) return refuse('expansion');
-      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(substitute(word)))) return refuse('command_shape');
+      if (program === 'printf') {
+        const printfArgs = current.words.slice(1);
+        if (printfArgs.some((word) => PRINTF_STATE_WRITE_WORD.test(substitute(word)))) return refuse('command_shape');
+        // The approved suffix shape is `printf <format> "${?}"`: more than two words, or a "${?}"
+        // anywhere but the one extra word, is refused. A plain `printf <format> <text>` predates
+        // the arity rule and stays mintable.
+        if (printfArgs.length > 2 || (printfArgs.includes('${?}') && printfArgs[1] !== '${?}')) return refuse('command_shape');
+      }
     }
     if (current.terminator !== null && ![';', '\n', '&&', '||'].includes(current.terminator)) return refuse('command_shape');
   }
@@ -370,10 +378,11 @@ function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string
 /** Mint literal write paths for all files covered by one user-approved rm. */
 export function approvedSingleFileRmGrant(
   command: string,
-  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
+  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'> & { runId?: string },
 ): string | string[] | undefined {
   const parsed = extractApprovedRmTargets(command, input.workingDirectory);
   if (!parsed.containsRm) return undefined;
+  recordApprovedRmSettlementTargets(input.sessionId, input.runId, parsed.targets ?? []);
   const conditions = [
     !input.sandboxDecision.sandboxed && 'sandboxed',
     !input.foreground && !input.background && 'foreground', input.pty && 'pty',
@@ -406,7 +415,7 @@ export function approvedSingleFileRmGrant(
     approvedRmLogger.warn(`APPROVED_RM_GRANT_REFUSED ${JSON.stringify(diagnostic)}`);
     return undefined;
   }
-  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify(diagnostic)}`);
+  approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify({ ...diagnostic, sessionId: input.sessionId, runId: input.runId })}`);
   rememberApprovedRmTargets(input.sessionId, [...(parsed.targets ?? []), ...grants]);
   return grants.length === 1 && parsed.operandCount === 1 ? grants[0] : grants;
 }

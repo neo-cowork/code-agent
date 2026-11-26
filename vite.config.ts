@@ -46,6 +46,34 @@ function stubHostInRendererPlugin(): Plugin {
 }
 
 /**
+ * Vite plugin: strip the trailing sourceMappingURL comment from the raw-embedded
+ * html2canvas bundle.
+ *
+ * src/renderer/utils/previewFrameCaptureSource.ts does
+ * `await import('html2canvas/dist/html2canvas.js?raw')`, so the whole library
+ * text — including its trailing `//# sourceMappingURL=html2canvas.js.map` line —
+ * becomes a string inside a dist/renderer chunk, which trips
+ * scripts/release-security-scan.mjs. Intercept the ?raw load ahead of
+ * vite:asset and emit the same `export default <JSON string>` shape minus the
+ * comment line; no other part of the library text changes.
+ */
+function stripRawSourceMapCommentPlugin(): Plugin {
+  const SOURCE_MAP_COMMENT_LINE =
+    /(^|\r?\n)[ \t]*\/\/[#@]\s*sourceMappingURL=[^\n\r]*(?:\r?\n|$)/g;
+  return {
+    name: 'strip-raw-sourcemap-comment',
+    enforce: 'pre',
+    load(id) {
+      if (!/[?&]raw(?:&|$)/.test(id)) return null;
+      const file = id.replace(/[?#].*$/, '').replace(/\\/g, '/');
+      if (!file.endsWith('/html2canvas/dist/html2canvas.js')) return null;
+      const source = fs.readFileSync(file, 'utf-8');
+      return `export default ${JSON.stringify(source.replace(SOURCE_MAP_COMMENT_LINE, '$1'))}`;
+    },
+  };
+}
+
+/**
  * Vite plugin: inject web server auth token into HTML during dev.
  * The token is written to .dev-token by webServer.ts on startup.
  */
@@ -72,7 +100,7 @@ function devAuthTokenPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [stubHostInRendererPlugin(), react(), devAuthTokenPlugin()],
+  plugins: [stubHostInRendererPlugin(), stripRawSourceMapCommentPlugin(), react(), devAuthTokenPlugin()],
   root: 'src/renderer',
   publicDir: path.resolve(__dirname, 'public'),
   base: './',

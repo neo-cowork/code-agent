@@ -8,6 +8,10 @@ import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 
 import { Notification, broadcastToRenderer } from '../../platform';
 import { hasInteractiveUi } from '../../platform/windowBridge';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../shared/constants';
+import { CRON_CONNECTOR_LOST } from '../../../shared/constants/cronErrors';
+import { getCronConnectorLostNotificationText } from '../../../shared/i18n/cronConnectorLostNotification';
+import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
@@ -118,10 +122,11 @@ interface VoiceWorkSettledNotificationData {
 
 export interface RecordedNotification {
   id: string;
-  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin' | 'digest';
+  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin' | 'digest' | 'cron_connector_lost';
   sessionId: string;
   title: string;
   body: string;
+  code?: string;
   createdAt: number;
   delivery: 'sent' | 'dry_run';
 }
@@ -315,6 +320,7 @@ class NotificationService implements Disposable {
       sessionId: item.sessionId,
       title: item.title,
       body: item.body,
+      ...(item.delivery.code ? { code: item.delivery.code } : {}),
     });
     this.deliver({
       id: entry.id,
@@ -528,9 +534,13 @@ class NotificationService implements Disposable {
     const { sessionTitle, summary, duration, toolsUsed } = data;
 
     // 构建通知内容
-    const en = readNotificationLocale() === 'en';
+    const locale = readNotificationLocale();
+    const en = locale === 'en';
+    const incomplete = data.code === BACKGROUND_TASK_DELETE_INCOMPLETE ? getDeleteIncompleteText(locale) : undefined;
     let body = '';
-    if (summary) {
+    if (incomplete) {
+      body = incomplete.reason;
+    } else if (summary) {
       body = summary;
     } else if (toolsUsed.length > 0) {
       body = en
@@ -545,7 +555,7 @@ class NotificationService implements Disposable {
 
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
-    const title = `${shell} - ${localizeCronSessionTitle(sessionTitle, en ? 'en' : 'zh')}`;
+    const title = incomplete?.title ?? `${shell} - ${localizeCronSessionTitle(sessionTitle, locale)}`;
     this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
@@ -625,6 +635,20 @@ class NotificationService implements Disposable {
       title: text.title,
       body: text.body,
       delivery: { urgent: true },
+    });
+  }
+
+  notifyCronConnectorLost(data: { connectorId: string }): void {
+    if (!this.isIntentAllowed('needs_input')) return;
+    if (!this.shouldNotify(true)) return;
+    const text = getCronConnectorLostNotificationText(readNotificationLocale(), data.connectorId);
+    if (!text) return;
+    this.enqueueBudgeted({
+      intent: 'needs_input',
+      type: 'cron_connector_lost',
+      sessionId: '',
+      ...text,
+      delivery: { urgent: true, code: CRON_CONNECTOR_LOST },
     });
   }
 

@@ -18,6 +18,7 @@ import { createLogger } from '../services/infra/logger';
 import { SESSION_SEARCH } from '../../shared/constants';
 import type { CrossSessionSearchProjectScope } from '../../shared/ipc/types';
 import type { Message } from '../../shared/contract';
+import { stripLegacyTeamRecipeSeed } from '../../shared/utils/legacyTeamRecipeDisplay';
 import {
   SessionLocalCache,
   CachedSession,
@@ -353,6 +354,11 @@ function isRuntimeSupplementMessage(message: CachedMessage): boolean {
   return workbench?.runtimeInputMode === 'supplement';
 }
 
+/** 参与匹配/相关度/摘要的文本：用户消息先剥掉旧组队配方前缀（legacyTeamRecipeDisplay.ts，与气泡同一口径）；返回的 message 保持原样 */
+function getSearchableText(message: SearchResultMessage): string {
+  return message.role === 'user' ? stripLegacyTeamRecipeSeed(message.content) : message.content;
+}
+
 export function inferConversationTurnNumbers(messages: CachedMessage[]): Array<number | undefined> {
   const turnNumbers: Array<number | undefined> = [];
   let currentTurnNumber = 0;
@@ -551,7 +557,8 @@ function searchSessionsViaFts(
 
     if (!passesDateFilter(message, options)) continue;
 
-    const matches = findMatches(message.content, query, {
+    const text = getSearchableText(message);
+    const matches = findMatches(text, query, {
       caseSensitive: false,
       useRegex: false,
       includeContext,
@@ -559,7 +566,7 @@ function searchSessionsViaFts(
     // FTS 命中但子串定位失败（大小写折叠差异等边界），保守跳过
     if (matches.length === 0) continue;
 
-    const relevance = calculateRelevance(message.content, query, matches, message);
+    const relevance = calculateRelevance(text, query, matches, message);
     if (relevance < minRelevance) continue;
 
     sessionsWithMatches.add(hit.sessionId);
@@ -571,7 +578,7 @@ function searchSessionsViaFts(
       turnNumber,
       matches,
       relevance,
-      snippet: generateSnippet(message.content, matches),
+      snippet: generateSnippet(text, matches),
     });
   }
 
@@ -684,8 +691,10 @@ export function searchSessions(
       if (role && message.role !== role) continue;
       if (!passesDateFilter(message, options)) continue;
 
+      const text = getSearchableText(message);
+
       // Find matches
-      const matches = findMatches(message.content, query, {
+      const matches = findMatches(text, query, {
         caseSensitive,
         useRegex,
         includeContext,
@@ -694,11 +703,11 @@ export function searchSessions(
       if (matches.length === 0) continue;
 
       // Calculate relevance
-      const relevance = calculateRelevance(message.content, query, matches, message);
+      const relevance = calculateRelevance(text, query, matches, message);
       if (relevance < minRelevance) continue;
 
       // Generate snippet
-      const snippet = generateSnippet(message.content, matches);
+      const snippet = generateSnippet(text, matches);
 
       sessionsWithMatches.add(sessionId);
 

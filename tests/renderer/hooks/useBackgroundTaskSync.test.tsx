@@ -170,6 +170,8 @@ describe('useBackgroundTaskSync', () => {
 
   it.each([
     ['zh', 'shell', 'completed', 'success', '归档笔记', '「归档笔记」已完成，耗时 不到 1 秒。'],
+    ['zh', 'shell', 'failed', 'error', 'Copy missing-report.txt into archive in background', '「后台命令」失败：命令未能成功完成，耗时 不到 1 秒。'],
+    ['en', 'pty', 'completed', 'success', '归档笔记', '“Background command” finished, took under 1 second.'],
     ['zh', 'pty', 'failed', 'error', '归档笔记', '「归档笔记」失败：命令未能成功完成，耗时 不到 1 秒。'],
     ['en', 'pty', 'completed', 'success', 'Archive notes', '“Archive notes” finished, took under 1 second.'],
     ['en', 'shell', 'failed', 'error', 'Archive notes', '“Archive notes” failed, took under 1 second. The command did not finish successfully.'],

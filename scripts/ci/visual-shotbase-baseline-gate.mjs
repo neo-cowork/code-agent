@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +16,8 @@ const linuxBaselines = [
   `${snapshotDir}/dangerous-command-approval-light-chromium-linux.png`,
   `${snapshotDir}/dangerous-command-approval-dark-chromium-linux.png`,
 ];
+const receiptPath = `${snapshotDir}/rerecord-receipt.json`;
+const ciRunUrlPattern = /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+/;
 
 const args = process.argv.slice(2);
 
@@ -23,7 +26,7 @@ function option(name, fallback) {
   return index === -1 ? fallback : args[index + 1];
 }
 
-const knownArgs = new Set(['--repo-root', '--base-ref']);
+const knownArgs = new Set(['--repo-root', '--base-ref', '--write-receipt']);
 const unknownArgs = args.filter((arg, index) => arg.startsWith('--')
   ? !knownArgs.has(arg)
   : index === 0 || !knownArgs.has(args[index - 1]));
@@ -173,6 +176,63 @@ function darwinSnapshotsInWorkingTree() {
     .sort();
 }
 
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function baselineHashes() {
+  const hashes = {};
+  for (const baseline of linuxBaselines) {
+    const absolutePath = path.join(repoRoot, baseline);
+    if (!fs.existsSync(absolutePath)) fail(`缺少 Linux 视觉基线：${baseline}`);
+    hashes[baseline] = sha256(fs.readFileSync(absolutePath));
+  }
+  return hashes;
+}
+
+// 回执只能证明「契约哈希 + PNG 字节哈希」彼此对得上，证明不了 CI 真的重录过；
+// 门无法核实 ciRunUrl 指向的运行。完整性只靠这几个哈希相等，ciRunUrl 仅供人工追溯。
+function checkReceipt(contract) {
+  let receipt;
+  try {
+    receipt = JSON.parse(readCurrent(receiptPath));
+  } catch (error) {
+    return `${receiptPath} 不是合法 JSON：${error instanceof Error ? error.message : String(error)}`;
+  }
+  if (receipt === null || typeof receipt !== 'object') return `${receiptPath} 顶层必须是对象`;
+  if (receipt.contractSha256 !== sha256(contract)) {
+    return `${receiptPath} 的 contractSha256 与当前截图契约不一致（回执是针对旧版 spec 生成的）`;
+  }
+  const recorded = receipt.baselineSha256;
+  if (recorded === null || typeof recorded !== 'object') return `${receiptPath} 的 baselineSha256 缺失或不是对象`;
+  const actual = baselineHashes();
+  for (const baseline of linuxBaselines) {
+    if (recorded[baseline] !== actual[baseline]) {
+      return `${receiptPath} 的 baselineSha256[${baseline}] 与磁盘上 PNG 的真实 sha256 不一致`;
+    }
+  }
+  if (typeof receipt.ciRunUrl !== 'string' || !ciRunUrlPattern.test(receipt.ciRunUrl)) {
+    return `${receiptPath} 的 ciRunUrl 缺失或格式不对（需形如 https://github.com/<owner>/<repo>/actions/runs/<id>）`;
+  }
+  return undefined;
+}
+
+const writeReceiptUrl = option('--write-receipt');
+if (args.includes('--write-receipt')) {
+  if (!writeReceiptUrl || !ciRunUrlPattern.test(writeReceiptUrl)) {
+    fail('--write-receipt 需要形如 https://github.com/<owner>/<repo>/actions/runs/<id> 的 CI 运行地址');
+  }
+  const contract = screenshotContractTokens(readCurrent(specPath), '当前工作树');
+  const receipt = {
+    contractSha256: sha256(contract),
+    baselineSha256: baselineHashes(),
+    ciRunUrl: writeReceiptUrl,
+  };
+  fs.writeFileSync(path.join(repoRoot, receiptPath), `${JSON.stringify(receipt, null, 2)}\n`);
+  console.log(`[visual-shotbase-baseline-gate] ✓ 已写入 ${receiptPath}`);
+  process.exit(0);
+}
+
 git(['rev-parse', '--show-toplevel']);
 const baseSha = git(['merge-base', 'HEAD', baseRef]);
 if (!baseSha) fail(`HEAD 与 ${baseRef} 的 merge-base 为空`);
@@ -204,10 +264,17 @@ if (baselineChangeBoundary) {
   const changedPaths = changedPathsSince(baselineChangeBoundary);
   const missingBaselines = linuxBaselines.filter((baseline) => !changedPaths.has(baseline));
   if (missingBaselines.length > 0) {
-    fail(
-      '你改了截图前的页面状态但没重生成基线。'
-      + `请在 Playwright 1.60.0 的 Linux/Chromium 环境同步更新 light 和 dark 两张 PNG；当前未变更：${missingBaselines.join(', ')}`,
-    );
+    const guide = '处理办法二选一：① 在 Playwright 1.60.0 的 Linux/Chromium 环境重生成 light 和 dark 两张 PNG 并提交；'
+      + '② 若 CI 重录后两张 PNG 与现有字节完全一致（没有 git diff 可交），运行 '
+      + '`node scripts/ci/visual-shotbase-baseline-gate.mjs --write-receipt <CI run URL>` 并提交生成的 '
+      + `${receiptPath}。`;
+    if (!changedPaths.has(receiptPath)) {
+      fail(
+        `你改了截图前的页面状态但没重生成基线。当前未变更：${missingBaselines.join(', ')}。${guide}`,
+      );
+    }
+    const problem = checkReceipt(currentContract);
+    if (problem) fail(`重录回执无效：${problem}。${guide}`);
   }
 }
 

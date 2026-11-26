@@ -103,4 +103,11 @@ describe('turnScaffold 拆包只认行首的 <user_request> 开始标签', () =>
     const merged = mergeTurnSystemContext(['<notice>补充</notice>'], '裸消息');
     expect(merged).toBe('<notice>补充</notice>\n\n<user_request>\n裸消息\n</user_request>');
   });
+  it('隐藏 <appshot> 块不算用户原话；纯截图消息（剥空）保持原样', () => {
+    const block = '<appshot app="" name="图片批注" captured="2026-11-23T00:00:00.000Z">\n区域 1（左侧）：单位不对\n</appshot>';
+    expect(extractUserRequest(`${block}\n\n我在图片上框出了 1 处`)).toBe('我在图片上框出了 1 处');
+    expect(extractUserRequest(block)).toBe(block);
+    // 没有 appshot 的消息逐字不变（含首尾空白与连续空行）
+    expect(extractUserRequest('  a\n\n\n\nb  ')).toBe('  a\n\n\n\nb  ');
+  });
 });

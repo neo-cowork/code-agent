@@ -7,7 +7,7 @@ import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSo
 import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
-import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { OUTBOUND_APPROVAL_DEGRADE, PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
@@ -18,8 +18,9 @@ import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOn
 import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
-import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { terminalApprovalPreviewText } from '../tools/modules/terminal/terminalApprovalPreview';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
 import {
@@ -31,6 +32,7 @@ import {
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
+import { commandGrantKey } from '../permissions/commandGrantTarget';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { matchToolGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -91,10 +93,13 @@ function isApproveResponse(response: PermissionResponse): boolean {
 function buildParkedArgsPreview(request: PermissionRequest): string | undefined {
   const parts = [
     request.details?.command,
+    terminalApprovalPreviewText(request.tool, request.details?.preview),
     request.details?.path,
     request.details?.filePath,
     request.details?.url,
     request.details?.changes,
+    // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：参数摘要显示「会发出的正文」。
+    request.details?.replyText,
   ].filter((part): part is string => typeof part === 'string' && part.length > 0);
   if (parts.length === 0) return undefined;
   const redacted = redactCommandSecrets(parts.join(' · '));
@@ -141,6 +146,7 @@ export class OrchestratorPermissionIsland {
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
+    expiringToDraft?: boolean;
   }> = new Map();
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
@@ -255,7 +261,12 @@ export class OrchestratorPermissionIsland {
       const req = sibling.request;
       if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
       const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
-      if (!identity || !matchToolGrant(sessionId, identity.tool, identity.target)) continue;
+      if (!identity) continue;
+      const commandTarget = commandGrantKey(req.tool, req.details?.commandGrantTarget, sessionId, req.details);
+      const tier = commandTarget
+        ? matchToolGrant(sessionId, identity.tool, identity.target, undefined, commandTarget)
+        : matchToolGrant(sessionId, identity.tool, identity.target);
+      if (!tier) continue;
       // 与 preAsk 同判据：本会话刚被拒过的同目标动作不因授权顺带放行。
       if (getDenialRegistry().refuseIfGoalDenied(req, { log: false })) continue;
       logger.info('Pending approval settled by a grant answered on a sibling card', { requestId: id, tool: req.tool, via: answered.id });
@@ -308,20 +319,23 @@ export class OrchestratorPermissionIsland {
     response: PermissionResponse,
     feedbackOverride?: string,
     machineDenial?: PermissionDenialSource,
+    draft?: InsertPendingApprovalInput,
   ): ParkedResolution {
     const pending = this.pendingPermissions.get(id);
     if (!pending) return 'lost';
+    if (pending.expiringToDraft && isApproveResponse(response)) return 'storage_unavailable';
     const repo = this.getPendingApprovalRepo();
     if (repo) {
       const status = isApproveResponse(response) ? 'approved' : 'rejected';
       let changes: number;
       try {
-        changes = repo.resolve({
+        const settlement = {
           id,
           status,
           feedback: feedbackOverride ?? null,
           resolvedAt: Date.now(),
-        });
+        } as const;
+        changes = draft ? repo.replaceTimedOutApprovalWithDraft(settlement, draft) : repo.resolve(settlement);
       } catch (err) {
         logger.warn(`Parked approval repo.resolve failed for ${id}, keeping it decidable`, err);
         // 瞬时写失败不动内存 Promise，也不许上层据此改台账终态——用户再点一次要能成。
@@ -760,21 +774,7 @@ export class OrchestratorPermissionIsland {
           : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
         if (degradeDeadline) {
-          logger.warn(`Unattended parked approval ${fullRequest.id} unanswered, degrading to deny`);
-          const degraded = this.resolveParkedApproval(
-            fullRequest.id,
-            'deny',
-            buildUnattendedDegradeFeedback(fullRequest.tool, timeoutMs),
-            'timeout',
-          );
-          if (degraded && fullRequest.sessionId) {
-            noteUnattendedApprovalDenial(fullRequest.sessionId, {
-              tool: fullRequest.tool,
-              argsPreview: fullRequest.argsPreview,
-              requestedAt: fullRequest.timestamp,
-              code: UNATTENDED_APPROVAL_TIMEOUT,
-            });
-          }
+          this.degradeParkedApproval(fullRequest, repo, timeoutMs);
           return;
         }
         logger.warn(
@@ -800,7 +800,9 @@ export class OrchestratorPermissionIsland {
       // 预览先挂到 fullRequest 再登记内存条目：会话卡（permission_request 事件）与
       // listPendingRequests 快照拿的是同一个对象引用，只算一份。
       const argsPreview = buildParkedArgsPreview(fullRequest);
-      if (argsPreview) fullRequest.argsPreview = argsPreview;
+      if (argsPreview && !terminalApprovalPreviewText(fullRequest.tool, fullRequest.details.preview)) {
+        fullRequest.argsPreview = argsPreview;
+      }
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,
@@ -852,7 +854,11 @@ export class OrchestratorPermissionIsland {
           ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${
               fullRequest.details?.requestedAccess === 'read_write' ? '读写' : '只读'
             }）${fullRequest.reason ? `· ${fullRequest.reason}` : ''}`
-          : undefined,
+          // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的去向
+          // （群名），不裸奔工具内部名；正文在 argsPreview（参数行）。
+          : typeof fullRequest.details?.replyDestination === 'string' && fullRequest.details.replyDestination
+            ? `回复 ${fullRequest.details.replyDestination}`
+            : undefined,
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
@@ -903,5 +909,49 @@ export class OrchestratorPermissionIsland {
 
       this.onEvent({ type: 'permission_request', data: fullRequest });
     }).finally(releaseHold);
+  }
+
+  private degradeParkedApproval(request: PermissionRequest, repo: PendingApprovalRepository, timeoutMs: number): void {
+    type Draft = Awaited<ReturnType<typeof import('./outboundDraft').prepareOutboundDraft>>;
+    const finish = (draft?: Draft) => {
+      let outcome = this.tryResolveParkedApproval(
+        request.id, 'deny', buildUnattendedDegradeFeedback(request.tool, timeoutMs, draft && (draft.payload.scheduledTaskName ?? '')), 'timeout', draft,
+      );
+      if (draft && outcome === 'storage_unavailable') {
+        logger.warn('Unattended mail draft could not be saved', { requestId: request.id });
+        draft = undefined;
+        outcome = this.tryResolveParkedApproval(
+          request.id, 'deny', buildUnattendedDegradeFeedback(request.tool, timeoutMs), 'timeout',
+        );
+      }
+      if (outcome !== 'resolved') return;
+      if (draft) logger.info('Unattended mail draft created', { requestId: request.id, draftId: draft.id });
+      else logger.warn(`Unattended parked approval ${request.id} unanswered, degrading to deny`);
+      if (request.sessionId) noteUnattendedApprovalDenial(request.sessionId, {
+        tool: request.tool,
+        argsPreview: request.argsPreview,
+        requestedAt: request.timestamp,
+        code: draft ? OUTBOUND_APPROVAL_DEGRADE.saved.code : UNATTENDED_APPROVAL_TIMEOUT,
+      });
+    };
+    const modes = getPermissionModeManager();
+    if (request.tool === 'mail_send' && modes.isUnattendedSession(request.sessionId)
+      && modes.isUnattendedApprovalDegrade(request.sessionId)) {
+      const pending = this.pendingPermissions.get(request.id);
+      if (!pending) return;
+      pending.expiringToDraft = true;
+      void import('./outboundDraft')
+        .then(({ prepareOutboundDraft }) => prepareOutboundDraft(repo, request.id, request.tool))
+        .catch(() => {
+          logger.warn('Unattended mail draft could not be prepared', { requestId: request.id, reason: 'draft_module_unavailable' });
+          return undefined;
+        })
+        .then((draft) => {
+          pending.expiringToDraft = false;
+          finish(draft);
+        });
+    } else {
+      finish();
+    }
   }
 }

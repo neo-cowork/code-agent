@@ -306,7 +306,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       // Shift+Enter 换行：插入 '\n' 文本字符（pre-wrap 渲染），不让浏览器产 <div>/<br>
       if (e.key === 'Enter' && e.shiftKey && !isIme) {
         e.preventDefault();
-        insertPlainTextAtCaret(root, '\n');
+        insertPlainTextAtCaret(root, '\n', { anchorCaret: true });
         emitChange();
         return;
       }

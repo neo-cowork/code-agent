@@ -61,7 +61,7 @@ const request: PermissionRequest = {
 
 // 紧凑权限卡按钮点即裁决，不再二次确认。
 function confirmAllowOnce() {
-  fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^允许$/ }));
 }
 
 describe('PermissionCard respond path', () => {
@@ -103,7 +103,7 @@ describe('PermissionCard respond path', () => {
   it('同一张卡只显示一个拒绝入口', () => {
     render(<PermissionCard />);
 
-    expect(screen.getAllByText('拒绝')).toHaveLength(1);
+    expect(screen.getAllByText('暂不')).toHaveLength(1);
   });
 
   it('keeps the pending request and allows retry when IPC is unavailable', async () => {
@@ -149,6 +149,14 @@ describe('PermissionCard respond path', () => {
 
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
+  });
+
+  it.each([['允许', 'once', 'allow'], ['暂不', 'deny', 'deny'], ['本次任务内允许', 'run', 'allow_run'], ['24 小时内允许', '24h', 'allow_24h']])('click %s preserves %s => %s', async (label, _level, wire) => {
+    invoke.mockResolvedValue(undefined);
+    render(<PermissionCard />);
+    if (wire === 'allow_run' || wire === 'allow_24h') fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, wire, request.sessionId));
   });
 
 });

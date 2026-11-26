@@ -438,6 +438,30 @@ describe('distillService', () => {
       expect(signals.every((s) => s.content.length <= 600)).toBe(true);
       expect(signals[0].queries.length).toBeGreaterThan(0);
     });
+
+    // N-FIX-TELEMETRY-RECOVERY-NOTICE-RESIDUE-SKILLDRAFT-TITLE：信号提取共用恢复提示清洗入口。
+    it('旧恢复提示前缀剥掉后再判信号；只剩提示的消息不产出信号', async () => {
+      const LEGACY_NOTICE =
+        '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+      const signals = await extractDistillSignalsFromRecentMessages({
+        sessions: [session('sess-notice')],
+        messagesBySession: new Map([
+          [
+            'sess-notice',
+            [
+              message({ id: 'n1', role: 'user', content: `${LEGACY_NOTICE}\n\n每次发版前帮我跑一遍 deploy checklist 然后生成周报` }),
+              message({ id: 'n2', role: 'user', content: `${LEGACY_NOTICE}\n\n` }),
+              message({ id: 'n3', role: 'user', content: '今天天气不错' }),
+            ],
+          ],
+        ]),
+        now: NOW,
+      });
+
+      expect(signals).toHaveLength(1);
+      expect(signals[0].title).not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
+      expect(signals[0].content).toContain('deploy checklist');
+    });
   });
 
   describe('formatDistillRunReport', () => {
