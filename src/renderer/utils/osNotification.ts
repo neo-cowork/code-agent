@@ -23,6 +23,8 @@ let lastFallbackToastId: string | undefined;
 /** 「系统通知已关闭」提示的 toast id。非 undefined = 自上次 UNC 成功发送起已提示过
  *  （含用户手动关掉后），再被拒不重复唠叨；只有 UNC 成功发送才复位。 */
 let deniedNoticeToastId: string | undefined;
+/** In-flight postOsNotification promises keyed by notification id so retract waits for send completion. */
+const inflightPostsById = new Map<string, Promise<void>>();
 
 /** UNC 授权被拒（macOS 侧关了通知，或包未被系统授权）。超时等其它失败不算：
  *  那不是用户能在系统设置里打开的，引导过去也白去。 */
@@ -113,13 +115,56 @@ export async function postOsNotification(
     reported = true;
     reportDelivery(r);
   };
-  try {
-    await postOsNotificationInner(opts, flags, report);
-  } catch (err) {
-    console.warn('[osNotification] postOsNotification 异常', err);
-    if (!reported) {
-      report({ mode: isTauriMode() ? 'tauri' : 'web', error: err instanceof Error ? err.message : String(err) });
+  const task = (async () => {
+    try {
+      await postOsNotificationInner(opts, flags, report);
+    } catch (err) {
+      console.warn('[osNotification] postOsNotification 异常', err);
+      if (!reported) {
+        report({ mode: isTauriMode() ? 'tauri' : 'web', error: err instanceof Error ? err.message : String(err) });
+      }
     }
+  })();
+  const postId = flags.id;
+  if (postId) {
+    inflightPostsById.set(postId, task);
+  }
+  try {
+    await task;
+  } finally {
+    if (postId && inflightPostsById.get(postId) === task) {
+      inflightPostsById.delete(postId);
+    }
+  }
+}
+
+/** Retract a delivered native OS notification by its notification id (no-op in web mode). */
+export async function retractOsNotification(id: string): Promise<void> {
+  if (!id || !isTauriMode()) return;
+  const inflight = inflightPostsById.get(id);
+  if (inflight) {
+    await inflight;
+  }
+  let result: NativeSystemNotificationResult;
+  try {
+    result = await invokeNativeCommandAction('retractSystemNotification', { id });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn('[osNotification] retract_system_notification invoke failed', reason);
+    return;
+  }
+  if (result.backend === 'legacy-needed') {
+    console.warn(
+      '[osNotification] retract_system_notification unsupported on legacy backend (legacy-needed)',
+      result.reason ?? 'legacy-needed',
+    );
+    return;
+  }
+  if (!result.ok) {
+    console.warn(
+      '[osNotification] retract_system_notification failed',
+      result.reason ?? 'UNUserNotificationCenter retract failed',
+    );
   }
 }
 
