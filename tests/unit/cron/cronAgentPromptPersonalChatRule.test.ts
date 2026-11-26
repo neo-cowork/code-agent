@@ -16,10 +16,13 @@ vi.mock('../../../src/host/session/sessionTitleHostPrompt', () => ({
 }));
 
 import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
+import { CRON_TEMPLATES } from '../../../src/renderer/components/features/cron/cronTemplates';
 
 /** 存量 zh 规则行（改动前的原文，字节钉） */
 const ZH_RULE =
   '若任务涉及微信/IM 等个人聊天来源，不要搜索或调用读取个人聊天记录的工具、技能或命令行，直接在产出中单独写一行「未读取：微信/IM（定时任务默认不读个人聊天记录；想读，请在任务编辑的「执行动作」页勾选「允许本任务使用这些个人技能」）」。请逐字保留引号内的整行文字，不得改写页面或选项名称。';
+const EN_LINE =
+  'Not read: WeChat/IM (scheduled jobs don\'t read personal chats by default; to allow it, tick "Allow this task to use these personal skills" on the "Action" page of the task editor)';
 
 const EN_PROMPT = 'Please give me a morning triage of my unread email, instant messages, and calendar changes since last night.';
 const ZH_PROMPT = '请汇总我从昨晚到现在的未读邮件、即时消息和日历变动，给我一份晨间分诊。';
@@ -43,9 +46,9 @@ describe('cronAgentPrompt 个人聊天来源规则语言档', () => {
 
   it('提示词判不出语言（纯数字）时跟 UI 语言', () => {
     uiState.language = 'en';
-    expect(buildCronAgentPrompt('12345', undefined, false)).toContain('Not read: WeChat/IM');
+    expect(buildCronAgentPrompt('12345 `WeChat`', undefined, false)).toContain('Not read: WeChat/IM');
     uiState.language = 'zh';
-    expect(buildCronAgentPrompt('12345', undefined, false)).toContain(ZH_RULE);
+    expect(buildCronAgentPrompt('12345 `WeChat`', undefined, false)).toContain(ZH_RULE);
   });
 
   it('已允许个人技能的任务不出现该规则行（两语都不出现）', () => {
@@ -54,5 +57,48 @@ describe('cronAgentPrompt 个人聊天来源规则语言档', () => {
       .not.toContain('未读取：微信/IM');
     expect(buildCronAgentPrompt(EN_PROMPT, undefined, false, undefined, undefined, undefined, undefined, ['wechat-reader']))
       .not.toContain('Not read: WeChat/IM');
+  });
+});
+
+describe('cronAgentPrompt chat source detection', () => {
+  describe.each([false, true])('snapshot tracking enabled=%s', (enabled) => {
+    it.each([
+      '每天早上读取工作文件夹中的 notes.txt，并总结文件中的消息。',
+      'Every morning, read notes.txt in my work folder and summarize it for me',
+      'Every morning summarize notes.txt… 请在工作文件夹读取 notes.txt',
+      'Summarize the message in notes.txt about the SIM and image uploads.',
+    ])('omits the rule for local notes.txt task: %s', (prompt) => {
+      const built = buildCronAgentPrompt(prompt, 'Previously summarized WeChat and IM.', enabled);
+      expect(built).not.toContain('未读取：微信/IM');
+      expect(built).not.toContain('Not read: WeChat/IM');
+    });
+
+    it.each([
+      ['微信', ZH_RULE],
+      ['企业微信', ZH_RULE],
+      ['即时消息', ZH_RULE],
+      ['聊天记录', ZH_RULE],
+      ['聊天', ZH_RULE],
+      ['WeChat', EN_LINE],
+      ['(IM)', EN_LINE],
+      ['WeCom', EN_LINE],
+      ['instant message', EN_LINE],
+      ['instant messages', EN_LINE],
+      ['chat history', EN_LINE],
+      ['chat messages', EN_LINE],
+    ])('preserves the verbatim rule for %s', (source, rule) => {
+      const prompt = rule === ZH_RULE ? `请汇总我的${source}` : `Summarize my ${source}`;
+      expect(buildCronAgentPrompt(prompt, undefined, enabled)).toContain(rule);
+    });
+  });
+
+  it.each([
+    ['zh', ZH_RULE],
+    ['en', EN_LINE],
+  ] as const)('preserves the rule for the real %s morning-triage draft', (language, rule) => {
+    const template = CRON_TEMPLATES.find(({ id }) => id === 'morning-triage');
+    if (!template) throw new Error('Missing morning-triage template');
+    const draft = template.generate({}, language);
+    expect(buildCronAgentPrompt(draft.agentPrompt, undefined, false)).toContain(rule);
   });
 });

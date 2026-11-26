@@ -18,6 +18,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({ default: {
   invoke: vi.fn().mockResolvedValue([]), on: vi.fn(() => () => undefined),
 } }));
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({ sessionAutomationClient: {
+  listOutboundDrafts: async () => [],
   listParkedApprovals: vi.fn().mockResolvedValue([]),
   listPendingReview: vi.fn().mockResolvedValue([]),
   countPendingReview: vi.fn().mockResolvedValue(0), listAwaitingApprovalRuns: vi.fn().mockResolvedValue([]),

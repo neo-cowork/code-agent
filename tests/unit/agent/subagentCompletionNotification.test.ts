@@ -46,7 +46,11 @@ describe('subagent completion response contract', () => {
     expect(record.content).toContain('"completion_kind": "shell"');
     expect(record.content).toContain('用简短、非技术化的话');
     expect(record.content).toContain('执行结果和下一步');
-    expect(record.content).toContain('不要只罗列退出码、日志或命令细节');
+    expect(record.content).toContain('没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言');
+    expect(record.content).toContain('不要写退出码');
+    expect(record.content).toContain('不要照抄英文报错原文');
+    expect(record.content).toContain('用户自己写过的命令可以点名');
+    expect(record.content).not.toContain('不要只罗列退出码');
   });
 
   it('defaults missing kind to internal and requires the recorded title instead of a generic agent label', () => {

@@ -735,13 +735,15 @@ async function main(): Promise<void> {
 
     await installUiCancelRunInterception(page, uiCancelRunRequests);
     await installIsolatedFolderTrustSafetyRoute(page);
-    // Fresh profiles now open a folderless conversation. Seed an actual session
-    // for the isolated fixture before expecting its folder-trust prompt.
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await waitForRenderer(page);
-    await page.locator('[data-chat-input]').first().waitFor({ state: 'visible' });
+    // Fresh profiles now open a folderless conversation, so seed an actual session for the
+    // isolated fixture first. Seed from a throwaway tab: a reload of the main tab would
+    // return to the session open before it (usePageReturn snapshot), not to the fixture.
+    const seedPage = await context.newPage();
+    await seedPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await waitForRenderer(seedPage);
+    await seedPage.locator('[data-chat-input]').first().waitFor({ state: 'visible' });
     const fixtureSession = await fetchFromRenderer<{ success?: boolean; data?: { id?: string } }>(
-      page, '/api/sessions', {
+      seedPage, '/api/sessions', {
         method: 'POST',
         body: { title: 'Isolated stop smoke', workingDirectory: isolatedWorkingDirectory },
       },
@@ -749,6 +751,13 @@ async function main(): Promise<void> {
     if (!fixtureSession.ok || !fixtureSession.data?.success || !fixtureSession.data.data?.id) {
       throw new Error(`Failed to create isolated stop-smoke session (${fixtureSession.status}).`);
     }
+    // Cold start reopens the last-viewed session and the API does not update that pointer
+    // (key: LAST_VIEWED_SESSION_KEY in src/renderer/stores/sessionBootDraft.ts).
+    await seedPage.evaluate(
+      (id) => localStorage.setItem('neo:last-viewed-session', id),
+      fixtureSession.data.data.id,
+    );
+    await seedPage.close();
     const startupDoctorSettled = page.waitForResponse(
       (response) => response.url().includes('/api/domain/provider/run_doctor'),
       { timeout: 20_000 },
@@ -937,7 +946,8 @@ async function main(): Promise<void> {
     }
     if (!hasFlag(args, 'keep-server')) {
       await stopProcess(appHost.child);
-      rmSync(dataDir, { recursive: true, force: true });
+      // The host may still be flushing files right after exit (ENOTEMPTY); retry briefly.
+      rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   }
 }

@@ -8,18 +8,24 @@ import type {
   ToolContext,
 } from '../../../../../src/host/protocol/tools';
 import { blobModule } from '../../../../../src/host/tools/modules/file/blob';
+import { imageAnalyzeSchema } from '../../../../../src/host/tools/modules/network/imageAnalyze.schema';
+import type { ToolDefinition } from '../../../../../src/shared/contract';
+
+/** Fields of the request ToolDefinition this test needs (names come from the production schemas). */
+type RequestToolShape = Pick<ToolDefinition, 'name' | 'description' | 'inputSchema'>;
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-function makeCtx(workingDir: string): ToolContext {
+function makeCtx(workingDir: string, overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     sessionId: 'blob-test-session',
     workingDir,
     abortSignal: new AbortController().signal,
     logger: makeLogger(),
     emit: () => void 0,
+    ...overrides,
   };
 }
 
@@ -84,11 +90,17 @@ describe('blobModule', () => {
     const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4096, 0xfe)]);
     const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4096, 0xfe)]);
 
-    async function readText(name: string, data: Buffer) {
+    const fullRequestTools: RequestToolShape[] = [
+      { name: blobModule.schema.name, description: blobModule.schema.description, inputSchema: blobModule.schema.inputSchema },
+      { name: imageAnalyzeSchema.name, description: imageAnalyzeSchema.description, inputSchema: imageAnalyzeSchema.inputSchema },
+    ];
+    const postPreflightTools = fullRequestTools.filter((tool) => tool.name !== 'image_analyze');
+
+    async function readText(name: string, data: Buffer, ctxOverrides: Partial<ToolContext> = {}) {
       const file = path.join(tmpDir, name);
       await fs.writeFile(file, data);
       const handler = await blobModule.createHandler();
-      const result = await handler.execute({ action: 'read_text', file_path: file }, makeCtx(tmpDir), allowAll);
+      const result = await handler.execute({ action: 'read_text', file_path: file }, makeCtx(tmpDir, ctxOverrides), allowAll);
       return { file, result };
     }
 
@@ -101,7 +113,9 @@ describe('blobModule', () => {
       ['doc.pdf', PDF, 'read_pdf'],
       ['doc-noext', PDF, 'read_pdf'],
     ])('%s is refused with a short hint', async (name, data, tool) => {
-      const { file, result } = await readText(name, data);
+      const { file, result } = await readText(name, data, {
+        requestToolNames: fullRequestTools.map((item) => item.name),
+      });
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
@@ -109,6 +123,65 @@ describe('blobModule', () => {
         expect(result.error).toContain(file);
         expect(result.error).toContain(tool);
         expect(result.error).not.toContain('\uFFFD');
+        if (tool === 'image_analyze') {
+          const ext = data === JPEG ? '.jpg' : '.png';
+          expect(result.error).toBe(
+            `Cannot read ${ext} file as text. This is an image, not text. To understand a picture use image_analyze. Blob stat still returns size/mime for images.\nPath: ${file}`,
+          );
+        }
+      }
+    });
+
+    it('includes browser_action clause without ToolSearch on Blob read_text when both image_analyze and browser_action are listed', async () => {
+      const { file, result } = await readText('page-shot.png', PNG, {
+        requestToolNames: ['Blob', 'image_analyze', 'browser_action'],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; to understand a picture use image_analyze. Blob stat still returns size/mime for images.\nPath: ${file}`,
+        );
+        expect(result.error).not.toContain('ToolSearch');
+        expect(result.error).not.toContain('select:image_analyze');
+      }
+    });
+
+    it('omits ToolSearch and browser_action on Blob read_text when image_analyze and ToolSearch are listed without browser_action', async () => {
+      const { file, result } = await readText('toolsearch-only.png', PNG, {
+        requestToolNames: ['Blob', 'image_analyze', 'ToolSearch'],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. To understand a picture use image_analyze. Blob stat still returns size/mime for images.\nPath: ${file}`,
+        );
+        expect(result.error).not.toContain('ToolSearch');
+        expect(result.error).not.toContain('browser_action');
+        expect(result.error).not.toContain('select:image_analyze');
+      }
+    });
+
+    it('omits removed tool names on image read_text after preflight filter or when requestToolNames is unknown, while keeping Blob stat hint', async () => {
+      for (const name of ['shot.png', 'shot-noext', 'shot-renamed.txt']) {
+        for (const ctxOverrides of [
+          { requestToolNames: postPreflightTools.map((item) => item.name) },
+          {},
+        ]) {
+          const { file, result } = await readText(name, PNG, ctxOverrides);
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+            expect(result.error).toContain('This is an image, not text.');
+            expect(result.error).toContain('already in the conversation');
+            expect(result.error).toContain('Blob stat still returns size/mime for images.');
+            expect(result.error).toContain(file);
+            for (const forbidden of ['image_analyze', 'ToolSearch', 'select:image_analyze', 'browser_action', 'get_content', 'get_dom_snapshot']) {
+              expect(result.error).not.toContain(forbidden);
+            }
+          }
+        }
       }
     });
 

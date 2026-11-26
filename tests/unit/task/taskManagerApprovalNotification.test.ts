@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ language: 'zh', broadcast: vi.fn() }));
+const getSession = vi.hoisted(() => vi.fn((sessionId: string, options: { userId: string }) => {
+  if (sessionId !== 'desktop-session' || options.userId !== 'test-user') return null;
+  return { title: state.language === 'en' ? 'Weekly report' : '周报' };
+}));
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({ getCurrentUser: () => ({ id: 'test-user' }) }),
+}));
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ getSession, getRecentMessages: () => [] }),
+}));
+
 vi.mock('../../../src/host/platform', () => ({
   Notification: { isSupported: () => true },
   broadcastToRenderer: state.broadcast,
@@ -29,9 +40,9 @@ afterEach(() => { vi.restoreAllMocks(); notificationService.clearRecentNotificat
 
 describe('desktop approval banner through taskManagerEventPersistence', () => {
   it.each([
-    ['en', 'Approval needed', 'Export spreadsheet'],
-    ['zh', '需要授权', '导出表格'],
-  ])('ui.language=%s names the spreadsheet action', async (language, title, action) => {
+    ['en', 'Approval needed: Weekly report', 'Needs your approval: Export spreadsheet'],
+    ['zh', '需要授权：周报', '等你确认：导出表格'],
+  ])('ui.language=%s names the spreadsheet action', async (language, title, body) => {
     state.language = language;
     const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
     await persistTaskManagerEvent({
@@ -43,7 +54,7 @@ describe('desktop approval banner through taskManagerEventPersistence', () => {
     });
     expect(notify).toHaveBeenCalledExactlyOnceWith({
       sessionId: 'desktop-session', title,
-      body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'desktop-request', tool: 'excel_generate',
+      body, dedupeKey: 'desktop-request', tool: 'excel_generate',
     });
     expect(state.broadcast).toHaveBeenCalledOnce();
     const payload = notify.mock.calls[0][0];

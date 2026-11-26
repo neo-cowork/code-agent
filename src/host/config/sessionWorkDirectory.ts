@@ -38,6 +38,7 @@ import { needsArtifactTaskBrief } from '../prompts/artifactGeneration';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getConfigService } from '../services/core/configService';
 import { deriveRuleSummaryTitle, isPlaceholderSessionTitle, isProvisionalAutoTitle } from '../../shared/sessionTitlePlaceholder';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../shared/constants/timeouts';
 import { buildHostSessionTitlePrompt } from '../session/sessionTitleHostPrompt';
 import { getDefaultWorkDirectory } from './configPaths';
@@ -189,7 +190,8 @@ function cleanRuleFolderTitle(message: string, language?: 'zh' | 'en'): string |
 }
 
 async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions): Promise<string | undefined> {
-  const message = options.userMessage?.trim();
+  // 文件夹命名与标题共用恢复提示清洗入口：只剩提示的消息按空消息处理，沿用附件名兜底。
+  const message = stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '').trim();
   if (!message) return undefined; // 附件名沿用既有路径。
   const started = Date.now();
   const logDecision = (source: 'model' | 'rule' | 'short-clean', reason: string) => {
@@ -272,9 +274,11 @@ function buildSessionFolderBaseName(options: SessionWorkDirectoryOptions): strin
   const date = new Date(options.now ?? Date.now());
   const mmdd = `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const prefix = (options.language ?? readUiLanguage()) === 'en' ? 'Task' : '任务';
+  // 与 chooseFirstTurnFolderTitle 同一道恢复提示清洗：只剩提示的消息等同空消息，走附件名/untitled。
+  const userMessage = stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '');
   const title = sanitizeFolderTitle(usableSessionTitle(options.sessionTitle) ?? '')
-    ?? sanitizeFolderTitle(options.userMessage ?? '')
-    ?? (!options.userMessage?.trim() ? attachmentFolderTitle(options.attachments) : undefined)
+    ?? sanitizeFolderTitle(userMessage)
+    ?? (!userMessage.trim() ? attachmentFolderTitle(options.attachments) : undefined)
     ?? 'untitled';
   return `${prefix}_${mmdd}_${title}`;
 }
@@ -365,15 +369,25 @@ async function findFreeSessionWorkDirectory(
   throw new Error(`session work directory name exhausted after ${COLLISION_SUFFIX_LIMIT} collisions: ${baseName}`);
 }
 
+const WORKSPACE_TITLE_WINDOW_THRESHOLD = 192;
+const WORKSPACE_TITLE_HEAD_LENGTH = 64;
+const WORKSPACE_TITLE_TAIL_LENGTH = 64;
+
 /**
  * The run binds its working directory before checking tool write authority.
  * Preserve smart naming for recognized deliverable and spreadsheet workflows
  * that may materialize this turn. Other native turns can use the rule title.
  */
 export function needsWorkspaceModelTitleForDeliverable(prompt: string): boolean {
-  const { isOfficeFileDeliverable, isExcelTask } = detectTaskFeatures(prompt);
-  const savesToFile = /\b(?:save|export)\s+(?:it\s+)?(?:to|as)\b|保存(?:到|至|为)|另存为|导出到/i.test(prompt);
-  return isOfficeFileDeliverable || isExcelTask || savesToFile || needsArtifactTaskBrief(prompt);
+  // Keep the edges separate so a pattern cannot match across omitted source text.
+  const instructionWindow = prompt.length > WORKSPACE_TITLE_WINDOW_THRESHOLD
+    ? [prompt.slice(0, WORKSPACE_TITLE_HEAD_LENGTH), prompt.slice(-WORKSPACE_TITLE_TAIL_LENGTH)]
+    : [prompt];
+  return instructionWindow.some((instruction) => {
+    const { isOfficeFileDeliverable, isExcelTask } = detectTaskFeatures(instruction);
+    const savesToFile = /\b(?:save|export)\s+(?:it\s+)?(?:to|as)\b|保存(?:到|至|为)|另存为|导出到/i.test(instruction);
+    return isOfficeFileDeliverable || isExcelTask || savesToFile || needsArtifactTaskBrief(instruction);
+  });
 }
 
 /**
@@ -396,7 +410,8 @@ export async function planSessionWorkDirectory(
   const firstTurnTitle = useExistingTitle ? title : await chooseFirstTurnFolderTitle(options);
   const baseName = buildSessionFolderBaseName({
     ...options, sessionTitle: firstTurnTitle, userMessage: undefined,
-    attachments: options.userMessage?.trim() ? undefined : options.attachments,
+    // 附件名兜底的门槛按清洗后的正文判：只剩恢复提示的消息等同空消息。
+    attachments: stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '').trim() ? undefined : options.attachments,
   });
   return findFreeSessionWorkDirectory(root, baseName, resolveReservationSet(root, options.reservedPaths));
 }

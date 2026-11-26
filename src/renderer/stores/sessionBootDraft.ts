@@ -79,6 +79,8 @@ function adoptHomeDraft(sessionId: string): void {
  * — never the server's most recent chat,
  * or a first-time browser would append its first task to someone else's old conversation. The home
  * draft moves onto the blank session that opens.
+ * The pick happens in the background: callers pass switch/create that keep any secondary page
+ * (Automation, plugins…) the user opened while boot was still waiting for the session list.
  */
 export async function openInitialSession<T extends { id: string }>(deps: {
   sessions: T[];

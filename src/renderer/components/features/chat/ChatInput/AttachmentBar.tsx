@@ -7,6 +7,7 @@ import { X, FileText, Code, Database, Globe, File, Folder, Music, Video, Present
 import type { ArchiveManifest, MessageAttachment, AttachmentCategory, PresentationSummary } from '../../../../../shared/contract';
 import { IconButton } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { pdfPageSentence } from './pdfPageSentence';
 
 export interface AttachmentBarProps {
   /** 附件列表 */
@@ -71,7 +72,7 @@ const AttachmentItem: React.FC<{
       return t.chatInput.attachFolderFiles.replace('{count}', String(att.folderStats.totalFiles));
     }
     if (att.category === 'pdf' && att.pageCount) {
-      return t.chatInput.attachPages.replace('{count}', String(att.pageCount));
+      return pdfPageSentence(t.chatInput, att.pageCount);
     }
     if (att.category === 'presentation') {
       const summary = parseJson<PresentationSummary>(att.pptJson);

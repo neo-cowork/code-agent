@@ -42,6 +42,7 @@ export type MemoryEntryKind =
   | 'user'
   | 'feedback'
   | 'project'
+  | 'people'
   | 'reference'
   | 'session'
   | 'pattern';
@@ -271,6 +272,8 @@ export interface MemoryEntry {
   status: MemoryEntryStatus;
   /** Replacement entry, when an archive was superseded by a newer memory. */
   deprecatedBy?: string | null;
+  /** Light Memory filename replaced when this candidate is adopted. */
+  supersedes?: string | null;
   kind: MemoryEntryKind;
   scope: MemoryEntryScope;
   title: string;
@@ -388,7 +391,7 @@ export interface MemoryTidyRestoreResult {
 
 export interface MemoryEntryCreateRequest {
   content?: string;
-  /** 仅 user / feedback / project / reference；其余由 host 拒绝 */
+  /** 仅 user / feedback / project / people / reference；其余由 host 拒绝 */
   kind?: string;
   projectPath?: string | null;
 }

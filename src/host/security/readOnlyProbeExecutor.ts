@@ -26,6 +26,8 @@ export interface ProbeAuthority {
   /** 本会话附件的本体路径。 */
   attachmentPaths: string[];
   homeDir: string;
+  /** 用户 Read(path) 类规则：返回 false 的路径不得被 pdf 读取（缺省视为允许）。 */
+  readPathAllowed?: (absolutePath: string) => boolean;
 }
 
 export interface ProbeRunResult {
@@ -39,7 +41,7 @@ class ProbeAbort extends Error {}
 const MAX_OUTPUT_CHARS = 256 * 1024;
 const EXEC_TIMEOUT_MS = 5000;
 const SHELL_BUILTINS = new Set(['echo', 'printf', 'test', 'command', 'cd', 'pwd', 'type', 'read', 'true', 'false', 'export', 'unset', 'set', 'exit']);
-const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
+const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami', stat: '/usr/bin/stat' } as const;
 
 // ----------------------------------------------------------------------------
 // 路径授权
@@ -233,6 +235,20 @@ function lookupOnPath(name: string): string | null {
   return null;
 }
 
+const SYSTEM_BIN_DIRS = new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin', '/opt/homebrew/bin', '/usr/local/bin']);
+const SYSTEM_REAL_PREFIXES = ['/usr/', '/bin/', '/sbin/', '/System/', '/Library/Developer/CommandLineTools/', '/Applications/Xcode.app/', '/opt/homebrew/Cellar/', '/opt/homebrew/opt/', '/usr/local/Cellar/'];
+const MAX_PDF_BYTES = 100 * 1024 * 1024;
+
+/** PATH 上第一个同名可执行文件；只有它落在系统 / 包管理目录才返回，否则 null（工作区、家目录、临时目录里的同名程序不执行）。 */
+function resolveSystemBinary(name: string): string | null {
+  const found = lookupOnPath(name);
+  if (!found) return null;
+  const dir = path.dirname(found);
+  if (!SYSTEM_BIN_DIRS.has(dir) && !/^\/opt\/homebrew\/opt\/[^/]+\/bin$/.test(dir)) return null;
+  const real = safeRealpath(found);
+  return SYSTEM_REAL_PREFIXES.some((prefix) => real.startsWith(prefix)) ? found : null;
+}
+
 class Runner {
   stdout = '';
   stderr = '';
@@ -265,8 +281,20 @@ class Runner {
     if (this.stdout.length + this.stderr.length > MAX_OUTPUT_CHARS) throw new ProbeAbort('output too large');
   }
 
+  /** `prog … | head -N`：stdout（及 2>&1 并入的 stderr）经 head 截断；末段是 head，无 pipefail，退出码 0。 */
+  private emitThroughHead(redirect: ProbeRedirect, res: ProbeRunResult, headLines: number): number {
+    const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
+    const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+    const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
+    this.emit({ out: 'out', err: 'err' }, lines.slice(0, headLines).join(''), stderr);
+    return 0;
+  }
+
+  /** 执行一条普通命令。when 步骤由 executeReadOnlyProbePlan 拆开（先判条件，再执行分支里的命令）。 */
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
+      // 分支里不会再有 when（编译器不认嵌套 if）；真出现了就中止，交回审批
+      case 'when': throw new ProbeAbort('nested when');
       case 'cd': {
         const directory = this.need(cmd.path);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
@@ -317,7 +345,43 @@ class Runner {
         }
         return 0;
       }
+      case 'which': {
+        let missing = false;
+        for (const name of cmd.names) {
+          if (cmd.builtins && SHELL_BUILTINS.has(name)) { this.emit(redirect, `${name}\n`, ''); continue; }
+          const found = lookupOnPath(name);
+          if (found) this.emit(redirect, `${found}\n`, ''); else missing = true;
+        }
+        return missing ? 1 : 0;
+      }
+      case 'version-probe': {
+        const bin = resolveSystemBinary(cmd.name);
+        if (!bin) throw new ProbeAbort('version probe binary not in a system directory');
+        const result = await runFixed(bin, [cmd.flag], this.currentDirectory);
+        if (cmd.headLines !== undefined) return this.emitThroughHead(redirect, result, cmd.headLines);
+        this.emit(redirect, result.stdout, result.stderr);
+        return result.exitCode;
+      }
+      case 'pdf-read': {
+        const target = this.need(cmd.file);
+        if (this.auth.readPathAllowed && !this.auth.readPathAllowed(target)) throw new ProbeAbort('pdf path denied by user rule');
+        const stat = fs.statSync(target);
+        if (!stat.isFile() || stat.size > MAX_PDF_BYTES) throw new ProbeAbort('pdf unavailable or too large');
+        const bin = resolveSystemBinary(cmd.program);
+        if (!bin) throw new ProbeAbort('pdf tool not in a system directory');
+        const result = await runFixed(bin, cmd.program === 'pdftotext' ? [...cmd.options, target, '-'] : [target], this.currentDirectory);
+        this.emit(redirect, result.stdout, result.stderr);
+        return result.exitCode;
+      }
       case 'noop': return 0;
+      case 'stat': {
+        // `-f format` 是 macOS BSD 语法（Linux 同形不同义：那是文件系统状态）；其它平台交回审批链
+        if (process.platform !== 'darwin') throw new ProbeAbort('stat unavailable');
+        for (const p of cmd.paths) this.need(p);
+        const res = await runFixed(FIXED_BINARIES.stat, ['-f', cmd.format, ...(cmd.timeFormat ? ['-t', cmd.timeFormat] : []), '--', ...cmd.paths], this.currentDirectory);
+        this.emit(redirect, res.stdout, res.stderr);
+        return res.exitCode;
+      }
       case 'test': {
         const abs = this.need(cmd.path);
         let ok: boolean;
@@ -341,13 +405,7 @@ class Runner {
         const targets = cmd.paths.length > 0 ? cmd.paths : ['.'];
         for (const p of targets) this.need(p);
         const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
-        if (cmd.headLines !== undefined) {
-          const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
-          const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-          const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
-          this.emit({ out: 'out', err: 'err' }, lines.slice(0, cmd.headLines).join(''), stderr);
-          return 0; // The last program is a literal head, with no pipefail.
-        }
+        if (cmd.headLines !== undefined) return this.emitThroughHead(redirect, res, cmd.headLines);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
@@ -436,13 +494,20 @@ class Runner {
 export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: ProbeAuthority): Promise<ProbeRunResult | { aborted: string }> {
   const runner = new Runner({ ...auth, homeDir: auth.homeDir || os.homedir() });
   let status = 0;
+  // 当前这段 if 的条件是否成立；条件不成立的分支语句不执行，也不动退出码
+  let branch: boolean | undefined;
   try {
     for (const step of plan.steps) {
       if (step.op === '&&' && status !== 0) continue;
       if (step.op === '||' && status === 0) continue;
-      const cmd = step.cmd.kind === 'echo'
-        ? { ...step.cmd, text: step.cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) }
-        : step.cmd;
+      let cmd = step.cmd;
+      if (cmd.kind === 'when') {
+        // 一段 if 的条件只在它带 start 的第一条语句处判一次，后面的分支语句沿用
+        if (cmd.start) branch = (await runner.run(cmd.test, step.redirect)) === 0;
+        if (branch === cmd.negate) continue;
+        cmd = cmd.cmd;
+      }
+      if (cmd.kind === 'echo') cmd = { ...cmd, text: cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) };
       status = await runner.run(cmd, step.redirect);
     }
   } catch (err) {

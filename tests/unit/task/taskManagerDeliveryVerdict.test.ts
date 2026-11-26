@@ -90,7 +90,7 @@ function artifact(artifactId: string, path: string, role = 'deliverable') {
 }
 
 function messages(input: {
-  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; command?: string; artifact?: ReturnType<typeof artifact> }>;
+  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; command?: string; failedOutput?: string; workspace?: string; artifact?: ReturnType<typeof artifact> }>;
   conclusion: string;
 }): Message[] {
   return [
@@ -116,6 +116,7 @@ function messages(input: {
         ...(call.success ? { output: 'ok' } : { error: 'save failed' }),
         ...(call.artifact ? { metadata: { artifact: call.artifact } } : {}),
         ...(call.hostCode ? { metadata: { hostReason: { code: call.hostCode } } } : {}),
+        ...(call.failedOutput !== undefined ? { metadata: { code: 'COMMAND_FAILED', output: call.failedOutput, ...(call.workspace ? { writeIsolation: { kind: 'workspace', targetPath: call.workspace } } : {}) } } : {}),
       })),
     },
     { id: 'assistant-final', role: 'assistant', content: input.conclusion, timestamp: 3 },
@@ -314,6 +315,75 @@ describe('TaskManager background delivery verdict', () => {
     expect(event.type).toBe('task_cancelled');
     expect((event.data as EventData).detail).toBe('你拒绝了这一步，任务已停止。');
     expect(JSON.stringify(event.data)).not.toContain('chmod');
+  });
+
+  it('ends a failed Bash (COMMAND_FAILED) as task_error naming the command, with workspace paths as ./', async () => {
+    sessionManagerState.getSession.mockResolvedValue({ messages: [], workingDirectory: '/work/proj' });
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'bash-1', name: 'Bash', success: false, command: '/work/proj/check.sh', failedOutput: 'missing: brief.pdf' }],
+      conclusion: '检查完成。',
+    }));
+    expect(event.type).toBe('task_error');
+    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
+    expect(JSON.stringify(event.data)).not.toContain('/work/proj');
+  });
+
+  it('words the failed-command task_error in English when the UI language is en', async () => {
+    configState.language = 'en';
+    try {
+      sessionManagerState.getSession.mockResolvedValue({ messages: [], workingDirectory: '/work/proj' });
+      const event = await runBackgroundTask(messages({
+        calls: [{ id: 'bash-1', name: 'Bash', success: false, command: '/work/proj/check.sh', failedOutput: 'missing: brief.pdf' }],
+        conclusion: 'done',
+      }));
+      expect(event.type).toBe('task_error');
+      expect((event.data as EventData).error).toBe('The background task could not finish: the command ./check.sh did not run successfully (missing: brief.pdf), so it stopped.');
+    } finally {
+      configState.language = 'zh';
+    }
+  });
+
+  it('still names the failed command when only a read-only Bash probe ran afterwards', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, command: './check.sh', failedOutput: 'missing: brief.pdf' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'ls -la' },
+      ],
+      conclusion: '看了一下目录。',
+    }));
+    expect(event.type).toBe('task_error');
+    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
+  });
+
+  it('shows the workspace as ./ from the result write root when the session has no working directory', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'bash-1', name: 'Bash', success: false, command: 'cd /Users/someone/proj/ws; sh check.sh', failedOutput: 'missing: brief.pdf', workspace: '/Users/someone/proj/ws' }],
+      conclusion: 'done',
+    }));
+    expect(event.type).toBe('task_error');
+    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 cd ./; sh check.sh 没有运行成功（missing: brief.pdf），已停止。');
+  });
+
+  it('keeps a failed Bash completed when a later non-probe Bash succeeded', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, command: './check.sh', failedOutput: 'missing: brief.pdf' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'npm test' },
+      ],
+      conclusion: 'Fixed and verified.',
+    }));
+    expect(event.type).toBe('task_completed');
+  });
+
+  it('keeps a failed Bash completed when a deliverable artifact exists', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, command: './check.sh', failedOutput: 'x' },
+        { id: 'w-1', name: 'Write', success: true, artifact: artifact('a1', '/tmp/report.xlsx') },
+      ],
+      conclusion: 'Report saved.',
+    }));
+    expect(event.type).toBe('task_completed');
   });
 
   it('keeps a denied Bash completed when a later Bash succeeded', async () => {

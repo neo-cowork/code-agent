@@ -27,3 +27,12 @@ export function useSessionTurnActive(sessionId: string | null | undefined): bool
   ));
   return isSessionTurnActive({ processing, running, taskStatus });
 }
+
+/** Recheck after an async session switch before sending a session-scoped action. */
+export function isSessionTurnActiveNow(sessionId: string): boolean {
+  return isSessionTurnActive({
+    processing: useAppStore.getState().processingSessionIds.has(sessionId),
+    running: useSessionStore.getState().runningSessionIds.has(sessionId),
+    taskStatus: useTaskStore.getState().sessionStates[sessionId]?.status,
+  });
+}

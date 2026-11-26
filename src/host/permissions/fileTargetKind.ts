@@ -41,7 +41,8 @@ export interface FileTargetKindOptions {
  * Anything else we can stat — regular files, directories, FIFOs, block
  * devices — is `regular`. Block devices stay regular on purpose: writing
  * `/dev/sda` does overwrite, so the device copy would be a lie.
- * Stat failure / empty input → `unknown` (renderer fail-closes to overwrite).
+ * ENOENT / ENOTDIR → `absent`; all other failures / empty input → `unknown`
+ * (renderer fail-closes to overwrite).
  */
 export function resolveFileTargetKind(
   rawPath: unknown,
@@ -61,7 +62,9 @@ export function resolveFileTargetKind(
     if (stat.isSymbolicLink()) return 'regular';
     if (stat.isCharacterDevice()) return 'device';
     return 'regular';
-  } catch {
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error
+      && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return 'absent';
     return 'unknown';
   }
 }

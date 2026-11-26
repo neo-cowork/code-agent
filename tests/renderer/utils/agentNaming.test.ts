@@ -45,14 +45,14 @@ describe('spawned agent naming through public entries', () => {
     }
   });
 
-  it('names a background node in English even when its host display name is Chinese', () => {
+  it('uses the localized role on both surfaces when a background node has a known role', () => {
     useAppStore.setState({ language: 'en' });
     const source = { ...node('explore'), background: true, displayName: '供应商对比研究' };
-    expect(buildAgentRows({ members: [], tasks: [], nodes: [source] })[0].name).toBe('Background assistant');
-    expect(deriveDelegationPresentation(call, [], [source])?.title).toBe('Background assistant');
+    expect(buildAgentRows({ members: [], tasks: [], nodes: [source] })[0].name).toBe('Researcher');
+    expect(deriveDelegationPresentation(call, [], [source])?.title).toBe('Researcher');
     useAppStore.setState({ language: 'zh' });
-    expect(buildAgentRows({ members: [], tasks: [], nodes: [source] })[0].name).toBe('供应商对比研究');
-    expect(deriveDelegationPresentation(call, [], [source])?.title).toBe('供应商对比研究');
+    expect(buildAgentRows({ members: [], tasks: [], nodes: [source] })[0].name).toBe('调研员');
+    expect(deriveDelegationPresentation(call, [], [source])?.title).toBe('调研员');
   });
 
   it('uses the existing fallback when spawn_agent has only a long task', () => {

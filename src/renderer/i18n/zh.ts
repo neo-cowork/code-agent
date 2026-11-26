@@ -6,12 +6,13 @@ import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh 
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
-import { attachmentPreviewZh } from './attachmentPreview';
+import { attachmentPreviewZh } from './attachmentPreview'; import { chatImageAnnotateZh } from './chatImageAnnotate';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder'; import { cronWakeCadenceZh } from './cronWakeCadence';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
+import { cronScheduleEstimateZh } from './cronScheduleEstimate';
 import { deliveryExperienceZh } from './deliveryExperience';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
@@ -944,15 +945,14 @@ export const zh = {
   ...expertZh,
 
   ...teamZh,
-  ...rolePackZh,
-  ...knowledgeMemoryZh,
+  ...rolePackZh, ...knowledgeMemoryZh,
   ...chatTranscriptZh,
-  ...attachmentPreviewZh,
+  ...attachmentPreviewZh, ...chatImageAnnotateZh,
   ...chatInputZh,
   ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
-  ...cronCenterZh, ...cronWorkingFolderZh, ...cronWakeCadenceZh,
+  ...cronScheduleEstimateZh, ...cronCenterZh, ...cronWorkingFolderZh, ...cronWakeCadenceZh,
   ...previewWorkspaceZh,
   ...deliveryExperienceZh,
   ...modalPrimitivesZh,
@@ -1078,7 +1078,7 @@ export const zh = {
     cost: { label: 'Cost', description: '查看当前会话的 token 用量和成本' },
     agents: { label: 'Agent 列表', description: '查看历史 Agent 记录' },
     hooks: { label: 'Hooks', description: '查看 Hook 配置' },
-    permissions: { label: 'Permissions', description: '查看安全决策链状态' },
+    permissions: { label: '权限', description: '查看安全决策链状态' },
     model: { label: '模型', description: '查看或切换当前模型' },
     compact: { label: '压缩上下文', description: '手动触发上下文压缩' },
     config: { label: '配置', description: '查看当前配置' },

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChannelAccount } from '../../../src/shared/contract/channel';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
@@ -16,6 +16,7 @@ import {
   CronResultChannelField,
   CronResultChannelSummary,
 } from '../../../src/renderer/components/features/cron/CronResultChannel';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const feishuAccount: ChannelAccount = {
   id: 'account-feishu',
@@ -68,7 +69,28 @@ beforeEach(() => {
   ipc.on.mockReturnValue(() => undefined);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({ language: 'zh' });
+});
+
+it('names Run history as the default result destination in English', async () => {
+  useAppStore.setState({ language: 'en' });
+  mockCatalog([feishuAccount]);
+  render(
+    <>
+      <ControlledField />
+      <CronResultChannelSummary />
+    </>,
+  );
+
+  const select = await screen.findByRole<HTMLSelectElement>('combobox', { name: 'Push result to (optional)' });
+  await waitFor(() => expect(select.options).toHaveLength(2));
+  expect(select.options[0]?.text).toBe('Keep in Run history only (default)');
+  expect(select.selectedIndex).toBe(0);
+  const summary = within(screen.getByTestId('cron-result-channel-summary'));
+  expect(summary.getByText('Keep in Run history only')).toBeTruthy();
+});
 
 describe('CronResultChannelField', () => {
   it('有账号时按“账号 → 会话”选择，并产出账号名加会话 ID 的完整目标', async () => {

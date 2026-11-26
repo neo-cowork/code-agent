@@ -22,6 +22,7 @@ import {
   extractComposerPlainText,
   getCaretPlainTextOffset,
   insertChipAtPlainOffset,
+  insertPlainTextAtCaret,
   listChipMounts,
   replaceRangeWithChipMount,
   setCaretPlainTextOffset,
@@ -172,6 +173,39 @@ describe('composerRichTextModel', () => {
     expect(extractComposerPlainText(root)).toBe('甲丙');
   });
 
+  it.each(['', COMPOSER_CARET_ANCHOR])('keeps inserted text after a line break with existing suffix %j', (suffix) => {
+    const root = buildRoot(document.createTextNode(`before${suffix}`));
+    setSelection(root.firstChild!, 'before'.length);
+
+    insertPlainTextAtCaret(root, '\n', { anchorCaret: true });
+
+    expect(extractComposerPlainText(root)).toBe('before\n');
+    expect(root.textContent).toBe(`before\n${COMPOSER_CARET_ANCHOR}`);
+    expect(getCaretPlainTextOffset(root)).toBe('before\n'.length);
+    const caret = window.getSelection()!.getRangeAt(0);
+    expect(caret.startContainer.textContent).toBe(suffix || `\n${COMPOSER_CARET_ANCHOR}`);
+    expect(caret.startOffset).toBe(suffix ? 0 : 1);
+    setCaretPlainTextOffset(root, 'before\n'.length);
+    expect(getCaretPlainTextOffset(root)).toBe('before\n'.length);
+    insertPlainTextAtCaret(root, 'after');
+    expect(extractComposerPlainText(root)).toBe('before\nafter');
+    expect(getCaretPlainTextOffset(root)).toBe('before\nafter'.length);
+  });
+
+  it('uses the existing text to position the caret after a mid-text line break', () => {
+    const root = buildRoot(document.createTextNode('beforeafter'));
+    setSelection(root.firstChild!, 'before'.length);
+
+    insertPlainTextAtCaret(root, '\n', { anchorCaret: true });
+
+    expect(root.textContent).toBe('before\nafter');
+    expect(extractComposerPlainText(root)).toBe('before\nafter');
+    expect(getCaretPlainTextOffset(root)).toBe('before\n'.length);
+    const caret = window.getSelection()!.getRangeAt(0);
+    expect(caret.startContainer.textContent).toBe('after');
+    expect(caret.startOffset).toBe(0);
+  });
+
   it('在文本节点中途插入 chip 会断开文本节点', () => {
     const root = buildRoot(document.createTextNode('开始做'));
     insertChipAtPlainOffset(root, 2, goalChip);
@@ -312,6 +346,7 @@ describe('InputArea 内联 chip', () => {
     // 普通 Enter → 发送
     fireEvent.keyDown(editor, { key: 'Enter', keyCode: 13 });
     expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenLastCalledWith();
 
     // IME 候选确认（keyCode 229）→ 不发送
     fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 });
@@ -326,6 +361,28 @@ describe('InputArea 内联 chip', () => {
     // Shift+Enter 换行 → 不发送
     fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true });
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])('modified Enter steers with %j', (modifier) => {
+    const onSubmit = vi.fn();
+    render(<Harness initialValue="draft" onSubmit={onSubmit} />);
+
+    fireEvent.keyDown(getEditor(), { key: 'Enter', ...modifier });
+
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ steer: true });
+  });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])('Enter and Shift+Enter leave the draft alone during IME with %j', (ime) => {
+    const onSubmit = vi.fn();
+    render(<Harness initialValue="draft" onSubmit={onSubmit} />);
+    const editor = getEditor();
+
+    expect(fireEvent.keyDown(editor, { key: 'Enter', ...ime })).toBe(true);
+    expect(fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true, ...ime })).toBe(true);
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(editor.getAttribute('data-plain-text')).toBe('draft');
+    expect(extractComposerPlainText(editor)).toBe('draft');
   });
 
   it('粘贴纯文本（含换行）走纯文本插入并触发 onChange', () => {

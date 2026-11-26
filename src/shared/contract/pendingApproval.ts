@@ -17,7 +17,29 @@
 // 必须显式 retry 或 cancel 才能放行后续流程。
 // ============================================================================
 
-export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing';
+export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing' | 'outbound_draft';
+
+export interface OutboundDraftInboxItem {
+  id: string;
+  revision: string;
+  scheduledTaskName?: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  attachmentNames: string[];
+  needsReconfirm: boolean;
+}
+
+export type OutboundDraftActionCode =
+  | 'OUTBOUND_DRAFT_SENT'
+  | 'OUTBOUND_DRAFT_DISCARDED'
+  | 'OUTBOUND_DRAFT_EXPIRED'
+  | 'OUTBOUND_DRAFT_CLOSED'
+  | 'OUTBOUND_DRAFT_RECONFIRM'
+  | 'OUTBOUND_DRAFT_ATTACHMENT_UNAVAILABLE'
+  | 'OUTBOUND_DRAFT_SEND_FAILED';
 
 /**
  * kind='tool_approval' 停车行的 payload（B2）。无人值守会话的工具审批请求超时不再 deny，
@@ -55,6 +77,7 @@ export interface ToolApprovalPayload {
   forceConfirm?: boolean;
   /** Host-owned origin of the request (copied from permission details): scheduled-task flag/name or the user's own quote. */
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
@@ -117,6 +140,7 @@ export interface ParkedApprovalInboxItem {
   forceConfirm?: boolean;
   /** Host-owned origin: scheduled-task flag/name, or the user's own quote for manual turns. */
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */

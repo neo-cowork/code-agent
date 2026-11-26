@@ -15,7 +15,7 @@
 // 同会话的下一个 agent run 可在 ensureBinding 认领（同 serviceKey 同 profile，登录态
 // 原样），聊天里出现「继续」卡；认领即消耗条目，窗由认领 run 按常规释放。
 //
-// 窗口自身的 close/crashed 会话事件把条目翻成 closed（池条目一并释放，不占容量）。
+// 窗口关闭、崩溃或最后一个托管标签页关闭时，条目翻成 closed 并释放池条目。
 
 import type { KeptResultPageReason, KeptResultPageSnapshot } from '../../../shared/ipc/types';
 import { createLogger } from '../infra/logger';
@@ -57,8 +57,10 @@ export interface RegisterKeptBrowserInput {
   serviceKey: string;
   url: string;
   title: string;
-  /** kept 窗的会话变化事件源（close/crashed → closed）。 */
-  browserService: { onSessionChanged?: (listener: (reason: string) => void) => (() => void) | undefined };
+  browserService: {
+    onSessionChanged?: (listener: (reason: string) => void) => (() => void) | undefined;
+    listTabs(): readonly unknown[];
+  };
   keptAt?: number;
   /** 停靠来由（缺省 keep_result_page）。takeover=接管停靠，agent run 可认领。 */
   reason?: KeptResultPageReason;
@@ -104,7 +106,8 @@ export class KeptBrowserRegistry {
 
     const capturedServiceKey = entry.serviceKey;
     const unsubscribe = input.browserService.onSessionChanged?.((reason) => {
-      if (!TERMINAL_SESSION_REASONS.has(reason)) return;
+      const lastTabClosed = reason === 'close_tab' && input.browserService.listTabs().length === 0;
+      if (!lastTabClosed && !TERMINAL_SESSION_REASONS.has(reason)) return;
       this.markClosedIfService(input.conversationId, capturedServiceKey);
     });
     if (unsubscribe) this.unsubs.set(key, unsubscribe);

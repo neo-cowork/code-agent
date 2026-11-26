@@ -99,25 +99,30 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector?: (state: typeof storeState) => unknown) => (
-    selector ? selector(storeState) : storeState
+  useAppStore: Object.assign(
+    (selector?: (state: typeof storeState) => unknown) => (selector ? selector(storeState) : storeState),
+    { getState: () => storeState },
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: Object.assign(
-    (selector: (state: { currentSessionId: string | null; messages: Message[] }) => unknown) => (
-      selector({ currentSessionId: currentSession.id, messages: [] })
+    (selector: (state: { currentSessionId: string | null; messages: Message[]; sessions: never[] }) => unknown) => (
+      selector({ currentSessionId: currentSession.id, messages: [], sessions: [] })
     ),
-    { getState: () => ({ currentSessionId: currentSession.id, messages: [] }) },
+    { getState: () => ({ currentSessionId: currentSession.id, messages: [], sessions: [] }) },
   ),
 }));
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({
   usePermissionStore: () => ({ checkMemory: () => null, saveMemory: vi.fn() }),
 }));
+// 代理行成员数据会顺带读一次 swarm 账本（与审批无关），不计入审批 invoke 的调用断言
+const approvalInvoke = vi.hoisted(() => (channel: string, ...args: unknown[]) => (
+  channel === 'swarm:list-trace-runs' ? Promise.resolve([]) : invoke(channel, ...args)
+));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { isAvailable: () => true, invoke },
+  default: { isAvailable: () => true, invoke: approvalInvoke },
   ipcService: {
-    invoke,
+    invoke: approvalInvoke,
     on: (_channel: string, callback: (payload: unknown) => void) => {
       stallListeners.add(callback);
       return () => { stallListeners.delete(callback); };
@@ -190,10 +195,13 @@ describe('DecisionSlot', () => {
     expect(slot.className).not.toContain('overflow-y-auto');
     expect(screen.getByText('运行命令')).toBeTruthy();
     expect(screen.getAllByText('危险')).toHaveLength(1);
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('border-red-500');
     expect(screen.getByText('还有 2 项')).toBeTruthy();
     expect(screen.queryByText('写入文件')).toBeNull();
+    // 高危命令卡默认展开，不再需要点开。
+    expect(screen.queryByRole('button', { name: '更多选项与详情' })).toBeNull();
     expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
-    expect(screen.getByTestId('permission-card-pinned-options').className).toContain('shrink-0');
+    expect(screen.getByTestId('permission-card-face').textContent).toContain('暂不');
     expect(screen.queryByTestId('permission-card-actions')).toBeNull();
     expect(screen.getByTestId('permission-card').className).not.toContain('px-4');
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
@@ -202,7 +210,7 @@ describe('DecisionSlot', () => {
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-md');
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('dark:shadow-2xl');
 
-    fireEvent.click(screen.getByRole('button', { name: /仍然执行/u }));
+    fireEvent.click(screen.getByRole('button', { name: /^允许$/u }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -238,7 +246,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /允许一次/ }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^允许$/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() => {
@@ -256,7 +264,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     const view = render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /拒绝/ }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^暂不$/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
 

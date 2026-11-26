@@ -11,6 +11,9 @@ export const zhSettingsWork = {
       saving: '保存中…',
       actions: {
         chooseDirectory: '选择目录',
+        reselectWebHint: '网页版没法选这台电脑上的文件夹，请在桌面版里重新选择这个文件夹。',
+        pickDirectoryNothingChosen: '没有选择文件夹，工作区保持不变。',
+        pickDirectoryFailed: '无法选择文件夹，请重试。',
         revealInFinder: '在访达中打开',
         change: '更换',
         clear: '清除',
@@ -106,7 +109,7 @@ export const zhSettingsWork = {
       },
       recentDirectories: {
         title: '最近目录',
-        description: '过去打开过的工作区，点击直接切换；保留行为由 settings.workspace 决定。',
+        description: '过去打开过的工作区，点击直接切换。',
         columns: {
           directory: '目录',
           status: '状态',
@@ -385,7 +388,7 @@ export const zhSettingsWork = {
       },
     },
     roles: {
-      description: '持久化角色 = 角色定义 + 角色记忆 + 工作履历。记忆与履历跨实例累积，归你所有。任何自定义 agent 在 ~/.code-agent/roles/ 下建同名目录即可升级为持久角色。',
+      description: '将 <名称>.md 放入 ~/.code-agent/agents/，专家就会出现在「我的」中。',
       listTitlePrefix: '持久化角色（',
       listTitleSuffix: '）',
       categoryCountPrefix: '（',
@@ -440,7 +443,7 @@ export const zhSettingsWork = {
           },
           daily: {
             label: '每日简报',
-            hint: '每天 09:00 醒来巡检产物，有进展时生成简报会话',
+            hint: '每天 {time} 醒来巡检产物，有进展时生成简报会话',
           },
           realtime: {
             label: '实时介入',
@@ -521,6 +524,7 @@ export const zhSettingsWork = {
         user: '用户',
         feedback: '反馈',
         project: '项目',
+        people: '人与组织',
         reference: '引用',
         unknown: '未分类',
       },
@@ -642,15 +646,7 @@ export const zhSettingsWork = {
           stale: '过期',
           archived: '归档',
         },
-        kindLabels: {
-          directive: '用户规则',
-          user: '用户',
-          feedback: '反馈',
-          project: '项目',
-          reference: '引用',
-          session: '会话',
-          pattern: '经验',
-        },
+        kindLabels: { directive: '用户规则', user: '用户', feedback: '反馈', project: '项目', people: '人与组织', reference: '引用', session: '会话', pattern: '经验' },
         stats: {
           total: '总数',
           currentMatched: '当前匹配',
@@ -684,7 +680,7 @@ export const zhSettingsWork = {
           summary: '摘要',
           content: '正文',
           projectPath: '绑定项目路径',
-          projectPathPlaceholder: '确认规范 workspace 路径后才能转正',
+          projectPathPlaceholder: '确认项目所在文件夹后，这条记忆才会生效',
         },
         save: '保存',
         activate: '激活',
@@ -727,7 +723,7 @@ export const zhSettingsWork = {
           selection: '选择',
           selectVisible: '选择当前可见候选（{count}）',
           selectEntry: '选择 {title}',
-          approve: '转正 {count}',
+          approve: '确认 {count}',
           reject: '拒绝 {count}',
           result: '已处理 {updated} 条，跳过 {skipped} 条',
           skippedDetailPrefix: '。跳过明细：',
@@ -737,7 +733,7 @@ export const zhSettingsWork = {
             'directive-requires-explicit-confirmation': '是指令类条目，需逐条确认',
             'project-binding-required': '需先绑定项目路径',
           },
-          directiveNeedsConfirmation: '指令类条目需逐条确认，不能批量转正',
+          directiveNeedsConfirmation: '指令类条目要逐条确认，不能一起确认',
           failed: '批量审阅失败',
         },
       },

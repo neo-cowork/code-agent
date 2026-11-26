@@ -26,7 +26,7 @@ export function preserveLatestCompressionSignal(
     },
   };
 }
-import { defaultLanguage, readStoredLanguage, storeLanguage } from '../i18n';
+import { applyDocumentLanguage, defaultLanguage, readStoredLanguage, storeLanguage } from '../i18n';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -53,6 +53,8 @@ import { useScheduleSettingsDraftStore } from './scheduleSettingsDraftStore';
 import { discardCronEditorDraft } from '../components/features/cron/cronEditorDraftStash';
 import { buildContentPreviewState } from './contentPreviewState';
 import { buildPermissionDecisionState, buildPermissionDismissState, buildForegroundRunEndState, buildBackgroundRunEndState } from './permissionDecisionState';
+import { useBackgroundTaskStore } from './backgroundTaskStore';
+import { isTerminalTaskStatus } from '@shared/contract/backgroundTask';
 import { installedBundledCapabilityIds } from './bundledCapabilityStore';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
@@ -422,6 +424,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setLanguage: (language) => {
     set({ language });
     storeLanguage(language);
+    applyDocumentLanguage(language);
   },
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
@@ -813,7 +816,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 归后台 run，宿主侧在前台 run 结束后仍 pending，要留给用户点
   // （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
   clearForegroundPermissionRequestsForSession: (sessionId) =>
-    set((state) => buildForegroundRunEndState(state, sessionId, GLOBAL_PERMISSION_REQUEST_SESSION_ID)),
+    set((state) => buildForegroundRunEndState(
+      state,
+      sessionId,
+      GLOBAL_PERMISSION_REQUEST_SESSION_ID,
+      (runId) => useBackgroundTaskStore.getState().tasks.some(
+        (task) => (task.id === runId || task.runId === runId) && !isTerminalTaskStatus(task.status),
+      ),
+    )),
 
   // 后台任务自己的 run 收线（subagent_run_end）：该 lane 未裁决的卡成死卡，按身份收走。
   removePermissionRequestsForBackgroundRun: (identity) =>
@@ -932,6 +942,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setContextHealth: (health) => set({ contextHealth: health }),
   setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
 }));
+
+// <html lang> 跟随初始语言：index.html 首帧脚本已按 localStorage 快照设过，
+// 这里兜底非 index.html 入口（测试、嵌入页）与快照无效回退默认语言的场景。
+applyDocumentLanguage(useAppStore.getState().language);
 
 // E2E/dev 调试钩子：真机测试用 openSettingsTab 打开设置并跳到指定 tab（同 window.__neo* 例）。
 if (typeof window !== 'undefined' && import.meta.env?.DEV) {

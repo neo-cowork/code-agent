@@ -636,6 +636,7 @@ export function projectTurns(
           : contentMetadata;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
+          messageId: msg.id,
           type: 'tool_call',
           content: '',
           timestamp: msg.timestamp,
@@ -644,6 +645,7 @@ export function projectTurns(
             name: tc.name,
             args: tc.arguments,
             result: tc.result?.output || tc.result?.error,
+            ...(tc.result?.userMessage !== undefined ? { userMessage: tc.result.userMessage } : {}),
             success: tc.result?.success,
             duration: tc.result?.duration,
             outputPath: tc.result?.outputPath,

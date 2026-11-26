@@ -18,6 +18,7 @@ interface ApprovedRmToolApprovalInput {
   params: Record<string, unknown>;
   permissionRequest: PermissionRequestData;
   sessionId?: string;
+  runId?: string;
   context: Pick<ToolContext, 'requiresOsWriteFence'>;
   abortSignal?: AbortSignal;
   workingDirectory: string;
@@ -30,8 +31,9 @@ export function approvedSingleFileRmGrantForToolApproval(
 ): string | string[] | undefined {
   if (!isBashToolName(input.toolName)) return undefined;
   const command = input.params.command;
+  // `if rm ...` / `do rm ...` inside a loop starts with a shell keyword; it is still an rm call and must log its refusal.
   if (typeof command !== 'string' || !parseShellCommand(command).segments.some(
-    segment => path.posix.basename(segment.words[0] ?? '') === 'rm',
+    segment => path.posix.basename(segment.words.find(word => !['if', 'then', 'else', 'do'].includes(word)) ?? '') === 'rm',
   )) return undefined;
   if (input.approvalSource !== 'user') {
     logger.warn('APPROVED_RM_GRANT_REFUSED {"conditions":["approval_source"]}');
@@ -52,5 +54,7 @@ export function approvedSingleFileRmGrantForToolApproval(
     newFileGrantSupported: getSandboxManager().supportsNewFileWriteGrant(),
     workingDirectory: input.workingDirectory,
     policyEnforcer: input.policyEnforcer,
+    sessionId: input.sessionId,
+    runId: input.runId,
   });
 }

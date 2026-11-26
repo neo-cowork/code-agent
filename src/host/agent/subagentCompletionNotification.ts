@@ -46,6 +46,8 @@ export interface BuildSubagentCompletionRecordInput extends SubagentCompletionSc
   lastProgress?: string;
   /** 声明了但未装配的工具（N-SUBAGENT-ZEROTOOLS 返修 Important 2：后台完成通知透传给父模型）。 */
   missingTools?: string[];
+  /** 本次 run 内真人（审批卡上点允许/拒绝）的决定次数；机器放行/拒绝不计。两者都为 0 时 payload 不带该字段。 */
+  userApprovals?: { approved: number; denied: number };
   /** 覆盖 payload.next_action 默认文案。stall 提醒指向当前状态而非「最终结果」（run 未收尾）。 */
   nextAction?: string;
 }
@@ -71,14 +73,14 @@ function buildCompletionAckInstruction(
 ): string {
   const namingRule = `提到子代理时，只能使用通知中的标题「${title}」，禁止使用 [agent]、[worker]、agent 或 worker 等泛称。回复中不要提及内部角色名、工具名或标识符；不要原样引用 agent_ 开头的内部编号，也不要写带这类编号的临时目录路径。`;
   if (kind === 'user_visible') {
-    const report = '用用户的语言写一份简明汇报，只写一遍，不要照抄通知原文；子代理改了文件且通知里有分支名时，写出分支名并说明需要合并才会生效；不要出现任务编号、工具名、信封标签或绝对路径。';
+    const report = '用用户的语言写一份简明汇报，只写一遍，不要照抄通知原文；汇报审批情况只依据通知里的 user_approvals（approved=用户点了允许的次数，denied=用户点了拒绝的次数），没有这个字段就不要对审批做任何说法；子代理改了文件且通知里有分支名时，写出分支名并说明需要合并才会生效；不要出现任务编号、工具名、信封标签或绝对路径。';
     if (delivery === 'wake') {
       return `回应要求：用户还没看到子代理的完整结果。本轮不要调用任何工具，直接${report}${namingRule}`;
     }
     return `回应要求：用户还没看到子代理的完整结果。先完成你当前正在做的任务，再向用户简要说明这个后台结果：${report}${namingRule}`;
   }
   if (kind === 'shell') {
-    return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步，不要只罗列退出码、日志或命令细节。${namingRule}`;
+    return `回应要求：用简短、非技术化的话向用户说明「${title}」的执行结果和下一步。没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言；不要写退出码，也不要照抄英文报错原文。用户自己写过的命令可以点名。${namingRule}`;
   }
   return `回应要求：结果只在内部上下文中。先完成必要的后续动作；没有后续动作时，不要回复用户。${namingRule}`;
 }
@@ -141,6 +143,9 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
     failure_code: input.failureCode,
     ...(input.missingTools && input.missingTools.length > 0
       ? { missing_tools: input.missingTools }
+      : {}),
+    ...(input.userApprovals && input.userApprovals.approved + input.userApprovals.denied > 0
+      ? { user_approvals: { approved: input.userApprovals.approved, denied: input.userApprovals.denied } }
       : {}),
     archive: archiveRef
       ? {

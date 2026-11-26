@@ -2,6 +2,9 @@
 // RemindersUpdate (P0-6.3 Batch 5 — connectors: native ToolModule rewrite)
 // ============================================================================
 
+import { stripReminderRowIds } from '../../../../shared/utils/connectorReceiptText';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type {
   ToolHandler,
   ToolModule,
@@ -13,7 +16,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
 import { remindersUpdateNoChangeError } from './remindersApprovalDetails';
 import { normalizeReminderCreateTime } from '../../reminderCreateTime';
@@ -54,6 +57,8 @@ async function executeRemindersUpdate(
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'change'), code: 'NOT_INITIALIZED' };
   }
 
+  const locale = getHostUiLocale();
+  const { separator, reminders: copy, appleScriptFailure } = getHostConnectorCopy(locale);
   try {
     const undoMetadata = await captureReminderBefore(connector, args);
     const result = await connector.execute('update_reminder', args);
@@ -64,7 +69,7 @@ async function executeRemindersUpdate(
       completed: boolean;
     };
     ctx.logger.debug('reminders_update', { id: reminder.id, list: reminder.list });
-    const output = `已更新提醒：\n- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+    const output = `${copy.updated}${separator.trimEnd()}\n- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
 
     return {
       ok: true,
@@ -82,10 +87,10 @@ async function executeRemindersUpdate(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已更新提醒：${reminder.title}`,
+          name: `${copy.updated}${separator}${reminder.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
-          preview: output.slice(0, 500),
+          preview: stripReminderRowIds(output).slice(0, 500),
           metadata: {
             connector: 'reminders',
             action: 'update_reminder',
@@ -104,9 +109,13 @@ async function executeRemindersUpdate(
       ctx.logger,
       schema.name,
     );
+    const title = typeof args.title === 'string' ? args.title.trim() : '';
+    const failureName = title ? `${copy.updateFailed}${separator}${title}` : copy.updateFailed;
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure) : undefined;
     return {
       ok: false,
       error: failure,
+      ...(userMessage ? { userMessage } : {}),
       meta: {
         action: 'update_reminder',
         connector: 'reminders',
@@ -118,7 +127,8 @@ async function executeRemindersUpdate(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'update_reminder',
-          name: `更新提醒失败：${String(args.title ?? args.reminder_id)}`,
+          name: failureName,
+          ...(userMessage ? { preview: `${failureName}${separator}${userMessage}` } : {}),
           error: failure,
           metadata: { connector: 'reminders', id: args.reminder_id, title: args.title },
         }),
