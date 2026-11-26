@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 import { buildRunHandoffMessage } from '../../../src/renderer/components/features/chat/MessageBubble/runHandoffMessage';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 const zhRun = zh.deliveryExperience;
 
@@ -86,7 +87,7 @@ describe('buildRunHandoffMessage', () => {
       zhRun,
     );
     // 10037 字符：省略 10037 - 2000 - 8000 = 37
-    expect(over).toContain(zhRun.runHandoffTruncationNote.replace('{count}', '37'));
+    expect(over).toContain(interpolatePlural(zhRun.runHandoffTruncationNote, 37));
     expect(over).toContain(head);
     expect(over).toContain(tail);
     expect(over).not.toContain('M');
@@ -95,7 +96,7 @@ describe('buildRunHandoffMessage', () => {
       { command: 'cat edge.log', status: 'completed', output: 'E'.repeat(10000), exitCode: 0 },
       zhRun,
     );
-    expect(exact).not.toContain(zhRun.runHandoffTruncationNote.split('{count}')[0]);
+    expect(exact).not.toContain(zhRun.runHandoffTruncationNote.other.split('{count}')[0]);
     expect(exact).toContain('E'.repeat(10000));
   });
 
@@ -150,7 +151,7 @@ describe('buildRunHandoffMessage', () => {
       zhRun,
     );
     expect(text).toContain('```\nok\n```');
-    expect(text).not.toContain(zhRun.runHandoffTruncationNote.split('{count}')[0]);
+    expect(text).not.toContain(zhRun.runHandoffTruncationNote.other.split('{count}')[0]);
   });
 
   it('输出只有颜色码：剥完为空，视同无输出（不发输出块）', () => {

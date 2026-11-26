@@ -341,7 +341,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
       <ConfirmDialog
         isOpen={isConfirmOpen}
         title={t.turnDiff.confirmTitle}
-        message={t.turnDiff.confirmMessage.replace('{count}', String(fileChanges.length))}
+        message={interpolatePlural(t.turnDiff.confirmMessage, fileChanges.length)}
         variant="warning"
         confirmText={t.turnDiff.confirmAction}
         onCancel={() => setIsConfirmOpen(false)}
