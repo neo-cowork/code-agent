@@ -42,6 +42,13 @@ const MAIL_PERMISSION_REFUSED_NOT_RUN =
   'not run: Mail automation permission was missing when this call was made, so nothing was saved or sent. '
   + 'The permission is now granted. Call this tool again once with the same arguments.';
 
+// A shell command held back until a runtime finished installing never started either. The wording is also what the
+// renderer recognises as "no result of this call exists" (toolExecutionPresentation.isToolInterruptionPlaceholder).
+const RUNTIME_READY_NOT_RUN =
+  'not run: the component this command needs was still being prepared when this call was made, so nothing was executed '
+  + 'and no result was recorded. It is ready now. Call this same command again once, naming the program plainly (soffice) '
+  + 'rather than a fixed application path.';
+
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
   updateMessage(messageId: string, updates: Partial<Message>): Promise<void>;
@@ -562,16 +569,20 @@ export function createApplicationNativeRecoveryPorts(
         if (existing) return existing;
         const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
         if (!persisted) throw new Error('native interrupted tool payload is unavailable');
-        // A permission-refused Mail write is the one interrupted call whose outcome is known: the first Apple event
-        // was refused, so nothing ran. Keyed on the stored env-blocked note (the tool name only picks the wording).
+        // A permission-refused Mail write (the first Apple event was refused) and a shell command held for a runtime
+        // install are the interrupted calls whose outcome is known: nothing ran. Keyed on the stored env-blocked note
+        // (the tool name only picks the wording).
         const envNote = input.plan.envelope.envBlocked;
-        const refusedMail = envNote?.toolCallId === persisted.toolCall.id && persisted.toolCall.name === 'mail_draft'
-          && envNote.class === 'perm_automation' && envNote.target === 'mail';
+        const parkedHere = envNote?.toolCallId === persisted.toolCall.id ? envNote : undefined;
+        const refusedMail = parkedHere && persisted.toolCall.name === 'mail_draft'
+          && parkedHere.class === 'perm_automation' && parkedHere.target === 'mail';
+        const runtimeReady = parkedHere && persisted.toolCall.name === 'Bash'
+          && parkedHere.class === 'runtime_missing' && parkedHere.target === 'libreoffice';
         const toolResult: ToolResult = {
           toolCallId: persisted.toolCall.id,
           success: false,
           // 存储型自动操作来自账本，必然有 begin 事件 → 恒为 OUTCOME_UNKNOWN 档
-          error: refusedMail ? MAIL_PERMISSION_REFUSED_NOT_RUN : INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+          error: refusedMail ? MAIL_PERMISSION_REFUSED_NOT_RUN : runtimeReady ? RUNTIME_READY_NOT_RUN : INTERRUPTED_TOOL_CALL_PLACEHOLDER,
           duration: 0,
         };
         const message = buildRecoveredToolMessage({

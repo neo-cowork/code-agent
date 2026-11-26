@@ -18,6 +18,7 @@ import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellP
 import type { ProbeResult, ReadOnlyProbe } from '../permissions/envAssist/probes/types';
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
+import { isRuntimeNotice, libreOfficeResumeProbe, recheckRuntimeNotice, retryRuntimeInstall } from '../permissions/envAssist/runtimeNotice';
 import { createLogger } from '../services/infra/logger';
 import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
 import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
@@ -49,6 +50,8 @@ interface EnvAssistDependencies {
   calendarReminderSetting?: { read: () => boolean; write: (on: boolean) => Promise<void> };
   /** A probe read calendar full access: settle every calendar card in every session (default: settleCalendarGranted). */
   calendarGranted?: (entry: string) => Promise<void>;
+  /** "Retry install" on a runtime card (default: retryRuntimeInstall). */
+  runtimeRetry?: (notice: EnvAssistNotice) => Promise<EnvAssistNotice>;
   sleep?: CalendarSettingDeps['sleep'];
 }
 
@@ -151,7 +154,7 @@ async function withResolvedNotice<T extends EnvAssistActResult>(deps: EnvAssistD
   return stored?.phase === 'resolved' ? { ...result, notice: stored } : result;
 }
 
-const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
+const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice, runtimeRetry: retryRuntimeInstall };
 /** A cua-helper card can be reused across runs, with one grant attempt per run. */
 const consumedHelperAttempts = new Set<string>();
 const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
@@ -161,6 +164,8 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const parsed = EnvAssistSchemas.recheck.safeParse(payload);
     if (!parsed.success) return { status: 'rejected' };
     const notice = await deps.findNotice(parsed.data.noticeId);
+    // A runtime card only asks for its current copy: no pane, nothing to probe, no install started by a page refresh.
+    if (notice && isRuntimeNotice(notice)) return { status: 'checked', notice: await recheckRuntimeNotice(notice) };
     // Already resolved elsewhere (another card, the reminder switch, System Settings): give the card its done copy.
     if (notice?.phase === 'resolved') return { status: 'checked', outcome: { status: 'granted' }, notice };
     const actionPayload = notice?.action?.payload;
@@ -185,6 +190,11 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const request = parsed.data;
     const notice = await deps.findNotice(request.noticeId);
     const action = notice?.action;
+    if (request.actionKind === 'recheck') {
+      // "Retry install" on a runtime card. Only that card, while it is the one asking, gets a new attempt.
+      if (notice?.phase !== 'needs_user' || !isRuntimeNotice(notice) || action?.kind !== 'recheck') return { status: 'rejected' };
+      return { status: 'checked', notice: await (deps.runtimeRetry ?? retryRuntimeInstall)(notice) };
+    }
     if (notice?.phase !== 'needs_user' || action?.kind !== request.actionKind
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
       return { status: 'rejected' };
@@ -305,7 +315,9 @@ registerEnvAssistHandlers.routes = routes;
  * S3 resume probe for a parked run: the same passive (never-prompting) check the card uses.
  * Distinguishable degrade reasons are logged; 'unavailable' stops the waiter (manual Continue still works).
  */
-export const envResumeProbeFactory: EnvResumeProbeFactory = (block) => {
+export const envResumeProbeFactory: EnvResumeProbeFactory = (block, scope) => {
+  // A runtime Neo installs itself resumes on the install state (passive, in-process).
+  if (block.class === 'runtime_missing' && block.target === 'libreoffice') return libreOfficeResumeProbe(scope);
   // Calendar runs (perm_calendars, and perm_automation runs parked before the switch) resume on the EventKit truth.
   if (block.target === 'calendar' && (block.class === 'perm_calendars' || block.class === 'perm_automation')) {
     const client = resolveShellBridgeClientFromEnv();

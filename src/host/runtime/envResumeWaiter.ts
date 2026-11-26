@@ -1,13 +1,18 @@
 import type { RunEnvelope } from '../../shared/contract/durableRun';
 import { getRunInterruptCause } from '../../shared/contract/durableRun';
-import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_TIMEOUT_MS } from '../../shared/constants/envResume';
+import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_RUNTIME_STALL_MS, ENV_RESUME_TIMEOUT_MS } from '../../shared/constants/envResume';
 import { createLogger } from '../services/infra/logger';
 import type { RunRegistry } from './runRegistry';
 
-type EnvResumeProbe = () => Promise<'green' | 'red' | 'unavailable'>;
+export type EnvResumeProbeStatus = 'green' | 'red' | 'unavailable' | 'failed';
+/** `progress` (runtime installs): each new value restarts the stall window; `failed` ends the wait without resuming. */
+export type EnvResumeProbe = () => Promise<EnvResumeProbeStatus | { status: EnvResumeProbeStatus; progress?: number }>;
 type Block = NonNullable<RunEnvelope['envBlocked']>;
 type Continuer = (input: { sessionId: string; runId: string }) => Promise<unknown>;
-export type EnvResumeProbeFactory = (block: Block) => EnvResumeProbe;
+/** `scope` (when the run is known): lets a runtime probe find the card it keeps current. */
+export type EnvResumeProbeFactory = (block: Block, scope?: { runId: string; sessionId: string }) => EnvResumeProbe;
+/** A runtime install is bounded by lack of progress, not by the fixed window a permission grant gets. */
+const progressBounded = (block: Block): boolean => block.class === 'runtime_missing';
 const logger = createLogger('EnvResumeWaiter');
 let continuer: Continuer | null = null;
 let probeFactory: EnvResumeProbeFactory | undefined;
@@ -31,6 +36,7 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
   clearEnvResumeWaiter(input.runId);
   const loop: { poll?: ReturnType<typeof setTimeout>; deadline?: ReturnType<typeof setTimeout> } = {};
   loops.set(input.runId, loop);
+  const stalled = progressBounded(input.envBlocked);
   const active = () => loops.get(input.runId) === loop;
   const stop = (reason: string, error?: unknown) => {
     if (!active()) return;
@@ -40,19 +46,31 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
       ...(error ? { error: error instanceof Error ? error.message : String(error) } : {}),
     });
   };
-  loop.deadline = setTimeout(() => stop('timeout'), ENV_RESUME_TIMEOUT_MS);
-  loop.deadline.unref?.();
+  // A permission wait is bounded by one fixed window; a runtime install only by lack of progress (re-armed below on each change).
+  const armDeadline = () => {
+    if (loop.deadline) clearTimeout(loop.deadline);
+    loop.deadline = setTimeout(() => stop(stalled ? 'stalled' : 'timeout'), stalled ? ENV_RESUME_RUNTIME_STALL_MS : ENV_RESUME_TIMEOUT_MS);
+    loop.deadline.unref?.();
+  };
+  armDeadline();
   let probe: EnvResumeProbe;
   try {
     if (!continuer) { stop('continuer_unavailable'); return; }
     if (!probeFactory) { stop('probe_unavailable'); return; }
-    probe = probeFactory(input.envBlocked);
+    probe = probeFactory(input.envBlocked, { runId: input.runId, sessionId: input.sessionId });
   } catch (error) { stop('probe_unavailable', error); return; }
+  let lastProgress: number | undefined;
   const poll = async () => {
     try {
-      const result = await probe();
+      const outcome = await probe();
       if (!active()) return;
+      const result = typeof outcome === 'string' ? outcome : outcome.status;
       if (result === 'unavailable') { stop('probe_unavailable'); return; }
+      if (result === 'failed') { stop(stalled ? 'runtime_install_failed' : 'failed'); return; }
+      if (result === 'red' && stalled && typeof outcome !== 'string' && outcome.progress !== lastProgress) {
+        lastProgress = outcome.progress;
+        armDeadline();
+      }
       if (result === 'green') {
         const fn = continuer;
         if (!fn) { stop('continuer_unavailable'); return; }
