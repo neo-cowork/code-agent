@@ -32,6 +32,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
+import { translateCatalogText } from "../../../utils/catalogText";
 import { useLocalizeRole } from "../../../hooks/useLocalizeRole";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
@@ -390,7 +391,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
-            {memory.name}
+            {translateCatalogText(memory.name, language)}
             {memory.lastChange?.actor === 'role_wake' ? (
               <Badge title={t.expert.roleDetail.roleWakeTooltip.replace('{time}', memory.lastChange.timestamp ? formatLocalDateTime(memory.lastChange.timestamp, language) : '')} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
                 {t.expert.roleDetail.roleWakeLabel}
@@ -688,7 +689,7 @@ const TopicsEditor: React.FC<{
   current: RoleProactivityConfig;
   onChanged: () => void;
 }> = ({ roleId, current, onChanged }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.settings.roles.detail;
   const [includeText, setIncludeText] = useState(topicsToInput(current.topicsInclude));
   const [excludeText, setExcludeText] = useState(topicsToInput(current.topicsExclude));
@@ -774,12 +775,12 @@ const TopicsEditor: React.FC<{
       <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
         {includeActive ? (
           <div data-testid="role-topics-include-active">
-            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join(t.punctuation.listSeparator))}
+            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).map((topic) => translateCatalogText(topic, language)).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {excludeActive ? (
           <div data-testid="role-topics-exclude-active">
-            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join(t.punctuation.listSeparator))}
+            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).map((topic) => translateCatalogText(topic, language)).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {!includeActive && !excludeActive ? <div>{text.topicsInactive}</div> : null}

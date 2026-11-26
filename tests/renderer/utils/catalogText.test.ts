@@ -44,7 +44,11 @@ function displayedCatalogStrings(): string[] {
   for (const visual of Object.values(RETIRED_BUILTIN_ROLE_VISUALS)) {
     add(visual.displayName, visual.profession, ...visual.tags, ...visual.quickPrompts);
   }
-  for (const recipe of TEAM_RECIPES) add(recipe.name, recipe.description, ...(recipe.tags ?? []), ...(recipe.quickPrompts ?? []));
+  for (const recipe of TEAM_RECIPES) {
+    add(recipe.name, recipe.description, ...(recipe.tags ?? []), ...(recipe.quickPrompts ?? []));
+    // 只读详情页会把主理人简报和成员任务模板上屏（发给模型的原模板不翻）
+    add(recipe.lead?.briefTemplate, ...recipe.members.map((member) => member.taskTemplate));
+  }
   return [...out];
 }
 

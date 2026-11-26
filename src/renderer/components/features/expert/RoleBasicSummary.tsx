@@ -4,6 +4,7 @@ import type { RolePanelDetail } from '@shared/contract/roleAssets';
 import { useI18n } from '../../../hooks/useI18n';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
+import { translateCatalogText } from '../../../utils/catalogText';
 
 // agentMdLoader 在定义没写 description 时塞的英文占位，不是用户写的简介
 const PLACEHOLDER_INTRO = /^Custom agent:\s/;
@@ -12,7 +13,7 @@ export const RoleBasicSummary: React.FC<{ detail: RolePanelDetail }> = ({ detail
   const { t, language } = useI18n();
   const shown = localizeBuiltinRole(detail.roleId, { name: detail.visual.displayName ?? '', profession: detail.visual.profession }, language);
   const text = t.expert.basicSummary;
-  const intro = detail.description?.trim();
+  const intro = translateCatalogText(detail.description?.trim(), language);
   const showIntro = Boolean(intro) && !PLACEHOLDER_INTRO.test(intro as string);
   const abilities = getRoleToolCapabilities({
     toolNames: detail.equipment?.tools ?? [],

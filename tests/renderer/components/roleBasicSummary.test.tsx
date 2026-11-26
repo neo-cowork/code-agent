@@ -58,6 +58,19 @@ describe('RoleBasicSummary via RoleDetailPage', () => {
     expect(box.textContent).not.toMatch(/WebSearch|web_search|\bRead\b/);
   });
 
+  it.each(['zh', 'en'] as const)('%s built-in expert intro goes through the shared catalog copy', async (language) => {
+    useAppStore.setState({ language });
+    const intro = '帮你读论文、做综述 — 单篇精读带页码定位，多篇对比出共识、分歧与研究空白';
+    const builtIn = detail(['Read'], intro);
+    builtIn.roleId = '万卷';
+    builtIn.visual = { displayName: '万卷', profession: '文献综述研究员' };
+    mockDetail(builtIn);
+    render(<RoleDetailPage roleId="万卷" />);
+    expect((await screen.findByTestId('role-basic-summary-intro')).textContent).toBe(language === 'en'
+      ? 'Helps you read papers and write reviews: close reading of a single paper with page references, and comparison across papers for consensus, disagreement and research gaps'
+      : intro);
+  });
+
   it('hides the Custom agent placeholder intro', async () => {
     mockDetail(detail(['Read'], 'Custom agent: 研究员'));
     render(<RoleDetailPage roleId="研究员" />);

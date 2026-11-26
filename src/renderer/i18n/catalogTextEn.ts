@@ -296,6 +296,16 @@ const CATALOG_TEXT_EN_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ['内容', 'Content'],
   ['营销', 'Marketing'],
   ['帮我围绕这个主题定一套内容战役方案，从核心信息排到渠道节奏', 'Plan a content campaign around this topic for me, from the core message through to channel pacing'],
+  // ---- 专家团队模板（只读详情页上屏；发给模型的原模板不翻，见 localizeCatalogObject 的身份字段） ----
+  ['围绕「{topic}」，统筹溯真的竞品与市场调研、青禾的对外表达稿，定稿一份产品规格：目标用户、核心场景、功能范围、优先级、风险与待决问题。', 'Around "{topic}", coordinate Suzhen\'s competitor and market research with Qinghe\'s outward-facing draft and finalize a product spec: target users, core scenarios, scope, priorities, risks and open questions.'],
+  ['为「{topic}」做竞品与市场调研，给出差异化机会与风险。', 'Research the competitors and market for "{topic}" and report differentiation opportunities and risks.'],
+  ['把「{topic}」的规格提炼成一段对外可讲的清晰说明。', 'Distill the "{topic}" spec into a clear explanation you can present to others.'],
+  ['围绕「{topic}」，整合两名证据成员的并行结论，定稿一份结构化综述：核心发现、证据分级、分歧与不确定性、结论及后续研究建议。', 'Around "{topic}", combine the parallel findings of the two evidence members into a structured review: key findings, evidence grading, disagreements and uncertainties, conclusions and suggested follow-up research.'],
+  ['就「{topic}」收集并核验权威机构、法规、官方公告等一手资料，提取可直接引用的事实、时间点与证据强度。', 'For "{topic}", collect and verify primary sources such as authorities, regulations and official announcements, and extract citable facts, dates and evidence strength.'],
+  ['就「{topic}」梳理行业研究、学术论文与可信案例，比较不同观点、样本或方法的局限，标出相互印证或冲突之处。', 'For "{topic}", review industry research, academic papers and credible cases, compare the limits of differing views, samples or methods, and flag where they agree or conflict.'],
+  ['围绕「{topic}」，整合溯真的数据支撑与明镜的风险复盘，定稿一套内容战役方案：目标受众、核心信息、渠道与节奏、内容资产、风险应对和效果衡量。', 'Around "{topic}", combine Suzhen\'s data support with Mingjing\'s risk review and finalize a content campaign plan: audience, core message, channels and pacing, content assets, risk responses and measurement.'],
+  ['为「{topic}」补充事实与数据支撑，标注引用。', 'Add supporting facts and data for "{topic}", with citations.'],
+  ['对「{topic}」战役方案做复盘与风险审视，给改进建议。', 'Review the "{topic}" campaign plan for lessons and risks, and suggest improvements.'],
   // ---- 内置专家：花名（拼音）/ 职业 / 说明 / 标签 / 开场白 ----
   ['知微', 'Zhiwei'],
   ['数据分析师', 'Data analyst'],

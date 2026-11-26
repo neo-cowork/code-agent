@@ -68,17 +68,11 @@ function collectCjk(page, surface) {
         matches: (element) => element.hasAttribute('data-language-self-name'),
       },
       {
-        reason: 'built-in expert content (name, profession, intro, keywords, example prompts) is owned by N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU4',
-        matches: (element, text) => {
-          const name = element.closest('[data-testid^="expert-card-"]')?.querySelector('.text-sm.font-medium.text-zinc-100');
-          const summary = element.closest('[data-testid="role-basic-summary"]');
-          const profession = summary !== null && element.tagName === 'SPAN' && element.parentElement === summary.firstElementChild;
-          const intro = element.closest('[data-testid="role-basic-summary-intro"]') !== null;
-          const placeholder = (element.getAttribute('placeholder') || '').replace(/\s+/g, ' ').trim();
-          const expertField = element.tagName === 'TEXTAREA' && text !== placeholder && document.querySelector('[data-testid="role-basic-summary"]') !== null;
-          return element === name || profession || intro || expertField || element.closest('[data-testid="role-basic-summary-name"]') !== null
-            || (element.matches('img[alt]') && element.closest('[data-testid="role-detail-page"]') !== null && element.getAttribute('alt') === text);
-        },
+        // Same class as the skipped `value` attribute of inputs: a textarea renders its stored value as a child text node.
+        // Expert name / profession / intro display copy is localized by the renderer (not allowlisted); only the editable
+        // stored text is, because saving the form writes the field content back verbatim.
+        reason: 'expert edit form: textarea content is the expert\'s stored text (user-entered for custom experts, product-authored for built-in ones); saving writes it back verbatim, and built-in expert content is owned by N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU4',
+        matches: (element) => element.tagName === 'TEXTAREA' && element.closest('[data-testid^="role-detail-page-"]') !== null,
       },
     ];
     const isVisible = (element) => {
@@ -256,11 +250,27 @@ async function sweepCapabilityHub(page, visit) {
     await clickRequired(page.getByTestId(`capability-hub-tab-${id}`), `Capability Hub ${id}`);
     await visit(`capability-hub-${id}`, page.getByTestId('capability-hub-page'));
     if (id === 'experts') {
+      await visit('capability-hub-experts-mine', page.getByTestId('expert-panel'));
+      await visit('capability-hub-experts-discover', page.getByTestId('expert-panel'));
       const detail = page.locator('[data-testid^="expert-detail-"]');
-      if (await detail.count() > 0) {
-        await clickRequired(detail, 'open one expert detail');
-        await visit('expert-detail', page.locator('[data-testid="role-basic-summary-name"], [data-testid^="role-detail-"]').first());
+      const expertCount = await detail.count();
+      console.log(`EXPERT_DETAILS count=${expertCount}`);
+      for (let index = 0; index < expertCount; index += 1) {
+        await clickRequired(detail.nth(index), `open expert detail ${index + 1}`);
+        await visit(`expert-detail-${index + 1}`, page.getByTestId('role-basic-summary-name'));
+        if (index === 0) {
+          for (const key of ['personalization', 'skills', 'model', 'security', 'records']) {
+            await clickRequired(page.getByTestId(`role-detail-tab-${key}`), `expert detail tab ${key}`);
+            await visit(`expert-detail-tab-${key}`, page.locator('[data-testid^="role-detail-page-"]').first());
+          }
+        }
         await clickRequired(page.getByTestId('sidebar-capability-hub'), 'return to Experts list');
+      }
+      const recipeLink = page.locator('[data-testid^="team-recipe-"] button[aria-label]').first();
+      if (await recipeLink.count() > 0) {
+        await clickRequired(recipeLink, 'open one expert team detail');
+        await visit('team-recipe-detail', page.locator('[data-testid^="team-recipe-detail-"]').first());
+        await clickRequired(page.locator('[data-testid^="team-recipe-detail-"] button').first(), 'back from expert team detail');
       }
     }
   }
