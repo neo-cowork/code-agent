@@ -23,7 +23,7 @@ export const AUXILIARY_RUN_SYSTEM_CONTEXT = [
   '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
   'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
   `收尾要求：你最后一条回复的第一行必须是结局标记 ${OUTCOME_MARKER}{"status":"done|partial|failed","reason":"一句大白话原因"}，下一行起才是写给用户的说明。`,
-  'status：done = 交代的事全部做成；partial = 只做成一部分；failed = 没做成（文件不存在、命令失败、缺权限等）。reason 不含命令、路径、错误码。写完回复不等于任务完成，没做成就如实写 failed。',
+  'status：done = 交代的事全部做成；partial = 只做成一部分；failed = 没做成（文件不存在、命令失败、缺权限等）。reason 和下面写给用户的说明，都用用户提这件事时所用的语言；reason 不含命令、路径、错误码。写完回复不等于任务完成，没做成就如实写 failed。',
 ].join('\n');
 
 const OUTCOME_STATUSES = new Set(['done', 'partial', 'failed']);
