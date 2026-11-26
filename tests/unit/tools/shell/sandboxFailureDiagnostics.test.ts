@@ -467,7 +467,7 @@ describe('diagnoseBashFailure TCC privacy hint', () => {
       platform: 'darwin',
       env: {},
     });
-    expect(lines).toEqual(['沙盒拒绝：/Users/tester/x（沙盒只允许写 /work 与临时目录）']);
+    expect(lines).toEqual(['沙盒拒绝：/Users/tester/x（沙盒只允许写 /work 与临时目录）。原文件内容没有被改动。下一步：请用户在对话里确认要写入这个位置（或写明「输出目录：路径」），也可以先把文件写到工作目录内再交付。']);
   });
 
   it('ambiguous codes alone are not a permission refusal (-1719 Invalid index, -1002 unsupported URL)', () => {

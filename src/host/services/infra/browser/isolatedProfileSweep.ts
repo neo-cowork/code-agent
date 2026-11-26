@@ -8,7 +8,7 @@ import { isPathInsideRoot, MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX, MANAGED_BROW
 
 let started = false;
 
-function isPidAlive(pid: number): boolean {
+export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -19,7 +19,7 @@ function isPidAlive(pid: number): boolean {
 }
 
 /** One `ps` call listing every command line; rejects where unsupported or oversized. */
-function listProcessCommands(): Promise<string> {
+export function listProcessCommands(): Promise<string> {
   if (process.platform === 'win32') return Promise.reject(new Error('unsupported-platform'));
   return new Promise((resolve, reject) => {
     execFile('ps', ['-axo', 'command'], { maxBuffer: BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_PROBE_MAX_BYTES, timeout: BROWSER_TIMEOUTS.ISOLATED_PROFILE_SWEEP_PROBE_TIMEOUT }, (error, stdout) => {
@@ -29,7 +29,7 @@ function listProcessCommands(): Promise<string> {
   });
 }
 
-function commandUsesDir(commands: string, dirs: string[]): boolean {
+export function commandUsesDir(commands: string, dirs: string[]): boolean {
   const marker = '--user-data-dir=';
   for (const line of commands.split('\n')) {
     let from = line.indexOf(marker);

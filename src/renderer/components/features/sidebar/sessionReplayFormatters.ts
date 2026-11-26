@@ -14,6 +14,7 @@ import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract
 import type { Language, Translations } from '../../../i18n';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
+import { shellBackgroundTaskFailureCopy } from '../../../utils/agentFailureCopy';
 
 type FocusedReplayOwner = { kind: 'workflow'; id: string } | { kind: 'background'; id: string };
 type SessionReplayLabels = Translations['sessionReplay'];
@@ -209,7 +210,8 @@ function formatWorkflowAgentSummary(snapshot: ScriptRunSnapshot): string {
   return items.length > 0 ? items.join(' · ') : `${snapshot.agents.length} agents`;
 }
 
-function formatTaskStatus(task: Task, { dialog: d }: SessionReplayLabels): string {
+function formatTaskStatus(task: Task, labels: SessionReplayLabels): string {
+  const { dialog: d } = labels;
   switch (task.status) {
     case 'queued':
       return d.taskQueued;
@@ -221,8 +223,11 @@ function formatTaskStatus(task: Task, { dialog: d }: SessionReplayLabels): strin
       return task.progress?.label ? d.taskStalledLabel.replace('{label}', task.progress.label) : d.taskStalled;
     case 'completed':
       return d.completed;
-    case 'failed':
-      return task.failure?.message ? d.failedPrefix.replace('{message}', truncateContent(task.failure.message, 48)) : d.failed;
+    case 'failed': {
+      const failure = shellBackgroundTaskFailureCopy(task, labels)
+        ?? (task.failure?.message ? truncateContent(task.failure.message, 48) : null);
+      return failure ? d.failedPrefix.replace('{message}', () => failure) : d.failed;
+    }
     case 'cancelled':
       return d.cancelled;
     case 'paused':
@@ -240,7 +245,6 @@ function formatBackgroundTaskMeta(task: Task, labels: SessionReplayLabels, lang:
   const started = formatTimestamp(task.startedAt, lang);
   const updated = formatTimestamp(task.updatedAt, lang);
   return [
-    `task ${task.id}`,
     started ? labels.dialog.metaStarted.replace('{time}', started) : null,
     updated ? labels.dialog.metaUpdated.replace('{time}', updated) : null,
   ].filter(Boolean).join(' · ');
@@ -330,6 +334,10 @@ function formatBlockDetail(block: ReplayBlock, labels: SessionReplayLabels): str
     const tokens = block.modelDecision.inputTokens + block.modelDecision.outputTokens;
     const latency = formatDuration(block.modelDecision.latencyMs, labels);
     return `${tokens} tokens · ${latency}`;
+  }
+  if (block.type === 'tool_result'
+    && /^(?:Background task|PTY session) started\.\s*<(?:task|session)-id>/.test(block.content ?? '')) {
+    return labels.shellTaskStarted;
   }
   if (block.type === 'event') {
     // 去重修复（label 收敛为「事件」）后 summary 必须落在 detail 里，

@@ -14,6 +14,8 @@ import { useAgentTreeSnapshot } from './useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useAppStore } from '../stores/appStore';
 import { useSessionMembers } from '../components/features/expert/SessionMemberBar';
+import { languages } from '../i18n';
+import { backgroundTaskLabels } from '../utils/agentRoleLabel';
 import { applyMemberHolds, buildAgentRows, type AgentRow } from '../utils/agentRows';
 
 /** parallelCoordinator/agentWorktree 不带会话归属，没锚点（成员/本会话任务）的节点不列，防跨会话泄漏。 */
@@ -125,6 +127,7 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
       members,
       nodes,
       tasks,
+      taskLabels: backgroundTaskLabels(sessionTasks, languages[language] ?? languages.zh),
     }).filter((row) => replacedIds.size === 0 || ![
       row.key,
       row.node?.id,

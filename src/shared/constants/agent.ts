@@ -106,8 +106,19 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v126：整合合并——自然语言定时任务按轮暴露 schedule_task 与精简后的延迟工具 JSON 用法措辞，叠上 main 的 sys-v125。
 // sys-v127–128：N-FIX-EN-REPLY-LANG-SOUL-TEMPLATE-ZH——SOUL.md 旧句「用中文沟通」在 ui.language=en 时取用期换成语言中立句（zh 字节不变）；init-soul 模板不再钉语言。
 // sys-v132：N-FIX-CALENDAR-TOOL-MODEL-EPOCH-MATH——calendar_create/update_event 增加 start_local/end_local（本机本地时间由 host 换算，模型不再算 epoch）与 create 的可选 notes，叠上 main 的 sys-v131。
-// sys-v134: expose native session task progress tools in text foreground turns.
-export const PROMPT_VERSION = 'sys-v134' as const;
+// sys-v135: integrate main sys-v134 with Bash command-substitution refusal guidance.
+// sys-v138: reminders_create omits notes unless the user asks, and must not restate the title or the time.
+// sys-v139 (branch): chat can copy a workspace file into the Library with library_add.
+// sys-v140 (branch): library_add confirms inside the handler, after empty and app-data checks.
+// sys-v139：N-FIX-BG-NEGATION-RE-BIE-FALSE-NEGATIVE——后台请求否定的「别」只认祈使：分句先整词摘掉「别」复合词（含报告/这个/部分等消歧前词）再测，分别/特别/差别等不再误判为否定，词尾字+祈使别（这份报告别放后台）与别处理/别处于仍算否定。
+// sys-v140：同单 r1——「别」排除从单字前后瞻改为整词摘除（BIE_COMPOUND_WORDS_RE），修复词尾字+祈使别（报告别/这个别/部分别…）与别处理/别处于被误组词放走的回归；sys-v139 未发版，两版合并为本 PR 的净行为。
+// sys-v141：同单 r2——以汉字收尾的「别」易混词（个别/类别/级别/告别/识别…）仅在前一字非汉字时整词摘除，修复「这一个别/警告别/班级别」把祈使别吞掉而被误判为明确要后台。
+// sys-v142：N-FIX-EN-SPACE-TERM-UNIFY——space_create/list/query 描述与 Space 上下文提示词英文统一为 Space（不再用 collaboration space）。
+// sys-v143：整合合并——本单 library_add 提示词（分支侧 sys-v139/v140，与 main 的 bg-negation 撞号）叠上 main 的 sys-v142，合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
+// sys-v148: integrate the event reply tool with main's sys-v147 prompt surface.
+// sys-v153: integrate main with the people memory prompt surface.
+// sys-v154: integrate main's sys-v153 with native session task progress tools in text foreground turns.
+export const PROMPT_VERSION = 'sys-v154' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
@@ -401,6 +412,12 @@ export const AGENT_WAKE = {
 } as const;
 
 
+/**
+ * 审批刚答完、工具结果还没到本页时，行保持「进行中」的宽限。旁观他端发起的 run 时，
+ * 终态广播到对账拉库约 3~6 秒；超过它仍无结果就是真没结果，读作「已中断」，不无限转圈。
+ */
+export const APPROVAL_ANSWER_RESULT_GRACE_MS = 15_000;
+
 /** Subagent progress watchdog; total execution budget remains an independent hard limit. */
 export const SUBAGENT_IDLE = {
   IDLE_MS: 120_000,
@@ -421,6 +438,8 @@ export const RUN_ERROR_CODE_MAX_ITERATIONS = 'MAX_ITERATIONS_REACHED';
  * BackgroundTaskManager.markCompleted；面板/通知侧不许直接展示这个裸串。
  */
 export const BACKGROUND_TASK_CANCELLED = 'USER_CANCELLED';
+export const BACKGROUND_TASK_DELETE_INCOMPLETE = 'DELETE_INCOMPLETE';
+export const BACKGROUND_TASK_MAX_LEFTOVER_PATHS = 8;
 
 /** 成员完成账本里 filesChanged 的条数上限（防止大目录改动撑爆账本行）。 */
 export const SUBAGENT_FILES_CHANGED_MAX = 200;

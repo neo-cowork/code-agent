@@ -36,7 +36,7 @@ export interface RunUiState {
   completionSignal?: string;
   /** 系统回收（长时间无进展）而非用户停止；仅 status='cancelled' 时出现 */
   terminalReason?: 'idle_reaped' | 'client_disconnect';
-  /** 本轮已收尾工具步骤里失败的条数 / 总数（success===false 才算失败）；终态词的唯一输入 */
+  /** 本轮已收尾工具步骤里未恢复失败的条数 / 总数；后续同目标成功会恢复失败，终态词的唯一输入 */
   toolStepOutcome?: { failed: number; total: number };
   /** 当前轮起止时间（来自 TraceTurn），Overview Run header 的用时来源 */
   startedAt?: number;
@@ -77,6 +77,10 @@ export interface TaskRecord {
   id: string;
   scope: 'session' | 'global' | 'scheduled';
   title: string;
+  /** 后台任务账本来源；渲染层据此决定标题是否需要折叠成本地化兜底名 */
+  source?: import('@shared/contract/backgroundTask').Task['source'];
+  /** 已按会话账本全集编号的展示名（助手 1/2）；缺省时渲染层按 source+title 现算 */
+  displayTitle?: string;
   status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled' | 'needs_decision' | 'user_action';
   steps: Array<{
     title: string;

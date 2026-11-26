@@ -17,11 +17,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import type { AppSettings, ModelConfig } from '../../../src/shared/contract';
-import { hasConfiguredDefaultRuntimeModel } from '../../../src/shared/modelRuntime';
+import { getProviderEndpointForProtocol, getProviderInfo } from '../../../src/shared/constants';
+import { buildRuntimeModelOptions, hasConfiguredDefaultRuntimeModel } from '../../../src/shared/modelRuntime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { toast, useToastStore } from '../../../src/renderer/hooks/useToast';
 import { DomainInvokeError } from '../../../src/renderer/services/ipcService';
 import { ModelSettings } from '../../../src/renderer/components/features/settings/tabs/ModelSettings';
+import type { DiscoverModelsResult } from '../../../src/renderer/components/features/settings/tabs/ModelSettings.helpers';
 import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 import { ConfigService } from '../../../src/host/services/core/configService';
 import { getSecureStorage } from '../../../src/host/services/core/secureStorage';
@@ -100,7 +102,7 @@ let persistedConfigPath: string;
 let hostSettingsHandler: DomainHandler | null = null;
 
 /** 启动真实 host 半边：真实 ConfigService（initialize 落盘默认配置）+ 真实 settings 路由表。 */
-async function startRealHost(): Promise<void> {
+async function startRealHost(discoverModels?: (payload: unknown) => Promise<DiscoverModelsResult>): Promise<void> {
   const ipc = makeFakeIpc();
   configService = new ConfigService();
   // ConfigService 构造：configPath = app.getPath('userData')/config.json = <temp>/userData/config.json
@@ -109,6 +111,10 @@ async function startRealHost(): Promise<void> {
   registerSettingsHandlers(ipc as never, () => configService);
   hostSettingsHandler = ipc.getHandler();
   mocks.bridgeInvokeDomain = async (domain: string, action: string, payload?: unknown) => {
+    if (domain === IPC_DOMAINS.PROVIDER && action === 'discover_models'
+      && (payload as { provider: string }).provider === 'xiaomi' && discoverModels) {
+      return discoverModels(payload);
+    }
     if (domain !== IPC_DOMAINS.SETTINGS) {
       throw new Error(`test bridge only routes ${IPC_DOMAINS.SETTINGS}, got: ${domain}`);
     }
@@ -129,9 +135,12 @@ async function freshSettingsGet(): Promise<AppSettings> {
   return (await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'get')) as AppSettings;
 }
 
-function Settings({ initialProvider = 'deepseek' as ModelConfig['provider'] }: { initialProvider?: ModelConfig['provider'] }) {
-  const [config, setConfig] = useState<ModelConfig>({ provider: initialProvider, model: 'deepseek-chat', apiKey: '', temperature: 0.7 });
-  return <ModelSettings config={config} onChange={setConfig} />;
+function Settings({
+  initialProvider = 'deepseek',
+  onModelChange,
+}: { initialProvider?: ModelConfig['provider']; onModelChange?: (config: ModelConfig) => void }) {
+  const [config, setConfig] = useState<ModelConfig>({ provider: initialProvider, model: getProviderInfo(initialProvider)!.defaultModel, apiKey: '', temperature: 0.7 });
+  return <ModelSettings config={config} onChange={onModelChange ? (next) => { setConfig(next); onModelChange(next); } : setConfig} />;
 }
 
 const DEEPSEEK_KEY = 'sk-hermetic-save-flow-key';
@@ -144,6 +153,14 @@ function findSaveButton(container: HTMLElement): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((btn) => btn.textContent === 'Save configuration');
   if (!button) throw new Error('Save configuration button not found');
   return button;
+}
+
+/** 任务档位下拉：Select 原生 select 外包一层 div，档位 label 在再外层的档位块里。 */
+function findProfileSelect(container: HTMLElement, label: string): HTMLSelectElement {
+  const select = Array.from(container.querySelectorAll('select'))
+    .find((sel) => sel.parentElement?.parentElement?.textContent?.includes(label));
+  if (!select) throw new Error(`task profile select not found: ${label}`);
+  return select as HTMLSelectElement;
 }
 
 beforeAll(() => {
@@ -181,7 +198,158 @@ afterEach(() => {
   // 真实 ConfigService 单例 secureStorage 在文件内共享：清掉本文件写过的 key（apiKeyCache
   // + 持久 store 两处都要清，deleteApiKey 才覆盖）与落盘文件，让每条用例都从出厂默认起跑（顺序无关）。
   getSecureStorage().deleteApiKey('deepseek');
+  // 第二条用例预置的 zhipu 可用 key 也要清（apiKeyCache 单例跨用例共享）
+  getSecureStorage().deleteApiKey('zhipu');
+  getSecureStorage().deleteApiKey('xiaomi');
   rmSync(path.join(mocks.userDataDir!, 'userData'), { recursive: true, force: true });
+});
+
+const xiaomiDefault = getProviderInfo('xiaomi')!.defaultModel;
+const listedMiMo = 'mimo-v2.6-flash';
+const endpointOnlyModel = 'gateway-chat';
+const customEndpoint = 'https://subscription.test/v1';
+const xiaomiKey = 'test-xiaomi-subscription-key';
+
+function discoveredModels(...ids: string[]): DiscoverModelsResult {
+  return {
+    success: true,
+    latencyMs: 5,
+    models: ids.map((id) => ({
+      id, label: id, capabilities: ['general'], supportsTool: true, supportsVision: false, supportsStreaming: true,
+    })),
+  };
+}
+
+async function saveXiaomiKey(baseUrl = customEndpoint, onModelChange?: (config: ModelConfig) => void) {
+  const view = render(<Settings initialProvider="xiaomi" onModelChange={onModelChange} />);
+  const keyInput = await waitFor(() => {
+    expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('Waiting for API Key');
+    const input = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
+    expect(input).not.toBeNull();
+    return input!;
+  });
+  const endpoint = view.getByPlaceholderText(getProviderEndpointForProtocol('xiaomi')!);
+  fireEvent.change(endpoint, { target: { value: baseUrl } });
+  fireEvent.change(keyInput, { target: { value: xiaomiKey } });
+  fireEvent.click(findSaveButton(view.container));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Provider configuration saved'));
+  return freshSettingsGet();
+}
+
+describe('ModelSettings custom endpoint promotion', () => {
+  it.each([
+    { name: 'prefers the first listed catalog model when the registry default is absent', ids: [endpointOnlyModel, listedMiMo], expected: listedMiMo },
+    { name: 'keeps the listed registry default', ids: [listedMiMo, xiaomiDefault], expected: xiaomiDefault },
+    { name: 'enables the first listed model when none are in the catalog', ids: [endpointOnlyModel, 'another-gateway-chat'], expected: endpointOnlyModel },
+  ])('$name', async ({ ids, expected }) => {
+    const discover = vi.fn().mockResolvedValue(discoveredModels(...ids));
+    await startRealHost(discover);
+    const onModelChange = vi.fn();
+    const settings = await saveXiaomiKey(customEndpoint, onModelChange);
+    expect(settings.models.providers.xiaomi.model).toBe(expected);
+    expect(onModelChange).toHaveBeenLastCalledWith(expect.objectContaining({ model: expected }));
+    expect(getSecureStorage().getApiKey('xiaomi')).toBe(xiaomiKey);
+    if (expected !== endpointOnlyModel) expect(settings.models.providers.xiaomi.models?.[expected]).toBeUndefined();
+    if (expected === listedMiMo) expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('MiMo v2.6 Flash'));
+    expect(discover).toHaveBeenCalledExactlyOnceWith({
+      provider: 'xiaomi', baseUrl: customEndpoint, protocol: 'openai', includeAllModels: true,
+    });
+    expect(settings.models.default).toBe('xiaomi');
+    expect(settings.models.taskStrategy?.profiles.main).toMatchObject({ provider: 'xiaomi', model: expected });
+    expect(buildRuntimeModelOptions(settings)).toContainEqual(expect.objectContaining({ provider: 'xiaomi', model: expected }));
+  });
+
+  it.each([
+    {
+      name: 'fails',
+      discovery: { success: false, models: [], latencyMs: 5, error: { code: 'NETWORK_ERROR', message: 'Network unavailable' } },
+      warning: 'Default model discovery failed during provider save',
+      metadata: { provider: 'xiaomi', code: 'NETWORK_ERROR' },
+    },
+    {
+      name: 'returns no models',
+      discovery: discoveredModels(),
+      warning: 'Default model discovery returned no models during provider save',
+      metadata: { provider: 'xiaomi' },
+    },
+  ])('keeps the default and warns when discovery $name', async ({ discovery, warning, metadata }) => {
+    const warn = vi.spyOn(console, 'warn');
+    await startRealHost(vi.fn().mockResolvedValue(discovery));
+    const settings = await saveXiaomiKey();
+    expect(settings.models.default).toBe('xiaomi');
+    expect(settings.models.providers.xiaomi.model).toBe(xiaomiDefault);
+    expect(settings.models.taskStrategy?.profiles.main).toMatchObject({ provider: 'xiaomi', model: xiaomiDefault });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(warning), metadata);
+  });
+
+  it('keeps a saved model choice without discovering', async () => {
+    const discover = vi.fn();
+    await startRealHost(discover);
+    await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+      models: { providers: { xiaomi: { enabled: true, model: listedMiMo } } },
+    });
+    const settings = await saveXiaomiKey();
+    expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
+    expect(discover).not.toHaveBeenCalled();
+  });
+
+  it('discovers when the first key makes the current default provider available', async () => {
+    const discover = vi.fn().mockResolvedValue(discoveredModels(listedMiMo));
+    await startRealHost(discover);
+    const before = await freshSettingsGet();
+    await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+      models: {
+        default: 'xiaomi',
+        defaultProvider: 'xiaomi',
+        taskStrategy: {
+          ...before.models.taskStrategy!,
+          profiles: { ...before.models.taskStrategy!.profiles, main: { provider: 'xiaomi', model: xiaomiDefault } },
+        },
+      },
+    });
+    const settings = await saveXiaomiKey();
+    expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
+    expect(settings.models.taskStrategy?.profiles.main).toMatchObject({ provider: 'xiaomi', model: listedMiMo });
+    expect(discover).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the registry default when it is disabled', async () => {
+    await startRealHost(vi.fn().mockResolvedValue(discoveredModels(xiaomiDefault, listedMiMo)));
+    await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+      models: { providers: { xiaomi: { enabled: true, models: { [xiaomiDefault]: { enabled: false } } } } },
+    });
+    const settings = await saveXiaomiKey();
+    expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
+    expect(settings.models.providers.xiaomi.models?.[xiaomiDefault]?.enabled).toBe(false);
+  });
+
+  it('preserves a task model selection saved while discovery is pending', async () => {
+    const newMain = { provider: 'zhipu', model: getProviderInfo('zhipu')!.defaultModel, reasoningEffort: 'low', maxTokens: 4096 };
+    await startRealHost(async () => {
+      const pending = await freshSettingsGet();
+      await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+        models: {
+          providers: { zhipu: { enabled: true, apiKey: 'test-zhipu-key-during-discovery' } },
+          taskStrategy: {
+            ...pending.models.taskStrategy!,
+            profiles: { ...pending.models.taskStrategy!.profiles, main: newMain },
+          },
+        },
+      });
+      return discoveredModels(listedMiMo);
+    });
+    const settings = await saveXiaomiKey();
+    expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
+    expect(settings.models.taskStrategy?.profiles.main).toEqual(newMain);
+  });
+
+  it('keeps the official endpoint behavior', async () => {
+    const discover = vi.fn();
+    await startRealHost(discover);
+    const settings = await saveXiaomiKey(getProviderEndpointForProtocol('xiaomi'));
+    expect(settings.models.providers.xiaomi.model).toBe(xiaomiDefault);
+    expect(discover).not.toHaveBeenCalled();
+  });
 });
 
 describe('ModelSettings desktop save flow (real settings handler + real ConfigService)', () => {
@@ -243,6 +411,67 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
     const inputAfterSave = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
     expect(inputAfterSave).toBe(inputBeforeSave);
     expect(inputAfterSave?.value).toBe(DEEPSEEK_KEY);
+
+    // (d) FB-1800：promote 不只切默认指针，还把 key-less 的任务主模型档接管到刚保存的
+    // provider/model —— 下拉值与 models.default 一致、无 Key needed 标注，且不重挂载即刷新。
+    const mainSelect = await waitFor(() => {
+      const select = findProfileSelect(view.container, 'Main task model');
+      expect(select.value).toBe(`deepseek:::${nextSendSettings.models.providers.deepseek.model}`);
+      return select;
+    });
+    expect(nextSendSettings.models.default).toBe('deepseek');
+    expect(nextSendSettings.models.taskStrategy?.profiles.main).toMatchObject({
+      provider: 'deepseek',
+      model: nextSendSettings.models.providers.deepseek.model,
+    });
+    expect(mainSelect.selectedOptions[0]?.textContent).not.toContain('Key needed');
+    expect(inputAfterSave).toBe(view.container.querySelector('input[data-model-api-key]'));
+  });
+
+  it('promote keeps a main task model slot that already points at a usable provider', async () => {
+    await startRealHost();
+    // 预置：zhipu 已有 key（可用），任务主模型档显式指向 zhipu——用户能用且选过的档位，
+    // 保存 deepseek key 触发 promote（出厂默认 longcat 仍无 key）时不得被改写。
+    const seeded = await freshSettingsGet();
+    expect(seeded.models.providers.zhipu.apiKeyConfigured).toBe(false);
+    await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+      models: {
+        providers: { zhipu: { ...seeded.models.providers.zhipu, apiKey: 'seed-zhipu-usable-key' } },
+        taskStrategy: {
+          ...seeded.models.taskStrategy!,
+          profiles: { ...seeded.models.taskStrategy!.profiles, main: { ...seeded.models.taskStrategy!.profiles.fast } },
+        },
+      },
+    });
+    const seededStrategy = (await freshSettingsGet()).models.taskStrategy!;
+    expect(seededStrategy.profiles.main).toMatchObject({ provider: 'zhipu', model: seededStrategy.profiles.fast.model });
+
+    const view = render(<Settings />);
+    const keyInput = await waitFor(() => {
+      const input = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
+      expect(input).toBeTruthy();
+      return input!;
+    });
+    const mainSelect = await waitFor(() => {
+      const select = findProfileSelect(view.container, 'Main task model');
+      expect(select.value).toBe(`zhipu:::${seededStrategy.profiles.fast.model}`);
+      return select;
+    });
+    fireEvent.change(keyInput, { target: { value: DEEPSEEK_KEY } });
+    fireEvent.click(findSaveButton(view.container));
+
+    await waitFor(() => expect(queryBadge(view.container)).toBeNull());
+    // promote 仍发生：默认指针切到 deepseek；但 main 档保持 zhipu 不动（同挂载组件 + 落库双证）
+    const after = await freshSettingsGet();
+    expect(after.models.default).toBe('deepseek');
+    expect(after.models.taskStrategy?.profiles.main).toMatchObject({
+      provider: 'zhipu',
+      model: seededStrategy.profiles.fast.model,
+    });
+    expect(mainSelect.value).toBe(`zhipu:::${seededStrategy.profiles.fast.model}`);
+    // main 没被接管时不出现「主任务模型已切换」的假提示（只有保存成功 toast）
+    expect(toast.success).toHaveBeenCalledWith('Provider configuration saved');
+    expect(toast.success).not.toHaveBeenCalledWith(expect.stringContaining('was switched to'));
   });
 
   it('host set rejection keeps the unsaved badge and surfaces the error toast (no false saved)', async () => {

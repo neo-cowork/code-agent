@@ -8,6 +8,7 @@
 // Shift+N=永不允许 作为隐藏直发保留；授权记忆命中仍 100ms 自动执行、不弹卡。
 // ============================================================================
 
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarPlus, ListTodo, Mail } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
@@ -39,6 +40,8 @@ import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQues
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
+import { useAgentTreeSnapshot } from '../../hooks/useAgentTreeSnapshot';
+import { agentNodeLabel } from '../../utils/agentRoleLabel';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
 
 function stringField(source: object, key: string): string | undefined {
@@ -57,6 +60,7 @@ function normalizeRequest(
   return {
     id: request.id,
     sessionId: request.sessionId,
+    agentId: request.agentId,
     forceConfirm: request.forceConfirm,
     tool: request.tool,
     type: request.type as PermissionType,
@@ -80,11 +84,13 @@ function normalizeRequest(
       purpose: request.details.purpose,
       userRequest: request.details.userRequest,
       startedByAutomation: request.details.startedByAutomation,
+      startedByFirstWake: request.details.startedByFirstWake,
       scheduledTaskName: request.details.scheduledTaskName,
       commandRiskLevel: request.details.commandRiskLevel,
       commandSecurityFlags: request.details.commandSecurityFlags,
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
+      pathDisplay: request.details.pathDisplay,
       targetKind: request.details.targetKind,
       standingGrantTarget: request.details.standingGrantTarget,
       browserSessionGrant: request.details.browserSessionGrant,
@@ -94,9 +100,13 @@ function normalizeRequest(
       body: request.details.body,
       connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
+      file: request.details.file,
       requestedAccess: request.details.requestedAccess,
       access: stringField(request.details, 'access'),
       preview: request.details.preview,
+      roleId: stringField(request.details, 'roleId'),
+      before: unknownField(request.details, 'before'),
+      after: unknownField(request.details, 'after'),
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
@@ -169,15 +179,28 @@ export function PermissionCard({
   )
     ? normalizeRequest(sourceRequest)
     : null;
+  const agentId = request?.agentId;
+  const requestingSessionId = request?.sessionId ?? sourceSessionId ?? currentSessionId;
+  const { snapshot } = useAgentTreeSnapshot(requestingSessionId, Boolean(agentId && requestingSessionId));
+  const role = agentId
+    ? snapshot?.nodes.find((node) => node.id === agentId || node.backgroundAgentId === agentId)?.role
+    : undefined;
+  const requesterLine = agentId ? t.decisionCard.permission.requestedBy.replace(
+    '{name}',
+    role && role !== 'background' ? agentNodeLabel({ role }, t.agentRoleLabels) : t.agentRoleLabels.assistant,
+  ) : undefined;
   const sandboxEscalation = request !== null && isSandboxEscalation(request);
   // ADR-088 敏感步骤交回卡：reasonCode 与 details.sensitiveStep 双判据（与 host 收口同口径）
   const sensitiveHandback = request !== null
     && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
       || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
-  // 删一条日程可撤销（删前留快照），和建 / 改同配色：主按钮「删除」，不默认突出「取消」、不给红框
-  // （爸 11-16：删一条日程不至于红色警示；红色只留给删整个系列 / 一次删多条这类收不回的操作）。
-  const safeDefaultDeny = request !== null && request.tool !== 'calendar_delete_event' && isSafeDefaultDeny(request);
+  // 删一条日程或提醒走中性写回卡：主按钮「删除」，不默认突出「取消」、不给红框。
+  // 红色只留给删整个系列 / 一次删多条这类收不回的操作。
+  const safeDefaultDeny = request !== null
+    && request.tool !== 'calendar_delete_event'
+    && request.tool !== 'reminders_delete'
+    && isSafeDefaultDeny(request);
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
@@ -192,9 +215,10 @@ export function PermissionCard({
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
   const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'
     || request?.tool === 'calendar_delete_event';
-  // 单条日程删除：中性写回卡 +「删除 / 取消」，没有「改一改」（见 permissionEdit 里 calendar_delete_event 的说明）
-  const isNativeDelete = request?.tool === 'calendar_delete_event';
-  const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update';
+  // 单条日程 / 提醒删除：中性写回卡 +「删除 / 取消」，没有「改一改」
+  const isNativeDelete = request?.tool === 'calendar_delete_event' || request?.tool === 'reminders_delete';
+  const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update'
+    || request?.tool === 'reminders_delete';
   const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
   const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
 
@@ -426,11 +450,12 @@ export function PermissionCard({
   const p = t.decisionCard.permission;
   const w = p.writeback;
   const connector = request.details.connectorAccess;
+  const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';
   const connectorQuestion = connector
-    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connector.connectorName)
+    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
     : undefined;
   const connectorScope = connector
-    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connector.connectorName)
+    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connectorName)
     : undefined;
   const pendingHeaderEnd = remainingCount > 0
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
@@ -463,7 +488,7 @@ export function PermissionCard({
     ...(!hideStandingGrants
       ? [
           { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : [connectorScope, p.optionRunDesc].filter(Boolean).join(' · '), shortcut: 's' },
-          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, sourceRequest?.details.commandGrantTarget === null ? p.option24hUnavailableDesc : sourceRequest?.details.commandGrantTarget ? p.option24hExactCommandDesc : p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -502,13 +527,15 @@ export function PermissionCard({
       ? w.calendarCreateTitle
       : request.tool === 'calendar_update_event'
         ? w.calendarUpdateTitle
-        : isNativeDelete
+        : request.tool === 'calendar_delete_event'
         ? w.calendarDeleteTitle
         : request.tool === 'reminders_create'
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
-            : editable
+            : request.tool === 'reminders_delete'
+              ? w.remindersDeleteTitle
+              : editable
               ? w.mailSendTitle
               : isDangerous && described.kind === 'shell'
                 ? getPermissionTitle('command', p)
@@ -528,12 +555,14 @@ export function PermissionCard({
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)
       : request.tool === 'calendar_update_event'
         ? (contentTitle ? w.calendarUpdateQuestion.replace('{title}', contentTitle) : w.calendarUpdateQuestionFallback)
-        : isNativeDelete
+        : request.tool === 'calendar_delete_event'
         ? (contentTitle ? w.calendarDeleteQuestion.replace('{title}', contentTitle) : w.calendarDeleteQuestionFallback)
         : request.tool === 'reminders_create'
           ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
           : request.tool === 'reminders_update'
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
+            : request.tool === 'reminders_delete'
+              ? (contentTitle ? w.remindersDeleteQuestion.replace('{title}', contentTitle) : w.remindersDeleteQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
     : described.question);
@@ -573,6 +602,7 @@ export function PermissionCard({
     return (
       <SensitiveStepHandbackCard
         request={request}
+        requesterLine={requesterLine}
         onRespond={(level) => { void handleApproval(level); }}
         onCollapse={onCollapse}
       />
@@ -592,6 +622,7 @@ export function PermissionCard({
         icon={icon}
         title={title}
         headerMeta={w.editingBadge}
+        headerLine={requesterLine}
         headerEnd={pendingHeaderEnd}
         question={isMeetingCreate
           ? w.tmeetWriteWarning
@@ -633,6 +664,7 @@ export function PermissionCard({
       icon={icon}
       title={title}
       headerEnd={headerEnd}
+      headerLine={requesterLine}
       question={question}
       details={
         <>
@@ -683,7 +715,7 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      showActionDescriptions={Boolean(connector)}
+      showActionDescriptions={Boolean(connector || sourceRequest?.details.commandGrantTarget !== undefined)}
       primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {

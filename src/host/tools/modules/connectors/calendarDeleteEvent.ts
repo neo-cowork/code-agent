@@ -10,10 +10,13 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
+import { stripCalendarReceiptUid } from '../../../../shared/utils/calendarReceiptText';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { calendarFailureCode, describeCalendarWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarFailureForUser, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 
@@ -48,6 +51,7 @@ async function executeCalendarDeleteEvent(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
+  const { separator, calendar: copy } = getHostConnectorCopy(getHostUiLocale());
   try {
     const result = await connector.execute('delete_event', args);
     const event = result.data as {
@@ -57,7 +61,7 @@ async function executeCalendarDeleteEvent(
       deleted: boolean;
     };
     ctx.logger.debug('calendar_delete_event', { uid: event.uid, calendar: event.calendar });
-    const output = `已删除日历事件：\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}`;
+    const output = `${copy.deleted}${separator.trimEnd()}\n- [${event.calendar}] ${event.title}\n- uid: ${event.uid}`;
 
     return {
       ok: true,
@@ -75,10 +79,10 @@ async function executeCalendarDeleteEvent(
           kind: 'text',
           role: 'receipt',
           sessionId: ctx.sessionId,
-          name: `已删除日历事件：${event.title}`,
+          name: `${copy.deleted}${separator}${event.title}`,
           mimeType: 'text/markdown',
           contentLength: output.length,
-          preview: output.slice(0, 500),
+          preview: stripCalendarReceiptUid(output).slice(0, 500),
           metadata: {
             connector: 'calendar',
             action: 'delete_event',
@@ -96,9 +100,13 @@ async function executeCalendarDeleteEvent(
       ctx.logger,
       schema.name,
     );
+    const title = undoMetadata.undoable && undoMetadata.before.title;
+    const failureName = title ? `${copy.deleteFailed}${separator}${title}` : copy.deleteFailed;
+    const userMessage = describeCalendarFailureForUser(copy, separator, error);
     return {
       ok: false,
       error: failure,
+      userMessage,
       ...calendarFailureCode(error),
       meta: {
         action: 'delete_event',
@@ -110,7 +118,8 @@ async function executeCalendarDeleteEvent(
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
           action: 'delete_event',
-          name: `删除日历事件失败：${String(args.event_uid)}`,
+          name: failureName,
+          preview: `${failureName}${separator}${userMessage}`,
           error: failure,
           metadata: { connector: 'calendar', calendar: args.calendar, uid: args.event_uid },
         }),

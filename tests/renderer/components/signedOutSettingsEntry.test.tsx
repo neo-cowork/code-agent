@@ -65,6 +65,55 @@ describe('signed-out settings entries', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
+  const customGlm = (extra: Record<string, unknown> = {}) => ({
+    models: {
+      default: 'custom-glm-coding',
+      providers: {
+        'custom-glm-coding': {
+          enabled: true, apiKeyConfigured: false, displayName: 'GLM Coding Plan',
+          baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4', protocol: 'openai', model: 'glm-5.3',
+        },
+        ...extra,
+      },
+    },
+  });
+
+  it.each([
+    ['zh', '先不登录，去配置模型/通道'],
+    ['en', 'Skip sign-in and set up a model or channel'],
+  ] as const)('names a custom default provider in the missing-key toast in %s', async (language, label) => {
+    vi.mocked(ipcService.invokeDomain).mockResolvedValue(customGlm());
+    useAppStore.setState({ language });
+    useAuthStore.setState({ showAuthModal: true });
+    render(<AuthModal />);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: label })); });
+    await waitFor(() => expect(useAppStore.getState().showSettings).toBe(true));
+    expect(useAppStore.getState().settingsModelFocus?.provider).toBe('custom-glm-coding');
+    const message = useToastStore.getState().toasts[0]?.message;
+    expect(message).toBe(languages[language].modelSetup.missingApiKey.replace('{provider}', 'GLM Coding Plan'));
+    expect(message).not.toContain('custom-glm-coding');
+  });
+
+  it('shows no toast when another provider already has a key (by-design suppression on the skip path)', async () => {
+    vi.mocked(ipcService.invokeDomain).mockResolvedValue(
+      customGlm({ zhipu: { enabled: true, apiKeyConfigured: true } }),
+    );
+    useAuthStore.setState({ showAuthModal: true });
+    render(<AuthModal />);
+    fireEvent.click(screen.getByRole('button', { name: languages.zh.sidebar.skipSignInSetup }));
+    await waitFor(() => expect(useAppStore.getState().showSettings).toBe(true));
+    expect(useAppStore.getState().settingsModelFocus?.provider).toBe('custom-glm-coding');
+    expect(useToastStore.getState().toasts).toEqual([]);
+  });
+
+  it('renders the skip-sign-in exit as a secondary (filled) button, not ghost', () => {
+    useAuthStore.setState({ showAuthModal: true });
+    render(<AuthModal />);
+    const skip = screen.getByRole('button', { name: languages.zh.sidebar.skipSignInSetup });
+    expect(skip.className).toContain('bg-btn-secondary');
+    expect(skip.className).not.toContain('bg-transparent');
+  });
+
   it.each(['default', 'other'] as const)('opens Model settings when a usable %s model exists', async (kind) => {
     vi.mocked(ipcService.invokeDomain).mockResolvedValue({
       models: { default: kind === 'default' ? DEFAULT_PROVIDER : 'zhipu', providers: { [DEFAULT_PROVIDER]: { enabled: true, apiKeyConfigured: true } } },

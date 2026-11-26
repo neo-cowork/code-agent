@@ -2,6 +2,8 @@
 // RemindersCreate (P0-6.3 Batch 5 — connectors: native ToolModule rewrite)
 // ============================================================================
 
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
 import type {
   ToolHandler,
   ToolModule,
@@ -19,8 +21,11 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { appleScriptFailureForDisplay } from './appleScriptWriteFailure';
+import type { AppleScriptFailureCode } from '../../../connectors/native/appleScriptFailure';
 import { remindersCreateSchema as schema } from './remindersCreate.schema';
 import { formatConnectorTime } from './connectorTime';
+import { omitUnrequestedReminderNotes } from '../../reminderUnrequestedNotes';
 
 const RECONCILE_LIMIT = 200;
 const REMIND_AT_TOLERANCE_MS = 60_000;
@@ -38,7 +43,7 @@ interface CreatedReminder {
   remindAtMs?: number | null;
 }
 
-function relativeReminderDay(remindAtMs: number, timeZone: string, nowMs = Date.now()): string {
+function relativeReminderDay(remindAtMs: number, timeZone: string, labels: readonly string[], nowMs = Date.now()): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
   });
@@ -46,7 +51,7 @@ function relativeReminderDay(remindAtMs: number, timeZone: string, nowMs = Date.
     .filter((part) => part.type === 'year' || part.type === 'month' || part.type === 'day')
     .map((part) => part.value).join('-');
   const target = calendarDate(new Date(remindAtMs));
-  for (const [days, label] of ['今天', '明天', '后天'].entries()) {
+  for (const [days, label] of labels.entries()) {
     const candidate = new Date(nowMs);
     // Advance calendar days in the process time zone, including DST transitions.
     candidate.setDate(candidate.getDate() + days);
@@ -59,8 +64,10 @@ function buildRemindersCreateSuccessResult(
   reminder: CreatedReminder,
   args: Record<string, unknown>,
   ctx: ToolContext,
-  reconciledNote?: string,
+  reconciled = false,
 ): ToolResult<string> {
+  const locale = getHostUiLocale();
+  const { separator, reminders: copy } = getHostConnectorCopy(locale);
   const undoMetadata = reminder.id
     ? { undoable: true as const }
     : {
@@ -75,18 +82,19 @@ function buildRemindersCreateSuccessResult(
   let remindAtText: string;
   if (remindAtMs !== null) {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const parts = new Intl.DateTimeFormat('zh-CN', {
+    const parts = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'zh-CN', {
       timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',
     }).formatToParts(new Date(remindAtMs));
     const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
-    const relativeDay = relativeReminderDay(remindAtMs, timeZone);
-    remindAtText = `${formatConnectorTime(remindAtMs, timeZone)}（${relativeDay ? `${relativeDay}，` : ''}${part('weekday')}，${timeZone}）`;
+    const relativeDay = relativeReminderDay(remindAtMs, timeZone, copy.days);
+    remindAtText = copy.timeContext(formatConnectorTime(remindAtMs, timeZone), [...(relativeDay ? [relativeDay] : []), part('weekday'), timeZone]);
   } else {
-    remindAtText = reminder.remindAtMs === null ? '未设置' : '无法确认，请在提醒事项中查看';
+    remindAtText = reminder.remindAtMs === null ? copy.notSet : copy.unknownTime;
   }
-  const baseOutput = `已创建提醒：\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}\n提醒时间：${remindAtText}`;
-  const output = reconciledNote ? `${baseOutput}\n${reconciledNote}` : baseOutput;
+  const receiptTitle = reconciled ? copy.alreadyExists : copy.created;
+  const baseOutput = `${receiptTitle}${separator.trimEnd()}\n- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}\n${copy.time}${separator}${remindAtText}`;
+  const output = reconciled ? `${baseOutput}\n${copy.reconciledNote}` : baseOutput;
 
   return {
     ok: true,
@@ -109,8 +117,9 @@ function buildRemindersCreateSuccessResult(
         content: {
           text: [
             `[${reminder.list}] ${reminder.title}`,
-            remindAtText ? `提醒时间：${remindAtText}` : null,
-            notes ? `备注：${notes}` : null,
+            remindAtText ? `${copy.time}${separator}${remindAtText}` : null,
+            notes ? `${copy.notes}${separator}${notes}` : null,
+            reconciled && locale === 'en' ? copy.reconciledNote : null,
           ].filter(Boolean).join('\n'),
           summary: remindAtText ? `${reminder.list} · ${remindAtText}` : reminder.list,
         },
@@ -125,7 +134,7 @@ function buildRemindersCreateSuccessResult(
         kind: 'text',
         role: 'receipt',
         sessionId: ctx.sessionId,
-        name: `已创建提醒：${reminder.title}`,
+        name: `${receiptTitle}${separator}${reminder.title}`,
         mimeType: 'text/markdown',
         contentLength: output.length,
         preview: output.slice(0, 500),
@@ -148,11 +157,19 @@ function buildRemindersCreateFailureResult(
   failure: string,
   args: Record<string, unknown>,
   ctx: ToolContext,
-  code?: string,
+  code?: AppleScriptFailureCode,
+  unconfirmed = false,
 ): ToolResult<string> {
+  const locale = getHostUiLocale();
+  const { separator, reminders: copy, appleScriptFailure } = getHostConnectorCopy(locale);
+  const name = `${copy.createFailed}${separator}${String(args.title)}`;
+  const userMessage = locale === 'en'
+    ? (unconfirmed ? copy.unconfirmed : appleScriptFailureForDisplay(undefined, 'Reminders', appleScriptFailure, code))
+    : undefined;
   return {
     ok: false,
     error: failure,
+    ...(userMessage ? { userMessage } : {}),
     // AppleScript 失败码随结果下发（与 calendar.ts 同形；classify 的 perm_automation
     // 判据读 metadata.code，缺了它 reminders_create 的授权被拒发不出环境卡片）。
     ...(code ? { code } : {}),
@@ -166,7 +183,8 @@ function buildRemindersCreateFailureResult(
         sourceTool: schema.name,
         sessionId: ctx.sessionId,
         action: 'create_reminder',
-        name: `创建提醒失败：${String(args.title)}`,
+        name,
+        ...(userMessage ? { preview: `${name}${separator}${userMessage}` } : {}),
         error: failure,
         metadata: { connector: 'reminders', list: args.list, title: args.title },
       }),
@@ -206,7 +224,9 @@ async function executeRemindersCreate(
 
   const reminderTime = normalizeReminderCreateTime(schema.name, args);
   if (!reminderTime.ok) return reminderTime;
-  args = reminderTime.args;
+  const unrequestedNotes = omitUnrequestedReminderNotes(reminderTime.args);
+  if (unrequestedNotes.dropped) ctx.logger.debug('reminders_create dropped notes', { reason: unrequestedNotes.reason });
+  args = unrequestedNotes.args;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
@@ -253,22 +273,17 @@ async function executeRemindersCreate(
         detail: appleScriptFailureLogDetail(listError),
       });
       const failure = `${described.message} Creation could not be confirmed because listing reminders failed; do not retry blindly, ask the user to check the Reminders list. ${NO_BASH_NO_RETRY_GUIDANCE}`;
-      return buildRemindersCreateFailureResult(failure, args, ctx, described.code);
+      return buildRemindersCreateFailureResult(failure, args, ctx, described.code, true);
     }
 
     const matched = items.find((item) => matchesExpectedReminder(item, args));
     if (matched) {
-      return buildRemindersCreateSuccessResult(
-        matched,
-        args,
-        ctx,
-        'Note: the create command reported an error, but the reminder already exists in Reminders and was not created again.',
-      );
+      return buildRemindersCreateSuccessResult(matched, args, ctx, true);
     }
 
     if (items.length >= RECONCILE_LIMIT) {
       const failure = `${described.message} Creation could not be confirmed because the list returned ${RECONCILE_LIMIT} reminders (may be truncated); do not retry blindly, ask the user to check the Reminders list. ${NO_BASH_NO_RETRY_GUIDANCE}`;
-      return buildRemindersCreateFailureResult(failure, args, ctx, described.code);
+      return buildRemindersCreateFailureResult(failure, args, ctx, described.code, true);
     }
 
     const failure = `${described.message} Nothing was created. ${NO_BASH_RETRY_ONCE_GUIDANCE}`;

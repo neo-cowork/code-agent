@@ -11,6 +11,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { PermissionGrantEntry } from '@shared/contract';
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
 import ipcService from '../../../../services/ipcService';
 import { SettingsSection } from '../SettingsLayout';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -32,11 +33,17 @@ const GRANT_TOOL_LABEL_KEYS: Record<string, keyof typeof zh.receiptPresentation.
 };
 
 function toolGrantLabel(
-  label: string,
+  grant: PermissionGrantEntry,
   labels: typeof zh.receiptPresentation.humanToolLabels,
+  language: 'zh' | 'en',
 ): string {
-  const key = GRANT_TOOL_LABEL_KEYS[label.trim().toLowerCase().replace(/[-_\s]/g, '')];
-  return key ? labels.tools[key] : getHumanToolLabel({ toolName: label, labels });
+  const { label } = grant;
+  if (grant.connectorAccess === 'read') return label;
+  // App labels are display names, but tool-shaped labels can arrive in any row kind.
+  if (grant.kind === 'app' && !/^[a-z\d]+(?:_+[a-z\d]+)+$/i.test(label.trim())) return label;
+  const name = label.trim().toLowerCase().replace(/[-_\s]/g, '');
+  if (Object.hasOwn(GRANT_TOOL_LABEL_KEYS, name)) return labels.tools[GRANT_TOOL_LABEL_KEYS[name]];
+  return getHumanToolLabel({ toolName: label, labels, fallback: () => toolUserLabel(label, language) });
 }
 
 function scopeLabel(source: string, copy: PermissionGrantsText['scope']): string {
@@ -110,7 +117,7 @@ const PermissionGrantList: React.FC = () => {
             <li key={grant.id} data-testid="permission-grant-row" className="flex items-center justify-between gap-3 py-2">
               <div className="min-w-0">
                 <div className="truncate text-sm text-zinc-200">
-                  {grant.kind === 'app' || grant.connectorAccess === 'read' ? grant.label : toolGrantLabel(grant.label, t.receiptPresentation.humanToolLabels)}
+                  {toolGrantLabel(grant, t.receiptPresentation.humanToolLabels, language)}
                 </div>
                 <div className="mt-0.5 text-xs text-zinc-500">
                   {[kindLabel(grant, copy.kind), grant.connectorAccess === 'read' ? copy.readOnly : '', scopeLabel(grant.source, copy.scope)].filter(Boolean).join(' · ')}
@@ -121,7 +128,7 @@ const PermissionGrantList: React.FC = () => {
                     : copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
                 </div>
                 {(grant.kind === 'tool-target' || grant.kind === 'tool-timed') && grant.detail ? (
-                  <div className="mt-0.5 truncate text-xs text-zinc-400">{copy.targetLabel.replace('{target}', grant.detail)}</div>
+                  <div className="mt-0.5 truncate text-xs text-zinc-400" title={grant.detail}>{copy.targetLabel.replace('{target}', () => grant.detail ?? '')}</div>
                 ) : null}
               </div>
               <Button

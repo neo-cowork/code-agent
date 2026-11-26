@@ -14,12 +14,15 @@ import {
 } from '../../cron/CronSimpleCreate';
 import { CronEventScheduleFields } from '../../cron/CronEventScheduleFields';
 import { CronMailEventFields } from '../../cron/CronMailEventFields';
+import { CronEventLimitFields } from '../../cron/CronEventLimitFields';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
 import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
 import { useScheduleSettingsDraftStore } from '../../../../stores/scheduleSettingsDraftStore';
 import { openCloudCronSettings } from '../../../../utils/cronCloudSettingsNavigation';
 import { CronCloudCreateNotice } from '../../cron/CronCloudCreateNotice';
+import { useScheduleEstimateHistory } from '../../cron/useScheduleEstimateHistory';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
 
 interface ScheduleConfirmCardProps {
@@ -43,6 +46,14 @@ interface WhenEditState {
 }
 
 /** epoch/ISO → datetime-local 输入值（yyyy-MM-ddTHH:mm，本地时区）。解析不了给空串。 */
+// 键序无关的序列化：编辑器编出来的 schedule 与模型草案键序可能不同，不能因此判成「改了时间」。
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+      : v);
+}
+
 function toLocalDateTimeValue(datetime: string | number): string {
   const date = typeof datetime === 'number' ? new Date(datetime) : new Date(datetime);
   if (Number.isNaN(date.getTime())) return '';
@@ -109,6 +120,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   const { t, language } = useI18n();
   const labels = t.scheduleConfirm;
   const cc = t.cronCenter;
+  const estimateHistory = useScheduleEstimateHistory(draft.input);
   const rows = useMemo(
     () => buildScheduleConfirmRows(draft, labels, language, {
       group: cc.eventConfirmGroup,
@@ -118,8 +130,8 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       mail: cc.eventConfirmMail,
       mailFallback: cc.eventConfirmMailFallback,
       mailTrigger: cc.eventMailTriggerPrefix,
-    }),
-    [draft, labels, language, cc],
+    }, estimateHistory),
+    [draft, labels, language, cc, estimateHistory],
   );
 
   // event 草案（N-CRON-EVENT-CREATE-CHAT）：没有「什么时候」行/时间编辑器，
@@ -164,6 +176,13 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   }));
   const mailEditRef = useRef(mailEdit);
   const [budgetEdit, setBudgetEdit] = useState(() => String(draft.input.maxRunBudget ?? ''));
+  const initialLimits = () => {
+    const schedule = draft.input.schedule;
+    return schedule.type === 'event'
+      ? { prefilter: schedule.prefilter ?? '', maxRuns: schedule.maxRunsPerHour !== undefined ? String(schedule.maxRunsPerHour) : '' }
+      : { prefilter: '', maxRuns: '' };
+  };
+  const [limitsEdit, setLimitsEdit] = useState(initialLimits);
 
   // 草案身份变化（同会话旧卡未确认时再次 /schedule 整体替换草案，挂载点没有 key、
   // 卡片不重挂）时重置挂载期初始化的 event 编辑态（rework r1 Important 1）：否则上一份
@@ -185,6 +204,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     };
     setMailEdit(mailEditRef.current);
     setBudgetEdit(String(draft.input.maxRunBudget ?? ''));
+    setLimitsEdit(initialLimits());
     // 故意只依赖草案身份：卡内每次编辑都会产生新 draft 引用，重置必须只随「换了一份草案」发生。
   }, [draftId]);
 
@@ -220,6 +240,38 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       },
     });
   };
+
+  // 一句话筛选 + 每小时上限：channel/mail 草案共用同一写回；空白不落键（host 缺省 20 生效）。
+  const writeLimitsEdit = (patch: Partial<{ prefilter: string; maxRuns: string }>) => {
+    const schedule = draft.input.schedule;
+    if (schedule.type !== 'event' || !onDraftChange) return;
+    const next = { ...limitsEdit, ...patch };
+    setLimitsEdit(next);
+    const { prefilter: _p, maxRunsPerHour: _m, ...rest } = schedule;
+    const prefilter = next.prefilter.trim();
+    const cap = Number(next.maxRuns);
+    onDraftChange({
+      ...draft,
+      input: {
+        ...draft.input,
+        schedule: {
+          ...rest,
+          ...(prefilter ? { prefilter } : {}),
+          ...(next.maxRuns.trim() && Number.isFinite(cap)
+            ? { maxRunsPerHour: Math.min(CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR, Math.max(CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR, Math.floor(cap))) }
+            : {}),
+        },
+      } as CreateCronJobInput,
+    });
+  };
+  const limitFields = (
+    <CronEventLimitFields
+      prefilter={limitsEdit.prefilter}
+      maxRunsPerHour={limitsEdit.maxRuns}
+      onPrefilterChange={(prefilter) => writeLimitsEdit({ prefilter })}
+      onMaxRunsPerHourChange={(maxRuns) => writeLimitsEdit({ maxRuns })}
+    />
+  );
 
   // mail 草案的卡内编辑（账号/邮箱下拉）：与通道版同款走 ref 合并 + 整体写回；
   // mailbox 空串 = 缺省 INBOX，写回时不落键（空串会被 host 当字面量邮箱名）。
@@ -262,9 +314,14 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
 
   const applyWhenEdit = () => {
     if (!compiledWhen || !onDraftChange) return;
+    // 时间真的变了：模型写的 what 句可能还带着旧间隔，清掉让 What 行走兜底链；notifyWhen 是通知门规则，保留。
+    const scheduleChanged = stableJson(compiledWhen) !== stableJson(draft.input.schedule);
     onDraftChange({
       ...draft,
       input: { ...draft.input, schedule: compiledWhen, scheduleType: compiledWhen.type },
+      ...(scheduleChanged && draft.restatement
+        ? { restatement: { what: '', notifyWhen: draft.restatement.notifyWhen } }
+        : {}),
     });
     setEditingWhen(false);
   };
@@ -283,12 +340,15 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     setEditingNotify(false);
   };
 
-  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail') => {
+  const renderRowValue = (key: (typeof rows)[number]['key']) => {
     const row = rows.find((candidate) => candidate.key === key);
     const value = row?.value ?? '';
     return (
       <>
-        <span className="flex-1 min-w-0 text-[11px] leading-relaxed text-zinc-200">{value}</span>
+        <span className="flex-1 min-w-0 text-[11px] leading-relaxed text-zinc-200">
+          {value}
+          {row?.hint && <span className="block text-badge-warning">{row.hint}</span>}
+        </span>
         {(key === 'when' || key === 'notifyWhen') && onDraftChange && !confirming && (
           <Button
             type="button"
@@ -332,7 +392,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
         {rows.map((row) => (
           <div
             key={row.key}
-            className="grid grid-cols-[auto_1fr] gap-3 rounded-md bg-indigo-500/5 px-2.5 py-1.5"
+            className={`grid grid-cols-[auto_1fr] gap-3 rounded-md px-2.5 py-1.5 ${row.hint ? 'bg-amber-500/10' : 'bg-indigo-500/5'}`}
             data-schedule-row={row.key}
           >
             <span className="text-[10px] text-badge-accent/55">{row.label}</span>
@@ -372,6 +432,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               validationMessage={eventViolation ? cc.eventValidation[eventViolation.reason] : null}
               preferredChatName={draft.eventGroupName}
             />
+            <div className="mt-3">{limitFields}</div>
           </div>
         )}
 
@@ -386,6 +447,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               onBudgetChange={handleEventBudgetChange}
               violation={eventViolation}
             />
+            <div className="mt-3">{limitFields}</div>
           </div>
         )}
 

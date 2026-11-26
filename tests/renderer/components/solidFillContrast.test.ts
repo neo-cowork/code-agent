@@ -125,6 +125,26 @@ function extractJoinedVariant(source: string, name: string): string {
   return literals.join(' ');
 }
 
+function extractJoinedConst(source: string, name: string): string {
+  const match = source.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\]\\.join\\(' '\\)`));
+  if (!match) throw new Error(`Button 缺少常量 ${name}`);
+  const literals = [...match[1].matchAll(/'([^'\\]*)'/g)].map((item) => item[1]);
+  if (literals.length === 0) throw new Error(`常量 ${name} 没有类字符串`);
+  return literals.join(' ');
+}
+
+/**
+ * ModalFooter 确认按钮禁用分支的类串（confirmDisabled 三元的 ? 臂）。
+ * 旧结构是 zinc 手搓对（浅色主题字底同为 113 113 122，1:1），新结构复用
+ * Button 的 secondary disabled token；这里按字面量解析，两代代码都能算出比值。
+ */
+function extractModalFooterDisabledBranch(source: string): string {
+  const footer = source.slice(source.indexOf('export const ModalFooter'));
+  const match = footer.match(/confirmDisabled\s*\n(?:\s*\/\/[^\n]*\n)*\s*\?\s*'([^']*)'/);
+  if (!match) throw new Error('ModalFooter 缺少禁用分支类字符串');
+  return match[1];
+}
+
 function extractConfirmClass(
   source: string,
   variant: string,
@@ -205,6 +225,35 @@ function materialize(
   if (!rgb) throw new Error(`未知填充色 ${name}`);
   if (alpha === 1) return { rgb, label: name };
   return { rgb: composite(rgb, alpha, WHITE), label: `${name}/${alpha} on #fff` };
+}
+
+/** 只算禁用态一行（浅/深两主题）；base 态可能用未映射的 btn-* token，这里不碰。 */
+function disabledRows(
+  subject: string,
+  classString: string,
+  palette: Map<string, Rgb>,
+  themes: { light: string; dark: string },
+): ContrastRow[] {
+  const resolved = resolveState(parseDecls(classString), 'disabled');
+  const fills = fillTokens(resolved);
+  const textToken = resolved.text;
+  if (!textToken || fills.length === 0) return [];
+  const rows: ContrastRow[] = [];
+  for (const themeName of ['light', 'dark'] as const) {
+    const themeCss = themeName === 'dark' ? themes.dark : themes.light;
+    const foreground = materialize(textToken, 'text', themeCss, palette);
+    for (const fill of fills) {
+      const background = materialize(fill.token, fill.slot, themeCss, palette);
+      rows.push({
+        id: `${subject}.disabled.${fill.slot}`,
+        theme: themeName,
+        ratio: contrast(foreground.rgb, background.rgb),
+        pair: `${foreground.label} / ${background.label}`,
+        whiteText: foreground.label === 'white',
+      });
+    }
+  }
+  return rows;
 }
 
 function rowsFor(
@@ -289,9 +338,11 @@ const dialog = {
   danger: extractConfirmClass(dialogSource, 'danger', button),
 };
 const themes = { light: lightCss, dark: darkCss };
+const modalFooterDisabled = extractModalFooterDisabledBranch(modalSource);
 const rows = [
   ...rowsFor('button.primary', button.primary, false, palette, themes),
   ...rowsFor('button.danger', button.danger, false, palette, themes),
+  ...rowsFor('modalFooter.confirm', modalFooterDisabled, false, palette, themes),
   ...rowsFor('dialog.info', dialog.info, true, palette, themes),
   ...rowsFor('dialog.warning', dialog.warning, true, palette, themes),
   ...rowsFor('dialog.danger', dialog.danger, true, palette, themes),
@@ -319,9 +370,14 @@ describe('实心白字填充对比度', () => {
   });
 
   it('Button 与 ConfirmDialog 的启用、hover、禁用填充都不低于 4.5', () => {
+    // ModalFooter 新结构：text-white 只留在启用分支，禁用分支走 secondary disabled token。
     const footer = modalSource.slice(modalSource.indexOf('export const ModalFooter'));
-    expect(footer).toContain('text-white');
-    expect(footer).toContain(': confirmColorClass');
+    expect(footer).toContain(': `text-white ${confirmColorClass}`');
+    expect(modalFooterDisabled).toContain('bg-btn-secondary-disabled');
+    expect(modalFooterDisabled).toContain('text-btn-secondary-disabled');
+    expect(modalFooterDisabled).toContain('cursor-not-allowed');
+    expect(modalFooterDisabled).not.toContain('text-white');
+    expect(modalFooterDisabled).not.toMatch(/zinc-\d+/);
 
     console.log(formatTable(rows));
 
@@ -380,6 +436,47 @@ describe('实心白字填充对比度', () => {
       `secondary-disabled light ${secondaryLight.toFixed(2)}`,
       `secondary-disabled dark ${secondaryDark.toFixed(2)}`,
     ].join('\n'));
+  });
+
+  it('ModalFooter 禁用确认按钮在浅深两主题下都不低于 3:1（高对比主题同一对 token）', () => {
+    const mfRows = rows.filter((row) => row.id.startsWith('modalFooter.confirm.disabled.'));
+    for (const themeName of ['light', 'dark'] as const) {
+      const row = mfRows.find((item) => item.theme === themeName);
+      expect(row, `modalFooter.confirm.disabled 缺 ${themeName} 行`).toBeTruthy();
+      expect(row?.ratio, `modalFooter.confirm.disabled ${themeName} ${row?.pair} ${row?.ratio?.toFixed(2)}`)
+        .toBeGreaterThanOrEqual(3);
+    }
+    // 高对比主题若带同一对 token，也必须过 3:1
+    for (const hcPath of [
+      'src/renderer/styles/themes/high-contrast-light.css',
+      'src/renderer/styles/themes/high-contrast-dark.css',
+    ]) {
+      const css = readSource(hcPath);
+      const ratio = contrast(
+        readHexToken(css, '--btn-secondary-fg-disabled'),
+        readHexToken(css, '--btn-secondary-bg-disabled'),
+      );
+      expect(ratio, `${hcPath} secondary disabled ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('primary/secondary/danger Button 的有效类串不再叠 disabled:opacity，禁用对比度不低于 3:1', () => {
+    const baseStyles = extractJoinedConst(buttonSource, 'baseStyles');
+    for (const name of ['primary', 'secondary', 'danger'] as const) {
+      const variant = extractJoinedVariant(buttonSource, name);
+      const effective = `${baseStyles} ${variant}`;
+      expect(effective.match(/(?:^|\s)disabled:opacity-[\d.]+/), `${name} 有效类串仍含 disabled:opacity`).toBeNull();
+      const disabled = disabledRows(`button.${name}`, effective, palette, themes);
+      for (const themeName of ['light', 'dark'] as const) {
+        const row = disabled.find((item) => item.theme === themeName);
+        expect(row, `button.${name}.disabled 缺 ${themeName} 行`).toBeTruthy();
+        expect(row?.ratio, `button.${name}.disabled ${themeName} ${row?.pair} ${row?.ratio?.toFixed(2)}`)
+          .toBeGreaterThanOrEqual(3);
+      }
+    }
+    // ghost 没有禁用底色 token，保留 /50 透明度做禁用观感
+    const ghost = `${baseStyles} ${extractJoinedVariant(buttonSource, 'ghost')}`;
+    expect(ghost.match(/(?:^|\s)disabled:opacity-50/), 'ghost 应保留 disabled:opacity-50').toBeTruthy();
   });
 
   it('列出的手搓白字元素没有无 dark: 守卫的 300–600 档填充', () => {

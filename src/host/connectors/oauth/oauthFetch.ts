@@ -1,5 +1,6 @@
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
+import { devFaultCheckOutbound } from '../../services/infra/devFaultLoader';
 
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -76,6 +77,7 @@ export function createConnectorOAuthFetch(options: {
       agent = new ProxyAgent(proxyUrl);
       agents.set(proxyUrl, agent);
     }
+    devFaultCheckOutbound(requestUrl(input).href);
     return undiciFetch(input as Parameters<typeof undiciFetch>[0], {
       ...init,
       dispatcher: agent,

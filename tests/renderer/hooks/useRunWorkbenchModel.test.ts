@@ -9,6 +9,13 @@ import {
 import type { ScriptRunSnapshot } from '../../../src/shared/contract/scriptRun';
 import type { SessionState } from '../../../src/renderer/stores/taskStore';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
+import { formatBlockDetail, formatTaskStatus } from '../../../src/renderer/components/features/sidebar/sessionReplayFormatters';
+import { languages } from '../../../src/renderer/i18n';
+import { backgroundTaskFailureCopy } from '../../../src/renderer/utils/agentFailureCopy';
+import { deriveTaskRailView } from '../../../src/renderer/utils/taskRailPresentation';
+import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { buildSessionReplayContext } from '../../../src/renderer/utils/sessionReplayContext';
 
 describe('buildGlobalTaskRecords', () => {
   it('does not mirror the current session into background tasks', () => {
@@ -117,6 +124,58 @@ describe('buildDurableSubagentViews', () => {
 });
 
 describe('buildLedgerTaskRecords', () => {
+  it('projects shell and PTY display titles in the UI language', () => {
+    const description = '把缺失的报告移入归档';
+    const english = 'Copy missing-report.txt into archive in background';
+    const tasks = [
+      makeLedgerTask({ id: 'shell:2', source: 'shell', sessionId: 'session-1', title: english, createdAt: 2 }),
+      makeLedgerTask({ id: 'pty:1', source: 'pty', sessionId: 'session-1', title: english, createdAt: 1 }),
+      makeLedgerTask({ id: 'shell:3', source: 'shell', sessionId: 'session-1', title: description, createdAt: 3 }),
+    ];
+
+    const records = buildLedgerTaskRecords(tasks, 'session-1', 'zh');
+    expect(records.map((record) => record.displayTitle)).toEqual(['后台命令 2', '后台命令 1', description]);
+    expect(records.map((record) => deriveTaskRailView(record).title)).toEqual(['后台命令 2', '后台命令 1', description]);
+    expect(records.map((record) => record.title)).toEqual([english, english, description]);
+    const [englishRecord] = buildLedgerTaskRecords([tasks[2]], 'session-1', 'en');
+    expect(deriveTaskRailView(englishRecord, null, 'en').title).toBe('Background command');
+  });
+
+  it.each([
+    ['zh', 'shell', '命令未能成功完成', '失败：命令未能成功完成'],
+    ['en', 'pty', 'The command did not finish successfully', 'Failed: The command did not finish successfully'],
+  ] as const)('routes %s %s failure rows through localized copy', (language, source, reason, replayText) => {
+    const raw = 'Process exited with code 1';
+    const task = makeLedgerTask({
+      id: `${source}:copy`, source, sessionId: 'session-1', status: 'failed',
+      failure: { message: raw, exitCode: 1, reason: 'shell_command_failed', category: 'command_failed' },
+      metadata: { recoveryPlan: { summary: '任务失败，退出码 1' } },
+      summary: '/private/tasks/copy.log',
+      outputRefs: [{ id: 'log', taskId: `${source}:copy`, type: 'log', path: '/private/tasks/copy.log', createdAt: 1 }],
+    });
+    const t = languages[language];
+    expect(backgroundTaskFailureCopy(task, t)).toBe(reason);
+    expect(backgroundTaskFailureCopy({ ...task, failure: { message: raw } }, t)).toBe(reason);
+    const previousLanguage = useAppStore.getState().language;
+    useAppStore.setState({ language });
+    try {
+      expect(buildAgentRows({ tasks: [task], nodes: [], members: [] })[0]?.failureReason).toBe(reason);
+    } finally {
+      useAppStore.setState({ language: previousLanguage });
+    }
+    expect(formatTaskStatus(task, t.sessionReplay)).toBe(replayText);
+    expect(buildSessionReplayContext('session-1', {}, [task], t).backgroundTasks[0]?.outputRefs).toEqual([]);
+    expect(formatBlockDetail({
+      type: 'tool_result',
+      timestamp: 1,
+      content: 'Background task started.\n\n<task-id>copy</task-id>\n<output-file>/private/tasks/copy.log</output-file>',
+    }, t.sessionReplay)).toBe(t.backgroundPanel.shellTaskStarted);
+    const [record] = buildLedgerTaskRecords([task], 'session-1', language);
+    expect(record.resumeHint).toBe(reason);
+    expect(record.outputRefs).toEqual([expect.objectContaining({ id: 'log', label: t.taskStatusPanels.runWorkbench.viewLog })]);
+    expect(JSON.stringify(record)).not.toMatch(/Process exited|退出码|copy\.log/);
+  });
+
   it('projects only current-session agent engine ledger status and output refs for TaskPanel', () => {
     const tasks = buildLedgerTaskRecords([
       makeLedgerTask({
@@ -213,6 +272,13 @@ describe('buildLedgerTaskRecords', () => {
     expect(tasks.map((task) => task.title)).not.toContain('Other session run');
   });
 
+  it('carries the ledger source through so the rail can localise model titles', () => {
+    const [record] = buildLedgerTaskRecords([
+      makeLedgerTask({ id: 'delegate:1', sessionId: 'session-1', title: 'Summarize the weekly report', source: 'delegate_task' }),
+    ], 'session-1');
+    expect(record.source).toBe('delegate_task');
+  });
+
   it('does not show ledger tasks without a current session', () => {
     expect(buildLedgerTaskRecords([
       makeLedgerTask({
@@ -254,6 +320,86 @@ describe('buildLedgerTaskRecords', () => {
       status: 'blocked',
       resumeHint: '应用重启后没有找到运行进程，保留日志，可打开日志后重跑。',
     });
+  });
+});
+
+describe('buildLedgerTaskRecords — non-shell step titles localized', () => {
+  const ALL_STATUSES = [
+    'queued',
+    'running',
+    'waiting_input',
+    'stalled',
+    'completed',
+    'failed',
+    'cancelled',
+    'paused',
+    'expired',
+    'orphaned',
+  ] as const satisfies readonly Task['status'][];
+
+  function ledgerTasksFor(statuses: readonly Task['status'][], idPrefix: string): Task[] {
+    return [
+      ...statuses.map((status) => makeLedgerTask({
+        id: `${idPrefix}:${status}`,
+        sessionId: 'session-1',
+        status,
+      })),
+      makeLedgerTask({
+        id: `${idPrefix}:stalled-labelled`,
+        sessionId: 'session-1',
+        status: 'stalled',
+        progress: { label: 'model warm-up' },
+      }),
+    ];
+  }
+
+  it('english step titles contain no CJK for every task status', () => {
+    const tasks = ledgerTasksFor(ALL_STATUSES, 'agent:en');
+    // buildLedgerTaskRecords slices the ledger at 8 rows; cover all statuses in two batches.
+    const records = [
+      ...buildLedgerTaskRecords(tasks.slice(0, 8), 'session-1', 'en'),
+      ...buildLedgerTaskRecords(tasks.slice(8), 'session-1', 'en'),
+    ];
+    expect(records).toHaveLength(tasks.length);
+    const titles = records.map((record) => record.steps[0]?.title ?? '');
+    for (const title of titles) {
+      expect(title).not.toMatch(/[一-鿿]/);
+    }
+    expect(titles).toEqual([
+      'Queued',
+      'Running',
+      'Waiting for input',
+      'Slow to start',
+      'Completed',
+      'Execution failed',
+      'Cancelled',
+      'Paused',
+      'Expired',
+      'Runtime process lost',
+      'Slow to start: model warm-up',
+    ]);
+  });
+
+  it('chinese step titles stay byte-identical for every task status', () => {
+    const tasks = ledgerTasksFor(ALL_STATUSES, 'agent:zh');
+    const records = [
+      ...buildLedgerTaskRecords(tasks.slice(0, 8), 'session-1', 'zh'),
+      ...buildLedgerTaskRecords(tasks.slice(8), 'session-1', 'zh'),
+    ];
+    expect(records).toHaveLength(tasks.length);
+    expect(records.map((record) => record.steps[0]?.title)).toEqual([
+      '排队中',
+      '执行中',
+      '等待输入',
+      '启动变慢',
+      '已完成',
+      '执行失败',
+      '已取消',
+      '已暂停',
+      '已过期',
+      '运行进程已丢失',
+      '启动变慢：model warm-up',
+    ]);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   type AssistantFeedbackState,
 } from '../../../src/renderer/utils/sendWithImmediateAssistantFeedback';
 import { StreamingIndicator } from '../../../src/renderer/components/features/chat/StreamingIndicator';
+import { AssistantFeedbackIndicator } from '../../../src/renderer/components/features/chat/AssistantFeedbackIndicator';
 
 import { useAssistantFeedbackEvents } from '../../../src/renderer/components/features/chat/useAssistantFeedbackEvents';
 import type { AgentEventEnvelope } from '../../../src/shared/contract';
@@ -76,13 +77,7 @@ function PendingSendHarness({ send, liveStage }: {
       )}
       {feedback !== null && (
         <div data-testid="assistant-send-placeholder">
-          <StreamingIndicator
-            startTime={feedback.startedAt}
-            preparationPhase={feedback.phase === 'submitting'
-              ? 'submitting'
-              : feedback.phase === 'queued' ? 'queued' : undefined}
-            waitingReason={feedback.phase === 'waiting_model' ? 'model' : undefined}
-          />
+          <AssistantFeedbackIndicator feedback={feedback} />
         </div>
       )}
     </div>
@@ -137,7 +132,8 @@ describe('ChatView first-turn assistant feedback', () => {
     expect(screen.getAllByTestId('assistant-send-placeholder')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));
-    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('信号传输中，正在等待模型回响…');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain(zh.chat.preparingReply);
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('preparing');
     expect(screen.getAllByTestId('assistant-send-placeholder')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: '首个 delta' }));
@@ -152,7 +148,7 @@ describe('ChatView first-turn assistant feedback', () => {
     fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));
     fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
 
-    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('信号传输中，正在等待模型回响…');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain(zh.chat.preparingReply);
   });
 
   // FU3-FU1-FU1 真跑实录：直接投递（starter 卡）没有 durable 队列，task_start 不带
@@ -232,6 +228,71 @@ describe('ChatView first-turn assistant feedback', () => {
     fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
     fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));
     expect(screen.queryByTestId('assistant-send-placeholder')).toBeNull();
+  });
+
+
+  const taskStart = (cm: string, sid = 'session-1'): AgentEventEnvelope => ({
+    type: 'task_start', sessionId: sid, data: { sessionId: sid, clientMessageId: cm },
+  } as unknown as AgentEventEnvelope);
+
+  it('task_start carrying this send\'s clientMessageId moves submitting to preparing (正在准备…) and keeps it there', () => {
+    render(<PendingSendHarness send={() => new Promise<boolean>(() => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('submitting');
+    emit(taskStart('message-1'));
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('preparing');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent?.trim()).toBe(zh.chat.preparingReply);
+    expect(screen.queryByText(zh.chat.waitingModel)).toBeNull();
+    // never goes backwards
+    fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('preparing');
+  });
+
+  it('ignores a task_start for another clientMessageId or another session', () => {
+    render(<PendingSendHarness send={() => new Promise<boolean>(() => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    emit(taskStart('someone-else'));
+    emit(taskStart('message-1', 'another-session'));
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('submitting');
+  });
+
+  // r4 hole: a context-free turn_start must never advance a queued send.
+  it('turn_start arriving before enqueue_succeeded leaves the send on 正在发送消息… and then on 已排队，正在启动…', () => {
+    render(<PendingSendHarness send={() => new Promise<boolean>(() => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    emit({ type: 'turn_start', data: { turnId: 't-1' }, streamEpoch: 'test', sessionId: 'session-1', seq: 1 } as unknown as AgentEventEnvelope);
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('submitting');
+    fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('queued');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent?.trim()).toBe(zh.chat.queuedStarting);
+  });
+
+  const clearing: AgentEventEnvelope[] = [
+    { type: 'message_delta', data: { text: 'x' }, streamEpoch: 'test', sessionId: 'session-1', seq: 9 },
+    { type: 'stream_chunk', data: { content: 'x' }, streamEpoch: 'test', sessionId: 'session-1', seq: 9 },
+    { type: 'stream_tool_call_start', data: { index: 0, name: 'Write' }, streamEpoch: 'test', sessionId: 'session-1', seq: 9 },
+    { type: 'agent_cancelled', data: {}, streamEpoch: 'test', sessionId: 'session-1', seq: 9 },
+  ] as unknown as AgentEventEnvelope[];
+  it.each(clearing)('preparing indicator clears on $type for the same session and ignores another session', (event) => {
+    render(<PendingSendHarness send={() => new Promise<boolean>(() => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    emit(taskStart('message-1'));
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('preparing');
+    emit({ ...event, sessionId: 'another-session' });
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('preparing');
+    emit(event);
+    expect(screen.queryByTestId('assistant-send-placeholder')).toBeNull();
+  });
+
+  it('queued copy stays until the activation arrives, then becomes 正在准备…', () => {
+    render(<PendingSendHarness send={() => new Promise<boolean>(() => {})} />);
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
+    expect(screen.getByTestId('assistant-send-placeholder').textContent?.trim()).toBe(zh.chat.queuedStarting);
+    emit({ type: 'stream_end', data: {}, sessionId: 'another-session' } as unknown as AgentEventEnvelope);
+    expect(screen.getByTestId('assistant-send-placeholder').textContent?.trim()).toBe(zh.chat.queuedStarting);
+    fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));
+    expect(screen.getByTestId('assistant-send-placeholder').textContent?.trim()).toBe(zh.chat.preparingReply);
   });
 
 });

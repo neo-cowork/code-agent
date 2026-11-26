@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
+import { useI18n } from '../hooks/useI18n';
 import { KeyRound, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { FormField, Input } from './composites/FormField';
 import { Modal } from './primitives/Modal';
@@ -18,6 +19,7 @@ export const PasswordResetModal: React.FC = () => {
     setShowPasswordResetModal,
     setError,
   } = useAuthStore();
+  const { t } = useI18n();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -39,13 +41,13 @@ export const PasswordResetModal: React.FC = () => {
 
     // Validate passwords match
     if (password !== confirmPassword) {
-      setError('两次输入的密码不一致');
+      setError(t.auth.passwordReset.mismatchError);
       return;
     }
 
     // Validate password strength
     if (password.length < 6) {
-      setError('密码长度至少为6位');
+      setError(t.auth.passwordReset.tooShortError);
       return;
     }
 
@@ -59,7 +61,7 @@ export const PasswordResetModal: React.FC = () => {
     <Modal
       isOpen={showPasswordResetModal}
       onClose={onClose}
-      title="设置新密码"
+      title={t.auth.passwordReset.title}
       size="md"
     >
       {/* Error message */}
@@ -74,13 +76,13 @@ export const PasswordResetModal: React.FC = () => {
         <div className="py-6 text-center space-y-4">
           <CheckCircle className="w-12 h-12 text-badge-success mx-auto" />
           <div className="space-y-2">
-            <p className="text-zinc-200 font-medium">密码已更新</p>
+            <p className="text-zinc-200 font-medium">{t.auth.passwordReset.successTitle}</p>
             <p className="text-zinc-400 text-sm">
-              您的密码已成功重置，现在可以使用新密码登录了。
+              {t.auth.passwordReset.successBody}
             </p>
           </div>
           <Button onClick={onClose} className="mt-4 px-6">
-            完成
+            {t.auth.passwordReset.done}
           </Button>
         </div>
       ) : (
@@ -88,16 +90,16 @@ export const PasswordResetModal: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20 text-badge-info text-sm mb-4">
             <KeyRound className="w-4 h-4 flex-shrink-0" />
-            <span>请设置您的新密码</span>
+            <span>{t.auth.passwordReset.infoBanner}</span>
           </div>
 
-          <FormField label="新密码">
+          <FormField label={t.auth.passwordReset.newPassword}>
             <div className="relative">
               <Input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少6位"
+                placeholder={t.auth.passwordReset.newPasswordPlaceholder}
                 required
                 minLength={6}
               />
@@ -115,12 +117,12 @@ export const PasswordResetModal: React.FC = () => {
             </div>
           </FormField>
 
-          <FormField label="确认密码">
+          <FormField label={t.auth.passwordReset.confirmPassword}>
             <Input
               type={showPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="再次输入密码"
+              placeholder={t.auth.passwordReset.confirmPasswordPlaceholder}
               required
               minLength={6}
             />
@@ -150,12 +152,12 @@ export const PasswordResetModal: React.FC = () => {
               </div>
               <p className="text-xs text-zinc-500">
                 {password.length < 6
-                  ? '密码太短'
+                  ? t.auth.passwordReset.strengthTooShort
                   : password.length < 8
-                  ? '密码强度：弱'
+                  ? t.auth.passwordReset.strengthWeak
                   : password.length < 10 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)
-                  ? '密码强度：中'
-                  : '密码强度：强'}
+                  ? t.auth.passwordReset.strengthMedium
+                  : t.auth.passwordReset.strengthStrong}
               </p>
             </div>
           )}
@@ -167,7 +169,7 @@ export const PasswordResetModal: React.FC = () => {
             disabled={password !== confirmPassword || password.length < 6}
             className="min-h-[42px]"
           >
-            确认修改
+            {t.auth.passwordReset.submit}
           </Button>
         </form>
       )}

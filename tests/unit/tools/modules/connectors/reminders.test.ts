@@ -11,6 +11,11 @@ import type {
 
 const execMock = vi.fn();
 const getMock = vi.fn();
+const configState = vi.hoisted(() => ({ language: 'zh' }));
+
+vi.mock('../../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
+}));
 
 vi.mock('../../../../../src/host/connectors', () => ({
   getConnectorRegistry: () => ({
@@ -51,6 +56,7 @@ async function run(
 }
 
 beforeEach(() => {
+  configState.language = 'zh';
   execMock.mockReset();
   getMock.mockReset();
   getMock.mockReturnValue({ execute: execMock });
@@ -96,6 +102,19 @@ describe('remindersModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
 
+    it('get_status not_authorized carries System Settings guidance from detailCode', async () => {
+      execMock.mockResolvedValue({
+        data: { connected: false, errorCode: 'not_authorized', detailCode: 'automation_not_authorized', capabilities: [] },
+      });
+      const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('not_authorized');
+        expect(result.error).toContain('System Settings');
+        expect(result.error).not.toBe('Reminders access denied');
+      }
+    });
+
     it('returns unavailable status when get_status connector is missing', async () => {
       getMock.mockReturnValue(undefined);
       const result = await run({ action: 'get_status' });
@@ -104,7 +123,7 @@ describe('remindersModule (native)', () => {
         expect(result.output).toContain(
           'Reminders is not connected on this computer, so reminders cannot be read.',
         );
-        expect(result.output).toContain('Connectors page');
+        expect(result.meta?.modelGuidance).toContain('Connectors page');
         expect(result.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
         expect(result.output).not.toContain('Capabilities:');
         expect(result.meta).toMatchObject({
@@ -164,6 +183,21 @@ describe('remindersModule (native)', () => {
       if (!lists.ok) expect(lists.error).not.toMatch(/列表名称.*减少读取条数/);
     });
 
+    it('shows the English read-timeout guidance in the failure card', async () => {
+      configState.language = 'en';
+      execMock.mockRejectedValue(Object.assign(
+        new Error('Command failed: osascript -e tell application "Reminders"'),
+        { code: 'ETIMEDOUT' },
+      ));
+      const result = await run({ action: 'list_reminders' });
+      expect(result).toMatchObject({ ok: false, code: 'timeout' });
+      if (result.ok) throw new Error('Expected a read timeout');
+      expect(result.error).toContain('try a specific list name or a lower limit');
+      expect(result.userMessage).toBe(result.error);
+      expect(result.userMessage).not.toMatch(/Command failed|osascript|did not confirm the action/);
+      expect(execMock).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps connector validation errors intact instead of rewriting to a retry hint', async () => {
       execMock.mockRejectedValue(new Error('list is required for get_reminder'));
       const result = await run({ action: 'get_status' });
@@ -210,7 +244,7 @@ describe('remindersModule (native)', () => {
           'Reminders is not connected right now, so reminders cannot be read.',
         );
         expect(disconnected.output).toContain('Automation permission needed.');
-        expect(disconnected.output).toContain('Connectors page');
+        expect(disconnected.meta?.modelGuidance).toContain('Connectors page');
         expect(disconnected.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
         expect(disconnected.output).not.toContain('Capabilities:');
       }

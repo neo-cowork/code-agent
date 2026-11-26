@@ -55,11 +55,14 @@ export interface PermissionRequestDetails {
   purpose?: string;
   userRequest?: { text: string; truncated: boolean };
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];
   affectedPath?: string;
   affectedFileCount?: number;
+  /** Host-owned：details.path 按真实上传 / 临时根分类的结论。 */
+  pathDisplay?: { path: string; kind: 'upload' | 'temp'; rest: string };
   /** Host 对写入目标的 stat 结论；渲染层只消费，缺省按 regular。 */
   targetKind?: FileTargetKind;
   /** B4：external 工具的授权 target 精确串（收件人/频道 id）；有值时审批卡点一行去向。 */
@@ -75,6 +78,8 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** Browser 上传审批：host 只给「.../<文件名>」的展示串，卡面只取文件名。 */
+  file?: string;
   /** calendar 读取卡的时间窗与日历名（host 原参数透传，缺省走默认窗口）。 */
   from_ms?: unknown;
   to_ms?: unknown;
@@ -82,6 +87,10 @@ export interface PermissionRequestDetails {
   /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
   requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
   access?: string;
+  /** set_role_proactivity：目标角色与改前/改后配置（宿主结构化数据，卡片按界面语言拼行）。 */
+  roleId?: string;
+  before?: unknown;
+  after?: unknown;
   // E2: 确认门控预览
   preview?: {
     type: 'diff' | 'command' | 'network' | 'generic';
@@ -112,6 +121,7 @@ export interface PermissionRequestDetails {
 export interface PermissionRequest {
   id: string;
   sessionId?: string;
+  agentId?: string;
   forceConfirm?: boolean;
   tool: string;
   type: PermissionType;

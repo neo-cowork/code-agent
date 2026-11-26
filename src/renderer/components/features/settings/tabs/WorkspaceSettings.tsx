@@ -8,7 +8,7 @@
 // settings.workspace.recentDirectories（main 侧 setCurrent/selectDirectory 走
 // configService.addRecentDirectory），表格行的"移除"调用 removeRecent。
 // ============================================================================
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Clock,
@@ -42,6 +42,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { MissingWorkspaceDirectoryNotice } from './MissingWorkspaceDirectoryNotice';
 import { WorkspaceDirectorySummaryCard } from './WorkspaceDirectorySummaryCard';
 import {
   BROWSER_OPTIONS,
@@ -83,6 +84,8 @@ export const WorkspaceSettings: React.FC = () => {
   const browserSession = useWorkbenchBrowserSession();
 
   const [currentDir, setCurrentDir] = useState<string | null>(null);
+  const pickAttempt = useRef(0);
+  const [pickFeedback, setPickFeedback] = useState<{ dir: string | null; kind: 'nothingChosen' | 'failed' } | null>(null);
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState<RecentDirRow | null>(null);
@@ -151,6 +154,10 @@ export const WorkspaceSettings: React.FC = () => {
   }, [selectedDetail]);
 
   const displayedCurrentDir = currentDir ?? workingDirectory;
+  useEffect(() => {
+    pickAttempt.current += 1;
+    setPickFeedback(null);
+  }, [displayedCurrentDir]);
   const rows = useMemo(() => buildRecentRows(displayedCurrentDir, recentDirs), [displayedCurrentDir, recentDirs]);
   const configScopeTiles = useMemo(() => buildConfigScopeTiles(configScope), [configScope]);
   const browserOptions = useMemo(
@@ -179,17 +186,23 @@ export const WorkspaceSettings: React.FC = () => {
   }, []);
 
   const handlePickDirectory = useCallback(async () => {
+    const attempt = ++pickAttempt.current;
+    setPickFeedback(null);
     try {
       const next = await pickWorkingDirectory(workspaceText.actions.chooseDirectory);
-      if (next) {
-        setCurrentDir(next);
-        setWorkingDirectory(next);
-        await load();
+      if (!next) {
+        if (attempt === pickAttempt.current) setPickFeedback({ dir: displayedCurrentDir, kind: 'nothingChosen' });
+        return;
       }
+      setPickFeedback(null);
+      setCurrentDir(next);
+      setWorkingDirectory(next);
+      await load();
     } catch (error) {
       logger.error('Failed to pick directory', error);
+      if (attempt === pickAttempt.current) setPickFeedback({ dir: displayedCurrentDir, kind: 'failed' });
     }
-  }, [load, setWorkingDirectory, workspaceText.actions.chooseDirectory]);
+  }, [displayedCurrentDir, load, setWorkingDirectory, workspaceText.actions.chooseDirectory]);
 
   const handleSwitchTo = useCallback(async (path: string) => {
     try {
@@ -295,19 +308,26 @@ export const WorkspaceSettings: React.FC = () => {
             ))}
           </div>
           {displayedCurrentDir && (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
-              <Folder className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="flex-1 truncate font-mono" title={displayedCurrentDir}>{displayedCurrentDir}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={isWebMode()}
-                onClick={() => handleReveal(displayedCurrentDir)}
-                leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
-              >
-                {workspaceText.actions.revealInFinder}
-              </Button>
-            </div>
+            <>
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
+                <Folder className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="flex-1 truncate font-mono" title={displayedCurrentDir}>{displayedCurrentDir}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={isWebMode()}
+                  onClick={() => handleReveal(displayedCurrentDir)}
+                  leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
+                >
+                  {workspaceText.actions.revealInFinder}
+                </Button>
+              </div>
+              <MissingWorkspaceDirectoryNotice
+                dir={displayedCurrentDir}
+                pickFeedback={pickFeedback?.dir === displayedCurrentDir ? pickFeedback.kind : null}
+                onReselect={() => { void handlePickDirectory(); }}
+              />
+            </>
           )}
 
           <div className="border-t border-zinc-700/60 px-3 py-3">

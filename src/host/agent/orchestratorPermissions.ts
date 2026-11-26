@@ -3,12 +3,11 @@
 // ============================================================================
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
-import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
-import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { OUTBOUND_APPROVAL_DEGRADE, PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
@@ -19,8 +18,9 @@ import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOn
 import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
-import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { terminalApprovalPreviewText } from '../tools/modules/terminal/terminalApprovalPreview';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
 import {
@@ -29,20 +29,21 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
-import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
-import { getConfirmationGate } from './confirmationGate';
-import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
+import { commandGrantKey } from '../permissions/commandGrantTarget';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
-import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
+import { matchToolGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
 import { holdStallClock } from './stallObserver';
 import { buildApprovalNotification } from '../services/infra/approvalNotification';
 
+// 放在其余 import 之后：humanGrantPolicy 的依赖链经环路回到本模块，靠前会让依赖本模块的
+// 通知链测试（parkedApprovalBannerClickRoute）装载顺序错乱。
+import { recordHumanGrant } from '../permissions/humanGrantPolicy';
 const logger = createLogger('AgentOrchestrator');
 
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
@@ -92,82 +93,19 @@ function isApproveResponse(response: PermissionResponse): boolean {
 function buildParkedArgsPreview(request: PermissionRequest): string | undefined {
   const parts = [
     request.details?.command,
+    terminalApprovalPreviewText(request.tool, request.details?.preview),
     request.details?.path,
     request.details?.filePath,
     request.details?.url,
     request.details?.changes,
+    // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：参数摘要显示「会发出的正文」。
+    request.details?.replyText,
   ].filter((part): part is string => typeof part === 'string' && part.length > 0);
   if (parts.length === 0) return undefined;
   const redacted = redactCommandSecrets(parts.join(' · '));
   return redacted.length > PARKED_APPROVAL_PREVIEW_MAX_CHARS
     ? `${redacted.slice(0, PARKED_APPROVAL_PREVIEW_MAX_CHARS - 1)}…`
     : redacted;
-}
-
-/** 真人点的会话/始终/两档工具授权。带 targetApp 时只记该应用，不记工具级放行。
- * plain allow 不记。allow_run/allow_24h 铸进 toolGrantStore（target 取透传的
- * standingGrantTarget，无 target 的工具级授权不放大到任何去向）。
- * 带 updatedArgs 的非 allow 应答会被 toAskResult 整体 fail-closed 拒——那种应答
- * 不铸造任何记忆：用户审的是改后内容，拒绝它不能换算成对原稿的任何档位授权。 */
-function recordHumanGrant(
-  response: PermissionResponse,
-  request: PermissionRequest,
-  updatedArgs?: Record<string, unknown>,
-): void {
-  // ADR-088 §4 三层保证之 3（host 侧永不铸造）：敏感步骤交回的应答**整体**跳过铸造——
-  // 包括 allow_session 在无 targetApp 时回落 recordApproval 的会话级工具放行记录
-  // （那同样是本流程不许产生的授权）。任何形态的记住应答都降级为一次性语义。
-  if (
-    request.reasonCode === PermissionRequestReason.SensitiveStepHandback
-    || request.details?.sensitiveStep
-  ) {
-    logger.info('Sensitive step hand-back answer never mints a grant', {
-      tool: request.tool,
-      response,
-    });
-    return;
-  }
-  if (updatedArgs && response !== 'allow') return;
-  // 与聊天卡 hideStandingGrants 等价的收口：可编辑写回工具 / forceConfirm / 无 target 的 external
-  // 只能一次性放行，两档工具授权（run/24h）一律不铸，避免收件箱点击放大成全局免审。
-  if (
-    (response === 'allow_run' || response === 'allow_24h')
-    && (
-      isEditableTool(request.tool)
-      || request.forceConfirm === true
-      || (isExternalSideEffectTool(request.tool) && !request.details?.standingGrantTarget)
-    )
-  ) {
-    logger.warn('Tier grant refused for editable/forceConfirm/untargeted-external request: treated as allow once', {
-      tool: request.tool,
-      requestId: request.id,
-      response,
-    });
-    return;
-  }
-  if (recordBrowserSessionGrant(response, request)) return;
-  const identity = connectorToolGrantIdentity(request.tool, request.details?.standingGrantTarget ?? null);
-  if (!identity) return;
-  const app = request.details?.targetApp;
-  if (response === 'allow_session' && request.sessionId) {
-    if (app?.name) mintAppGrantSession(request.sessionId, app);
-    else getConfirmationGate().recordApproval(request.sessionId, request.tool);
-  } else if (response === 'allow_standing' && app?.name) {
-    mintAppGrantStanding(app);
-  } else if (response === 'allow_run' && !app?.name) {
-    // run 档没有会话就无处归属（重启恢复/无会话应答）：不落任何记忆，warn 留痕，
-    // 下一次同类调用照常询问——fail-safe 而非静默放大成全局。
-    if (!request.sessionId) {
-      logger.warn('allow_run response without sessionId: run-tier grant not minted, next call will ask again', {
-        tool: request.tool,
-        requestId: request.id,
-      });
-    } else {
-      mintToolRunGrant(request.sessionId, identity.tool, identity.target);
-    }
-  } else if (response === 'allow_24h' && !app?.name) {
-    mintTool24hGrant(identity.tool, identity.target);
-  }
 }
 
 /**
@@ -208,6 +146,7 @@ export class OrchestratorPermissionIsland {
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
     parked?: boolean;
+    expiringToDraft?: boolean;
   }> = new Map();
   private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
   private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
@@ -303,7 +242,43 @@ export class OrchestratorPermissionIsland {
       logger.warn('Answered approval notification retract failed', err);
     }
     pending.resolve(response, undefined, updatedArgs);
+    if (response === 'allow_run' || response === 'allow_24h' || response === 'allow_session') {
+      this.settleSiblingsCoveredByGrant(pending.request);
+    }
     return 'delivered';
+  }
+
+  /**
+   * 模型一次并发发出几个同类调用时，卡是同时弹的：用户在第一张上点「本次任务内允许」，
+   * 其余几张已在授权之前问出，preAsk 碰不到它们（11-17 真机：连弹三张查看日程）。
+   * 只放行 host 标过 grantEligible（询问时无任何强制确认）且现在确能命中授权的同会话请求，
+   * 按一次性 allow 结、不再铸权，并告诉界面这张已在别处裁决。
+   */
+  private settleSiblingsCoveredByGrant(answered: PermissionRequest): void {
+    const sessionId = answered.sessionId;
+    if (!sessionId) return;
+    for (const [id, sibling] of [...this.pendingPermissions]) {
+      const req = sibling.request;
+      if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
+      const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
+      if (!identity) continue;
+      const commandTarget = commandGrantKey(req.tool, req.details?.commandGrantTarget, sessionId, req.details);
+      const tier = commandTarget
+        ? matchToolGrant(sessionId, identity.tool, identity.target, undefined, commandTarget)
+        : matchToolGrant(sessionId, identity.tool, identity.target);
+      if (!tier) continue;
+      // 与 preAsk 同判据：本会话刚被拒过的同目标动作不因授权顺带放行。
+      if (getDenialRegistry().refuseIfGoalDenied(req, { log: false })) continue;
+      logger.info('Pending approval settled by a grant answered on a sibling card', { requestId: id, tool: req.tool, via: answered.id });
+      this.pendingPermissions.delete(id);
+      try {
+        notificationService.retractNeedsInput(id);
+      } catch (err) {
+        logger.warn('Sibling approval notification retract failed', err);
+      }
+      this.onEvent({ type: 'permission_request', data: { ...req, resolved: true } });
+      sibling.resolve('allow');
+    }
   }
 
   /**
@@ -344,20 +319,23 @@ export class OrchestratorPermissionIsland {
     response: PermissionResponse,
     feedbackOverride?: string,
     machineDenial?: PermissionDenialSource,
+    draft?: InsertPendingApprovalInput,
   ): ParkedResolution {
     const pending = this.pendingPermissions.get(id);
     if (!pending) return 'lost';
+    if (pending.expiringToDraft && isApproveResponse(response)) return 'storage_unavailable';
     const repo = this.getPendingApprovalRepo();
     if (repo) {
       const status = isApproveResponse(response) ? 'approved' : 'rejected';
       let changes: number;
       try {
-        changes = repo.resolve({
+        const settlement = {
           id,
           status,
           feedback: feedbackOverride ?? null,
           resolvedAt: Date.now(),
-        });
+        } as const;
+        changes = draft ? repo.replaceTimedOutApprovalWithDraft(settlement, draft) : repo.resolve(settlement);
       } catch (err) {
         logger.warn(`Parked approval repo.resolve failed for ${id}, keeping it decidable`, err);
         // 瞬时写失败不动内存 Promise，也不许上层据此改台账终态——用户再点一次要能成。
@@ -796,21 +774,7 @@ export class OrchestratorPermissionIsland {
           : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
         if (degradeDeadline) {
-          logger.warn(`Unattended parked approval ${fullRequest.id} unanswered, degrading to deny`);
-          const degraded = this.resolveParkedApproval(
-            fullRequest.id,
-            'deny',
-            buildUnattendedDegradeFeedback(fullRequest.tool, timeoutMs),
-            'timeout',
-          );
-          if (degraded && fullRequest.sessionId) {
-            noteUnattendedApprovalDenial(fullRequest.sessionId, {
-              tool: fullRequest.tool,
-              argsPreview: fullRequest.argsPreview,
-              requestedAt: fullRequest.timestamp,
-              code: UNATTENDED_APPROVAL_TIMEOUT,
-            });
-          }
+          this.degradeParkedApproval(fullRequest, repo, timeoutMs);
           return;
         }
         logger.warn(
@@ -836,7 +800,9 @@ export class OrchestratorPermissionIsland {
       // 预览先挂到 fullRequest 再登记内存条目：会话卡（permission_request 事件）与
       // listPendingRequests 快照拿的是同一个对象引用，只算一份。
       const argsPreview = buildParkedArgsPreview(fullRequest);
-      if (argsPreview) fullRequest.argsPreview = argsPreview;
+      if (argsPreview && !terminalApprovalPreviewText(fullRequest.tool, fullRequest.details.preview)) {
+        fullRequest.argsPreview = argsPreview;
+      }
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,
@@ -864,6 +830,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...(hasBackgroundRunIdentity(fullRequest) ? { backgroundLane: true as const } : {}),
         ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
@@ -887,10 +854,15 @@ export class OrchestratorPermissionIsland {
           ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${
               fullRequest.details?.requestedAccess === 'read_write' ? '读写' : '只读'
             }）${fullRequest.reason ? `· ${fullRequest.reason}` : ''}`
-          : undefined,
+          // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的去向
+          // （群名），不裸奔工具内部名；正文在 argsPreview（参数行）。
+          : typeof fullRequest.details?.replyDestination === 'string' && fullRequest.details.replyDestination
+            ? `回复 ${fullRequest.details.replyDestination}`
+            : undefined,
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.targetApp ? { targetApp: fullRequest.details.targetApp } : {}),
         ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
@@ -914,10 +886,11 @@ export class OrchestratorPermissionIsland {
         const ownChat = this.isDetachedRun()
           && !modes.isUnattendedSession(fullRequest.sessionId)
           && !modes.isLiveVoiceSession(fullRequest.sessionId);
+        const noticeContext = modes.isFirstWakeSession(fullRequest.sessionId) ? 'first_wake' : ownChat ? 'approval' : 'parked';
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            ...buildApprovalNotification(fullRequest.tool, ownChat ? 'approval' : 'parked'),
+            ...buildApprovalNotification(fullRequest.tool, noticeContext, fullRequest.sessionId),
             tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
@@ -936,5 +909,49 @@ export class OrchestratorPermissionIsland {
 
       this.onEvent({ type: 'permission_request', data: fullRequest });
     }).finally(releaseHold);
+  }
+
+  private degradeParkedApproval(request: PermissionRequest, repo: PendingApprovalRepository, timeoutMs: number): void {
+    type Draft = Awaited<ReturnType<typeof import('./outboundDraft').prepareOutboundDraft>>;
+    const finish = (draft?: Draft) => {
+      let outcome = this.tryResolveParkedApproval(
+        request.id, 'deny', buildUnattendedDegradeFeedback(request.tool, timeoutMs, draft && (draft.payload.scheduledTaskName ?? '')), 'timeout', draft,
+      );
+      if (draft && outcome === 'storage_unavailable') {
+        logger.warn('Unattended mail draft could not be saved', { requestId: request.id });
+        draft = undefined;
+        outcome = this.tryResolveParkedApproval(
+          request.id, 'deny', buildUnattendedDegradeFeedback(request.tool, timeoutMs), 'timeout',
+        );
+      }
+      if (outcome !== 'resolved') return;
+      if (draft) logger.info('Unattended mail draft created', { requestId: request.id, draftId: draft.id });
+      else logger.warn(`Unattended parked approval ${request.id} unanswered, degrading to deny`);
+      if (request.sessionId) noteUnattendedApprovalDenial(request.sessionId, {
+        tool: request.tool,
+        argsPreview: request.argsPreview,
+        requestedAt: request.timestamp,
+        code: draft ? OUTBOUND_APPROVAL_DEGRADE.saved.code : UNATTENDED_APPROVAL_TIMEOUT,
+      });
+    };
+    const modes = getPermissionModeManager();
+    if (request.tool === 'mail_send' && modes.isUnattendedSession(request.sessionId)
+      && modes.isUnattendedApprovalDegrade(request.sessionId)) {
+      const pending = this.pendingPermissions.get(request.id);
+      if (!pending) return;
+      pending.expiringToDraft = true;
+      void import('./outboundDraft')
+        .then(({ prepareOutboundDraft }) => prepareOutboundDraft(repo, request.id, request.tool))
+        .catch(() => {
+          logger.warn('Unattended mail draft could not be prepared', { requestId: request.id, reason: 'draft_module_unavailable' });
+          return undefined;
+        })
+        .then((draft) => {
+          pending.expiringToDraft = false;
+          finish(draft);
+        });
+    } else {
+      finish();
+    }
   }
 }

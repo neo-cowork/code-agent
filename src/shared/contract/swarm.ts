@@ -66,6 +66,11 @@ export function getSwarmTreeScopeKey(
   return [scope.sessionId, scope.treeId].map(encodeScopePart).join(SCOPED_SWARM_SEPARATOR);
 }
 
+/** Logical run id for the visibility trace of a standalone spawn. */
+export function createSingleSpawnRunId(agentId: string): string {
+  return `single_${agentId}`;
+}
+
 /** Opaque persistence identity for trace/ledger repositories with a single id key. */
 export function createSwarmTraceStorageId(scope: SwarmRunScope): string {
   return [
@@ -208,7 +213,10 @@ export interface SwarmAgentContextSnapshot {
   warningLevel: ContextHealthWarningLevel;
   lastUpdated: number;
   tools: string[];
+  /** 成员每次 Bash 调用的 arguments.description 与命令（最近 6 条，按调用序）；渲染端过滤后才可上屏。 */
+  bashSteps?: Array<{ description?: string; command: string; callId?: string; notRun?: boolean }>;
   attachments: string[];
+  guiDisclosures?: Array<{ app: string; callId: string }>;
   previews: SwarmAgentContextPreview[];
   truncatedMessages: number;
 }

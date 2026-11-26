@@ -107,6 +107,11 @@ export interface ProjectSource {
   role: ProjectSourceRole;
   access: ProjectSourceAccess;
   trustState: ProjectSourceTrustState;
+  /**
+   * Set by getProjectDetail when this source currently fails the trust gate.
+   * Absent when the source is healthy. trustState stays blocked for existing consumers.
+   */
+  trustFailureKind?: ProjectSourceTrustFailureKind;
   identityDev?: string | null;
   identityIno?: string | null;
   identityBirthtimeNs?: string | null;
@@ -172,6 +177,11 @@ export interface ProjectCapabilitySelection {
 export interface ProjectWithActivity extends Project {
   activeTopicCount: number;
   lastActivityAt: number | null;
+  /**
+   * 默认侧栏能看见的会话数：未删除、未归档、且属于当前登录用户
+   * （未登录则 user_id 为空）。SQL 全量计数，不看已加载的那一页。
+   */
+  visibleSessionCount: number;
 }
 
 /** 项目详情聚合（中心视图数据源） */
@@ -237,6 +247,12 @@ export const UNSORTED_PROJECT_NAME = '未分类';
  * 不钉的话会话会被挪进 `<数据目录>-work` 的自动项目，跑出手机的项目授权（N-MOBILE-DEFAULT-PROJECT，09-17 模拟器实测）。
  */
 export const SESSION_PROJECT_PINNED_METADATA_KEY = 'projectPinned';
+
+/**
+ * 创建会话时显式指定的项目不存在、已删除或已归档。
+ * host 抛这个稳定 code，renderer 译成用户可见文案；不许静默落到未分类。
+ */
+export const SESSION_PROJECT_UNAVAILABLE = 'SESSION_PROJECT_UNAVAILABLE';
 
 /** 新建项目入参 */
 export interface CreateProjectInput {

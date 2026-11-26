@@ -2,9 +2,13 @@ import { formatDateTime } from '../../../../utils/formatDateTime';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { estimateScheduleRuns } from '@shared/cronScheduleEstimate';
+import type { CronJobExecution } from '@shared/contract/cron';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
 import { formatCronScheduleLabelWithZone } from '../../../../utils/formatCronJobTime';
-import { redactCronDisplayText } from '../../cron/types';
+import { languages } from '../../../../i18n';
+import { formatScheduleRunCount } from '../../../../i18n/cronScheduleEstimate';
+import { formatRunCostUsd, redactCronDisplayText } from '../../cron/types';
 
 interface ScheduleConfirmLabels {
   what: string;
@@ -31,9 +35,10 @@ export interface ScheduleEventConfirmLabels {
 }
 
 interface ScheduleConfirmRow {
-  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail';
+  key: 'what' | 'when' | 'estimate' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail';
   label: string;
   value: string;
+  hint?: string;
 }
 
 export interface NormalizedScheduleDraft {
@@ -75,6 +80,18 @@ function readRestatement(value: unknown): ScheduleRestatement | undefined {
 // 校验失败返回 undefined，由 normalizeScheduleDraft 判草案无效（与缺 action 同等处理）：
 // 缺 schedule 的草案走到确认一步也会被 host 拒掉，不能出卡。
 // weeks 是契约遗留单位，展示标签没有对应文案，按无效处理。
+// 事件草案的两项可选限额：模型给的一句话筛选 + 每小时上限；空/非数不落键（host 缺省生效）。
+function readEventLimits(value: Record<string, unknown>): { prefilter?: string; maxRunsPerHour?: number } {
+  const prefilter = asTrimmedString(value.prefilter).slice(0, CRON_EVENT_TRIGGER.MAX_PREFILTER_CHARS);
+  const cap = value.maxRunsPerHour;
+  return {
+    ...(prefilter ? { prefilter } : {}),
+    ...(typeof cap === 'number' && Number.isFinite(cap)
+      ? { maxRunsPerHour: Math.min(CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR, Math.max(CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR, Math.floor(cap))) }
+      : {}),
+  };
+}
+
 function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | undefined {
   if (!isPlainObject(value)) return undefined;
   switch (asTrimmedString(value.type)) {
@@ -103,6 +120,7 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
       // accountId 恒为 string（草稿期可为空串 = 还没选，共享校验器据此禁确认）；
       // chatId 空串不落键（= 任意会话，空串下发给 host 会绑死不存在的会话）。
       const accountId = asTrimmedString(value.accountId);
+      const limits = readEventLimits(value);
       if (asTrimmedString(value.source) === 'channel') {
         const chatId = asTrimmedString(value.chatId);
         return {
@@ -111,6 +129,7 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
           eventName: 'message',
           accountId,
           ...(chatId ? { chatId } : {}),
+          ...limits,
         };
       }
       // connector:mail：mailbox 可选（缺省 INBOX，空串不落键——空 mailbox 下发给
@@ -124,6 +143,7 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
           eventName: 'message',
           accountId,
           ...(mailbox ? { mailbox } : {}),
+          ...limits,
         };
       }
       return undefined;
@@ -222,6 +242,7 @@ export function buildScheduleConfirmRows(
   labels: ScheduleConfirmLabels,
   lang: CronHumanLang = 'zh',
   eventLabels?: ScheduleEventConfirmLabels,
+  estimateHistory?: readonly CronJobExecution[],
 ): readonly ScheduleConfirmRow[] {
   // 草案已经过 normalizeScheduleDraft，但这里仍按不可信输入读：任何字段非字符串都当缺失，不抛错。
   const input = draft.input as unknown as Record<string, unknown>;
@@ -283,10 +304,34 @@ export function buildScheduleConfirmRows(
     ];
   }
 
-  return [
+  const actionType = draft.input.action?.type;
+  const estimate = estimateHistory && schedule && actionType
+    ? estimateScheduleRuns(schedule, draft.input.runsOn, actionType, estimateHistory)
+    : undefined;
+  const rows: ScheduleConfirmRow[] = [
     { key: 'what', label: labels.what, value: what },
     { key: 'when', label: labels.when, value: when },
-    ...(isAgentAction ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }] : []),
-    { key: 'result', label: labels.result, value: result },
   ];
+  if (estimate) {
+    const copy = languages[lang].cronScheduleEstimate;
+    const cadence = formatScheduleRunCount(copy, estimate);
+    const { cost } = estimate;
+    const costText = {
+      usd: cost.kind === 'usd' ? copy.usd(formatRunCostUsd(cost.perDayUsd)) : '',
+      'flat-fee': copy.flatFee,
+      unknown: copy.unknown,
+      none: '',
+    }[cost.kind];
+    rows.push({
+      key: 'estimate',
+      label: copy.label,
+      value: costText ? `${cadence} · ${costText}` : cadence,
+      hint: estimate.highlight
+        ? (cost.kind === 'none' ? copy.frequentWithoutModel : copy.frequent)
+        : undefined,
+    });
+  }
+  if (isAgentAction) rows.push({ key: 'notifyWhen', label: labels.notifyWhen, value: notifyWhen });
+  rows.push({ key: 'result', label: labels.result, value: result });
+  return rows;
 }

@@ -13,6 +13,8 @@ import { Clock3 } from 'lucide-react';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { useChannelCatalog } from './useChannelCatalog';
+import { useArchiveProjectName } from './useArchiveProjectName';
+import { useScheduleEstimateHistory } from './useScheduleEstimateHistory';
 import {
   buildSavedRoutineRestateRows,
   resolveSavedRoutineChannelLabel,
@@ -50,6 +52,9 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
     [input.resultChannel, accounts, conversationsByAccount],
   );
 
+  const archiveProjectName = useArchiveProjectName(input.action.type === 'agent' ? input.action.libraryProjectId : undefined);
+  const estimateHistory = useScheduleEstimateHistory(input);
+
   const rows = useMemo(() => buildSavedRoutineRestateRows({
     job: input,
     channelLabel,
@@ -65,10 +70,14 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
       savedRolePrefix: cc.savedRestateRolePrefix,
       savedStatusLabel: cc.savedRestateStatusLabel,
       savedStatusPaused: cc.savedRestateStatusPaused,
+      archiveLabel: cc.savedRestateArchiveLabel,
+      archiveUnknown: cc.savedRestateArchiveUnknown,
     },
+    archiveProjectName,
     lang: language,
     notifyWhenRow: true,
-  }), [input, channelLabel, sc, cc, language]);
+    estimateHistory,
+  }), [input, channelLabel, archiveProjectName, sc, cc, language, estimateHistory]);
 
   return (
     <div data-testid="cron-pending-routine-restate" className="space-y-3">
@@ -88,7 +97,7 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
         {rows.map((row) => (
           <div
             key={row.key}
-            className="grid grid-cols-[auto_1fr] gap-3 rounded-md bg-indigo-500/5 px-2.5 py-1.5"
+            className={`grid grid-cols-[auto_1fr] gap-3 rounded-md px-2.5 py-1.5 ${row.hint ? 'bg-amber-500/10' : 'bg-indigo-500/5'}`}
             data-pending-routine-row={row.key}
           >
             <span className="text-[10px] text-zinc-500">{row.label}</span>
@@ -97,6 +106,7 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
               data-pending-routine-value={row.key}
             >
               {row.value}
+              {row.hint && <span className="block text-badge-warning">{row.hint}</span>}
             </span>
           </div>
         ))}

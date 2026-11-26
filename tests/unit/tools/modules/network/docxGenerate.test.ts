@@ -199,6 +199,48 @@ describe('docxGenerateModule (native)', () => {
     });
   });
 
+  describe('meeting-minutes labels (N-FIX-DOCX-MARKDOWN-STAR-LEAK-AND-OUTPUT-DIR-FU1)', () => {
+    const boldRunFor = (xml: string, label: string) =>
+      new RegExp(`<w:r>(?:(?!</w:r>)[\\s\\S])*<w:b/>(?:(?!</w:r>)[\\s\\S])*<w:t[^>]*>${label}</w:t>`).test(xml);
+
+    it('bolds transcript-style paragraph labels and leaves no star', async () => {
+      const outputPath = join(workingDir, 'minutes-paragraphs.docx');
+      const content = [
+        '**会议时间**：2026年11月20日',
+        '',
+        '**主持人**：陈静',
+        '',
+        '**参会人员**：王磊、李娜、赵敏',
+      ].join('\n');
+      const result = await run(workingDir, { title: '会议纪要', content, output_path: outputPath });
+      expect(result.ok).toBe(true);
+      const xml = await documentXml(outputPath);
+      for (const label of ['会议时间', '主持人', '参会人员']) {
+        expect(boldRunFor(xml, label)).toBe(true);
+      }
+      expect(xml).toContain('陈静');
+      expect(xml).not.toContain('*');
+    });
+
+    it('bolds table first-column labels and leaves no star', async () => {
+      const outputPath = join(workingDir, 'minutes-table.docx');
+      const content = [
+        '| 项目 | 内容 |',
+        '|---|---|',
+        '| **会议时间** | 2026年11月20日 |',
+        '| **主持人** | 陈静 |',
+        '| **参会人员** | 王磊、李娜、赵敏 |',
+      ].join('\n');
+      const result = await run(workingDir, { title: '会议纪要', content, output_path: outputPath });
+      expect(result.ok).toBe(true);
+      const xml = await documentXml(outputPath);
+      for (const label of ['会议时间', '主持人', '参会人员']) {
+        expect(boldRunFor(xml, label)).toBe(true);
+      }
+      expect(xml).not.toContain('*');
+    });
+  });
+
   describe('residue scan is paragraph-level', () => {
     it('does not reject legitimate text that starts a run after inline bold (" - ", " > ", numbered heading)', async () => {
       const outputPath = join(workingDir, 'legit.docx');

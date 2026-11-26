@@ -2,6 +2,8 @@
 // ConfirmationGate Tests [E2]
 // ============================================================================
 
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
@@ -391,10 +393,10 @@ describe('ConfirmationGate', () => {
       expect(preview!.diff).toBeDefined();
       const lines = preview!.diff!.split('\n');
       expect(lines).toHaveLength(3);
-      expect(lines[0]).toBe('query: search term');
-      expect(lines[1]).toBe('apiKey: ***REDACTED***');
+      expect(lines[0]).toBe('搜索内容: search term');
+      expect(lines[1]).toBe('详情: ***REDACTED***');
       expect(lines[1]).not.toContain('plain-secret-with-no-recognizable-token-shape');
-      expect(lines[2]).toBe(`longText: ${'a'.repeat(120)}`);
+      expect(lines[2]).toBe(`详情: ${'a'.repeat(120)}`);
       expect(preview!.diff).not.toContain('fourthParam');
     });
 
@@ -405,11 +407,161 @@ describe('ConfirmationGate', () => {
         expect(preview.type).toBe('generic');
       }
     });
+
+    it('reminder previews hide Reminder ID, and calendar previews show UID only when a title is unavailable', () => {
+      const update = gate.buildPreview('reminders_update', {
+        list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'pay electricity', remind_at_ms: 1_763_337_600_000,
+      });
+      const deleted = gate.buildPreview('reminders_delete', {
+        list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'wrong', remind_at_ms: 1,
+      });
+      const calendar = gate.buildPreview('calendar_delete_event', {
+        calendar: 'Work', event_uid: 'cal-opaque', title: 'Review',
+      });
+      expect(update?.diff).not.toContain('Reminder ID');
+      expect(update?.diff).toContain('Title: pay electricity');
+      expect(deleted?.diff).not.toContain('Reminder ID');
+      expect(deleted?.diff).not.toContain('wrong');
+      expect(deleted?.diff).not.toContain('Title:');
+      expect(deleted?.diff).not.toContain('Remind At:');
+      expect(calendar?.diff).toContain('Title: Review');
+      expect(calendar?.diff).not.toContain('cal-opaque');
+      const calendarWithoutTitle = gate.buildPreview('calendar_delete_event', {
+        calendar: 'Work', event_uid: 'cal-opaque',
+      });
+      expect(calendarWithoutTitle?.diff).toContain('UID: cal-opaque');
+    });
   });
 
   // --------------------------------------------------------------------------
   // Singleton
   // --------------------------------------------------------------------------
+  describe('buildPreview generic card plain language', () => {
+    const UUID = '3ab3c0de-1111-4222-8333-444455556666';
+    const withLocale = (loc: 'zh' | 'en', fn: () => void) => {
+      const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(loc);
+      try { fn(); } finally { spy.mockRestore(); }
+    };
+    const excelArgs = {
+      title: 'Sales', sheet_name: 'Sales', theme: 'blue', dry_run: 'false',
+      data: '[["a",1],["b",2]]', output_path: 'exports/sales.xlsx',
+    };
+
+    it('excel_generate (model order): save location kept, no raw keys, zh', () => {
+      withLocale('zh', () => {
+        const diff = getConfirmationGate().buildPreview('excel_generate', excelArgs)?.diff ?? '';
+        expect(diff).toBe('保存到: exports/sales.xlsx\n标题: Sales\n工作表: Sales');
+        expect(diff).not.toMatch(/output_path|sheet_name|theme|dry_run|dry run/);
+      });
+    });
+
+    it('excel_generate: en labels', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('excel_generate', excelArgs)?.diff ?? '';
+        expect(diff).toBe('Save to: exports/sales.xlsx\nTitle: Sales\nSheet: Sales');
+      });
+    });
+
+    it('unknown key uses generic label and keeps value; *_id hidden; true/false hidden', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { dry_run: 'false', task_id: 'abc', flavor: 'mint' })?.diff;
+        expect(diff).toBe('Details: mint');
+      });
+    });
+
+    it('http_request JSON body is still shown (sorted last)', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('http_request', {
+          body: '{"to":"x@y.z"}', method: 'POST', url: 'https://api.example.com/v1',
+        })?.diff ?? '';
+        expect(diff).toContain('{"to":"x@y.z"}');
+        expect(diff.indexOf('Link: https://api.example.com/v1')).toBeLessThan(diff.indexOf('{"to"'));
+      });
+    });
+
+    it('keeps secret redaction', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { api_key: 'sk-secret' })?.diff ?? '';
+        expect(diff).not.toContain('sk-secret');
+        expect(diff).toContain('REDACTED');
+      });
+    });
+
+    it.each([
+      '/tmp/../etc/passwd',
+      '/var/folders/ab/cd/T/../../../etc/passwd',
+      '/private/var/folders/ab/cd/T/../../../etc/passwd',
+      `/Users/x/Library/uploads/${UUID}/../../../etc/hosts`,
+      `/tmp/${UUID}/../../etc/hosts`,
+    ])('traversal path shown unchanged: %s', (p) => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff;
+        expect(diff).toBe(`Save to: ${p}`);
+      });
+    });
+
+    // 上传 / 临时位置词只认真实根：<dataDir>/uploads、os.tmpdir()/code-agent-uploads、os.tmpdir()、/tmp
+    const dataDir = path.join(os.tmpdir(), 'neo-gate-test-data');
+    const upload = (...rest: string[]) => path.join(dataDir, 'uploads', UUID, ...rest);
+    const preview = (p: string) => getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff;
+    const withDataDir = (fn: () => void) => {
+      const prev = process.env.CODE_AGENT_DATA_DIR;
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+      try { fn(); } finally { if (prev === undefined) delete process.env.CODE_AGENT_DATA_DIR; else process.env.CODE_AGENT_DATA_DIR = prev; }
+    };
+
+    it('real upload root, tmpdir and legacy code-agent-uploads root are mapped to place words', () => {
+      withDataDir(() => {
+        withLocale('en', () => {
+          expect(preview(upload('合同', '合同.pdf'))).toBe('Save to: Your uploaded file: 合同/合同.pdf');
+          expect(preview(path.join(os.tmpdir(), 'a', 'sales.xlsx'))).toBe('Save to: Temporary file: a/sales.xlsx');
+          expect(preview(path.join(os.tmpdir(), 'code-agent-uploads', UUID, 's.csv'))).toBe('Save to: Your uploaded file: s.csv');
+          if (process.platform !== 'win32') expect(preview('/tmp/a/sales.xlsx')).toBe('Save to: Temporary file: a/sales.xlsx');
+        });
+        withLocale('zh', () => {
+          expect(preview(upload('合同', '合同.pdf'))).toBe('保存到: 你上传的文件：合同/合同.pdf');
+          expect(preview(path.join(os.tmpdir(), 'sales.csv'))).toBe('保存到: 临时文件：sales.csv');
+        });
+      });
+    });
+
+    it.runIf(process.platform === 'darwin')('/private/var alias of the real tmpdir still matches', () => {
+      withLocale('en', () => {
+        expect(preview(`/private${path.join(os.tmpdir(), 'sales.csv')}`)).toBe('Save to: Temporary file: sales.csv');
+      });
+    });
+
+    it('project path that merely looks like uploads/<uuid>/ keeps its full path (not a chat upload)', () => {
+      withDataDir(() => {
+        for (const p of [`/Users/x/project/uploads/${UUID}/avatar.png`, `/Users/x/Library/uploads/${UUID}/a.png`, `/Users/x/code-agent-uploads/${UUID}/a.png`]) {
+          withLocale('en', () => { expect(preview(p)).toBe(`Save to: ${p}`); });
+          withLocale('zh', () => { expect(preview(p)).toBe(`保存到: ${p}`); });
+        }
+      });
+    });
+
+    it('real run shape: excel_generate saving next to an upload shows no uuid and keeps the save line', () => {
+      const params = { title: '合同金额整理', sheet_name: '金额明细', theme: 'professional', output_path: upload('合同金额整理.xlsx'), data: '[{"金额":12800}]' };
+      withDataDir(() => {
+        withLocale('zh', () => {
+          expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+            .toBe('保存到: 你上传的文件：合同金额整理.xlsx\n标题: 合同金额整理\n工作表: 金额明细');
+        });
+        withLocale('en', () => {
+          expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+            .toBe('Save to: Your uploaded file: 合同金额整理.xlsx\nTitle: 合同金额整理\nSheet: 金额明细');
+        });
+      });
+    });
+
+    it('ancestor /var/folders itself and other paths are not shortened', () => {
+      withLocale('en', () => {
+        expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/var/folders/etc/passwd' })?.diff).toBe('Save to: /var/folders/etc/passwd');
+        expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/etc/passwd' })?.diff).toBe('Save to: /etc/passwd');
+      });
+    });
+  });
+
   describe('Singleton', () => {
     it('should return same instance', () => {
       const a = getConfirmationGate();

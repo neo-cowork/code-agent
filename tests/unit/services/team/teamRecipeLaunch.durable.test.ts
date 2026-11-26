@@ -167,8 +167,19 @@ describe('launchTeamRecipe durable parent', () => {
     expect(launched).toMatchObject({ ok: true, runId: expect.stringMatching(/^team_recipe_/) });
     expect(sessionManagerMock.addMessageToSession).toHaveBeenCalledWith(
       'session-team-recipe',
-      expect.objectContaining({ content: '【组队 · 用户专家小组】会员增长' }),
+      expect.objectContaining({ role: 'user', content: '会员增长' }),
     );
+  });
+
+  it('英文主题：持久化的可见行只有用户原话，不含中文前缀', async () => {
+    await launchTeamRecipe({
+      sessionId: 'session-team-recipe',
+      recipeId: 'durable-only',
+      topic: 'Q4 membership growth plan',
+    });
+    const rows = sessionManagerMock.addMessageToSession.mock.calls.map((c: any[]) => c[1]);
+    expect(rows).toEqual([expect.objectContaining({ role: 'user', content: 'Q4 membership growth plan' })]);
+    expect(JSON.stringify(rows)).not.toMatch(/【组队|执行铁律|spawn_agent/);
   });
 
   it('冷启窗口内迟配置 kernel 时等待后仍能起团', async () => {

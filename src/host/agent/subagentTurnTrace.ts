@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { ToolCall } from '../../shared/contract';
 import {
   captureTurnDiff,
   captureWorkspaceMutationSnapshot,
@@ -150,13 +151,13 @@ export function createSubagentTurnObservability(input: {
         ? captureWorkspaceMutationSnapshot(input.workingDirectory)
         : undefined;
     },
-    emitToolCallStart(toolCall: { id: string; name: string; arguments: Record<string, unknown> }): void {
+    emitToolCallStart(toolCall: ToolCall): void {
       noteForegroundProgress();
       eventScope.emitToolCallStart(toolCall);
     },
     async recordToolResult(
       toolCall: { id: string; name: string; arguments: Record<string, unknown> },
-      result: { success: boolean; error?: string; output?: string; fromCache?: boolean },
+      result: { success: boolean; userMessage?: string; error?: string; output?: string; fromCache?: boolean },
       durationMs: number,
       workspaceMutationSnapshot?: WorkspaceMutationSnapshot,
     ): Promise<void> {
@@ -167,6 +168,7 @@ export function createSubagentTurnObservability(input: {
         success: result.success,
         durationMs,
         error: result.error ?? null,
+        ...(result.userMessage !== undefined ? { userMessage: result.userMessage } : {}),
         fromCache: result.fromCache ?? false,
       });
       await recordSubagentMutationPaths({

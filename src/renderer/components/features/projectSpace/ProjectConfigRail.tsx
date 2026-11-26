@@ -25,7 +25,7 @@ import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared
 import type { CronJobDefinition } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
-import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
+import { getJobDisplayName } from '../cron/builtinJobDisplay';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
 import { cronClient } from '../../../services/cronClient';
@@ -293,12 +293,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   // ---- 自动化（cron agent 任务的 libraryProjectId） ----
   const automationSelected = agentJobs
     .filter((job) => job.action.type === 'agent' && job.action.libraryProjectId === projectId)
-    .map((job) => ({ id: job.id, label: getBuiltinJobDisplay(job, language)?.name ?? job.name }));
+    .map((job) => ({ id: job.id, label: getJobDisplayName(job, language) }));
   const automationOptions = agentJobs
     .filter((job) => !(job.action.type === 'agent' && job.action.libraryProjectId === projectId))
     .map((job) => ({
       id: job.id,
-      label: getBuiltinJobDisplay(job, language)?.name ?? job.name,
+      label: getJobDisplayName(job, language),
       // 调度时间人话复用侧栏能力区 formatNextRun 样板（utils/formatNextRun），不重写
       description: job.nextRunAt != null
         ? ps.automationNextRun.replace(

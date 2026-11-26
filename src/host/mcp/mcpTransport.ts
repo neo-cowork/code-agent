@@ -24,6 +24,7 @@ import type {
   MCPStdioServerConfig,
 } from './types';
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig } from './types';
+import { devFaultCheckOutbound } from '../services/infra/devFaultLoader';
 import { isMcpInsufficientScopeError, isMcpServiceUnavailableError } from './mcpErrors';
 import {
   computeMcpRateLimitDelayMs,
@@ -155,6 +156,7 @@ function createRemoteMCPFetch(
     ?? (options.useProxy ? sharedProxyAwareOauthFetch : sharedDirectOauthFetch);
   return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
     if (init?.signal) {
+      if (dispatcher) devFaultCheckOutbound(typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url);
       const sessionResponse: Promise<Response> = dispatcher
         ? undiciFetch(input as Parameters<typeof undiciFetch>[0], {
           ...init,

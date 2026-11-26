@@ -17,6 +17,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { buildSlotlessConfig, buildWebServerEnv, parseStartArgs, probeModelChat, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
+import { maskVerifyKey, parseProviderFlag, readSelectedProviderKey, resolveSlotlessProviderKey, resolveSlotlessSelection } from '../../scripts/lib/slotlessProvider.mjs';
+// @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
 // N-APPROVAL-LANE-CLICK-DROP-FU1 rework r1：live 形状检查（真 webServer + scratch
@@ -533,4 +535,109 @@ describe('slotless verification scripts', () => {
     expect(resolveSourceConfigPath('/tmp/explicit-template.json')).toBe('/tmp/explicit-template.json');
   });
 
+});
+
+describe('slotless provider selection', () => {
+  const tempDirs: string[] = [];
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  const trSource = () => ({
+    models: {
+      providers: {
+        deepseek: { enabled: true, apiKey: 'leak-me' },
+        'custom-tokenrhythm': { baseUrl: 'https://tr.example/v1', protocol: 'openai', model: 'x', models: { 'deepseek-v4-flash': { enabled: true } } },
+      },
+      routing: { code: { provider: 'deepseek', model: 'a' }, chat: { provider: 'deepseek', model: 'b' } },
+    },
+  });
+  const xiaomiSource = () => ({
+    models: {
+      providers: {
+        deepseek: { enabled: true },
+        xiaomi: { enabled: true, baseUrl: 'https://example.test/v1', protocol: 'openai', model: 'mimo-test', temperature: 0.7, maxTokens: 64000 },
+        'custom-tokenrhythm': { baseUrl: 'https://tr.example/v1', models: { 'deepseek-v4-flash': {} } },
+      },
+      routing: { code: { provider: 'deepseek', model: 'a' }, fast: { provider: 'deepseek', model: 'b' } },
+    },
+  });
+  const expectPointsAt = (config: any, providerId: string, model: string, key: string) => {
+    expect(config.models.default).toBe(providerId);
+    expect(config.models.defaultProvider).toBe(providerId);
+    for (const route of Object.values(config.models.routing)) expect(route).toEqual({ provider: providerId, model });
+    const staged = config.models.providers[providerId];
+    expect(staged).toMatchObject({ enabled: true, apiKey: key, model });
+    expect(Object.keys(staged.models)).toEqual([model]);
+    for (const [id, value] of Object.entries(config.models.providers)) {
+      if (id !== providerId) expect(value).toEqual({ enabled: false });
+    }
+  };
+
+  it('custom-tokenrhythm source: default selection keeps the deepseek candidate behaviour', () => {
+    const config = buildSlotlessConfig(trSource(), 'sk_tr_test-only-abcd');
+    expectPointsAt(config, 'custom-tokenrhythm', 'deepseek-v4-flash', 'sk_tr_test-only-abcd');
+    expectPointsAt(buildSlotlessConfig(trSource(), 'sk_tr_test-only-abcd', undefined, { providerId: 'custom-tokenrhythm' }), 'custom-tokenrhythm', 'deepseek-v4-flash', 'sk_tr_test-only-abcd');
+  });
+
+  it('xiaomi source without a models map: selected provider/model drive default, routes and staged provider', () => {
+    const config = buildSlotlessConfig(xiaomiSource(), 'xm-key-1234', undefined, { providerId: 'xiaomi' });
+    expectPointsAt(config, 'xiaomi', 'mimo-test', 'xm-key-1234');
+    expect(config.models.providers.xiaomi).toMatchObject({ baseUrl: 'https://example.test/v1', protocol: 'openai', temperature: 0.7, maxTokens: 64000 });
+    expect(config.models.providers.xiaomi.models['mimo-test']).toEqual({});
+    expect(config.models.providers['custom-tokenrhythm']).toEqual({ enabled: false });
+  });
+
+  it('model override replaces the provider default model', () => {
+    const config = buildSlotlessConfig(xiaomiSource(), 'xm-key-1234', undefined, { providerId: 'xiaomi', modelOverride: 'mimo-other' });
+    expectPointsAt(config, 'xiaomi', 'mimo-other', 'xm-key-1234');
+  });
+
+  it('resolver order: flag > env > dogfood file > fallback; empty/whitespace file ignored; model env', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'neo-sel-'));
+    tempDirs.push(dir);
+    const file = path.join(dir, 'realrun-dev-model');
+    writeFileSync(file, '  xiaomi  \nsecond-line\n');
+    const env = { NEO_VERIFY_PROVIDER: 'envprov', NEO_VERIFY_MODEL_ID: 'env-model', NEO_VERIFY_MODEL: 'ignored' };
+    expect(resolveSlotlessSelection({ provider: 'flagprov', model: 'flag-model', env, dogfoodFile: file })).toEqual({ providerId: 'flagprov', modelOverride: 'flag-model' });
+    expect(resolveSlotlessSelection({ env, dogfoodFile: file })).toEqual({ providerId: 'envprov', modelOverride: 'env-model' });
+    expect(resolveSlotlessSelection({ env: {}, dogfoodFile: file })).toEqual({ providerId: 'xiaomi', modelOverride: undefined });
+    expect(resolveSlotlessSelection({ env: { NEO_VERIFY_PROVIDER: '   ' }, dogfoodFile: file }).providerId).toBe('xiaomi');
+    writeFileSync(file, '  \n');
+    expect(resolveSlotlessSelection({ env: {}, dogfoodFile: file }).providerId).toBe('custom-tokenrhythm');
+    expect(resolveSlotlessSelection({ env: {}, dogfoodFile: path.join(dir, 'missing') }).providerId).toBe('custom-tokenrhythm');
+  });
+
+  it('parses --provider/--model flags', () => {
+    expect(parseStartArgs(['T', '--provider', 'xiaomi', '--model', 'm1'])).toMatchObject({ provider: 'xiaomi', model: 'm1' });
+    expect(() => parseStartArgs(['T', '--provider'])).toThrow(/--provider requires an id/);
+    expect(parseProviderFlag(['--reuse-dist'], 0)).toBeUndefined();
+  });
+
+  it('missing provider / missing key errors name the provider and carry the unavailable phrase', async () => {
+    expect(() => buildSlotlessConfig(xiaomiSource(), 'k', undefined, { providerId: 'no-such' })).toThrow(/missing provider no-such.*verification environment unavailable/);
+    await expect(resolveSlotlessProviderKey({ providerId: 'no-such' }, xiaomiSource(), '/nonexistent', 'k')).rejects.toThrow(/no-such.*verification environment unavailable/);
+    const noKeyRead = () => ({});
+    await expect(readSelectedProviderKey('xiaomi', xiaomiSource().models.providers.xiaomi, '/x', noKeyRead)).rejects.toThrow(/no usable key for provider xiaomi \(verification environment unavailable\)/);
+  });
+
+  it('key lookup: secure store first, then plain apiKey; fallback uses the dogfood key', async () => {
+    const provider = { apiKey: 'plain-key' };
+    expect(await readSelectedProviderKey('xiaomi', provider, '/x', () => ({ 'apikey.xiaomi': 'stored-key' }))).toBe('stored-key');
+    expect(await readSelectedProviderKey('xiaomi', provider, '/x', () => ({}))).toBe('plain-key');
+    expect(await resolveSlotlessProviderKey({ providerId: 'custom-tokenrhythm' }, trSource(), '/x', 'sk_tr_dogfood')).toBe('sk_tr_dogfood');
+  });
+
+  it('masks any key without printing it in full', () => {
+    expect(maskVerifyKey('sk_tr_abcdefghij1234')).toBe('sk_tr_…1234');
+    expect(maskVerifyKey('tp-abcdefghijklmnop')).toBe('tp-…mnop');
+  });
+
+  it('non-fallback selection does not require NEO_DOGFOOD_TR_KEY', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'neo-cred-'));
+    tempDirs.push(dir);
+    const file = path.join(dir, 'neo-dogfood.env');
+    writeFileSync(file, 'NEO_DOGFOOD_EMAIL=a@b.test\nNEO_DOGFOOD_PASSWORD=pw\n', { mode: 0o600 });
+    expect(readDogfoodCredentials(file, { requireTokenRhythmKey: false })).toMatchObject({ email: 'a@b.test' });
+    expect(() => readDogfoodCredentials(file)).toThrow('缺 NEO_DOGFOOD_TR_KEY');
+  });
 });

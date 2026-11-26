@@ -3,17 +3,24 @@
 import React from 'react';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../src/shared/constants';
+import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { ToolCall } from '../../../src/shared/contract';
 
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { PermissionRequest } from '../../../src/shared/contract/permission';
 
 const mocks = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
   tasks: [] as Task[],
   snapshot: null as AgentTreeSnapshot | null,
   openPreview: vi.fn(),
+  sendPrompt: vi.fn(),
+  runningSessions: new Set<string>(),
+  setViewingMemberId: vi.fn(),
   pendingPermissionRequest: null as PermissionRequest | null,
   pendingPermissionSessionId: null as string | null,
   queuedPermissionRequests: {} as Record<string, PermissionRequest[] | undefined>,
@@ -28,16 +35,24 @@ vi.mock('../../../src/renderer/hooks/useAgentTreeSnapshot', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: (selector: (state: { currentSessionId: string }) => unknown) => (
-    selector({ currentSessionId: 'session-1' })
+  useSessionStore: (selector: (state: { currentSessionId: string; runningSessionIds: Set<string> }) => unknown) => (
+    selector({ currentSessionId: 'session-1', runningSessionIds: mocks.runningSessions })
   ),
+}));
+
+vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
+  useMessageActionStore: { getState: () => ({ sendPrompt: mocks.sendPrompt }) },
+}));
+
+vi.mock('../../../src/renderer/stores/memberViewStore', () => ({
+  useMemberViewStore: { getState: () => ({ setViewingMemberId: mocks.setViewingMemberId }) },
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: Object.assign((selector?: (state: {
     processingSessionIds: Set<string>;
     openPreview: typeof mocks.openPreview;
-    language: 'zh';
+    language: 'zh' | 'en';
     setLanguage: ReturnType<typeof vi.fn>;
     cloudUIStrings: undefined;
     pendingPermissionRequest: PermissionRequest | null;
@@ -48,7 +63,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     const state = {
       processingSessionIds: new Set<string>(),
       openPreview: mocks.openPreview,
-      language: 'zh' as const,
+      language: mocks.language,
       setLanguage: vi.fn(),
       cloudUIStrings: undefined as undefined,
       pendingPermissionRequest: mocks.pendingPermissionRequest,
@@ -56,7 +71,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
       queuedPermissionRequests: mocks.queuedPermissionRequests,
     };
     return selector ? selector(state) : state;
-  }, { getState: () => ({ language: 'zh' as const }) }),
+  }, { getState: () => ({ language: mocks.language }) }),
 }));
 
 function delegateCall(): ToolCall {
@@ -170,6 +185,8 @@ beforeEach(() => {
   mocks.tasks = [];
   mocks.snapshot = null;
   mocks.openPreview.mockReset();
+  mocks.sendPrompt.mockReset();
+  mocks.setViewingMemberId.mockReset();
   mocks.pendingPermissionRequest = null;
   mocks.pendingPermissionSessionId = null;
   mocks.queuedPermissionRequests = {};
@@ -179,9 +196,9 @@ afterEach(cleanup);
 
 describe('delegation receipt', () => {
   it.each([
-    ['Extract and summarize contract.pdf', '助手没有完成', false],
-    ['提炼合同关键条款', '提炼合同关键条款没有完成', true],
-    ['deepwiki', 'deepwiki没有完成', true],
+    ['Extract and summarize contract.pdf', '助手 · 没有完成', false],
+    ['提炼合同关键条款', '提炼合同关键条款 · 没有完成', true],
+    ['deepwiki', 'deepwiki · 没有完成', true],
   ])('zh failed headline for task title %s is %s and uses the sans font', (title, headline, verbatim) => {
     mocks.tasks = [task({ title, status: 'failed' })];
     const { getByTestId, container } = renderCall();
@@ -203,8 +220,8 @@ describe('delegation receipt', () => {
     const view = renderCall();
 
     expect(view.getByTestId('delegation-activity').textContent).toContain('读取了 /repo/release.md');
-    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单正在处理');
-    expect(view.getByText('正在处理')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单 · 正在处理');
+    expect(view.getByText('· 正在处理')).toBeTruthy();
   });
 
   it('keeps a completed receipt with title, step count and clickable output refs', () => {
@@ -226,7 +243,7 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByText('已完成')).toBeTruthy();
+    expect(view.getByText('· 已完成')).toBeTruthy();
     expect(view.getByText('核对发布清单')).toBeTruthy();
     expect(view.getByText('做了 2 步')).toBeTruthy();
     fireEvent.click(view.getByText('report.md'));
@@ -240,8 +257,8 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单没有完成');
-    expect(view.getByText('没有完成')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单 · 没有完成');
+    expect(view.getByText('· 没有完成')).toBeTruthy();
     expect(view.getByTestId('delegation-failure').textContent).toBe('远端服务超时');
   });
 
@@ -320,7 +337,7 @@ describe('delegation receipt', () => {
     };
     view.rerender(<ToolCallDisplay toolCall={spawnCall} index={0} total={1} />);
     const receipt = view.getByTestId('delegation-receipt');
-    expect(view.getByText('已完成')).toBeTruthy();
+    expect(view.getByText('· 已完成')).toBeTruthy();
     expect(receipt.querySelectorAll('[data-testid="delegation-branch"]')).toHaveLength(1);
     expect(view.getByTestId('delegation-branch').textContent).toBe('改动在分支 agent/launch-polish，合并后才会生效');
     expect(receipt.textContent).not.toContain('/tmp/worktree/launch');
@@ -543,4 +560,167 @@ describe('delegation receipt — approval pending copy', () => {
     expect(view.getByTestId('delegation-receipt')).toBeTruthy();
     expect(view.queryByTestId('delegation-activity')).toBeNull();
   });
+});
+
+
+describe('delegation receipt — cancelled retry and details', () => {
+  const spawnCall: ToolCall = {
+    id: 'spawn-compare',
+    name: 'spawn_agent',
+    arguments: { role: 'researcher', task: '对比三家供应商', run_in_background: true },
+    result: { toolCallId: 'spawn-compare', success: true, metadata: { agentId: 'background-compare' } },
+  };
+  const node: AgentTreeNode = {
+    id: 'execution-compare',
+    backgroundAgentId: 'background-compare',
+    role: 'researcher',
+    displayName: '调研员',
+    background: true,
+    status: 'cancelled',
+    statusLabel: '已取消',
+    failureReason: '无法读取供应商报价',
+    createdAt: 1,
+    updatedAt: 4,
+    completedAt: 3,
+    children: [],
+    worktreeState: { status: 'none' },
+    budgetSummary: {},
+    evidenceRefs: [],
+    sources: ['backgroundRegistry'],
+  };
+
+  it.each([
+    ['agent', spawnCall, [], [node], '调研员', '对比三家供应商', 'execution-compare', 3],
+    ['task', delegateCall(), [task({ title: '发布协调', status: 'cancelled', summary: '无法读取清单' })], [],
+      '发布协调', '核对发布清单', 'task-1', 2],
+  ] as const)('shows both actions on a cancelled %s receipt', (_kind, call, tasks, nodes, title, dispatch, memberId, endedAt) => {
+    const presentation = deriveDelegationPresentation(call, [...tasks], [...nodes]);
+    expect(presentation).toMatchObject({ memberId, endedAt, retryTitle: dispatch });
+    if (!presentation) throw new Error('Expected a delegation presentation');
+    const view = render(<>
+      <DelegationHeader presentation={presentation} />
+      <DelegationReceipt presentation={presentation} superseded />
+    </>);
+
+    expect(view.getByTestId('delegation-headline').textContent).toBe(`${title} · 已取消`);
+    expect(view.queryByTestId('delegation-failure')).toBeNull();
+    expect(view.queryByTestId('delegation-failure-superseded')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: '查看详情' }));
+    expect(mocks.setViewingMemberId).toHaveBeenCalledWith(memberId);
+    fireEvent.click(view.getByRole('button', { name: '重试' }));
+    expect(mocks.sendPrompt).toHaveBeenCalledWith(`请重新做一下我刚才取消的任务：${dispatch}`, {
+      clientMessageId: expect.stringMatching(`^delegation-retry-${memberId}-`),
+    });
+  });
+
+  it('keeps the failure headline, reason and retry wording for a failed agent', () => {
+    const presentation = deriveDelegationPresentation(spawnCall, [], [{ ...node, status: 'failed' }]);
+    if (!presentation) throw new Error('Expected a delegation presentation');
+    const view = render(<>
+      <DelegationHeader presentation={presentation} />
+      <DelegationReceipt presentation={presentation} />
+    </>);
+
+    expect(view.getByTestId('delegation-headline').textContent).toBe('调研员 · 没有完成');
+    expect(view.getByTestId('delegation-failure').textContent).toBe('无法读取供应商报价');
+    fireEvent.click(view.getByRole('button', { name: '重试' }));
+    expect(mocks.sendPrompt).toHaveBeenCalledWith('请重新做一下刚才失败的任务：对比三家供应商', {
+      clientMessageId: expect.stringMatching(/^delegation-retry-execution-compare-/),
+    });
+  });
+});
+
+
+it.each([
+  ['zh', '接下来我会直接操作「Keynote」的界面——这件事没有现成的连接器或网页路径可用。'],
+  ['en', "Next I'll operate Keynote directly on screen — there's no connector or browser route for this."],
+] as const)('shows the host disclosure once in the live and completed delegation receipt (%s)', (language, expected) => {
+  mocks.language = language;
+  try {
+    const progress = { guiDisclosures: [{ app: 'Keynote', callId: 'keynote-call' }] };
+    mocks.tasks = [task({ status: 'running', progress })];
+    const view = renderCall();
+    expect(view.getAllByTestId('gui-takeover-disclosure').map((row) => row.textContent)).toEqual([expected]);
+    mocks.tasks = [task({ status: 'completed', progress })];
+    view.rerender(<ToolCallDisplay toolCall={delegateCall()} index={0} total={1} />);
+    expect(view.getAllByTestId('gui-takeover-disclosure').map((row) => row.textContent)).toEqual([expected]);
+  } finally {
+    mocks.language = 'zh';
+    cleanup();
+  }
+});
+
+
+it.each([
+  ['zh', '未完成', '已完成', '删除没有成功，文件还在', '重试', '换个方式'],
+  ['en', 'Incomplete', 'finished', 'The files are still there because the deletion did not succeed', 'Retry', 'Try another way'],
+] as const)('shows both %s recovery actions only on the incomplete delegation card', (language, incomplete, completed, reason, retry, alternate) => {
+  mocks.language = language;
+  mocks.tasks = [task({
+    status: 'failed',
+    title: '已完成删除 / Deleted all files',
+    failure: { reason: BACKGROUND_TASK_DELETE_INCOMPLETE, message: 'rm output' },
+    leftoverPaths: ['/temporary/exports/export.csv'],
+    progress: { current: 1 },
+  })];
+  const failed = renderCall();
+  expect(failed.getByTestId('delegation-headline').textContent).toBe(`export.csv · ${incomplete}`);
+  expect(failed.queryByTestId('delegation-retry')).toBeNull();
+  expect(failed.getByRole('button', { name: retry })).toBeTruthy();
+  expect(failed.getByRole('button', { name: alternate })).toBeTruthy();
+  expect(failed.getByTestId('delegation-failure').textContent).toBe(reason);
+  expect((failed.container.textContent ?? '').replace(incomplete, '')).not.toMatch(/完成|completed|deleted all files|\/temporary/i);
+  failed.unmount();
+  mocks.tasks = [task({ status: 'completed' })];
+  const success = renderCall();
+  expect(success.getByTestId('delegation-headline').textContent?.toLowerCase()).toContain(completed.toLowerCase());
+  expect(success.queryByRole('button', { name: retry })).toBeNull();
+  expect(success.queryByRole('button', { name: alternate })).toBeNull();
+  success.unmount();
+  mocks.tasks = [task({ status: 'failed' })];
+  const ordinary = renderCall();
+  expect(ordinary.getByTestId('delegation-retry').textContent).toBe(retry);
+  expect(ordinary.queryByRole('button', { name: alternate })).toBeNull();
+  cleanup();
+  mocks.language = 'zh';
+  mocks.tasks = [];
+});
+
+
+const incompleteTask = () => task({
+  status: 'failed',
+  failure: { reason: BACKGROUND_TASK_DELETE_INCOMPLETE, message: 'rm output' },
+  leftoverPaths: ['/home/fixture/exports/spring.csv', 'C:\\Users\\fixture\\autumn.csv'],
+});
+
+it.each([
+  ['重试', '请在后台再试一次，删除这些还在的文件：spring.csv, autumn.csv。'],
+  ['换个方式', '上次删除受阻，这些文件还在：spring.csv, autumn.csv。请试试别的办法。'],
+])('clicking %s on the incomplete receipt sends one localized, filename-only message', (action, prompt) => {
+  mocks.tasks = [incompleteTask()];
+  const view = renderCall();
+  fireEvent.click(view.getByRole('button', { name: action }));
+  fireEvent.click(view.getByRole('button', { name: '重试' }));
+  fireEvent.click(view.getByRole('button', { name: '换个方式' }));
+  expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+  expect(mocks.sendPrompt).toHaveBeenCalledWith(prompt, {
+    clientMessageId: expect.stringMatching(/^delete-incomplete-retry-task-1-[a-f0-9-]+$/),
+  });
+});
+
+it('disables both incomplete receipt actions during an active turn', () => {
+  mocks.tasks = [incompleteTask()];
+  mocks.runningSessions.add('session-1');
+  try {
+    const view = renderCall();
+    for (const name of ['重试', '换个方式']) {
+      const button = (view.getByRole('button', { name }) as HTMLButtonElement);
+      expect(button.disabled).toBe(true);
+      expect(button.title).toBe('请等当前任务完成后再重试');
+      fireEvent.click(button);
+    }
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+  } finally {
+    mocks.runningSessions.clear();
+  }
 });

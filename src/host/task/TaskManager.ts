@@ -19,7 +19,9 @@ import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
+import { TaskManagerReadiness } from './taskManagerReadiness';
 import type { PlanningService } from '../planning';
+import { getPermissionModeManager } from '../permissions/modes';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
@@ -30,21 +32,24 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
-import type { RunRegistry } from '../runtime/runRegistry';
+import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
+import { executingBackgroundPrimaryRunId, withBackgroundPrimaryRun } from '../session/backgroundSettlementHold';
+import { generateMessageId } from '../../shared/utils/id';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import {
   SESSION_COMMAND_CENTER_TOOL_NAMES,
   formatSessionTaskDeliveryFailure,
+  formatSessionTaskUserDenied,
 } from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { getTaskDeliveryFailure } from './taskDeliveryVerdict';
+import { describeFailedCommand, getTaskDeliveryFailure } from './taskDeliveryVerdict';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
@@ -106,6 +111,13 @@ function isInferenceHistoryMessage(message: Message): boolean {
  * });
  * ```
  */
+function isBackgroundApprovalDetached(sessionId: string): boolean {
+  if (hasInteractiveUi()) return false;
+  const modes = getPermissionModeManager();
+  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
+    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
+}
+
 export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
@@ -125,6 +137,7 @@ export class TaskManager extends EventEmitter {
 
   // 依赖注入
   private configService: ConfigService | null = null;
+  private readonly readiness = new TaskManagerReadiness();
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
   /**
@@ -168,7 +181,12 @@ export class TaskManager extends EventEmitter {
     this.planningService = deps.planningService;
     this.runRegistry = deps.runRegistry;
     this.onAgentEvent = deps.onAgentEvent;
+    this.readiness.markReady();
     logger.info('TaskManager dependencies initialized');
+  }
+
+  waitUntilReady(timeoutMs: number): Promise<boolean> {
+    return this.readiness.wait(timeoutMs);
   }
 
   /**
@@ -208,6 +226,10 @@ export class TaskManager extends EventEmitter {
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
+    }
+
+    if (this.hasActivePrimaryRun(sessionId)) {
+      throw new RunSessionConflictError(sessionId, this.runRegistry?.getBySessionId(sessionId)?.context.runId);
     }
 
     // 检查是否已经在运行或排队
@@ -255,7 +277,7 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
-      await wrapper.orchestrator.resumeExistingDurableRun(
+      await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,
         {
@@ -267,7 +289,7 @@ export class TaskManager extends EventEmitter {
         },
         messageMetadata ?? source.metadata,
         clientMessageId ?? source.id,
-      );
+      ));
       if (this.cancellingSessions.has(sessionId)) {
         const currentHandle = this.runRegistry?.get(runId); if (currentHandle && this.runRegistry?.hasDurableOwner(runId)) await this.runRegistry.parkDurable(runId, { reason: 'user_stop' }, currentHandle);
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -282,7 +304,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage, runId);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -373,11 +395,17 @@ export class TaskManager extends EventEmitter {
           return true;
         });
         const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
+        if (deliveryFailure === 'user_denied') {
+          this.emitEvent('task_cancelled', sessionId, { taskId, detail: formatSessionTaskUserDenied(resolveSessionTaskResultLocale()) });
+          return;
+        }
         this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
           taskId,
           ...(deliveryFailure
             ? {
-              error: formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale())
+              error: (deliveryFailure === 'command_failed'
+                ? describeFailedCommand(messages, session?.workingDirectory, resolveSessionTaskResultLocale())
+                : formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale()))
                 ?? (finalMessage?.content?.trim() || 'Task delivery failed.'),
             }
             : { conclusion: finalMessage?.content?.trim() }),
@@ -555,12 +583,12 @@ export class TaskManager extends EventEmitter {
    *
    * @param sessionId - 会话 ID
    */
-  async cancelTask(sessionId: string, options?: { keepBackground?: boolean }): Promise<void> {
+  async cancelTask(sessionId: string, options?: { keepBackground?: boolean; persistUserStop?: boolean }): Promise<void> {
     // 后台级联必须先于下面所有按前台状态的 early-return：前台 idle（委派后的常态）时也要停后台。
     // keepBackground：只想摘掉前台（排队中被改道、切会话、进程收尾）的内部调用不是用户 Stop，不动后台。
     const backgroundSettled = options?.keepBackground
       ? Promise.resolve()
-      : this.cancelSessionBackgroundWork(sessionId);
+      : this.cancelSessionBackgroundWork(sessionId, options?.persistUserStop);
     try {
       await this.cancelForegroundTask(sessionId);
     } finally {
@@ -573,11 +601,12 @@ export class TaskManager extends EventEmitter {
    * run_in_background 子代理），返回的 promise 限时等待收线（永不 reject）。
    * 无前台 orchestrator 的入口（web /api/cancel 的 idle 会话）直接调用本方法。
    */
-  cancelSessionBackgroundWork(sessionId: string): Promise<void> {
+  cancelSessionBackgroundWork(sessionId: string, persistUserStop = true): Promise<void> {
     this.emit(SESSION_STOP_REQUESTED_EVENT, { type: SESSION_STOP_REQUESTED_EVENT, sessionId });
     return stopSessionBackgroundWork({
       sessionId,
       backgroundRuns: this.backgroundRuns,
+      persistUserStop,
       cancelBackgroundTask: (taskId) => this.cancelBackgroundTask(taskId),
     });
   }
@@ -886,13 +915,13 @@ export class TaskManager extends EventEmitter {
     const backgroundTaskId = this.backgroundPermissionOwners.get(requestId);
     if (backgroundTaskId) {
       const background = this.backgroundRuns.get(backgroundTaskId);
-      if (background?.sessionId !== sessionId) return 'no_orchestrator';
-      // 后台 lane 的审批应答路由留痕（N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1）：应答进了
-      // lane 的 orchestrator 还是前台会话的，此前只能从下游日志反推。
+      if (!background) return 'no_orchestrator';
+      // 属主以 requestId 为准（FB-1408：调用方会话 id 可能缺省或是 web「最后触碰会话」兜底），不一致只留痕不拒收；同时留应答路由痕迹。
+      if (background.sessionId !== sessionId) logger.warn('Background permission response session mismatch; routing by requestId owner', { requestId, callerSessionId: sessionId, ownerSessionId: background.sessionId });
       logger.info('Permission response routed to background task orchestrator', {
         requestId,
         backgroundTaskId,
-        sessionId,
+        sessionId: background.sessionId,
       });
       const outcome = background.orchestrator.handlePermissionResponse(requestId, response, updatedArgs);
       // 'storage_unavailable' 是台账瞬时写失败、可重试：跟 'unknown_request' 一样不能
@@ -996,6 +1025,9 @@ export class TaskManager extends EventEmitter {
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
   ): Promise<void> {
+    // Preflight can reject before the orchestrator registers its handle. Give that
+    // rejection and the later native loop the same primary identity.
+    const runId = options?.runId?.trim() || `run-${generateMessageId()}`;
     logger.info(`Executing task for session ${sessionId}`);
 
     const requestedModelSpec = options?.modelSpec;
@@ -1019,7 +1051,8 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
 
     try {
-      await wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata, clientMessageId);
+      await withBackgroundPrimaryRun(sessionId, runId, () =>
+        wrapper.orchestrator.sendMessage(message, attachments, options, messageMetadata, clientMessageId));
 
       if (this.cancellingSessions.has(sessionId)) {
         this.finishCancelledSession(sessionId, { clearMarker: true });
@@ -1044,7 +1077,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage, runId);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),
@@ -1207,6 +1240,9 @@ export class TaskManager extends EventEmitter {
       planningService: this.planningService,
       runRegistry: this.runRegistry,
       hasApprovalUi: () => hasInteractiveUi(),
+      // 后台 lane 没有页面时审批停车进收件箱（degrade），不再 60s 自动拒绝。
+      // cron/heartbeat/channel/语音会话保持它们自己的停车模式，这里恒 false。
+      ...(eventKey !== sessionId ? { isDetachedRun: () => isBackgroundApprovalDetached(sessionId) } : {}),
       onEvent: async (event: AgentEvent) => this.trackEventHandling(sessionId, this.handleAgentEvent(sessionId, event, eventKey)),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {
@@ -1266,6 +1302,8 @@ export class TaskManager extends EventEmitter {
       backgroundPermissionOwners: this.backgroundPermissionOwners,
       backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
       messageDeltaAccumulator: this.messageDeltaAccumulator,
+      primaryRunId: executingBackgroundPrimaryRunId(sessionId) ?? this.runRegistry?.getBySessionId(sessionId)?.context.runId,
+      isPrimaryRunActive: () => this.getSessionState(sessionId).status === 'running' || this.hasActivePrimaryRun(sessionId),
     }, sessionId, event, snapshot, eventKey);
   }
 

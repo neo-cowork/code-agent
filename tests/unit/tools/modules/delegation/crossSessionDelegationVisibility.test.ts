@@ -39,6 +39,8 @@ const PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES = [
   'AskUserQuestion',
   // N-MEETING-PAGE（11-15）：问过去的会走本机会议记录，与委派开关无关
   'meeting_records',
+  // N-FIX-LIBRARY-ADD-FROM-CHAT-NO-TOOL（11-19）：聊天入库 library_add，与委派开关无关
+  'library_add',
 ] as const;
 
 // 不命中任何连接器意图的英文委派 prompt（getNativeConnectorToolNamesForIntent 零副作用，
@@ -122,7 +124,7 @@ describe('crossSessionDelegation visibility', () => {
     expect(kept).toContain('list_session_candidates');
   });
 
-  it('flag off: only native task progress extends the prior foreground face, with neither delegation name present', () => {
+  it('flag off: foreground allowlist unchanged — neither delegation name present and the list equals the pinned foreground face', () => {
     expect(isCrossSessionDelegationEnabled()).toBe(false);
     resetProtocolRegistry();
     const names = getTextForegroundToolNamesForPrompt(FOREGROUND_ALLOWLIST_PROMPT);

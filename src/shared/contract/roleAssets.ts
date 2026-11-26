@@ -154,6 +154,37 @@ export type RoleWakeDecision = 'advance' | 'report' | 'suggest' | 'silence';
 /** 醒来触发方式 */
 export type RoleWakeTrigger = 'cadence' | 'event';
 
+export interface RoleWakeFunnel {
+  wakes: number;
+  reports: number;
+  suppressed: number;
+  fallbackSent: number;
+  duplicates: Array<{ at: number; firstReportedAt: number }>;
+}
+
+/** 账本落盘的决策。silence 在文件里写成 silent。 */
+export type RoleWakeLedgerStoredDecision =
+  | 'advance'
+  | 'report'
+  | 'suggest'
+  | 'silent'
+  | 'suppressed_duplicate';
+
+/** 相对上一行新增的依据，只按邮件 / 日程计数，不含原始编号。 */
+export interface RoleWakeLedgerBasisCounts {
+  mail: number;
+  calendar: number;
+}
+
+/** roles IPC wakeLedgerRecent 的一行。reason 是已知原因码，或模型写下的第一句。 */
+export interface RoleWakeLedgerRecentRow {
+  at: number;
+  decision: RoleWakeLedgerStoredDecision;
+  reason: string;
+  newBasis: RoleWakeLedgerBasisCounts;
+  firstReportedAt?: number;
+}
+
 /** 首次醒来的一条可一键委托建议：title 一句话；prompt = 用户点这条时发给角色的话 */
 export interface RoleFirstWakeSuggestion {
   title: string;
@@ -185,6 +216,11 @@ export interface RoleFirstWakeSnapshot {
   intro?: string;
   /** 失败短因（无堆栈，仅在开发者模式原样展示；普通用户走 classifyAgentError 映射）。 */
   failureReason?: string;
+  /**
+   * 本次醒来入队时间（epoch ms），来自状态文件的 enqueuedAt。
+   * 缺字段或不是有限数时不带。重试会写成新的入队时间。
+   */
+  startedAt?: number;
 }
 
 /** 一次醒来的执行结果（cron 执行记录 / E2E 验收用） */

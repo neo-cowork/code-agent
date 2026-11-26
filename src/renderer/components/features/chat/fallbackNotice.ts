@@ -5,7 +5,9 @@ import { generateMessageId } from '@shared/utils/id';
 export interface ModelFallbackNoticePayload {
   reason: string;
   from: string;
-  to: string;
+  /** 缺省 = 链耗尽（exhausted: true），没有"切到哪个模型"可报。 */
+  to?: string;
+  exhausted?: boolean;
   category?: string;
   strategy?: ModelFallbackStrategy;
   tried?: ModelFallbackTraceStep[];
@@ -13,6 +15,24 @@ export interface ModelFallbackNoticePayload {
   toolPolicy?: ModelFallbackToolPolicy;
   fromIdentity?: ModelProviderIdentity;
   toIdentity?: ModelProviderIdentity;
+}
+
+// N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL 之前的 host 把链耗尽标记成硬编码中文
+// '未切换' 塞进 `to`，横幅在英文 UI 上混出两种语言。旧会话落盘的 notice 仍带这个
+// 字面量，数据路径在这里统一把它映射回 `exhausted: true`（组件层不做特判）。
+const LEGACY_MODEL_FALLBACK_NOT_SWITCHED = '未切换';
+
+/** 归一 `to` / `exhausted` 两个字段：旧格式的 zh 字面量映射为 exhausted，其余原样保留。 */
+export function resolveModelFallbackTarget(fields: { to?: unknown; exhausted?: unknown }): { to?: string; exhausted?: boolean } {
+  const exhausted = fields.exhausted === true;
+  const to = typeof fields.to === 'string' && fields.to ? fields.to : undefined;
+  if (!exhausted && to === LEGACY_MODEL_FALLBACK_NOT_SWITCHED) {
+    return { exhausted: true };
+  }
+  return {
+    ...(to !== undefined ? { to } : {}),
+    ...(exhausted ? { exhausted: true } : {}),
+  };
 }
 
 interface ModelFallbackNoticeEnvelope {
@@ -98,11 +118,14 @@ export function parseModelFallbackNotice(content: string): ModelFallbackNoticePa
   try {
     const parsed = JSON.parse(content) as Partial<ModelFallbackNoticeEnvelope>;
     const notice = parsed?.__modelFallbackNotice;
+    const target = notice
+      ? resolveModelFallbackTarget({ to: notice.to, exhausted: notice.exhausted })
+      : undefined;
     if (
       notice
       && typeof notice.reason === 'string'
       && typeof notice.from === 'string'
-      && typeof notice.to === 'string'
+      && (target?.to || target?.exhausted === true)
     ) {
       const tried = normalizeFallbackTraceSteps(notice.tried);
       const skipped = normalizeFallbackTraceSteps(notice.skipped);
@@ -112,7 +135,8 @@ export function parseModelFallbackNotice(content: string): ModelFallbackNoticePa
       return {
         reason: notice.reason,
         from: notice.from,
-        to: notice.to,
+        ...(target.to ? { to: target.to } : {}),
+        ...(target.exhausted ? { exhausted: true } : {}),
         ...(typeof notice.category === 'string' && notice.category ? { category: notice.category } : {}),
         ...(typeof notice.strategy === 'string' && FALLBACK_STRATEGIES.has(notice.strategy as ModelFallbackStrategy)
           ? { strategy: notice.strategy as ModelFallbackStrategy }

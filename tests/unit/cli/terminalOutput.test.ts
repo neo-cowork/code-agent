@@ -165,4 +165,40 @@ describe('TerminalOutput', () => {
     expect(text).toContain('not written: /repo/b.docx');
     expect(text).not.toContain('files changed');
   });
+
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽的 model_fallback 事件没有 `to`
+  // （exhausted: true）——打印 "not switched" 而不是 "undefined"，且不污染跟踪的当前模型。
+  it('prints not switched for an exhausted model_fallback and keeps the tracked model unset', () => {
+    const output = new TerminalOutput();
+    const { logs } = captureOutput();
+
+    output.handleEvent({
+      type: 'model_fallback',
+      data: { reason: 'Moonshot API error: 503 service unavailable', from: 'zhipu/glm-4.7-flash', exhausted: true },
+    } as AgentEvent);
+
+    const text = logs.join('\n');
+    expect(text).toContain('zhipu/glm-4.7-flash → not switched');
+    expect(text).not.toContain('undefined');
+
+    // 耗尽事件不设置 currentModel：任务完成摘要里不得出现模型标签
+    const logsBeforeSummary = logs.length;
+    output.taskComplete(1500, []);
+    expect(logs.slice(logsBeforeSummary).join('\n')).not.toContain('not switched');
+  });
+
+  it('still prints and tracks the target model for a non-exhausted model_fallback', () => {
+    const output = new TerminalOutput();
+    const { logs } = captureOutput();
+
+    output.handleEvent({
+      type: 'model_fallback',
+      data: { reason: 'Moonshot API error: 503 service unavailable', from: 'zhipu/glm-4.7-flash', to: 'moonshot/kimi-k2.5' },
+    } as AgentEvent);
+
+    expect(logs.join('\n')).toContain('zhipu/glm-4.7-flash → moonshot/kimi-k2.5');
+
+    output.taskComplete(1500, []);
+    expect(logs.join('\n')).toContain('moonshot/kimi-k2.5');
+  });
 });

@@ -32,10 +32,8 @@ export async function calendarApprovalDetails(toolName: string, params: Record<s
       for (const key of Object.keys(details)) {
         if (Object.hasOwn(params, key)) delete details[key];
       }
-      // EventKit changes only the supplied endpoint; it does not preserve duration.
-      if (typeof params.start_ms === 'number' && typeof details.end_ms === 'number' && details.end_ms < params.start_ms) {
-        delete details.end_ms;
-      }
+      // A start-only change moves the end with it (native keeps the duration), so the old end is never what gets saved.
+      if (typeof params.start_ms === 'number' && !Object.hasOwn(params, 'end_ms')) delete details.end_ms;
       // An end-only request is rejected until the user/model supplies a start explicitly.
       if (Object.hasOwn(params, 'end_ms') && !Object.hasOwn(params, 'start_ms')) delete details.start_ms;
       // Preserve provenance: these current values may prefill the form, but are not proposed writes.

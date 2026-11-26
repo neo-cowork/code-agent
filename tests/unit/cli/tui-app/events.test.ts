@@ -245,6 +245,17 @@ describe('appendSystemMessage / formatDuration', () => {
 });
 
 describe('task_progress 活动标签不闪', () => {
+  it('keeps the current activity when English turn-phase steps arrive', () => {
+    const starting = createChatState();
+    const thinking = reduceAgentEvent(starting, ev('task_progress', { phase: 'thinking', step: 'Understanding the request' }));
+    expect(thinking.activity).toBe('Thinking…');
+    const searching = reduceAgentEvent(thinking, ev('task_progress', { phase: 'tool_running', step: 'Searching codebase' }));
+    for (const step of ['Writing the response', 'Writing the report']) {
+      expect(reduceAgentEvent(searching, ev('task_progress', { phase: 'generating', step }))).toBe(searching);
+      expect(reduceAgentEvent(searching, ev('agent_thinking', { message: step }))).toBe(searching);
+    }
+  });
+
   it('分析请求中 归一成 Thinking…，不与 Thinking 来回切', () => {
     let state = markRunStarted(createChatState(), 1);
     state = reduceAgentEvent(state, ev('task_progress', { phase: 'thinking', step: '分析请求中...' }));
@@ -284,5 +295,31 @@ describe('task_progress 活动标签不闪', () => {
     // agent_thinking 通道同规则
     const viaThinking = reduceAgentEvent(state, ev('agent_thinking', { message: '生成回复中...' }));
     expect(viaThinking.activity).toBe('Searching codebase');
+  });
+});
+
+// N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽的 model_fallback 事件没有 `to`
+//（exhausted: true）——打印 not switched，不得出现 "undefined"。
+describe('model_fallback', () => {
+  it('耗尽事件（无 to）打印 not switched', () => {
+    const state = reduceAgentEvent(
+      createChatState(),
+      ev('model_fallback', { reason: 'Moonshot API error: 503 service unavailable', from: 'zhipu/glm-4.7-flash', exhausted: true }),
+    );
+    expect(state.messages.at(-1)).toMatchObject({
+      kind: 'system',
+      text: 'Model fallback: zhipu/glm-4.7-flash → not switched (Moonshot API error: 503 service unavailable)',
+    });
+  });
+
+  it('正常事件仍打印切换目标模型', () => {
+    const state = reduceAgentEvent(
+      createChatState(),
+      ev('model_fallback', { reason: 'Moonshot API error: 503 service unavailable', from: 'zhipu/glm-4.7-flash', to: 'moonshot/kimi-k2.5' }),
+    );
+    expect(state.messages.at(-1)).toMatchObject({
+      kind: 'system',
+      text: 'Model fallback: zhipu/glm-4.7-flash → moonshot/kimi-k2.5 (Moonshot API error: 503 service unavailable)',
+    });
   });
 });

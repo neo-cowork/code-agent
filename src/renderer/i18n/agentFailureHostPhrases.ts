@@ -7,6 +7,7 @@ export const agentFailureHostPhrases: Record<string, AgentFailureCode> = {
   '需要的能力当前不可用': AgentFailureCode.ToolUnavailable,
   '助手设置的等待时间超过了允许的上限，需要缩短': AgentFailureCode.InvalidArguments,
   '可用预算已经用完': AgentFailureCode.BudgetExhausted,
+  '执行步数已达上限': AgentFailureCode.StepCapReached,
   '处理时间超过了限制': AgentFailureCode.Timeout,
   '父任务已经结束': AgentFailureCode.ParentGone,
   '用户取消了这个任务': AgentFailureCode.CancelledByUser,

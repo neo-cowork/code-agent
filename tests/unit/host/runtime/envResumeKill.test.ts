@@ -2,8 +2,18 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 vi.unmock('better-sqlite3');
+
+// Includes two fresh Node processes loading the host on a shared CI worker.
+// The waiter and completion deadlines are asserted inside the child.
+const PROCESS_CASE_TIMEOUT_MS = 120_000;
+const useProcessGroup = process.platform !== 'win32';
+
+function killChild(child: ReturnType<typeof spawn>): void {
+  if (useProcessGroup) process.kill(-child.pid!, 'SIGKILL');
+  else child.kill('SIGKILL');
+}
 
 /** Park a child holding an env_blocked run, SIGKILL it, then run the recover-mode child. */
 async function killThenRecover(parkMode: string, recoverMode: string): Promise<{ first: string; second: string }> {
@@ -11,11 +21,29 @@ async function killThenRecover(parkMode: string, recoverMode: string): Promise<{
   const file = path.join(directory, 'run.db');
   const script = path.join(process.cwd(), 'tests/fixtures/envResumeKillChild.ts');
   const children: ReturnType<typeof spawn>[] = [];
+  let stopped = false;
+  const cleanup = () => {
+    if (stopped) return;
+    stopped = true;
+    for (const owned of children) {
+      if (owned.pid && owned.exitCode === null && owned.signalCode === null) {
+        try {
+          killChild(owned);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+      }
+    }
+    rmSync(directory, { recursive: true, force: true });
+  };
+  onTestFinished(cleanup);
   const start = (mode: string) => {
+    if (stopped) throw new Error('Kill harness already stopped');
     // Recover children need DEBUG=true: CLI mode gates info/warn at the logger instance
     // level, and the EnvResumeWaiter arm/stop lines are the evidence under test.
-    const child = spawn(process.execPath, ['--import', 'tsx', script, mode, directory, file], {
+    const child = spawn(process.execPath, ['--import', 'tsx', script, mode, directory, file, parkMode], {
       env: { ...process.env, CODE_AGENT_CLI_MODE: 'true', CODE_AGENT_WEB_MODE: 'false', DEBUG: mode.startsWith('park') ? 'false' : 'true', CODE_AGENT_NO_RUNTIME_AUTOINSTALL: '1', CODE_AGENT_DATA_DIR: directory },
+      detached: useProcessGroup,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.push(child); return child;
@@ -30,26 +58,27 @@ async function killThenRecover(parkMode: string, recoverMode: string): Promise<{
       child.once('error', reject); child.once('exit', (code) => reject(new Error(`park process exited ${code}: ${first}`)));
     });
     expect(first).toContain('env_blocked');
-    process.stdout.write(`KILL -9 ${child.pid}\n`);
-    child.kill('SIGKILL'); await exited;
+    const killLine = `KILL -9 ${child.pid}\n`;
+    process.stdout.write(killLine);
+    killChild(child); await exited;
     expect(child.signalCode).toBe('SIGKILL');
     const next = start(recoverMode);
     const code = await new Promise<number | null>((resolve, reject) => {
       next.stdout!.on('data', (chunk) => { second += String(chunk); });
       next.stderr!.on('data', (chunk) => { second += String(chunk); });
-      next.once('error', reject); next.once('exit', resolve);
+      next.once('error', reject); next.once('close', resolve);
     });
     console.log(`PROCESS_ONE_RAW (${parkMode})\n` + first); console.log(`PROCESS_TWO_RAW (${recoverMode})\n` + second);
     if (process.env.ENV_RESUME_EVIDENCE_DIR) {
-      writeFileSync(path.join(process.env.ENV_RESUME_EVIDENCE_DIR, `kill-${recoverMode}.log`), `${first}\n=== recover ===\n${second}`);
+      const name = parkMode === 'park-mail-continuing' ? parkMode : recoverMode;
+      writeFileSync(path.join(process.env.ENV_RESUME_EVIDENCE_DIR, `kill-${name}.log`), first + killLine + second);
     }
     expect(code, second).toBe(0);
     for (const owned of children) expect(() => process.kill(owned.pid!, 0)).toThrow();
     process.stdout.write(`OWNED_PROCESSES_EXITED ${children.map((owned) => owned.pid).join(' ')}\n`);
     return { first, second };
   } finally {
-    for (const owned of children) if (owned.exitCode === null && owned.signalCode === null) owned.kill('SIGKILL');
-    rmSync(directory, { recursive: true, force: true });
+    cleanup();
   }
 }
 
@@ -74,7 +103,7 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('"seenCalls":["env-call"]');
     expect(second).toContain('"seenRuns":["env-run"]');
     expect(countUserMessages(second)).toBe(1);
-  }, 60_000);
+  }, PROCESS_CASE_TIMEOUT_MS);
 
   it('startup observes only; domain session load return arms the waiter and auto-continues the same run', async () => {
     const { second } = await killThenRecover('park', 'recover-domain');
@@ -87,7 +116,7 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('"seenCalls":["env-call"]');
     expect(second).toContain('"seenRuns":["env-run"]');
     expect(countUserMessages(second)).toBe(1);
-  }, 60_000);
+  }, PROCESS_CASE_TIMEOUT_MS);
 
   it('three returns inside one poll interval arm exactly one loop with single-loop probe ticks', async () => {
     const { second } = await killThenRecover('park', 'recover-repeat');
@@ -99,7 +128,7 @@ describe('environment park survives process kill', () => {
     const probeCalls = Number(second.match(/^PROBE_CALLS (\d+)$/m)?.[1]);
     expect(probeCalls).toBeGreaterThanOrEqual(2);
     expect(probeCalls).toBeLessThanOrEqual(3);
-  }, 60_000);
+  }, PROCESS_CASE_TIMEOUT_MS);
 
   it('without a session return nothing polls or continues even with a green probe registered', async () => {
     const { second } = await killThenRecover('park', 'recover-noentry');
@@ -109,7 +138,7 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('PROBE_CALLS 0');
     expect(countsLine(second)).toMatchObject({ resumes: 0 });
     expect(second).not.toContain('Environment auto-continue armed on session return');
-  }, 60_000);
+  }, PROCESS_CASE_TIMEOUT_MS);
 
   it('a red environment times the armed loop out after return and stays manually continuable', async () => {
     const { second } = await killThenRecover('park', 'recover-timeout');
@@ -127,7 +156,7 @@ describe('environment park survives process kill', () => {
     // The manual continue after the timeout completes the run exactly once (the child
     // asserts the auto-continuer count was 0 at AFTER_TIMEOUT before going manual).
     expect(countsLine(second)).toMatchObject({ executions: 1, resumes: 1 });
-  }, 60_000);
+  }, PROCESS_CASE_TIMEOUT_MS);
 
   it('a sideEffect tool is never re-executed through the session-return auto-continue', async () => {
     const { second } = await killThenRecover('park-write', 'recover-write');
@@ -140,5 +169,39 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('"toolCallId":"env-call"');
     expect(countUserMessages(second)).toBe(1);
     expect(countsLine(second)).toMatchObject({ executions: 0, resumes: 1, seenCalls: [], seenRuns: [] });
-  }, 60_000);
+  }, PROCESS_CASE_TIMEOUT_MS);
+
+  it('④ mail draft, kill before the grant: the park survives restart, then grant + return saves exactly one draft', async () => {
+    const { first, second } = await killThenRecover('park-mail', 'recover-mail');
+    expect(first).toContain('"target\\":\\"mail');
+    expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
+    expect(second).toContain('Environment auto-continue armed on session return');
+    expect(second).toContain('"status":"completed"');
+    expect(second).toContain('not run: Mail automation permission was missing');
+    expect(second).not.toContain('process crashed');
+    expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(countUserMessages(second)).toBe(1);
+  }, PROCESS_CASE_TIMEOUT_MS);
+
+  it('④ mail draft, kill after the grant but before the resume: restart resumes the same run and saves one draft, not two', async () => {
+    const { second } = await killThenRecover('park-mail', 'recover-mail-granted');
+    expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
+    expect(second).toContain('"status":"completed"');
+    expect(second).toContain('not run: Mail automation permission was missing');
+    expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(countUserMessages(second)).toBe(1);
+  }, PROCESS_CASE_TIMEOUT_MS);
+
+  it('mail draft, kill inside the continuation: session return resumes the same run and saves one draft', async () => {
+    const { first, second } = await killThenRecover('park-mail-continuing', 'recover-mail-granted');
+    expect(labeledLine(first, 'INSIDE_CONTINUATION')).toContain('"status":"running"');
+    expect(labeledLine(first, 'KILL_SESSION')).toContain('"status":"running","attempts":1,"saved":0');
+    expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
+    expect(second).toContain('Environment auto-continue armed on session return');
+    expect(labeledLine(second, 'AFTER_GREEN')).toContain('"runId":"env-run"');
+    expect(labeledLine(second, 'AFTER_RETURN')).toContain('"sessionStatus":"idle","runStatus":"completed","userMessages":1');
+    expect(labeledLine(second, 'AFTER_RETURN')).toContain('"subjects":["Rollback plan 3"],"seenRuns":["env-run"]');
+    expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(countUserMessages(second)).toBe(1);
+  }, PROCESS_CASE_TIMEOUT_MS);
 });

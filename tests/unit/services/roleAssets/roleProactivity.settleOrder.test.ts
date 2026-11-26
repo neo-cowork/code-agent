@@ -10,6 +10,7 @@ const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const inflight = vi.hoisted(() => new Set<Promise<void>>());
 const mockOrchestrator = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  setExecutionTopology: vi.fn(),
   cancel: vi.fn(async () => undefined),
 }));
 const mockLogger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));

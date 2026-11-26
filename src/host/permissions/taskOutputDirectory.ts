@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { MessageMetadata } from '../../shared/contract';
 import type { WorkspaceScope } from '../../shared/contract/project';
@@ -6,6 +7,8 @@ import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
+import { TASK_OUTPUT_RECORD_FILE } from '../../shared/constants/sandbox';
 import { getPermissionModeManager, type PermissionMode } from './modes';
 import { parseShellCommand } from '../security/commandParse';
 
@@ -19,6 +22,53 @@ interface TaskOutputDirectory {
 
 const scope = new AsyncLocalStorage<TaskOutputDirectory | undefined>();
 const logger = createLogger('TaskOutputDirectory');
+const RECORD_FILE = TASK_OUTPUT_RECORD_FILE;
+
+interface GrantRecord { directory: string; requestedDirectory: string }
+
+/** Host-written, per-session record of the folder the user named. Written only when a
+ * grant is minted from the user's own directive; later runs of the SAME session
+ * re-validate it. History text is never re-parsed. */
+function recordFilePath(): string {
+  return path.join(getUserConfigDir(), RECORD_FILE);
+}
+
+function readRecords(): Record<string, GrantRecord> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(recordFilePath(), 'utf-8')) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, GrantRecord> : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistGrant(sessionId: string, record: GrantRecord): void {
+  try {
+    const records = readRecords();
+    records[sessionId] = record;
+    fs.mkdirSync(path.dirname(recordFilePath()), { recursive: true });
+    fs.writeFileSync(recordFilePath(), JSON.stringify(records), 'utf-8');
+  } catch (error) {
+    logger.warn('Failed to persist task output directory record', error);
+  }
+}
+
+/** Re-run every mint-time check against the live filesystem; a retargeted symlink or
+ * a now-protected path yields no grant. */
+function restoreGrant(sessionId: string): TaskOutputDirectory | undefined {
+  const record = readRecords()[sessionId];
+  if (!record || typeof record.directory !== 'string' || typeof record.requestedDirectory !== 'string') return undefined;
+  try {
+    if (!path.isAbsolute(record.requestedDirectory) || record.requestedDirectory.split('/').includes('..')) return undefined;
+    const directory = resolveCanonicalRunPath(record.requestedDirectory);
+    if (directory !== record.directory || directory === path.parse(directory).root || isProtectedWritePath(directory)) return undefined;
+    return { sessionId, directory, requestedDirectory: record.requestedDirectory, active: true, leases: 1 };
+  } catch {
+    return undefined;
+  }
+}
+
+type DirectiveRefusalReason = 'negation_or_fence' | 'multiple_directives' | 'invalid_path' | 'root_or_protected';
 
 /** Only an explicit output directive in the new user's own task can grant a folder.
  * Never scan history, attachments, model output, recovery or automated input. Ambiguous
@@ -30,9 +80,16 @@ export async function withTaskOutputDirectory<T>(input: {
   internal: boolean;
   /** Host-owned auxiliary execution of this same task, not a fresh source of consent. */
   inherit?: boolean;
+  /** Unattended (cron / heartbeat) turn: never mints or restores. */
+  unattended?: boolean;
 }, run: () => Promise<T>): Promise<T> {
   const metadata = input.metadata;
   let grant: TaskOutputDirectory | undefined;
+  // When the user's text carries an output-directory directive line that mints nothing
+  // this turn, the freshest instruction outranks any folder recorded for this session:
+  // silently re-applying the stale grant would authorize a folder the user just moved
+  // away from, so the turn runs with no grant (normal confirmation path covers writes).
+  let directiveRefusal: DirectiveRefusalReason | undefined;
   const inherited = scope.getStore();
   if (input.inherit && inherited?.active && inherited.sessionId === input.sessionId
     && !metadata?.automation && getPermissionModeManager().getModeForSession(input.sessionId) === 'bypassPermissions') {
@@ -47,7 +104,8 @@ export async function withTaskOutputDirectory<T>(input: {
     // extraction / model inference, shell expansion, relative path or multiple grants.
     const directives = input.userText.split(/\r?\n/).filter((line) =>
       /(?:^输出目录|(?:^|[，；])成品都存到同一目录)[：:]/u.test(line));
-    const raw = directives.length === 1 && !/```|~~~|不要|不得|禁止|勿|\bdo not\b|\bdon't\b/iu.test(input.userText)
+    const negatedOrFenced = /```|~~~|不要|不得|禁止|勿|\bdo not\b|\bdon't\b/iu.test(input.userText);
+    const raw = directives.length === 1 && !negatedOrFenced
       ? directives[0].match(/(?:^输出目录|(?:^|[，；])成品都存到同一目录)[：:]\s*(\/[^\s`'"<>$\\]+)\s*$/u)?.[1]
       : undefined;
     if (raw && path.isAbsolute(raw) && !raw.split('/').includes('..')) {
@@ -55,10 +113,31 @@ export async function withTaskOutputDirectory<T>(input: {
         const directory = resolveCanonicalRunPath(raw);
         if (directory !== path.parse(directory).root && !isProtectedWritePath(directory)) {
           grant = { sessionId: input.sessionId, directory, requestedDirectory: path.resolve(raw), active: true, leases: 1 };
+          persistGrant(input.sessionId, { directory, requestedDirectory: grant.requestedDirectory });
+        } else {
+          directiveRefusal = 'root_or_protected';
         }
       } catch {
         // Path analysis failure cannot mint an authorization.
+        directiveRefusal = 'invalid_path';
       }
+    } else if (directives.length >= 1) {
+      if (negatedOrFenced) directiveRefusal = 'negation_or_fence';
+      else if (directives.length > 1) directiveRefusal = 'multiple_directives';
+      else directiveRefusal = 'invalid_path';
+    }
+    if (directiveRefusal) {
+      logger.warn('Task output directory directive refused; session grant restore skipped',
+        { sessionId: input.sessionId, reason: directiveRefusal });
+    }
+  }
+  const manager = getPermissionModeManager();
+  if (!grant && input.sessionId && !input.unattended && !manager.isUnattendedSession(input.sessionId)
+    && !metadata?.automation && !metadata?.agentTeam && !metadata?.channel
+    && manager.getModeForSession(input.sessionId) === 'bypassPermissions') {
+    if (!directiveRefusal) {
+      grant = restoreGrant(input.sessionId);
+      if (grant) logger.info('Task output directory restored for session', { sessionId: grant.sessionId, directory: grant.directory });
     }
   }
   return scope.run(grant, async () => {
@@ -75,12 +154,29 @@ export async function withTaskOutputDirectory<T>(input: {
   });
 }
 
+/** A quoted heredoc body (`<<'PY'`) is never expanded or run by the invoking shell; it is plain
+ * stdin for the program (e.g. a python script). Dropping it lets the guard see the real command
+ * line. Bodies fed to a shell interpreter or eval are kept, because those do get executed. */
+function withoutInertHeredocBodies(command: string): string {
+  return command.replace(/<<-?[ \t]*(['"])([A-Za-z_]\w*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/gu,
+    (match, _quote: string, _tag: string, rest: string, offset: number) => {
+      const lineStart = command.lastIndexOf('\n', offset - 1) + 1;
+      // Interpreter word anywhere on the heredoc's command line (before `<<` or in the
+      // trailing part, e.g. `| bash`, `| xargs sh`) means the body may be executed.
+      const line = command.slice(lineStart, offset) + rest;
+      return /\b(?:sh|bash|zsh|dash|ksh|eval|source)\b/u.test(line) ? match : rest;
+    });
+}
+
 /** Add only this task's folder to an already-required OS write jail. Approval,
  * command policy and sensitive-path denials remain separate authoritative gates. */
 export function taskOutputDirectoryForShell(sessionId: string | undefined, mode: PermissionMode, command: string, workspaceScope?: WorkspaceScope): string | undefined {
   const grant = scope.getStore();
-  if (!grant || /\$|`|<\(|>\(/u.test(command)) return undefined;
-  const parsed = parseShellCommand(command);
+  // `$?` `$#` `$$` `$!` expand to numbers only, so they cannot name a path; every other
+  // expansion form (`$VAR`, `${..}`, `$(..)`, backticks, process substitution) stays rejected.
+  const inspected = withoutInertHeredocBodies(command).replace(/\$[?#$!]/gu, '');
+  if (!grant || /\$|`|<\(|>\(/u.test(inspected)) return undefined;
+  const parsed = parseShellCommand(inspected);
   if (parsed.parsingFailed || parsed.uncertain.length > 0) return undefined;
   // A selected output folder does not override a Project Source's read-only promise,
   // including when the selected folder contains that Source rather than vice versa.

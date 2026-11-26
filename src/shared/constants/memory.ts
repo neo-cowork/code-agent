@@ -44,9 +44,13 @@ export const MEMORY_OFF_NOTICE =
 /** session 收尾 LLM 判断（runFinalizer → conversationJudge） */
 export const SESSION_JUDGE = {
   /** quick model max_tokens：需要容纳判断结果与少量长期事实正文 */
-  MAX_TOKENS: 768,
-  /** quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口 */
-  TIMEOUT_MS: 8000,
+  MAX_TOKENS: 1024,
+  /**
+   * quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口。
+   * 8000→20000：dogfood 模型关思考后判官典型 4–5s，但实测会有 14s 的尾延迟，8s 线上会整段降级成
+   * 「一条长期记忆也写不出」；仍须小于 SKILL_REVIEW.TIMEOUT_MS（conversationReview 单测钉着）。
+   */
+  TIMEOUT_MS: 20000,
   /** 参与判断的最近用户轮数（多轮会话取最近 N 轮即可锁定当前主题） */
   RECENT_USER_TURNS: 8,
   /** 单轮最多沉淀的长期事实条数 */
@@ -147,6 +151,15 @@ export const MEMORY_CONSOLIDATION = {
   JOB_TAG: 'light-memory-consolidation',
   /** 每次真跑追加一行 JSON，保留合并/降级/索引/镜像的可回放证据。 */
   AUDIT_FILENAME: 'consolidation-audit.jsonl',
+  /**
+   * 演练预览文件（与审计文件同目录，只保留最近一次）：开关未开启时定时演练
+   * 「如果开启，下次会改什么」，设置页「最近整理」读它出预告句（N-MEM-CONSOLIDATION-HISTORY-UNDO）。
+   */
+  PREVIEW_FILENAME: 'consolidation-preview.json',
+  /** 「最近整理」列表最多返回的运行条数（新在前）。 */
+  HISTORY_MAX_RUNS: 20,
+  /** 列表/恢复读审计文件时最多回看的行数（一周一跑，400 行足够覆盖多年）。 */
+  HISTORY_TAIL_LINES: 400,
 } as const;
 
 /** Built-in maintenance is not a user-created schedule and must not keep the app resident. */
@@ -201,6 +214,7 @@ export const ROLE_ASSETS = {
   FIRST_WAKE_FILENAME: 'first-wake.json',
   /** 每日醒来外部增量提议：roles/<roleId>/wake-proposals.json */
   WAKE_PROPOSALS_FILENAME: 'wake-proposals.json',
+  WAKE_LEDGER_FILENAME: 'wake-ledger.jsonl',
   /** 首次醒来的工具调用轮数预算（独立于巡检醒来：提示词要求 ≤3 次只读探查后作答，
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
@@ -227,6 +241,13 @@ export const ROLE_ASSETS = {
   /** 回收站条目里的角色定义文件名：agents/<roleId>.md 移入后改名存放 */
   TRASH_AGENT_FILENAME: 'agent.md',
 } as const;
+
+/**
+ * 首次醒来「正在思考」最多回溯多久。
+ * 主机在 running 中重启不会重跑，状态文件会停在 running；更老的 enqueuedAt
+ * 不能当成还在跑的起点，否则重载后数字会一直涨。
+ */
+export const ROLE_FIRST_WAKE_THINKING_TIMER_MAX_AGE_MS = 10 * 60 * 1000;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
 export const ROLE_PROACTIVITY = {
@@ -261,6 +282,14 @@ export const ROLE_PROACTIVITY = {
   RATIONALE_MAX_CHARS: 240,
   /** 提取不到决策标记时的保守兜底决策 */
   FALLBACK_DECISION: 'report',
+  BASIS_TAG_PATTERN: /<basis>\s*([^<>]*?)\s*<\/basis>/i,
+  WAKE_LEDGER_MAX_ROWS: 256,
+  WAKE_LEDGER_DEDUP_DAYS: 30,
+  WAKE_LEDGER_FUNNEL_DAYS: 7,
+  /** 记录页「最近唤醒」一次带回的决策行数。 */
+  WAKE_LEDGER_RECENT_ROWS: 20,
+  /** 账本行与定时执行记录对齐的窗口：账本 at 落在 [startedAt, startedAt + 该值]。 */
+  WAKE_LEDGER_EXECUTION_MATCH_MS: 30 * 60 * 1000,
   /** 醒来履历条目的产出摘要截断字符数（why 是独立字段，不挤进这个预算） */
   HISTORY_SUMMARY_MAX_CHARS: 200,
   /** 醒来 run 返回后等待 task_complete 收口链排空的上限（防泄漏兜底，非时序依赖） */

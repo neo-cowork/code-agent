@@ -41,6 +41,8 @@ import { isStartupAborted, raceStartupStep } from './startupAssemblyGuard';
 
 const logger = createLogger('AgentLoop');
 
+type SystemMessageSink = Pick<ContextAssembly, 'injectSystemMessage'>;
+
 export async function bootstrapDesktopDerivedContext(
   ctx: RuntimeContext,
   contextAssembly: ContextAssembly,
@@ -122,7 +124,7 @@ export async function bootstrapDesktopDerivedContext(
 }
 
 export async function injectActivityContext(
-  contextAssembly: ContextAssembly,
+  contextAssembly: SystemMessageSink,
   options: { includeDesktopActivity: boolean },
 ): Promise<void> {
   try {
@@ -166,7 +168,7 @@ export async function injectActivityContext(
 
 async function injectSeedMemory(
   ctx: RuntimeContext,
-  contextAssembly: ContextAssembly,
+  contextAssembly: SystemMessageSink,
   userMessage: string,
 ): Promise<void> {
   const recordEmptyAuthorityBlock = (
@@ -249,7 +251,9 @@ async function injectSeedMemory(
         excludeEntryIds: ctx.suppressedMemoryEntryIds,
       });
       let userMemoryBlock = packedSeedMemory?.block ?? null;
-      if (!userMemoryBlock) {
+      // 空包 = 有 query 但没有记忆命中：明确不注入，不回落到 database-seed 的最近 10 条。
+      const packerMatchedNothing = packedSeedMemory?.packed.items.length === 0;
+      if (!userMemoryBlock && !packerMatchedNothing) {
         memorySource = 'database-seed';
         userMemoryBlock = buildSeedMemoryBlock(ctx.workingDirectory);
       }
@@ -312,7 +316,7 @@ async function injectSeedMemory(
 
 async function injectRecentConversations(
   ctx: RuntimeContext,
-  contextAssembly: ContextAssembly,
+  contextAssembly: SystemMessageSink,
 ): Promise<void> {
   if (ctx.memoryMode === 'off' || ctx.persistentRoleId) return;
 
@@ -339,9 +343,8 @@ async function injectRecentConversations(
 
 /**
  * initializeRun 尾段（UserPromptSubmit/SessionStart hooks → 近期会话 → 跨会话恢复 →
- * seed memory → 活动上下文 → 桌面派生上下文）的顺序装配，从 ConversationRuntime 抽出。
- * 行为与原内联版本一致，唯一新增：每个慢步骤用 raceStartupStep 与 run 级 abort 信号
- * 竞速、每个 await 边界检查取消——启动期点「停止」即刻退出装配，不再等全部步骤跑完。
+ * seed memory → 活动上下文 → 桌面派生上下文）的注入顺序。SessionStart 与
+ * 上下文读取并行，注入顺序保持不变。每个慢步骤与 run 级 abort 信号竞速。
  *
  * 返回 'aborted' 时调用方应从 initializeRun return null，由 run() 走既有
  * cancelled/interrupted 收尾（不新造终态）；'blocked' 保持原 hook 拦截语义（早退）。
@@ -351,13 +354,13 @@ async function injectRecentConversations(
  */
 export async function runStartupContextAssembly(
   ctx: RuntimeContext,
-  contextAssembly: ContextAssembly,
+  contextAssembly: SystemMessageSink,
   options: {
     userMessage: string;
     /** 分析口径的用户原话（extractUserRequest 后）：seed memory 检索按它评分，不看轮首脚手架。 */
     analysisUserRequest?: string;
     isSimpleTask: boolean;
-    injectActivityContext: (options: { includeDesktopActivity: boolean }) => Promise<void>;
+    injectActivityContext: (options: { includeDesktopActivity: boolean }, sink: SystemMessageSink) => Promise<void>;
     bootstrapDesktopDerivedContext: (userMessage?: string) => Promise<void>;
   },
 ): Promise<'proceed' | 'blocked' | 'aborted'> {
@@ -387,9 +390,51 @@ export async function runStartupContextAssembly(
     recordSessionStart(ctx.sessionId).catch(() => { /* non-critical */ });
   }
 
-  // Session start hooks run once per chat session; per-turn hooks stay on UserPromptSubmit/PreToolUse/PostToolUse.
-  if (isFirstUserTurn && ctx.hookManager) {
-    const sessionResult = await raceStartupStep(ctx, ctx.hookManager.triggerSessionStart(ctx.sessionId), 'session_start_hook');
+  // Start the observer hook only after UserPromptSubmit has passed.
+  const sessionStart = isFirstUserTurn ? ctx.hookManager?.triggerSessionStart(ctx.sessionId) : undefined;
+  sessionStart?.catch(() => {}); // Context assembly may abort before joining the hook.
+
+  // Replay context writes after the hook to preserve prompt order, including buffered categories.
+  const pendingInjections: Parameters<ContextAssembly['injectSystemMessage']>[] = [];
+  const contextSink: SystemMessageSink = sessionStart
+    ? { injectSystemMessage: (...args) => { pendingInjections.push(args); } }
+    : contextAssembly;
+
+  if (isFirstUserTurn) {
+    await raceStartupStep(ctx, injectRecentConversations(ctx, contextSink), 'recent_conversations');
+    if (isStartupAborted(ctx)) return 'aborted';
+  }
+
+  // F5: 跨会话任务恢复
+  if (!options.isSimpleTask) {
+    try {
+      const recovery = await raceStartupStep(
+        ctx,
+        getSessionRecoveryService().checkPreviousSession(ctx.sessionId, ctx.workingDirectory), 'session_recovery',
+      );
+      if (isStartupAborted(ctx)) return 'aborted';
+      if (recovery) {
+        contextSink.injectSystemMessage(
+          `<session-recovery>\n${recovery}\n</session-recovery>`,
+          'runtime-recovery',
+        );
+        logger.info('[AgentLoop] Session recovery summary injected');
+      }
+    } catch {
+      // Graceful: recovery failure doesn't block execution
+    }
+  }
+
+  // seed memory 检索是分析口径：query 只用用户原话。注入块（含 <repeated_workarounds>）
+  // 混进 query 会把无关的历史记忆召回（N-CAP-NOTICE-LEAK）。
+  await raceStartupStep(ctx, injectSeedMemory(ctx, contextSink, options.analysisUserRequest ?? options.userMessage), 'seed_memory');
+  if (isStartupAborted(ctx)) return 'aborted';
+
+  await raceStartupStep(ctx, options.injectActivityContext({ includeDesktopActivity: !options.isSimpleTask }, contextSink), 'activity_context');
+  if (isStartupAborted(ctx)) return 'aborted';
+
+  if (sessionStart) {
+    const sessionResult = await raceStartupStep(ctx, sessionStart, 'session_start_hook');
     if (isStartupAborted(ctx)) return 'aborted';
     if (sessionResult?.message) {
       contextAssembly.injectSystemMessage(
@@ -403,40 +448,9 @@ export async function runStartupContextAssembly(
         'session-start-hook',
       );
     }
+    const commitInjection = contextAssembly.injectSystemMessage.bind(contextAssembly);
+    for (const args of pendingInjections) commitInjection(...args);
   }
-
-  if (isFirstUserTurn) {
-    await raceStartupStep(ctx, injectRecentConversations(ctx, contextAssembly), 'recent_conversations');
-    if (isStartupAborted(ctx)) return 'aborted';
-  }
-
-  // F5: 跨会话任务恢复
-  if (!options.isSimpleTask) {
-    try {
-      const recovery = await raceStartupStep(
-        ctx,
-        getSessionRecoveryService().checkPreviousSession(ctx.sessionId, ctx.workingDirectory), 'session_recovery',
-      );
-      if (isStartupAborted(ctx)) return 'aborted';
-      if (recovery) {
-        contextAssembly.injectSystemMessage(
-          `<session-recovery>\n${recovery}\n</session-recovery>`,
-          'runtime-recovery',
-        );
-        logger.info('[AgentLoop] Session recovery summary injected');
-      }
-    } catch {
-      // Graceful: recovery failure doesn't block execution
-    }
-  }
-
-  // seed memory 检索是分析口径：query 只用用户原话。注入块（含 <repeated_workarounds>）
-  // 混进 query 会把无关的历史记忆召回（N-CAP-NOTICE-LEAK）。
-  await raceStartupStep(ctx, injectSeedMemory(ctx, contextAssembly, options.analysisUserRequest ?? options.userMessage), 'seed_memory');
-  if (isStartupAborted(ctx)) return 'aborted';
-
-  await raceStartupStep(ctx, options.injectActivityContext({ includeDesktopActivity: !options.isSimpleTask }), 'activity_context');
-  if (isStartupAborted(ctx)) return 'aborted';
 
   if (!options.isSimpleTask) {
     try {

@@ -104,6 +104,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       trigger_json TEXT,
       cost_usd REAL,
       push_note TEXT,
+      flat_fee INTEGER,
       FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
     );
   `);

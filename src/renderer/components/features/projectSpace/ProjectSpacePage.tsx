@@ -5,13 +5,14 @@
 // projectId=null 显示列表，点列表项进 space 视图，面包屑「协作空间」点回列表。
 // ============================================================================
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FolderKanban, Plus } from 'lucide-react';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { useI18n } from '../../../hooks/useI18n';
 import { ProjectListView, type ProjectListViewHandle } from './ProjectListView';
 import { PrimaryButton } from '../../primitives/Button';
 import { ProjectSpaceView } from './ProjectSpaceView';
+import { useAppStore } from '../../../stores/appStore';
 
 export interface ProjectSpacePageProps {
   onClose: () => void;
@@ -21,6 +22,19 @@ export const ProjectSpacePage: React.FC<ProjectSpacePageProps> = () => {
   const { t } = useI18n();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const listRef = useRef<ProjectListViewHandle>(null);
+  const createRequested = useAppStore((state) => state.projectSpaceCreateRequested);
+
+  useEffect(() => {
+    if (!createRequested || !useAppStore.getState().projectSpaceCreateRequested) return;
+    if (selectedProjectId) {
+      setSelectedProjectId(null);
+      return;
+    }
+    const list = listRef.current;
+    if (!list) return;
+    list.openCreate();
+    useAppStore.getState().consumeProjectSpaceCreate();
+  }, [createRequested, selectedProjectId]);
 
   return (
     <FullScreenPage testId="project-space-page" variant="inline">

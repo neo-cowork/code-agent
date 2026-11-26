@@ -90,7 +90,7 @@ function localizeDisplaySessionTitle(title: string, language: Language): string 
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
     // [Channel] 档沿用 #3218 的渲染（本地化渠道前缀 + 剥离尾部群聊 UUID）；
-    // Schedule/Heartbeat/Cron 走共享 localizer（本单 option A：zh `[定时] `、en `[Schedule] `）。
+    // Schedule/Heartbeat/Cron 走共享 localizer。
     const channelMatch = /^\[Channel\]\s*(.*)$/i.exec(stripped);
     if (channelMatch) {
       const t = languages[language];
@@ -197,6 +197,9 @@ export function getSessionStatusPresentation(args: {
   }
   if (sessionStatus === 'completed') {
     return PRESENTATION.done;
+  }
+  if (sessionStatus === 'cancelled') {
+    return PRESENTATION.idle;
   }
 
   // P3: messageCount fallback for sessions without explicit status

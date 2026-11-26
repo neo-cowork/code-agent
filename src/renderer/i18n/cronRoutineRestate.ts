@@ -1,5 +1,8 @@
 // Shared cron editor restatement and urgency-rule copy.
 export const cronRoutineRestateZh = {
+  // 内置维护任务分组（N-FIX-CRON-LIST-BUILTIN-MAINTENANCE-MIXED-WITH-USER-JOBS）；cronCenter.ts 已到 max-lines，新键放这里随 spread 合入
+  builtinGroupTitle: '系统自动维护（{count}）',
+  builtinMaintenanceNote: '这是系统自动维护任务，不是你创建的；可以暂停或立即运行，不能删除。',
   savedRestateTitle: '已保存 · 这个自动化会这样做',
   savedRestateDone: '完成',
   savedRestateWhenEvent: '有新消息到达时',
@@ -7,6 +10,9 @@ export const cronRoutineRestateZh = {
   // 停用副本的第四行「状态」（N-ROLE-ROUTINE-RESTATE-FU1-FU1）
   savedRestateStatusLabel: '状态',
   savedRestateStatusPaused: '当前已停用，点启用后才会按时跑',
+  // 产出归档行（N-FIX-CRON-CONFIRM-CARD-OMITS-ARCHIVE-PROJECT）
+  savedRestateArchiveLabel: '产出归档到',
+  savedRestateArchiveUnknown: '所选项目（名称暂时读不到）',
   // 保存前确认卡（N-CRON-MORNING-TRIAGE-REST1）：无角色任务先复述再落库；
   // 行文案复用 chatInput 的 scheduleConfirm（what/when/notifyWhen/result）
   pendingRestateTitle: '保存前确认 · 这个自动化会这样做',
@@ -22,12 +28,16 @@ export const cronRoutineRestateZh = {
 };
 
 export const cronRoutineRestateEn = {
+  builtinGroupTitle: 'System maintenance ({count})',
+  builtinMaintenanceNote: 'Automatic system maintenance, not created by you. You can pause or run it now, but not delete it.',
   savedRestateTitle: 'Saved · what this automation will do',
   savedRestateDone: 'Done',
   savedRestateWhenEvent: 'When a new message arrives',
   savedRestateRolePrefix: 'Run by {role}: ',
   savedRestateStatusLabel: 'Status',
   savedRestateStatusPaused: 'Currently paused — it will only run on schedule after you turn it on.',
+  savedRestateArchiveLabel: 'Archive output to',
+  savedRestateArchiveUnknown: 'The project you picked (name unavailable)',
   pendingRestateTitle: 'Before saving · what this automation will do',
   pendingRestateHint: 'Nothing is created yet — check it over, then save. Or go back and edit.',
   pendingRestateHintUpdate: 'Your changes are not saved yet — check them, then confirm. Or go back and edit.',

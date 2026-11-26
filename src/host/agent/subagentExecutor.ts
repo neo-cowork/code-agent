@@ -3,6 +3,9 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { modelVisibleToolOutput } from '../tools/toolResultMessageContent';
+import { appendBashStep, bashStepFromToolCall, markBashStepNotRun } from './bashStepOutcome';
+import type { BashStep } from '../../shared/contract/backgroundTask';
 import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
 import { buildConnectorToolFailureEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
@@ -22,6 +25,7 @@ import {
   getAgentMaxBudget,
 } from './agentDefinition';
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
+import { attachGuiTakeoverDisclosures } from './runtime/guiTakeoverDisclosure';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SubagentContextProjection } from './subagentContextProjection';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
@@ -185,6 +189,7 @@ export class SubagentExecutor {
       ? Math.max(0, Math.floor(config.maxToolCalls))
       : undefined;
     const toolsUsed: string[] = [];
+    let bashSteps: BashStep[] = [];
     // 持久化角色履历用：收集实例产出的产物（设计 §4.3 履历 = 产物清单）
     const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
@@ -380,6 +385,7 @@ export class SubagentExecutor {
     const { toolDefinitions, supportsTool } = buildSubagentToolTable(config.name, context.modelConfig, surface);
 
     const subagentContextStore = getSubagentContextStore();
+    const disclosedApps = new Set<string>();
     // Parallel/Team callers provide a stable composite execution identity.
     // Keep the pipeline's internal random id private to the pipeline registry;
     // user-facing events, tool calls, approvals and results must stay in the
@@ -400,6 +406,7 @@ export class SubagentExecutor {
       context.modelConfig.provider,
       toolsUsed,
       context.attachments,
+      bashSteps,
     );
     const emitContextSnapshot = (messageOverride?: RuntimeMessage[]): void => {
       const effectiveMessages = messageOverride || messages;
@@ -409,6 +416,7 @@ export class SubagentExecutor {
         context.modelConfig.provider,
         toolsUsed,
         context.attachments,
+        bashSteps,
       );
       context.onContextSnapshot?.(latestContextSnapshot);
       // 只读侧聊等一次性运行不落活动账（见 SubagentExecutionContext.suppressContextPublishing）
@@ -717,11 +725,9 @@ export class SubagentExecutor {
           doomLoopGuard.recordStep(response.toolCalls);
 
           const toolResults: string[] = [];
-          const assistantToolCalls: ToolCall[] = response.toolCalls.map((toolCall) => ({
-            id: toolCall.id,
-            name: toolCall.name,
-            arguments: toolCall.arguments,
-          }));
+          const assistantToolCalls: ToolCall[] = response.toolCalls.map(
+            ({ guiTakeoverDisclosure: _disclosure, ...toolCall }) => toolCall,
+          );
           pushObservabilityMessage({
             id: generateMessageId(),
             role: 'assistant',
@@ -732,7 +738,7 @@ export class SubagentExecutor {
             timestamp: Date.now(),
           });
 
-          for (const [toolIndex, toolCall] of response.toolCalls.entries()) {
+          for (const [toolIndex, toolCall] of assistantToolCalls.entries()) {
             if (maxToolCalls !== undefined && toolCallsAttempted >= maxToolCalls) {
               const error = `Tool call blocked by tool policy: maxToolCalls=${maxToolCalls}, attempted ${toolCall.name}`;
               logger.warn(`[${config.name}] ${error}`);
@@ -873,11 +879,15 @@ export class SubagentExecutor {
             }
 
             toolsUsed.push(toolCall.name);
+            if (toolCall.name === 'Bash' || toolCall.name === 'bash') bashSteps = appendBashStep(bashSteps, bashStepFromToolCall(toolCall));
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
-            // 发射 subagent 工具调用开始事件
+            await attachGuiTakeoverDisclosures(disclosedApps, [toolCall]);
             turnObservability.emitToolCallStart(toolCall);
+            if (toolCall.guiTakeoverDisclosure) emitContextSnapshot([...messages, createRuntimeMessage({
+              role: 'assistant', content: '', toolCalls: assistantToolCalls.slice(0, toolIndex + 1),
+            })]);
 
             const toolStartTime = Date.now();
             const workspaceMutationSnapshot = await turnObservability.beginTool(toolCall.name);
@@ -918,12 +928,13 @@ export class SubagentExecutor {
               ).finally(markToolEnd);
               await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
+              bashSteps = markBashStepNotRun(bashSteps, toolCall.id, result) ?? bashSteps;
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
               const scopeCard = buildConnectorToolFailureEvent(result);
               if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
-                `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
+                `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${modelVisibleToolOutput(result)}`
               );
               // 持久化角色履历：从工具结果里收集产物引用
               if (config.roleId && result.success && result.metadata && typeof result.metadata === 'object') {
@@ -956,6 +967,7 @@ export class SubagentExecutor {
                   success: result.success,
                   output: result.output,
                   error: result.error,
+                  ...(result.userMessage !== undefined ? { userMessage: result.userMessage } : {}),
                   duration: toolDuration,
                   outputPath: result.outputPath,
                   metadata: result.metadata,
@@ -1064,7 +1076,7 @@ export class SubagentExecutor {
       if (!exitedLoop) {
         return earlyFailure('Max iterations reached', {
           iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
-          failureCode: AgentFailureCode.BudgetExhausted,
+          failureCode: AgentFailureCode.StepCapReached,
           // 只读提示：前台照 main 按失败返回；后台注册表据此给用户一句白话（而不是「额度用完了」）。
           ...(answerLedger.settled() ? {} : { stopHint: { kind: 'step_cap' as const, conclusion: buildStepCapConclusion({ iterations, maxIterations, messages }) } }),
         });

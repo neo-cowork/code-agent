@@ -317,7 +317,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
           </form>
-          <Button variant="ghost" fullWidth className="mt-4" onClick={() => {
+          <Button variant="secondary" fullWidth className="mt-4" onClick={() => {
             onClose();
             void ensureModelConfigured(t, language, { openSettingsWhenReady: true });
           }}>

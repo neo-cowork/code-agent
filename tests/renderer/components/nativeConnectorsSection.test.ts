@@ -49,8 +49,7 @@ const statuses: ConnectorStatusSummary[] = [
     label: 'Calendar',
     connected: false,
     readiness: 'failed',
-    detail: 'Calendar 授权/可用性检查失败',
-    error: 'Automation denied',
+    detailCode: 'automation_not_authorized',
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities: ['list_events'],
     checkedAt: 1_713_456_000_000,
@@ -84,7 +83,7 @@ describe('NativeConnectorsSection helpers', () => {
       enabled: true,
       status: {
         readiness: 'failed',
-        error: 'Automation denied',
+        detailCode: 'automation_not_authorized',
       },
     });
     expect(rows[1]).toMatchObject({
@@ -212,7 +211,7 @@ describe('NativeConnectorItems', () => {
     expect(html).toContain('日历');
     expect(html).toContain('检查失败');
     expect(html).toContain('可用动作: 检查、修复权限、断开、移除');
-    expect(html).toContain('Automation denied');
+    expect(html).toContain(zh.settings.nativeConnectors.grid.detailCode.automation_not_authorized.replaceAll('{name}', '日历').replaceAll('>', '&gt;'));
     expect(html).toContain('检查');
     expect(html).toContain('修复权限');
     expect(html).toContain('断开');
@@ -362,4 +361,32 @@ describe('NativeConnectorsSection diagnostic presentation', () => {
     expect(screen.getByText('Reminders')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/id:\s*(calendar|mail|reminders)/i);
   });
+
+  for (const language of ['zh', 'en'] as const) {
+    it(`list checkbox shows a state word and an opposite action aria-label in ${language}`, async () => {
+      testLocale.value = language;
+      mockInvokeDomain.mockImplementation((_domain: string, action: string) => {
+        if (action === 'listNativeInventory') {
+          return Promise.resolve([
+            { id: 'calendar', label: 'Calendar', enabled: true },
+            { id: 'mail', label: 'Mail', enabled: false },
+          ]);
+        }
+        if (action === 'listStatuses') return Promise.resolve(diagnosticStatuses);
+        return Promise.resolve(undefined);
+      });
+      const t = (language === 'zh' ? zh : en).settings.nativeConnectors;
+      render(React.createElement(NativeConnectorsSection));
+
+      await screen.findByText(t.grid.labels.calendar);
+      const boxes = screen.getAllByRole('checkbox');
+      const off = boxes.find((b) => !(b as HTMLInputElement).checked) as HTMLInputElement;
+      const on = boxes.find((b) => (b as HTMLInputElement).checked) as HTMLInputElement;
+      expect(off.closest('label')?.querySelector('span')?.textContent).toBe(t.disabled);
+      expect(on.closest('label')?.querySelector('span')?.textContent).toBe(t.enabled);
+      expect(off.getAttribute('aria-label')).toBe(`${t.enableAction} ${t.grid.labels.mail}`);
+      expect(on.getAttribute('aria-label')).toBe(`${t.disableAction} ${t.grid.labels.calendar}`);
+      expect(t.enabled).not.toBe(t.enableAction);
+    });
+  }
 });

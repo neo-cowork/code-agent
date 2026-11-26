@@ -22,7 +22,8 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 // 只在 osascript / 原生桥边界替身：连接器对象、registry、tool-search 都是真实的。
-vi.mock('../../../src/host/connectors/native/osascript', () => ({
+vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>(),
   runAppleScript: mocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -118,10 +119,38 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(getConnectorRegistry().get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
 
     const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names).toHaveLength(4);
+    expect(names).toEqual(expect.arrayContaining([
+      'calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event',
+    ]));
     expect(names).toContain('calendar_create_event');
     expect(names).not.toContain('reminders_create');
     expect(names).not.toContain('mail_draft');
     expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(2);
+  });
+
+  it.each(['probe_access', 'list_reminders'])('keeps the Reminders read on the next turn after -1743 from %s', async (action) => {
+    enable(['reminders']);
+    const connector = getConnectorRegistry().get('reminders')!;
+    if (action === 'list_reminders') await connector.execute('probe_access', {});
+    const prompt = 'what reminders do I have today';
+    const { getTextForegroundToolNamesForPrompt } = await import('../../../src/host/app/sessionCommandCenterBrain');
+    const { isToolDeniedByRunPolicy } = await import('../../../src/host/tools/runToolPolicy');
+    expect(getTextForegroundToolNamesForPrompt(prompt)).toContain('reminders_create');
+
+    const denied = Object.assign(new Error('Command failed: osascript'), {
+      stderr: 'Not authorized to send Apple events to Reminders. (-1743)',
+    });
+    mocks.runAppleScript.mockRejectedValueOnce(denied);
+    await expect(connector.execute(action, {})).rejects.toBe(denied);
+    expect(connector.getCachedStatus?.()).toMatchObject({ readiness: 'failed', errorCode: 'not_authorized' });
+
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames }, 'reminders')).toBe(false);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames }, 'reminders_create')).toBe(true);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames, deniedToolNames: ['reminders'] }, 'reminders')).toBe(true);
+    expect(getDeferredToolsToPreloadForTurn(turn(prompt))).toContain('reminders');
+    expect(getTextForegroundToolNamesForPrompt(prompt, ['calendar'])).not.toContain('reminders');
   });
 
   it('enabled but platform unavailable: not preloaded, warns readiness-unavailable', () => {

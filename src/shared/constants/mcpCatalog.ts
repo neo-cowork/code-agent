@@ -40,6 +40,8 @@ export const MCP_CATEGORIES: McpCategoryMeta[] = [
 // 推荐 MCP Server
 // ----------------------------------------------------------------------------
 
+export const MCP_OAUTH_CREDENTIAL = 'OAuth 授权';
+
 export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   // ---- 搜索与抓取 ----
   {
@@ -157,7 +159,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://mcp.notion.com/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: 'Notion 官方',
     // hosted Notion MCP 工具名录未公开稳定文档，宁缺毋滥
   },
@@ -173,7 +175,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://docs.qq.com/openapi/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -189,7 +191,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://saas.docs.qq.com/api/v6/open/agent/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -205,7 +207,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://wj.qq.com/api/v2/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -221,13 +223,14 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://www.weiyun.com/api/v3/mcpserver',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
   {
     id: 'lark',
     name: '飞书',
+    displayNameEn: 'Feishu',
     logo: 'feishu',
     description: `飞书多维表格与日历（只读）。需先在飞书开放平台建自建应用、开多维表格与日历的只读权限、启用机器人能力（日历接口的必要条件）、创建版本并发布，再把应用加进目标表格的协作者。日历要监听哪一本需自己提供日历 ID（应用身份列不出你新建的日历），取日程时每次至少取 ${FEISHU_CALENDAR_MIN_PAGE_SIZE} 条。`,
     category: 'office-collab',
@@ -421,7 +424,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://mcp.figma.com/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: 'Figma 官方',
     // hosted Figma MCP 工具名录未公开稳定文档，宁缺毋滥
   },

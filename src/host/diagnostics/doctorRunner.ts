@@ -172,12 +172,13 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
     ? jobs.filter((job) => job.category === opts.category)
     : jobs;
   const items: DoctorItem[] = [];
+  let overallTimedOut = false;
 
   for (const job of selectedJobs) {
     const jobStart = Date.now();
     const remainingOverallMs = deadline - jobStart;
 
-    if (remainingOverallMs <= 0) {
+    if (overallTimedOut || remainingOverallMs <= 0) {
       items.push({
         ...timeoutItem(job.category, job.name, overallTimeoutMs, 'overall'),
         durationMs: 0,
@@ -198,7 +199,7 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
     try {
       const effectiveTimeoutMs = Math.min(perCheckTimeoutMs, remainingOverallMs);
       const limitedByOverallTimeout = remainingOverallMs <= perCheckTimeoutMs;
-      const { value } = await withTimeout(
+      const { value, timedOut } = await withTimeout(
         job.run(),
         effectiveTimeoutMs,
         () => [
@@ -210,6 +211,7 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
           ),
         ],
       );
+      overallTimedOut = timedOut && limitedByOverallTimeout;
 
       const durationMs = Date.now() - jobStart;
       const checkItems = value.map((item) => ({

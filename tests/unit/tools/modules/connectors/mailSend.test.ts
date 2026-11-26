@@ -21,6 +21,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { mailSendModule } from '../../../../../src/host/tools/modules/connectors/mailSend';
+import { withPrivateMailDraftDiagnostics } from '../../../../../src/host/tools/outboundGuard';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -167,6 +168,26 @@ describe('mailSendModule (native)', () => {
         'mail_send osascript failed',
         expect.objectContaining({ connector: 'mail', code: 'timeout' }),
       );
+    });
+
+    it('keeps saved draft text out of connector failures and their warning details', async () => {
+      const ctx = makeCtx();
+      const content = 'The confidential draft message';
+      const failure = Object.assign(new Error(`Command failed: osascript -e ${content}`), {
+        stderr: `Not authorized to send Apple events to Mail. ${content}`,
+      });
+      execMock.mockRejectedValueOnce(failure).mockRejectedValueOnce(new Error(content));
+
+      const send = () => withPrivateMailDraftDiagnostics(() => run({ ...validArgs, content }, ctx));
+      const scriptFailure = await send();
+      expect(scriptFailure.ok).toBe(false);
+      expect(JSON.stringify(scriptFailure)).not.toContain(content);
+      expect(ctx.logger.warn).toHaveBeenCalledExactlyOnceWith(
+        'mail_send osascript failed',
+        { connector: 'mail', code: 'not_authorized' },
+      );
+
+      await expect(send()).resolves.toMatchObject({ ok: false, error: 'Mail send failed' });
     });
 
     it('wraps connector errors', async () => {

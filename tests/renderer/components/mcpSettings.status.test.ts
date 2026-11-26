@@ -465,6 +465,42 @@ describe('MCPSettings status', () => {
     expectManagementCount('1/3');
   });
 
+  it('treats a disabled server with connected lifecycle as not connected: no count, no disconnect button, badge disabled', () => {
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      { ...makeConnectedServer('memory-kv', 'in-process'), enabled: false },
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    const disabledCard = screen.getByTestId('mcp-connector-card-memory-kv');
+    expect(within(disabledCard).getByText(mcpText.grid.cardStatus.disabled, { exact: true })).toBeTruthy();
+    expect(screen.queryByTestId('mcp-card-action-memory-kv')).toBeNull();
+    expect(screen.queryByTestId('mcp-use-in-chat-memory-kv')).toBeNull();
+    expect(screen.getByTestId('mcp-card-action-deepwiki')).toBeTruthy();
+    expect(getConnectedCards()).toHaveLength(1);
+    expect(screen.getByText('已连接 1 / 共 2 个')).toBeTruthy();
+  });
+
+  it('a card switched to installing (connecting) is neither counted nor shown connected', async () => {
+    mockDomainInvoke.mockImplementation(() => new Promise(() => {}));
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      { ...makeConnectedServer('memory-kv', 'in-process'), enabled: false },
+    ];
+
+    render(React.createElement(MCPSettings));
+    const card = screen.getByTestId('mcp-connector-card-memory-kv');
+    fireEvent.click(within(card).getByRole('switch'));
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId('mcp-connector-card-memory-kv')).getByText(mcpText.grid.cardStatus.connecting, { exact: true })).toBeTruthy();
+    });
+    expect(screen.queryByTestId('mcp-card-action-memory-kv')).toBeNull();
+    expect(getConnectedCards()).toHaveLength(1);
+    expect(screen.getByText('已连接 1 / 共 2 个')).toBeTruthy();
+  });
+
   it('counts connected cards when host status is null', () => {
     mcpStatus = null;
     mcpServers = [

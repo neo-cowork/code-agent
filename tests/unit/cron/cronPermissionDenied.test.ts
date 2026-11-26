@@ -37,6 +37,7 @@ import {
 } from '../../../src/host/cron/cronNormalizers';
 import { CronFailureNoticeGate, notifyCronAgentExecution } from '../../../src/host/cron/cronFailurePolicy';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
+import { buildUnattendedDegradeFeedback } from '../../../src/host/agent/unattendedApprovalTerminal';
 
 // ----------------------------------------------------------------------------
 // 真实形状的消息构造：tool 消息与 messageProcessor 落库的形状一致
@@ -85,6 +86,21 @@ const READONLY_MCP_TOOL = 'mcp__lark__calendar_v4_calendarEvent_list';
 // ① 被拒 Bash + 无其他结果
 // ----------------------------------------------------------------------------
 describe('deriveCronPermissionDenied ① 被拒且无产出', () => {
+  it('counts the persisted email draft as a result while still denying the live send', () => {
+    const reason = permissionDenialError('mail_send', 'timeout');
+    const messages = (savedTask?: string) => [
+      assistantWithCalls([{ id: 'mail', name: 'mail_send', arguments: {} }]),
+      toolResultMessage([deniedResult('mail', {
+        ...reason,
+        modelText: buildUnattendedDegradeFeedback('mail_send', 0, savedTask),
+      })]),
+    ];
+    expect(deriveCronPermissionDenied(messages(), false)?.steps).toContainEqual({
+      tool: 'mail_send', summary: 'mail_send', reason: 'timeout',
+    });
+    expect(deriveCronPermissionDenied(messages('Weekly summary'), false)).toBeUndefined();
+  });
+
   it('被拒 Bash + 无其他工具结果 → count === 1、工具名/摘要来自被拒调用', () => {
     const hostReason = permissionDenialError('bash', 'timeout');
     expect(isHostReasonPayload(hostReason)).toBe(true); // 真实 denial 出口形状

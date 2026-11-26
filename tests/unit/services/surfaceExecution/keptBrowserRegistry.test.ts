@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BrowserPool } from '../../../../src/host/services/infra/browserPool';
 import { BrowserService } from '../../../../src/host/services/infra/browserService';
+import { BROWSER_TIMEOUTS, KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS } from '../../../../src/shared/constants';
 import {
   KeptBrowserRegistry,
   type KeptBrowserPoolFacade,
 } from '../../../../src/host/services/surfaceExecution/keptBrowserRegistry';
+import { captureKeptResultSnapshot, keptResultReopenMode } from '../../../../src/host/services/surfaceExecution/keptResultSnapshot';
 
 function createFakePool() {
   const released: string[] = [];
@@ -21,6 +23,7 @@ function createFakePool() {
 function createFakeService() {
   const listeners = new Set<(reason: string) => void>();
   return {
+    listTabs: vi.fn<() => Array<{ id: string }>>(() => []),
     onSessionChanged: vi.fn((listener: (reason: string) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -132,6 +135,24 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(registry.get('conversation-a')?.state).toBe('closed');
   });
 
+  it('closes the kept entry only when close_tab removes the last managed tab', () => {
+    const { pool, released } = createFakePool();
+    const registry = new KeptBrowserRegistry(pool);
+    const input = baseInput();
+    registry.register(input);
+
+    input.browserService.listTabs.mockReturnValue([{ id: 'remaining-tab' }]);
+    input.browserService.emit('close_tab');
+    expect(registry.snapshot(input.conversationId).state).toBe('kept');
+    expect(released).toEqual([]);
+
+    input.browserService.listTabs.mockReturnValue([]);
+    input.browserService.emit('close_tab');
+    expect(registry.get(input.conversationId)?.state).toBe('closed');
+    expect(registry.snapshot(input.conversationId).state).toBe('closed');
+    expect(released).toEqual([input.serviceKey]);
+  });
+
   it('a newer keep closes the older kept window (one kept window per conversation)', () => {
     const { pool, released } = createFakePool();
     const registry = new KeptBrowserRegistry(pool);
@@ -241,6 +262,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       url: 'https://example.test/result',
       title: 'Result',
       reason: 'keep_result_page',
+      reopenMode: 'url',
     });
 
     input.browserService.emit('close');
@@ -249,6 +271,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       url: 'https://example.test/result',
       title: 'Result',
       reason: 'keep_result_page',
+      reopenMode: 'url',
     });
   });
 
@@ -269,9 +292,161 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       url: 'https://example.test/result',
       title: 'Result',
       reason: 'keep_result_page',
+      reopenMode: 'url',
     });
     expect(registry.getAlive('conversation-a')).toBeNull();
     expect(released).toEqual(['surface-key-1']);
+  });
+
+  it('reopen policy is snapshot only with stored html and no query string', () => {
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/signup-direct', snapshotHtml: '<h1>Signup success, Lee</h1>' })).toBe('snapshot');
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/done-flash', snapshotHtml: '<h1>Signup success, Lee</h1>' })).toBe('snapshot');
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/done?id=abc', snapshotHtml: '<h1>Signup success, Lee</h1>' })).toBe('url');
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/done?', snapshotHtml: '<h1>ok</h1>' })).toBe('url');
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/done#section', snapshotHtml: '<h1>ok</h1>' })).toBe('snapshot');
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/signup-direct', snapshotHtml: '' })).toBe('url');
+    expect(keptResultReopenMode({ url: 'http://127.0.0.1/signup-direct' })).toBe('url');
+  });
+
+  it('stores a snapshot, hides it from the poll, and drops it when the entry is replaced', async () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    const input = baseInput({ url: 'http://127.0.0.1/signup-direct' });
+    registry.register(input);
+    const html = '<html><body><h1>Signup success, Lee</h1></body></html>';
+    await captureKeptResultSnapshot({
+      registry,
+      conversationId: 'conversation-a',
+      serviceKey: 'surface-key-1',
+      getPageHTML: async () => html,
+      phase: 'release',
+    });
+
+    const polled = registry.snapshot('conversation-a');
+    expect(polled).toEqual({
+      state: 'kept',
+      url: 'http://127.0.0.1/signup-direct',
+      title: 'Result',
+      reason: 'keep_result_page',
+      reopenMode: 'snapshot',
+    });
+    expect(polled).not.toHaveProperty('snapshotHtml');
+    expect(registry.get('conversation-a')).not.toHaveProperty('snapshotHtml');
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      reopenMode: 'snapshot',
+      snapshotHtml: html,
+    });
+
+    input.browserService.emit('close');
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      state: 'closed',
+      reopenMode: 'snapshot',
+      snapshotHtml: html,
+    });
+
+    registry.register(baseInput({ serviceKey: 'surface-key-2', url: 'http://127.0.0.1/signup-direct' }));
+    const replaced = registry.snapshot('conversation-a', { includeSnapshot: true });
+    expect(replaced).toMatchObject({ reopenMode: 'url', state: 'kept' });
+    expect(replaced).not.toHaveProperty('snapshotHtml');
+  });
+
+  it('a query string keeps URL reopen even when a snapshot was stored', async () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    registry.register(baseInput({ url: 'http://127.0.0.1/done?id=abc' }));
+    await captureKeptResultSnapshot({
+      registry,
+      conversationId: 'conversation-a',
+      serviceKey: 'surface-key-1',
+      getPageHTML: async () => '<h1>Signup success, Lee</h1>',
+      phase: 'keep',
+    });
+    const view = registry.snapshot('conversation-a');
+    expect(view).toMatchObject({ reopenMode: 'url' });
+    expect(view).not.toHaveProperty('snapshotHtml');
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      reopenMode: 'url',
+      snapshotHtml: '<h1>Signup success, Lee</h1>',
+    });
+  });
+
+  it('does not store an empty, failed, or over-cap snapshot, so reopen stays on the URL', async () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    registry.register(baseInput({ url: 'http://127.0.0.1/signup-direct' }));
+    const capture = (getPageHTML: () => Promise<string>) => captureKeptResultSnapshot({
+      registry,
+      conversationId: 'conversation-a',
+      serviceKey: 'surface-key-1',
+      getPageHTML,
+      phase: 'release',
+    });
+
+    await capture(async () => '');
+    await capture(async () => '   ');
+    await capture(async () => { throw new Error('page gone'); });
+    await capture(async () => 'x'.repeat(KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS + 1));
+
+    const view = registry.snapshot('conversation-a', { includeSnapshot: true });
+    expect(view).toMatchObject({ state: 'kept', reopenMode: 'url' });
+    expect(view).not.toHaveProperty('snapshotHtml');
+  });
+
+  it('keeps a same-URL snapshot when a later read fails, and drops it when the final URL changes', async () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    registry.register(baseInput({ url: 'http://127.0.0.1/page-a' }));
+    const capture = (getPageHTML: () => Promise<string>, phase: 'keep' | 'release' = 'release') => captureKeptResultSnapshot({
+      registry,
+      conversationId: 'conversation-a',
+      serviceKey: 'surface-key-1',
+      getPageHTML,
+      phase,
+    });
+
+    await capture(async () => '<h1>Page A</h1>', 'keep');
+    registry.refreshTarget('conversation-a', 'http://127.0.0.1/page-a', 'Same');
+    await capture(async () => { throw new Error('page gone'); });
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      url: 'http://127.0.0.1/page-a',
+      reopenMode: 'snapshot',
+      snapshotHtml: '<h1>Page A</h1>',
+    });
+
+    registry.refreshTarget('conversation-a', 'http://127.0.0.1/page-b', 'Page B');
+    const dropped = registry.snapshot('conversation-a', { includeSnapshot: true });
+    expect(dropped).toMatchObject({ url: 'http://127.0.0.1/page-b', reopenMode: 'url' });
+    expect(dropped).not.toHaveProperty('snapshotHtml');
+
+    await capture(async () => 'x'.repeat(KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS + 1));
+    const stillDropped = registry.snapshot('conversation-a', { includeSnapshot: true });
+    expect(stillDropped).toMatchObject({ reopenMode: 'url' });
+    expect(stillDropped).not.toHaveProperty('snapshotHtml');
+
+    await capture(async () => '<h1>Page B</h1>');
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      url: 'http://127.0.0.1/page-b',
+      reopenMode: 'snapshot',
+      snapshotHtml: '<h1>Page B</h1>',
+    });
+  });
+
+  it('a hung page read stops at the capture timeout and does not store HTML', async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new KeptBrowserRegistry(createFakePool().pool);
+      registry.register(baseInput({ url: 'http://127.0.0.1/page-a' }));
+      const hung = captureKeptResultSnapshot({
+        registry,
+        conversationId: 'conversation-a',
+        serviceKey: 'surface-key-1',
+        getPageHTML: () => new Promise(() => undefined),
+        phase: 'release',
+      });
+      await vi.advanceTimersByTimeAsync(BROWSER_TIMEOUTS.KEPT_RESULT_SNAPSHOT_CAPTURE);
+      await hung;
+      const view = registry.snapshot('conversation-a', { includeSnapshot: true });
+      expect(view).toMatchObject({ state: 'kept', reopenMode: 'url' });
+      expect(view).not.toHaveProperty('snapshotHtml');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -286,7 +461,9 @@ function configuredService({
 } = {}): BrowserService {
   const service = new BrowserService('liveness-test-agent');
   Reflect.set(service, 'browser', { isConnected: () => connected });
-  Reflect.set(service, 'context', { pages: () => [{ isClosed: () => !open }] });
+  const trackedPage = { isClosed: () => !open };
+  Reflect.set(service, 'context', { pages: () => [trackedPage, { isClosed: () => false }] });
+  Reflect.set(service, 'tabs', new Map([['tab-1', { page: trackedPage }]]));
   Reflect.set(service, 'browserProcess', processHandle);
   return service;
 }
@@ -313,7 +490,7 @@ describe('BrowserPool.isServiceAlive and BrowserService.isProcessAlive', () => {
     expect(registry.snapshot('conversation-a').state).toBe('closed');
   });
 
-  it('checks connected browser, open pages, and OS pid liveness (including EPERM and ESRCH)', () => {
+  it('checks the connection, tracked pages, and OS pid liveness (including EPERM and ESRCH)', () => {
     expect(configuredService().isProcessAlive()).toBe(true);
     expect(configuredService({ connected: false }).isProcessAlive()).toBe(false);
     expect(configuredService({ open: false }).isProcessAlive()).toBe(false);

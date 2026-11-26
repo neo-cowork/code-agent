@@ -5,7 +5,8 @@ import path from 'path';
 import type { AgentInterface } from '../../../src/host/testing/testRunner';
 import type { TestRunSummary } from '../../../src/host/testing/types';
 
-vi.mock('../../../src/shared/constants/sandbox', () => ({
+vi.mock('../../../src/shared/constants/sandbox', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   isOsSandboxEnabled: () => true,
 }));
 

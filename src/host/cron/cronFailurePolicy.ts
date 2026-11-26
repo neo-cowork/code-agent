@@ -9,7 +9,7 @@
 //      最终停用通知不受冷却约束（用户必须知道任务被停了）。
 // ============================================================================
 
-import { buildScheduledSessionTitle } from '../../shared/i18n/cronNotificationTitle';
+import { buildScheduledSessionTitle, type CronNotificationLocale } from '../../shared/i18n/cronNotificationTitle';
 import { CRON_GUARDRAILS } from '../../shared/constants';
 import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
@@ -31,6 +31,7 @@ import {
   CRON_FAILURE_CODE,
   classifyCronFailure as classifyCronFailurePresentation,
 } from '../../shared/utils/cronFailureClassification';
+import { cronFailureNoticeSentence } from './cronFailureNoticeCopy';
 
 export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait' | 'login-wall';
 
@@ -141,18 +142,50 @@ export class CronFailureNoticeGate {
 // 通知文案与出口
 // ----------------------------------------------------------------------------
 
-function cronNotificationLocale(): 'zh' | 'en' {
+function readCronNoticeLocale(): CronNotificationLocale {
   return getConfigService().getSettings().ui?.language === 'en' ? 'en' : 'zh';
 }
 
-function truncateForNotice(message: string, maxChars = 200): string {
-  return message.length > maxChars ? `${message.slice(0, maxChars)}…` : message;
+const cronNoticeCopy = {
+  zh: {
+    completed: '定时任务已完成',
+    failed: '定时任务失败：',
+    unknownError: '未知错误',
+    consecutive: (count: number, lastError: string) =>
+      `连续失败 ${count} 次已自动停用。最后错误：${lastError}`
+      + '可在「自动化中心 → 定时任务」重新启用。',
+    permanent: (lastError: string) =>
+      `因配置/鉴权类错误停用（重试无效）。错误：${lastError}`
+      + '修正配置后可在「自动化中心 → 定时任务」重新启用。',
+  },
+  en: {
+    completed: 'Scheduled task completed',
+    failed: 'Scheduled task failed: ',
+    unknownError: 'Unknown error',
+    consecutive: (count: number, lastError: string) =>
+      `The task was disabled after ${count} consecutive failures. `
+      + `Re-enable it under Automation Center → Scheduled tasks. Last error: ${lastError}`,
+    permanent: (lastError: string) =>
+      'The task was disabled because of a configuration or authentication error. '
+      + `Fix the configuration, then re-enable it under Automation Center → Scheduled tasks. Error: ${lastError}`,
+  },
+};
+
+function disabledNoticeLastError(error: string | undefined, locale: CronNotificationLocale): string {
+  const { kind } = classifyCronFailurePresentation(error);
+  if (kind === 'cloud_unavailable') {
+    const message = error ?? cronNoticeCopy[locale].unknownError;
+    const detail = message.length > 200 ? `${message.slice(0, 200)}…` : message;
+    return locale === 'zh' ? `${detail}。` : detail;
+  }
+  const sentence = cronFailureNoticeSentence(kind, locale);
+  return locale === 'zh' && !sentence.endsWith('。') ? `${sentence}。` : sentence;
 }
 
 /** 到数停用文案（N-CRON-BUDGET-EXPOSE）：点名上限与重新启用的去处，中英随界面语言。 */
-function buildMaxRunsDisabledSummary(definition: CronJobDefinition): string {
+function buildMaxRunsDisabledSummary(definition: CronJobDefinition, locale: CronNotificationLocale): string {
   const maxRuns = definition.maxRuns ?? '?';
-  const english = getConfigService().getSettings().ui?.language === 'en';
+  const english = locale === 'en';
   return english
     ? `Run limit reached (${maxRuns} runs); the job has been auto-disabled. `
       + 'Re-enable it under Automation Center → Scheduled tasks to reset the counter.'
@@ -160,12 +193,12 @@ function buildMaxRunsDisabledSummary(definition: CronJobDefinition): string {
       + '可在「自动化中心 → 定时任务」重新启用，重新启用后计数清零。';
 }
 
-function buildBudgetDisabledSummary(definition: CronJobDefinition, error: string | undefined): string {
+function buildBudgetDisabledSummary(definition: CronJobDefinition, error: string | undefined, locale: CronNotificationLocale): string {
   const parsed = parseCronBudgetExceededMessage(error);
   const cap = typeof definition.maxRunBudget === 'number' && Number.isFinite(definition.maxRunBudget)
     ? definition.maxRunBudget.toFixed(2)
     : parsed?.cap ?? '?';
-  const english = getConfigService().getSettings().ui?.language === 'en';
+  const english = locale === 'en';
   if (parsed?.spent) {
     return english
       ? `This run spent $${parsed.spent}, over your per-run budget cap of $${cap}, so the task was disabled. `
@@ -187,10 +220,10 @@ function buildBudgetDisabledSummary(definition: CronJobDefinition, error: string
  * cronPermissionDenied 的 cronPermissionDeniedReasonText）。多步被拒只点名第一条，
  * 其余看运行详情；步摘要 ≤80 字且已脱敏，全文不超邻接通知的 200 字惯例。
  */
-function buildPermissionDeniedNoticeSummary(marker: CronPermissionDeniedMarker): string {
-  const english = getConfigService().getSettings().ui?.language === 'en';
+function buildPermissionDeniedNoticeSummary(marker: CronPermissionDeniedMarker, locale: CronNotificationLocale): string {
+  const english = locale === 'en';
   const step = marker.steps[0];
-  const reason = cronPermissionDeniedReasonText(step.reason, english ? 'en' : 'zh');
+  const reason = cronPermissionDeniedReasonText(step.reason, locale);
   return english
     ? `Scheduled task needs attention: "${step.summary}" was not approved (${reason}); nothing was produced.`
     : `定时任务需处理：「${step.summary}」没有获批准（${reason}），没有产出。`;
@@ -205,21 +238,20 @@ export function notifyCronJobDisabled(
   execution: CronJobExecution,
   reason: 'consecutive' | 'permanent' | 'max_runs' | 'budget',
 ): void {
-  const lastError = execution.error ? truncateForNotice(execution.error) : '未知错误';
+  const locale = readCronNoticeLocale();
+  const copy = cronNoticeCopy[locale];
   const summary = reason === 'consecutive'
-    ? `连续失败 ${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} 次已自动停用。最后错误：${lastError}。`
-      + '可在「自动化中心 → 定时任务」重新启用。'
+    ? copy.consecutive(CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES, disabledNoticeLastError(execution.error, locale))
     : reason === 'budget'
-      ? buildBudgetDisabledSummary(definition, execution.error)
-    : reason === 'max_runs'
-      ? buildMaxRunsDisabledSummary(definition)
-    : `因配置/鉴权类错误停用（重试无效）。错误：${lastError}。`
-      + '修正配置后可在「自动化中心 → 定时任务」重新启用。';
+      ? buildBudgetDisabledSummary(definition, execution.error, locale)
+      : reason === 'max_runs'
+        ? buildMaxRunsDisabledSummary(definition, locale)
+        : copy.permanent(disabledNoticeLastError(execution.error, locale));
   try {
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId ?? '',
-        sessionTitle: buildScheduledSessionTitle(cronNotificationLocale(), definition.name),
+        sessionTitle: buildScheduledSessionTitle(locale, definition.name),
         // 停用通知必须带 jobId：无会话执行（如云端 run）的点击落 Cron Center 选中该任务，
         // 那里才有「重新启用」；不带 jobId 时 renderer 的点击是无操作的 dismiss。
         jobId: definition.id,
@@ -279,8 +311,10 @@ export function notifyCronAgentExecution(
 ): void {
   // 无会话放行仅限 cloud_unavailable 失败：这类失败的执行没有本地 session（云端 FK
   // 约束），早退会把它静默吞掉；判据与载荷 failureKind 同源（同一个分类函数）。
-  const cloudDownNotice = execution.status === 'failed' && !execution.sessionId
-    && classifyCronFailurePresentation(execution.error).kind === 'cloud_unavailable';
+  // runtime_starting（启动期等运行时超时，会话尚未创建）同理放行，点击落点用 event.jobId。
+  const sessionlessKind = execution.status === 'failed' && !execution.sessionId
+    ? classifyCronFailurePresentation(execution.error).kind : undefined;
+  const cloudDownNotice = sessionlessKind === 'cloud_unavailable' || sessionlessKind === 'runtime_starting';
   if (definition.action.type !== 'agent' || (!execution.sessionId && !cloudDownNotice)) return;
   // cancelled = 等容量被中断，不是失败，不发失败告警
   if (execution.status !== 'completed' && execution.status !== 'failed') return;
@@ -289,10 +323,13 @@ export function notifyCronAgentExecution(
     if (succeeded && isNotifySuppressedResult(execution.result)) {
       return; // notifyWhen 未满足：本轮不打扰（留痕在 cronNotifyQuietRound）
     }
+    // Keep the dedupe key stable if the UI language changes during the cooldown.
     if (!succeeded
-      && !noticeGate.shouldNotify(definition.id, execution.error ?? '未知错误')) {
+      && !noticeGate.shouldNotify(definition.id, execution.error ?? cronNoticeCopy.zh.unknownError)) {
       return; // 同因失败冷却中：这次不重复告警
     }
+    const locale = readCronNoticeLocale();
+    const copy = cronNoticeCopy[locale];
     const loginWall = parseCronLoginWallStop(execution.error);
     const presentation = !succeeded && !loginWall
       ? classifyCronFailurePresentation(execution.error)
@@ -302,15 +339,17 @@ export function notifyCronAgentExecution(
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId ?? '',
-        sessionTitle: buildScheduledSessionTitle(cronNotificationLocale(), definition.name),
+        sessionTitle: buildScheduledSessionTitle(locale, definition.name),
         jobId: definition.id,
         summary: succeeded
           ? permissionDenied
-            ? buildPermissionDeniedNoticeSummary(permissionDenied)
-            : readCronAlertReason(execution.result) ?? '定时任务已完成'
-          : loginWall
-            ? undefined
-            : `定时任务失败：${execution.error ?? '未知错误'}`,
+            ? buildPermissionDeniedNoticeSummary(permissionDenied, locale)
+            : readCronAlertReason(execution.result) ?? copy.completed
+          : presentation
+            ? `${copy.failed}${presentation.kind === 'cloud_unavailable'
+              ? execution.error ?? copy.unknownError
+              : cronFailureNoticeSentence(presentation.kind, locale)}`
+            : undefined,
         duration: execution.duration ?? 0,
         toolsUsed: [],
         succeeded,

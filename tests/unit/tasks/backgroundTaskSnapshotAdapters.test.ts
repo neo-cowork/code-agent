@@ -21,6 +21,7 @@ vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', async (im
 }));
 
 import Database from 'better-sqlite3';
+import { getConfigService } from '../../../src/host/services/core/configService';
 import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../../src/host/task/backgroundTaskStore';
 import type { BackgroundTaskLedgerChangedData } from '../../../src/shared/contract/agent';
@@ -45,6 +46,39 @@ describe('backgroundTaskSnapshotAdapters', () => {
 
   afterEach(() => {
     shutdownEventBus();
+  });
+
+  it.each([
+    ['zh', 'Copy missing-report.txt into archive in background', '复制 missing-report.txt 到 archive'],
+    ['zh', '把缺失的报告移入归档', '把缺失的报告移入归档'],
+    ['en', '把缺失的报告移入归档', 'Copy missing-report.txt to archive'],
+  ] as const)('persists the %s shell terminal message for %s', (language, displayName, expectedTitle) => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    const getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language },
+    });
+    const db = new Database(':memory:');
+    try {
+      const ledger = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      syncShellTaskSnapshotToLedger({
+        taskId: 'missing-report', status: 'failed', command: 'cp missing-report.txt archive/',
+        displayName, cwd: '/repo', sessionId: 'session-1', startTime: 1_000, endTime: 1_250,
+        duration: 250, exitCode: 1, outputFile: '/tmp/missing-report.log',
+      }, ledger);
+
+      const row = db.prepare('SELECT notification_json FROM background_task_notifications').get() as {
+        notification_json: string;
+      };
+      expect(JSON.parse(row.notification_json)).toMatchObject({
+        message: `${expectedTitle} 失败，耗时 不到 1 秒`,
+        payload: { source: 'shell', label: expectedTitle },
+      });
+    } finally {
+      getSettings.mockRestore();
+      db.close();
+    }
   });
 
   it('does not publish invalidations during pull-driven snapshot reconciliation', () => {
@@ -128,6 +162,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
       durationMs: 1_500,
       failure: {
         message: 'Process exited with code 1',
+        reason: 'shell_command_failed',
         exitCode: 1,
         category: 'command_failed',
       },
@@ -178,8 +213,10 @@ describe('backgroundTaskSnapshotAdapters', () => {
         taskId: 'shell:shell-1',
         type: 'task_failed',
         message: expect.stringContaining('npm 失败'),
+        payload: expect.objectContaining({ source: 'shell', status: 'failed', label: 'npm', exitCode: 1, durationMs: 1_500 }),
       }),
     ]);
+    expect(notifications[0]?.message).not.toMatch(/退出码|exit code|\.log/);
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
@@ -197,6 +234,12 @@ describe('backgroundTaskSnapshotAdapters', () => {
   });
 
   it('shell task title uses displayName while displayCommand keeps the real command', () => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    using _getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language: 'en' },
+    });
     const ledger = new BackgroundTaskLedger();
     syncShellTaskSnapshotToLedger({
       taskId: 'named123456', status: 'running', command: 'sandbox-exec -f /tmp/p.sb /bin/sh -c "osascript -e x"',
@@ -286,7 +329,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
       expect(ledger.getTask('pty:pty-unsandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
       expect(ledger.getTask('pty:pty-sandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
       expect(ledger.getTask('pty:pty-generic')).toMatchObject({
-        title: 'Background task',
+        title: '后台命令',
         command: genericFallbackCommand,
       });
       expect(store.loadTerminalTask('pty:pty-unsandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
@@ -427,19 +470,40 @@ describe('backgroundTaskSnapshotAdapters', () => {
     { status: 'failed' as const, exitCode: 3, stoppedByRequest: false, expected: 'failed' },
     { status: 'failed' as const, exitCode: undefined, stoppedByRequest: true, expected: 'cancelled' },
   ])('public snapshot entries preserve $expected with missing logs', ({ status, exitCode, stoppedByRequest, expected }) => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    using _getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language: 'en' },
+    });
     const ledger = new BackgroundTaskLedger();
-    const shared = { status, exitCode, stoppedByRequest, command: 'true', cwd: '/repo', startTime: 1_000, duration: 100 };
-    syncShellTaskSnapshotToLedger({ ...shared, taskId: 'missing-shell', outputFile: '/missing/shell.log' }, ledger);
+    const shared = {
+      status, exitCode, stoppedByRequest, command: 'true', displayName: 'Archive meeting notes',
+      cwd: '/repo', startTime: 1_000, duration: 100,
+    };
+    syncShellTaskSnapshotToLedger({
+      ...shared, taskId: 'missing-shell', sessionId: 'session-1', outputFile: '/missing/shell.log',
+    }, ledger);
     syncPtySessionSnapshotToLedger({
-      ...shared, sessionId: 'missing-pty', args: [], cols: 80, rows: 24, outputFile: '',
+      ...shared, sessionId: 'missing-pty', ownerSessionId: 'session-1', args: [], cols: 80, rows: 24, outputFile: '',
     }, ledger);
 
     for (const id of ['shell:missing-shell', 'pty:missing-pty']) {
       expect(ledger.getTask(id)?.status).toBe(expected);
       expect(ledger.getTask(id)?.failure).toEqual(expected === 'failed'
-        ? { message: 'Process exited with code 3', exitCode: 3, category: 'command_failed' }
+        ? { message: 'Process exited with code 3', reason: 'shell_command_failed', exitCode: 3, category: 'command_failed' }
         : undefined);
       expect(ledger.getTask(id)?.outputRefs[0]?.size).toBeUndefined();
+    }
+    const notifications = ledger.drainNotifications('session-1');
+    expect(notifications).toHaveLength(2);
+    for (const source of ['shell', 'pty']) {
+      const notification = notifications.find((item) => item.taskId.startsWith(`${source}:`));
+      expect(notification).toMatchObject({
+        type: `task_${expected}`,
+        payload: { source, status: expected, label: 'Archive meeting notes', durationMs: 100 },
+      });
+      expect(notification?.message).not.toMatch(/退出码|exit code|\.log|Process exited/);
     }
   });
 

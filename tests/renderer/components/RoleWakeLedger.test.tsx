@@ -6,10 +6,14 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-const { listJobs, getExecutions } = vi.hoisted(() => ({
+import type { RoleWakeLedgerRecentRow } from '@shared/contract/roleAssets';
+const { listJobs, getExecutions, getRoleWakeFunnel, getRoleWakeLedgerRecent } = vi.hoisted(() => ({
   listJobs: vi.fn(),
   getExecutions: vi.fn(),
+  getRoleWakeFunnel: vi.fn(async () => ({ wakes: 0, reports: 0, suppressed: 0, fallbackSent: 0, duplicates: [] as Array<{ at: number; firstReportedAt: number }> })),
+  getRoleWakeLedgerRecent: vi.fn(async (): Promise<RoleWakeLedgerRecentRow[]> => []),
 }));
+vi.mock('../../../src/renderer/services/rolesClient', () => ({ getRoleWakeFunnel, getRoleWakeLedgerRecent }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: vi.fn() },
 }));
@@ -18,6 +22,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 }));
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import { RoleWakeLedger } from '../../../src/renderer/components/features/expert/RoleWakeLedger';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 const todayAtNine = new Date();
 todayAtNine.setHours(9, 0, 0, 0);
@@ -62,6 +67,30 @@ afterEach(() => {
 });
 
 describe('RoleWakeLedger', () => {
+  it('shows the seven-day counts and the previous report date, including wakes absent from cron', async () => {
+    listJobs.mockResolvedValue([]);
+    getRoleWakeFunnel.mockResolvedValueOnce({
+      wakes: 7, reports: 2, suppressed: 1, fallbackSent: 1,
+      duplicates: [{ at: NOW, firstReportedAt: YESTERDAY }],
+    });
+    render(<RoleWakeLedger roleId="role-a" />);
+    expect((await screen.findByTestId('role-wake-weekly-funnel')).textContent).toBe(
+      '过去 7 天 · 查了 7 轮 · 报了 2 条 · 压下重复 1 条',
+    );
+    expect(screen.getByText(/未重复推送，已于 .* 报告/)).toBeTruthy();
+    expect(getRoleWakeFunnel).toHaveBeenCalledWith('role-a');
+  });
+
+  it('a flat-fee wake reads "not billed in USD" in the row and the daily line', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w1', { flatFee: true, result: { roleId: 'role-a', trigger: 'cadence', status: 'completed', sessionId: 'session-1' } }),
+    ]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent)).toContain('不按美元计费'));
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).toContain('不按美元计费 · 1 次');
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).not.toContain('成本未完整记录');
+  });
   it('does not infer no model call or a zero total from a missing cost', async () => {
     listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
     getExecutions.mockResolvedValue([
@@ -111,6 +140,22 @@ describe('RoleWakeLedger', () => {
     expect(values).toContain('未运行：角色处于静默档，不主动醒来');
     expect(values).toContain('未运行：处于免打扰时段，本次不补');
     expect(values).toContain('$0.1100');
+  });
+
+  it('connector_lost 行显示飞书，不露连接器 id', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w-lost', {
+        result: { status: 'skipped', skipReason: 'connector_lost:feishu', skipped: true },
+      }),
+    ]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent))
+        .toContain('未运行：飞书已退出登录，重新连接后会继续');
+    });
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('feishu');
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('connector_lost');
   });
 
   it('每日小计出现在角色页（与自动化中心同组件同口径）', async () => {
@@ -179,5 +224,78 @@ describe('RoleWakeLedger', () => {
     const values = screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent);
     expect(values).toContain('$0.0500');
     expect(values).toContain('$0.0300');
+  });
+
+  it('merges a silent ledger row with the work-history sentence, and shows a no-cron row', async () => {
+    const historySilence = '巡检无需行动';
+    const historyExcluded = '命中排除话题，已停止汇报';
+    const noCronAt = NOW + 60 * 60 * 1000;
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w-silent', { cost: 0.01 }),
+    ]);
+    getRoleWakeLedgerRecent.mockResolvedValueOnce([
+      {
+        at: NOW,
+        decision: 'silent',
+        reason: 'no_action_needed',
+        newBasis: { mail: 0, calendar: 0 },
+      },
+      {
+        at: NOW + 60_000,
+        decision: 'silent',
+        reason: 'excluded_topic',
+        newBasis: { mail: 0, calendar: 0 },
+      },
+      {
+        at: noCronAt,
+        decision: 'silent',
+        reason: 'no_products',
+        newBasis: { mail: 0, calendar: 0 },
+      },
+    ] satisfies RoleWakeLedgerRecentRow[]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => expect(screen.getAllByTestId('role-wake-ledger-row')).toHaveLength(3));
+    const values = screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent);
+    expect(values).toContain(`保持沉默 · ${historySilence} · $0.0100`);
+    expect(values).toContain(`保持沉默 · ${historyExcluded}`);
+    expect(values).toContain('保持沉默 · 巡检无需行动（履历中没有产物）');
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('no_action_needed');
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('excluded_topic');
+    expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('no_products');
+  });
+
+  it('shows when a duplicate was first reported, what was new, and no raw basis id', async () => {
+    const firstReportedAt = YESTERDAY;
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w-report', { cost: 0.04 }),
+      wakeExecution('w-dup', { startedAt: NOW + 30 * 60 * 1000, scheduledAt: NOW + 30 * 60 * 1000, cost: 0.002 }),
+    ]);
+    getRoleWakeLedgerRecent.mockResolvedValueOnce([
+      {
+        at: NOW,
+        decision: 'report',
+        reason: '今早有两封新邮件。',
+        newBasis: { mail: 2, calendar: 1 },
+      },
+      {
+        at: NOW + 30 * 60 * 1000,
+        decision: 'suppressed_duplicate',
+        reason: 'previously_reported',
+        newBasis: { mail: 0, calendar: 0 },
+        firstReportedAt,
+      },
+    ] satisfies RoleWakeLedgerRecentRow[]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => expect(screen.getAllByTestId('role-wake-ledger-row')).toHaveLength(2));
+    const values = screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent ?? '');
+    expect(values).toContain('已汇报 · 今早有两封新邮件。 · 比上一轮新增 2 封邮件、1 个日程 · $0.0400');
+    expect(values).toContain(`未重复推送 · 此前已于 ${formatDateTime(firstReportedAt, 'zh')} 汇报过 · $0.0020`);
+    const list = screen.getByTestId('role-wake-ledger-list').textContent ?? '';
+    expect(list).not.toContain('mail:');
+    expect(list).not.toContain('calendar:');
+    expect(list).not.toContain('previously_reported');
+    expect(list).not.toContain('suppressed_duplicate');
   });
 });

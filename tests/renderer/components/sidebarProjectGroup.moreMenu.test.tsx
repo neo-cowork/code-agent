@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
+import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { groupByWorkspace } from '../../../src/renderer/utils/workspaceGrouping';
 
 const dialogMocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -175,5 +177,86 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
     });
     expect(queryByRole('button', { name: /更多操作/ })).toBeNull();
     expect(queryByRole('button', { name: /新建会话/ })).toBeNull();
+  });
+});
+
+
+describe('SidebarProjectGroup new session directory', () => {
+  const projectRoot = '/workspace/proj';
+  const taskDirectory = '/workspace/任务_1124_x';
+  const taskSession = {
+    id: 'task',
+    title: 'Summarize notes',
+    createdAt: 100,
+    updatedAt: 300,
+    workingDirectory: taskDirectory,
+    projectId: 'p1',
+    messageCount: 2,
+    turnCount: 1,
+  } as SessionWithMeta;
+  const [projectGroup] = groupByWorkspace([taskSession], 'Quick chat', 'Project');
+  const projectMeta = { name: 'code-agent', primaryPath: projectRoot };
+  const newSessionButton = { name: '在 code-agent 新建会话' };
+
+  it('opens the project root on each of three consecutive project row clicks after a task', () => {
+    const createWorkspaceChat = vi.fn();
+    const handleNewWorkspaceChat = vi.fn(async (
+      _event: React.MouseEvent,
+      workspaceKey: string,
+      directory?: string,
+      projectId?: string,
+    ) => createWorkspaceChat(workspaceKey, directory, projectId));
+    const { getByRole } = renderGroup({
+      group: projectGroup,
+      projectMetaById: { p1: projectMeta },
+      createWorkspaceChat,
+      handleNewWorkspaceChat,
+    });
+    const button = getByRole('button', newSessionButton);
+
+    expect(projectGroup.path).toBe(taskDirectory);
+    for (const click of [1, 2, 3]) {
+      fireEvent.click(button);
+      expect(createWorkspaceChat).toHaveBeenNthCalledWith(click, projectGroup.key, projectRoot, 'p1');
+    }
+    expect(createWorkspaceChat).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses the project root for drawer new sessions and both goal start buttons', () => {
+    const goal = { id: 'g1', title: 'Summarize notes', status: 'active' as const, updatedAt: 100 };
+    const { getByRole, getAllByRole, props } = renderGroup({
+      group: projectGroup,
+      projectMetaById: { p1: { ...projectMeta, goals: [goal] } },
+      projectDrawerKey: projectGroup.key,
+      expandedProjectDetails: { [projectGroup.key]: true },
+    });
+
+    fireEvent.click(getByRole('button', { name: '新建项目会话' }));
+    expect(props.createWorkspaceChat).toHaveBeenCalledWith(projectGroup.key, projectRoot, 'p1');
+
+    const goalButtons = getAllByRole('button', { name: '从目标 Summarize notes 新建项目会话' });
+    expect(goalButtons).toHaveLength(2);
+    goalButtons.forEach((button) => fireEvent.click(button));
+    expect(props.handleStartProjectGoal).toHaveBeenCalledTimes(2);
+    expect(props.handleStartProjectGoal).toHaveBeenNthCalledWith(1, goal, projectGroup.key, projectRoot, 'p1');
+    expect(props.handleStartProjectGoal).toHaveBeenNthCalledWith(2, goal, projectGroup.key, projectRoot, 'p1');
+  });
+
+  it('uses the group path for the new session button on a folder group without a project', () => {
+    const [group] = groupByWorkspace([{ ...taskSession, projectId: undefined }], 'Quick chat', 'Project');
+    const { getByRole, props } = renderGroup({ group, projectMetaById: {} });
+
+    fireEvent.click(getByRole('button', { name: '在 任务_1124_x 新建会话' }));
+    expect(props.handleNewWorkspaceChat).toHaveBeenCalledWith(expect.anything(), group.key, taskDirectory, undefined);
+  });
+
+  it('keeps the project id and leaves the directory unset when the project has no folder', () => {
+    const { getByRole, props } = renderGroup({
+      group: projectGroup,
+      projectMetaById: { p1: { name: 'code-agent' } },
+    });
+
+    fireEvent.click(getByRole('button', newSessionButton));
+    expect(props.handleNewWorkspaceChat).toHaveBeenCalledWith(expect.anything(), projectGroup.key, undefined, 'p1');
   });
 });

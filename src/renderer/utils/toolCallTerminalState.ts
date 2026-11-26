@@ -3,6 +3,8 @@ import type { Task } from '@shared/contract/backgroundTask';
 import type { TraceNode } from '@shared/contract/trace';
 import type { AgentRow } from './agentRows';
 import { isToolInterruptionPlaceholder } from './toolExecutionPresentation';
+import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
+import { classifyToolName } from './humanizeToolStep';
 import { isDelegationTool, isTaskTerminalStatus } from './agentActivity';
 
 type TerminalState = 'running' | 'completed' | 'failed' | 'interrupted' | 'hidden';
@@ -32,12 +34,16 @@ export function resolveToolCallTerminalState(input: {
   agentId?: string;
   sessionLive?: boolean;
   awaitingApproval?: boolean;
+  /** The user (or timeout) already answered this call's approval but its result has not arrived. */
+  approvalAnswered?: boolean;
   interruptionReason?: StreamInterruptionReason;
   /** State of the work a delegation call handed off, once that work has its own task/agent record. */
   delegatedWork?: 'working' | 'completed' | 'failed' | 'cancelled';
 }) {
-  const { toolCall, sessionId, sessionLive, awaitingApproval, interruptionReason, delegatedWork } = input;
+  const { toolCall, sessionId, sessionLive, awaitingApproval, approvalAnswered, interruptionReason, delegatedWork } = input;
   const { result, task } = ownOutcome(toolCall, sessionId, input.tasks);
+  // 同一轮已交给后台任务的调用：工作没丢，不当失败、也不读作「没执行」。
+  const handedOff = result?.metadata?.code === 'HANDED_OFF_TO_BACKGROUND';
   const agentId = input.agentId
     ?? (typeof result?.metadata?.agentId === 'string' ? result.metadata.agentId : undefined)
     ?? result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m)?.[1];
@@ -49,7 +55,7 @@ export function resolveToolCallTerminalState(input: {
   // (a failure already recovered by a later success stays settled).
   if (delegatedWork && result?.metadata?.recovered !== true) state = delegatedWork === 'working' ? 'running' : delegatedWork === 'cancelled' ? 'interrupted' : delegatedWork;
   // Otherwise an actual call outcome takes precedence over every inferred task/agent outcome.
-  else if (result) state = result.success || result.metadata?.recovered === true ? 'completed' : 'failed';
+  else if (result) state = result.success || result.metadata?.recovered === true || handedOff ? 'completed' : 'failed';
   else if (awaitingApproval) state = 'running';
   else if (task) state = task.status === 'completed' ? 'completed'
     : task.status === 'cancelled' ? 'interrupted'
@@ -57,6 +63,7 @@ export function resolveToolCallTerminalState(input: {
   else if (row && row.status !== 'standby') state = row.status === 'done' ? 'completed'
     : row.status === 'failed' ? 'failed' : row.status === 'cancelled' ? 'interrupted' : 'running';
   else if (interruptionReason) state = 'interrupted';
+  else if (approvalAnswered) state = 'running';
   else if (sessionLive) state = 'running';
   else state = toolCall?._streaming ? 'hidden' : 'interrupted';
   // A terminal shell task has its own receipt; drop only its result-less background placeholder.
@@ -67,7 +74,13 @@ export function resolveToolCallTerminalState(input: {
     : state === 'failed' ? 'error' as const : state === 'interrupted' ? 'interrupted' as const : 'success' as const;
   const stepStatus: ToolStepStatus = awaitingApproval && !result ? 'pending-approval'
     : state === 'running' ? 'running' : state === 'failed' ? 'failed' : 'completed';
-  return { state, displayStatus, stepStatus };
+  // 停车审批被自动收口：命令从未执行，标题不能说「未成功」。
+  const notRun = result?.success === false && result.metadata?.recovered !== true
+    && isParkedApprovalClosureSentence(result.error);
+  // 主机封存、从未执行的 Bash（metadata.skipped）：即使被降级为 recovered（state 仍是 completed、
+  // 不变色），标题也不能说「运行了」。executed===true 是命令跑完后才被读循环封口替换的结果，不算没执行。只改措辞，不改 state。
+  const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !handedOff && !!toolCall && classifyToolName(toolCall.name) === 'bash';
+  return { state, displayStatus, stepStatus, notRun, skipped, handedOff };
 }
 
 /** Preserve even empty tool results when adapting the trace's flattened representation. */
@@ -76,10 +89,12 @@ export function traceTerminalToolCall(tc: NonNullable<TraceNode['toolCall']>): T
     id: tc.id, name: tc.name, arguments: tc.args, _streaming: tc._streaming,
     shortDescription: tc.shortDescription, stepLabel: tc.stepLabel,
     targetContext: tc.targetContext, expectedOutcome: tc.expectedOutcome, liveOutput: tc.liveOutput,
+    guiTakeoverDisclosure: tc.guiTakeoverDisclosure,
     result: tc.result !== undefined || tc.success !== undefined ? {
       toolCallId: tc.id, success: tc.success ?? true,
       output: tc.success !== false ? tc.result : undefined,
       error: tc.success === false ? tc.result : undefined,
+      ...(tc.userMessage !== undefined ? { userMessage: tc.userMessage } : {}),
       duration: tc.duration, outputPath: tc.outputPath,
       metadata: tc.recovered ? { ...tc.metadata, recovered: true } : tc.metadata,
     } : undefined,

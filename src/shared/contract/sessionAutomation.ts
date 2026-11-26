@@ -111,6 +111,8 @@ export interface SessionAutomationOwnerIdentity {
 
 export interface SessionAutomationConfig extends Record<string, unknown> {
   createdVia?: string;
+  /** 绑定的专家（cron 任务绑定了角色时由桥写入；收件箱据此显示专家名）。 */
+  roleId?: string;
   /** Execution location snapshot for review-inbox presentation. */
   runsOn?: 'local' | 'cloud';
   /** 进程归属戳（见 SessionAutomationOwnerStamp）；进入终态时清除。 */
@@ -239,7 +241,12 @@ export interface UpsertSessionAutomationInput {
 
 /** 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：一条「等批准」运行（已 join 到 cron 任务）。 */
 export interface AwaitingApprovalRun {
-  jobId: string;
+  /** Real scheduled job id only; absent for first/event/cadence role wakes. */
+  jobId?: string;
+  /** Wake execution/session identity, independent of the cron job namespace. */
+  runKey?: string;
+  runKind?: 'role_wake';
+  title?: string;
   executionId: string | null;
   requestId: string;
   sessionId?: string;
@@ -248,4 +255,10 @@ export interface AwaitingApprovalRun {
   tool?: string;
   /** 已脱敏的命令/路径预览（argsPreview ?? argsSummary），没有则不带。 */
   commandPreview?: string;
+}
+
+/** Persisted wake lifecycle and approval outcome, without inventing a cron execution. */
+export interface RoleWakeRunStatus {
+  run: SessionAutomationRecord;
+  approvalTimedOut: boolean;
 }

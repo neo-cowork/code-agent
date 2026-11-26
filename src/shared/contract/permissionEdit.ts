@@ -2,7 +2,7 @@
 // 审批面「改一改再发」（N-WRITEBACK-EDIT）—— 可编辑写回工具的字段表与合并校验
 //
 // 原则：mail_send 与明确登记的 calendar/reminders/tmeet 写回动作在真正派发前允许修改；
-// mail_draft 本身就是草稿容器，不重复套编辑，delete 动作也不开放内容编辑。
+// mail_draft 本身就是草稿容器，不重复套编辑。删除单条日程或提醒走同一张中性写回卡，字段全只读。
 //
 // renderer 与 host 共用这一份表：renderer 只对表内工具出编辑口，host 只认表内工具与
 // 表内可编辑字段（fail-closed），只读标识与 attachments 从原参数原样带回。
@@ -18,6 +18,8 @@ export interface EditableField {
   required?: boolean;
   /** 只在审批卡查看态展示；编辑态不出控件，host 也拒绝 updatedArgs 修改。 */
   readonly?: boolean;
+  /** 内部标识：审批卡不展示。执行参数仍原样带走。 */
+  internal?: boolean;
   /** 多行文本（renderer 用 Textarea）。 */
   multiline?: boolean;
 }
@@ -40,7 +42,7 @@ const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
   ],
   calendar_update_event: [
     { key: 'calendar', kind: 'string', required: true, readonly: true },
-    { key: 'event_uid', kind: 'string', required: true, readonly: true },
+    { key: 'event_uid', kind: 'string', required: true, readonly: true, internal: true },
     { key: 'title', kind: 'string' },
     { key: 'start_ms', kind: 'datetime' },
     { key: 'end_ms', kind: 'datetime' },
@@ -64,10 +66,17 @@ const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
   ],
   reminders_update: [
     { key: 'list', kind: 'string', required: true, readonly: true },
-    { key: 'reminder_id', kind: 'string', required: true, readonly: true },
+    { key: 'reminder_id', kind: 'string', required: true, readonly: true, internal: true },
     { key: 'title', kind: 'string' },
     { key: 'notes', kind: 'string', multiline: true },
     { key: 'remind_at_ms', kind: 'datetime' },
+  ],
+  // 删除单条提醒走同一张中性写回卡：字段全只读。宿主在批准前用 get_reminder 补上标题和时间，只给卡片看，不进删除请求。
+  reminders_delete: [
+    { key: 'list', kind: 'string', required: true, readonly: true },
+    { key: 'reminder_id', kind: 'string', required: true, readonly: true, internal: true },
+    { key: 'title', kind: 'string', readonly: true },
+    { key: 'remind_at_ms', kind: 'datetime', readonly: true },
   ],
 };
 
@@ -149,14 +158,23 @@ function validateTimeRange(
   return null;
 }
 
-function validateFinalFields(fields: readonly EditableField[], params: Record<string, unknown>): ApplyEditedArgsResult | null {
+function validateFinalFields(
+  fields: readonly EditableField[],
+  params: Record<string, unknown>,
+  original: Record<string, unknown>,
+): ApplyEditedArgsResult | null {
   for (const field of fields) {
     const value = params[field.key];
     const empty = value === undefined
       || value === null
       || (typeof value === 'string' && value.trim() === '')
       || (Array.isArray(value) && value.length === 0);
-    if (field.required && empty) return { ok: false, reason: `field ${field.key} is required` };
+    // 只读字段的值永远来自原参数（updatedArgs 改不动它）。原参数就没带这个字段时
+    // 再要求它必填，等于因为模型少传了一个工具 schema 本就允许缺省的参数而拒掉用户
+    // 的任何修改（FB-2606 复现路径：模型省略 calendar → 卡上改 notes 被整体拒绝）。
+    // 原参数带了这个字段（哪怕是空值）时照常校验。
+    const originalLacked = field.readonly && !Object.prototype.hasOwnProperty.call(original, field.key);
+    if (field.required && empty && !originalLacked) return { ok: false, reason: `field ${field.key} is required` };
     if (field.kind === 'datetime' && !empty && datetimeMillis(field, value) === null) {
       return { ok: false, reason: `field ${field.key} must be a valid datetime` };
     }
@@ -207,7 +225,7 @@ export function applyEditedArgs(
     if (JSON.stringify(value) !== JSON.stringify(original[field.key])) changedKeys.push(field.key);
     params[field.key] = value;
   }
-  const invalidFields = validateFinalFields(fields, params);
+  const invalidFields = validateFinalFields(fields, params, original);
   if (invalidFields) return invalidFields;
   const invalidRange = validateTimeRange(toolName, fields, params);
   if (invalidRange) return invalidRange;

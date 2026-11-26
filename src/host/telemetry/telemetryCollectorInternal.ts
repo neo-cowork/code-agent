@@ -11,6 +11,7 @@ import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { sanitizeBrowserComputerToolArguments } from '../../shared/utils/browserComputerRedaction';
 import { projectSurfaceExecutionMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
 import { redactSurfaceExecutionValue } from '../../shared/utils/surfaceExecutionRedaction';
+import { omitMailBodyFromDiagnostics } from '../tools/outboundGuard';
 
 // ----------------------------------------------------------------------------
 // Error Classification
@@ -229,12 +230,13 @@ export function sanitizeToolArgsForTelemetry(
     const serialized = JSON.stringify(args ?? {});
     return { serialized, actualArguments: serialized };
   }
-  const safeArgs = sanitizeBrowserComputerToolArguments(name, args) || args;
+  const diagnosticArgs = omitMailBodyFromDiagnostics(name, args);
+  const safeArgs = sanitizeBrowserComputerToolArguments(name, diagnosticArgs) || diagnosticArgs;
   const serialized = JSON.stringify(safeArgs);
   return {
     serialized,
     actualArguments: serialized,
-    rawArguments: args
+    rawArguments: diagnosticArgs
   };
 }
 

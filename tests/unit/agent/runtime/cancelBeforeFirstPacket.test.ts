@@ -23,6 +23,11 @@ import { getLangfuseService } from '../../../../src/host/services';
 import { DEFAULT_SETTINGS } from '../../../../src/host/services/core/configDefaults';
 import { settlePrimaryRunSessionStatus } from '../../../../src/host/task/backgroundTaskTerminal';
 import { ModelRouter } from '../../../../src/host/model/modelRouter';
+import { stampAssistantMessageCorrelation } from '../../../../src/host/session/assistantCorrelation';
+import { applyConversationStreamEvent } from '../../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
+import type { ConversationStreamEventActions } from '../../../../src/renderer/hooks/agent/effects/streamEventTypes';
+import { projectTurns } from '../../../../src/renderer/hooks/useTurnProjection';
+import { mergeSnapshotWithLiveTail } from '../../../../src/renderer/stores/sessionSnapshotMerge';
 
 const store = vi.hoisted(() => ({
   sessions: undefined as SessionRepository | undefined,
@@ -31,7 +36,10 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     getCurrentSessionId: () => 'cancel-session',
     getSession: async (id: string) => store.sessions?.getSession(id),
-    addMessageToSession: async (id: string, message: Message) => store.sessions?.addMessage(id, message),
+    addMessageToSession: async (id: string, message: Message) => {
+      stampAssistantMessageCorrelation(message);
+      return store.sessions?.addMessage(id, message);
+    },
     updateSession: async (id: string, updates: Partial<Session>) => store.sessions?.updateSession(id, updates),
     getSessionMetadata: () => undefined,
     getTodos: async () => [],
@@ -103,6 +111,9 @@ describe('AgentOrchestrator Stop before first model packet', () => {
   afterEach(async () => {
     await Promise.all(writes);
     await orchestrator.drainWorkspaceServices();
+    // 终局之后的记忆/建议日志发生在 sendMessage 返回之后。先排空再 restoreAllMocks，
+    // 否则这些 console.error 会在 worker 关 RPC 时还挂着 onUserConsoleLog。
+    await orchestrator.drainPostTerminalWork();
     resetApplicationRunRegistryForTests();
     vi.restoreAllMocks(); vi.unstubAllEnvs();
     // restoreAllMocks 会把 beforeEach 里的静音一并还原；在收尾动作前重新压上，覆盖
@@ -180,6 +191,63 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     expect(store.sessions?.getMessages('cancel-session').filter((m) => m.content.includes('[cancelled]'))).toHaveLength(1);
   });
 
+  it('Stop mid-stream keeps one partial through live events and session reload', async () => {
+    const run = orchestrator.sendMessage('Write a long picnic checklist.', undefined, { mode: 'normal', disableAutoAgent: true });
+    await vi.waitFor(() => expect(requestStarted).toBe(true));
+    const partial = '\n\n1. Pack the wicker basket.\n2. Bring the patched blanket.\n3.';
+    await onStream?.({ type: 'text', content: partial });
+    await orchestrator.cancel('user');
+    await run;
+    await Promise.all(writes);
+
+    const persisted = store.sessions?.getMessages('cancel-session') ?? [];
+    const userMessage = persisted.find((message) => message.role === 'user');
+    expect(userMessage).toBeDefined();
+    const persistedAssistants = persisted.filter((message) => message.role === 'assistant');
+    expect(persistedAssistants).toHaveLength(1);
+    expect(persistedAssistants[0]?.content.startsWith('1.')).toBe(true);
+    expect(persistedAssistants[0]?.metadata?.correlation?.turnId).toBe(runtime.turn.currentTurnId);
+
+    let liveMessages: Message[] = [userMessage!];
+    const actions: ConversationStreamEventActions = {
+      addMessage: (message) => { liveMessages = [...liveMessages, message]; },
+      updateMessage: (id, updates) => {
+        liveMessages = liveMessages.map((message) => message.id === id ? { ...message, ...updates } : message);
+      },
+      appendStreamingMessageDelta: (messageId, delta) => {
+        liveMessages = liveMessages.map((message) => message.id === messageId
+          ? { ...message, content: `${message.content ?? ''}${delta.content ?? ''}`, reasoning: `${message.reasoning ?? ''}${delta.reasoning ?? ''}` || undefined }
+          : message);
+      },
+      setMessages: (messages) => { liveMessages = messages; },
+      getMessages: () => liveMessages,
+      queueUpdate: () => {},
+      now: () => Date.now(),
+    };
+    const streamState = {
+      currentTurnMessageId: null as string | null,
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+    for (const event of events.filter((event) => event.type === 'turn_start' || event.type === 'stream_chunk' || event.type === 'message')) {
+      applyConversationStreamEvent(event, streamState, actions);
+    }
+
+    const visiblePartialTexts = (messages: Message[]) => projectTurns(messages, 'cancel-session', false).turns
+      .flatMap((turn) => turn.nodes)
+      .filter((node) => node.type === 'assistant_text' && Boolean(node.content.trim()))
+      .map((node) => node.content);
+    expect(liveMessages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(liveMessages.find((message) => message.role === 'assistant')?.content.startsWith('\n\n1.')).toBe(true);
+    expect(visiblePartialTexts(liveMessages)).toHaveLength(1);
+
+    const reloaded = mergeSnapshotWithLiveTail(persisted, liveMessages).messages;
+    expect(reloaded.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(visiblePartialTexts(reloaded)).toHaveLength(1);
+    expect(visiblePartialTexts(mergeSnapshotWithLiveTail(persisted, []).messages)).toHaveLength(1);
+  });
+
   it('a fast model finishes normally and Stop after settlement adds no marker', async () => {
     vi.mocked(ModelRouter.prototype.inference).mockImplementation(async (_messages, _tools, _config, stream) => {
       await stream?.({ type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' });
@@ -192,5 +260,25 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     expect(db.prepare('select status from durable_runs').all()).toEqual([{ status: 'completed' }]);
     await orchestrator.cancel('user');
     expect(store.sessions?.getMessages('cancel-session').some((m) => m.content.includes('[cancelled]'))).toBe(false);
+  });
+
+  it('post-terminal summary logs land before drainPostTerminalWork returns', async () => {
+    const lines: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      lines.push(args.map((part) => (typeof part === 'string' ? part : '')).join(' '));
+    });
+    vi.mocked(ModelRouter.prototype.inference).mockImplementation(async (_messages, _tools, _config, stream) => {
+      await stream?.({ type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' });
+      return { type: 'text', content: '会议摘要：周三完成反馈归类，下周一评审改进计划。' };
+    });
+    await orchestrator.sendMessage('Summarize these meeting notes in one sentence.', undefined, { mode: 'normal', disableAutoAgent: true });
+    await Promise.all(writes);
+    // 摘要日志在 await judgeConversation 之后。drain 若没有留住这条 promise，下面的匹配在返回时还是空的。
+    const marker = lines.length;
+    await orchestrator.drainPostTerminalWork();
+    expect(lines.slice(marker).join('\n')).toMatch(/Conversation summary saved/);
+    const settled = lines.length;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(lines.slice(settled).join('\n')).not.toMatch(/Conversation summary saved/);
   });
 });

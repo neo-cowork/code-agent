@@ -3,6 +3,7 @@ import type { AppSettings, ModelProvider } from '@shared/contract';
 import { Button } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
+import { isWebMode } from '../../../../utils/platform';
 import { providerRequiresApiKey } from './ModelSettings.helpers';
 
 export function ModelKeyGuide({ settings, defaultProvider }: {
@@ -11,6 +12,7 @@ export function ModelKeyGuide({ settings, defaultProvider }: {
 }) {
   const { t } = useI18n();
   const openModelSettings = useAppStore((state) => state.openModelSettings);
+  if (isWebMode()) return null; // 网页版存不了密钥：引导填密钥会与页面说明矛盾
   const requiringKeys = Object.entries(settings?.models.providers ?? {})
     .filter(([provider]) => providerRequiresApiKey(provider as ModelProvider));
   if (!requiringKeys.length || requiringKeys.some(([, config]) => config.apiKeyConfigured || config.apiKey)) return null;

@@ -1,6 +1,7 @@
+import { getHostTurnProgress } from '../../../shared/i18n/hostTurnProgress';
 import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { TraceEventDataMap } from './turnTrace';
-import { getToolAttemptTrace } from './toolAttemptTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
@@ -33,6 +34,7 @@ import type { RunFinalizer } from './runFinalizer';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getAttachmentId } from '../../../shared/utils/messageAttachments';
+import { hasDesktopAppshotBlock } from '../../../shared/contract/appshot';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
 import { applyDeclareDeliverablesOutcome, recordDeclareDeliverables } from './declareDeliverablesGate';
@@ -52,11 +54,14 @@ import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifac
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate, collectRecentUserTexts } from './desktopActionClaimGate';
+import { applyBrowserKeepClaimGate, collectBrowserEngines } from './browserKeepClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } from './hiddenWakeNoop';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
+import { collectProposedRoleIds, stripRoleOpenLinkTail } from './roleOpenLinkStrip';
+import { attachGuiTakeoverDisclosures } from './guiTakeoverDisclosure';
 import {
   buildSteerModelContent, buildForcedFinalAssistantContent,
   hasOnlySoftValidationFailures,
@@ -70,17 +75,15 @@ import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
-import { deniedToolFinalReply, deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
-import { isBashToolName } from '../../tools/toolNames';
-import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
-import { isWriteBlockedDuringPlanExitFallback } from './planExitFallback';
+import { settleForegroundToolDenial } from './foregroundDenialHandoff';
 import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
 import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -97,6 +100,7 @@ export class MessageProcessor {
     toolCallRetryCount: 0,
     deliveryCriticBlockCount: 0,
     deliverableRepairCount: 0,
+    browserKeepClaimRetryCount: 0,
     artifactRenderRepairCount: 0,
     _consecutiveTruncations: 0,
   };
@@ -216,11 +220,8 @@ export class MessageProcessor {
     const isForcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
 
     // Research mode: indicate report generation phase
-    if (this.ctx.turn.researchModeActive) {
-      this.runFinalizer.emitTaskProgress('generating', '正在生成报告...');
-    } else {
-      this.runFinalizer.emitTaskProgress('generating', '生成回复中...');
-    }
+    const progress = getHostTurnProgress(getHostUiLocale());
+    this.runFinalizer.emitTaskProgress('generating', this.ctx.turn.researchModeActive ? progress.report : progress.generating);
 
     // User-configurable Stop hook (GAP-006: 完成闸 + 重试安全阀)
     if (!isForcedFinalTextPass && this.ctx.hookManager && !isSimpleTask) {
@@ -270,7 +271,7 @@ export class MessageProcessor {
       const modifiedFiles = Array.from(this.ctx.nudgeManager.getModifiedFiles());
       if (modifiedFiles.length >= DELIVERY_CRITIC.FILE_THRESHOLD) {
         try {
-          this.runFinalizer.emitTaskProgress('generating', '交付前自动审查中...');
+          this.runFinalizer.emitTaskProgress('generating', getHostTurnProgress(getHostUiLocale()).deliveryReview);
           const userFirstMessage = this.ctx.messages.find((m) => m.role === 'user')?.content;
           const verificationOutcome = this.ctx.nudgeManager.getVerificationOutcome();
           const criticResult = await runDeliveryCritic(
@@ -405,7 +406,7 @@ export class MessageProcessor {
 
       this.runFinalizer.emitTaskProgress(
         'generating',
-        stopLooksIncomplete ? '回复疑似未完，继续生成剩余内容...' : '输出过长，继续生成剩余内容...',
+        stopLooksIncomplete ? progress.incomplete : progress.truncated,
       );
       return 'continue';
     }
@@ -443,12 +444,14 @@ export class MessageProcessor {
 
     const strippedRawContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
     const handoffTail = extractHandoffProposalTail(strippedRawContent);
-    const strippedContent = handoffTail.cleanedContent;
+    const roleOpenStrip = stripRoleOpenLinkTail(handoffTail.cleanedContent, collectProposedRoleIds(this.ctx.messages));
+    const strippedContent = roleOpenStrip.content;
+    if (roleOpenStrip.removedLine) logger.info('[RoleOpenLinkStrip] dropped stray open-link tail line', { roleId: roleOpenStrip.roleId, length: roleOpenStrip.removedLine.length, sessionId: this.ctx.sessionId });
     const latestUserMessage = [...this.ctx.messages].reverse()
       .find((message) => message.role === 'user' && message.visibility !== 'rewound');
     const latestUserContent = latestUserMessage?.content;
     const hasAppshotEvidence =
-      (typeof latestUserContent === 'string' && latestUserContent.includes('<appshot')) ||
+      (typeof latestUserContent === 'string' && hasDesktopAppshotBlock(latestUserContent)) ||
       // 缺 id 的历史附件（持久化/回放脏数据，后台槽会继承主会话历史）必须走
       // getAttachmentId 兜底——裸 `attachment.id.startsWith` 曾让一条脏附件炸穿
       // 整轮纯文本收尾（2026-08-07 converter.ts 同型事故；realrun20 07/08 占位
@@ -471,6 +474,24 @@ export class MessageProcessor {
       return 'continue';
     }
 
+    const browserKeepGate = await applyBrowserKeepClaimGate({
+      sessionId: this.ctx.sessionId,
+      recentUserMessages: collectRecentUserTexts(this.ctx.messages),
+      assistantContent: desktopClaimGate.content,
+      usedBrowserTool: this.ctx.turn.toolsUsedInTurn.some((name) => name === 'Browser' || name === 'browser_action'),
+      browserEngines: collectBrowserEngines(this.ctx.messages),
+      retriesDone: this.guardState.browserKeepClaimRetryCount,
+    });
+    if (browserKeepGate.action === 'retry') {
+      this.guardState.browserKeepClaimRetryCount += 1;
+      logger.warn('[BrowserKeepClaimGate] retrying: window-kept claim without a kept entry', { reason: browserKeepGate.reason, sessionId: this.ctx.sessionId });
+      this.contextAssembly.injectSystemMessage(browserKeepGate.repairPrompt, 'browser-keep-claim-guard');
+      return 'continue';
+    }
+    if (browserKeepGate.action === 'warn') {
+      logger.warn('[BrowserKeepClaimGate] warning prepended: window-kept claim without a kept entry', { reason: browserKeepGate.reason, sessionId: this.ctx.sessionId });
+    }
+
     // === Ground-truth gate ===
     // 如果用户首条消息含 URL 且本 run 命中反爬阈值，给"成功输出"加 disclaimer。
     // 不替换内容，只 prefix 提示——让用户看到"反爬限制下未必准确"。
@@ -478,7 +499,7 @@ export class MessageProcessor {
     const gated = applyGroundTruthGate(
       typeof userFirstMessage === 'string' ? userFirstMessage : undefined,
       this.guardState.antiScrapingHitsInRun,
-      desktopClaimGate.content,
+      browserKeepGate.content,
     );
     if (gated.applied) {
       logger.warn(
@@ -510,7 +531,7 @@ export class MessageProcessor {
       });
       if (gate.action === 'repair') {
         if (gate.kind === 'disk') this.guardState.deliverableRepairCount += 1; else this.guardState.artifactRenderRepairCount += 1;
-        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}) });
+        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}), ...(gate.items ? { items: gate.items } : {}) });
         this.contextAssembly.injectSystemMessage(gate.prompt, gate.tag);
         return 'continue';
       }
@@ -530,7 +551,7 @@ export class MessageProcessor {
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
     // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
-    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+    if ((handoffTail.found || roleOpenStrip.removedLine) && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // forced-final 落盘正文为空（原文仅内部格式标记，被 stripInternalFormatMimicry 清掉）
     // 不算交付（ai-review R2 #2005）：不落空消息、不清 reason，保持循环尾部
@@ -598,7 +619,7 @@ export class MessageProcessor {
 
     langfuse.endSpan(this.ctx.turn.currentIterationSpanId, { type: 'text_response' });
 
-    this.runFinalizer.emitTaskProgress('completed', '回复完成');
+    this.runFinalizer.emitTaskProgress('completed', progress.completed);
     this.runFinalizer.emitTaskComplete();
 
     // Telemetry: record turn end (text response)
@@ -660,48 +681,16 @@ export class MessageProcessor {
       );
     }
 
-    // ADR-074 K1/K2：plan-exit 兜底窗口内工具面收成 allowlist，落选者与 run 级禁用工具同一 admission 口拒绝。
-    const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name)
-      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall));
-    if (deniedToolCalls.length > 0) {
-      for (const call of toolCalls) {
-        const blocked = deniedToolCalls.some((denied) => denied.id === call.id);
-        getToolAttemptTrace(this.ctx).begin(call);
-        getToolAttemptTrace(this.ctx).finish(call, { toolCallId: call.id, success: false,
-          error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
-      }
-      this.guardState.toolCallRetryCount++;
-      const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
-      this.contextAssembly.injectSystemMessage(
-        [
-          '<tool-run-policy>',
-          this.ctx.foregroundToolFace ? 'The previous call was NOT run.'
-            : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
-          deniedToolRetryGuidance(this.ctx),
-          ...(shellDenial ? [shellDenial.guidance] : []),
-          '</tool-run-policy>',
-        ].join('\n'),
-        'tool-policy-guard',
-      );
-      await sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'denied', new Set(deniedToolCalls.map((denied) => denied.id)));
-      if (this.guardState.toolCallRetryCount > this.ctx.maxToolCallRetries) {
-        const finalMessage: Message = {
-          id: this.contextAssembly.generateId(),
-          role: 'assistant',
-          content: deniedToolFinalReply(this.ctx),
-          timestamp: Date.now(),
-          effortLevel: this.ctx.turn.effortLevel,
-          metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-          ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
-        };
-        await this.contextAssembly.addAndPersistMessage(finalMessage);
-        this.ctx.onEvent({ type: 'message', data: finalMessage });
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-        this.ctx.onEvent({ type: 'turn_end', data: { turnId: this.ctx.turn.currentTurnId } });
-        return 'break';
-      }
-      return 'continue';
-    }
+    // ADR-074 K1/K2 与前台执行工具收窄：拒绝口在 foregroundDenialHandoff，本文件只转交。
+    const admission = await settleForegroundToolDenial({
+      ctx: this.ctx,
+      contextAssembly: this.contextAssembly,
+      guard: this.guardState,
+      response,
+      toolCalls,
+      planModeActive: () => this.toolEngine.runtimeControl?.isPlanMode() === true,
+    });
+    if (admission) return admission;
 
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。
@@ -747,7 +736,7 @@ export class MessageProcessor {
     // 推进目标文件。noProgressTurns 只在目标真被成功改动时清零（markTargetPatched）。
 
     this.ctx.stats.addToolCalls(toolCalls.length);
-    this.runFinalizer.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
+    this.runFinalizer.emitTaskProgress('tool_pending', getHostUiLocale() === 'en' ? `Preparing ${toolCalls.length} actions` : `正在准备 ${toolCalls.length} 项操作`, {
       toolTotal: toolCalls.length,
     });
 
@@ -776,6 +765,10 @@ export class MessageProcessor {
 
     // 清理模型输出中模仿内部格式的文本
     const cleanedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+
+    // 本 run 首次直接驱动某 app 界面的调用：host 派发前先挂结构化披露（先于下方
+    // assistant 消息落库与 tool_call_start，审批卡在 executor 里照旧随后弹）。
+    await attachGuiTakeoverDisclosures(this.ctx, toolCalls);
 
     const isTerminalWakeNoop = isTerminalWakeNoopCall(toolCalls, this.ctx.allowedToolNames);
     const assistantMessage: Message = {
@@ -809,7 +802,7 @@ export class MessageProcessor {
         const historyResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
         await this.contextAssembly.addAndPersistMessage({
           id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
-          content: JSON.stringify(historyResults), toolResults: historyResults,
+          content: serializeToolResultsForModel(historyResults), toolResults: historyResults,
         });
       }
       await persistCancelledToolCallClosures({
@@ -884,7 +877,7 @@ export class MessageProcessor {
     const toolMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'tool',
-      content: JSON.stringify(artifactRepairResults),
+      content: serializeToolResultsForModel(artifactRepairResults),
       timestamp: Date.now(),
       toolResults: artifactRepairResults,
       ...(isTerminalWakeNoop ? { isMeta: true } : {}),

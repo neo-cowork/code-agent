@@ -53,7 +53,7 @@ async function buildDocumentEditMeta(
   metadata: Record<string, unknown> | undefined,
   ctx: ToolContext,
 ): Promise<Record<string, unknown>> {
-  const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(ctx.workingDir, filePath);
+  const resolvedPath = path.resolve(resolveInputPath(filePath, ctx.workingDir));
   const artifact = dryRun
     ? undefined
     : await createFileArtifact(resolvedPath, schema.name, ctx, {

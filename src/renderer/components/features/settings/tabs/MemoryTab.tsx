@@ -94,6 +94,7 @@ const TYPE_CONFIG: Record<string, Omit<MemoryTypeConfig, 'label'>> = {
   user: { icon: '👤', color: 'text-badge-info' },
   feedback: { icon: '💬', color: 'text-badge-warning' },
   project: { icon: '📁', color: 'text-badge-success' },
+  people: { icon: '🧑', color: 'text-badge-info' },
   reference: { icon: '🔗', color: 'text-badge-accent' },
   unknown: { icon: '📄', color: 'text-zinc-400' },
 };
@@ -430,7 +431,7 @@ export const MemoryTab: React.FC = () => {
 
     if (file) {
       setSelectedFile(file);
-      setMessage({ type: 'success', text: `${memoryText.files.focusFoundPrefix}${file.filename}` });
+      setMessage({ type: 'success', text: `${memoryText.files.focusFoundPrefix}${file.name}` });
     } else if (searchText) {
       setSelectedFile(null);
       setMessage({ type: 'error', text: `${memoryText.files.focusMissingPrefix}${searchText}` });
@@ -503,13 +504,15 @@ export const MemoryTab: React.FC = () => {
 
   // Delete file
   const handleDelete = async (filename: string) => {
+    // 归档成功提示展示人读名称；重载后列表查不到（陈旧行）时退回不带名称的前缀文案
+    const deletedName = files.find((item) => item.filename === filename)?.name;
     try {
       const result = await invokeLightMemory<boolean>({
         action: 'lightDelete',
         filename,
       });
-      if (result?.success) {
-        setMessage({ type: 'success', text: `${memoryText.files.deleteSuccessPrefix}${filename}` });
+      if (result?.success && result.data !== false) {
+        setMessage({ type: 'success', text: deletedName ? `${memoryText.files.deleteSuccessPrefix}${deletedName}` : memoryText.files.deleteSuccessPrefix.trim() });
         if (selectedFile?.filename === filename) setSelectedFile(null);
         setEntriesRefreshKey((key) => key + 1);
         await loadData();
@@ -828,7 +831,7 @@ export const MemoryTab: React.FC = () => {
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
             {[
               [memoryText.files.stats.memoryFiles, String(memorySummary.totalFiles), `${memorySummary.matchedFiles}${memoryText.files.stats.matchSuffix}`],
-              [memoryText.files.stats.types, String(memorySummary.typeCount), `${memoryText.typeLabels.user} / ${memoryText.typeLabels.feedback} / ${memoryText.typeLabels.project} / ${memoryText.typeLabels.reference}`],
+              [memoryText.files.stats.types, String(memorySummary.typeCount), `${memoryText.typeLabels.user} / ${memoryText.typeLabels.feedback} / ${memoryText.typeLabels.project} / ${memoryText.typeLabels.people} / ${memoryText.typeLabels.reference}`],
               [memoryText.files.stats.totalSessions, String(memorySummary.totalSessions), `${memoryText.files.stats.averageDepthPrefix}${memorySummary.averageDepth}`],
               [memoryText.files.stats.active7Days, String(memorySummary.activeDays7), `${memorySummary.recentConversationCount}${memoryText.files.stats.recentSessionsSuffix}`],
             ].map(([label, value, caption]) => (
@@ -882,9 +885,6 @@ export const MemoryTab: React.FC = () => {
                             <FileText className="h-4 w-4 shrink-0 text-zinc-500" />
                             <span className="truncate text-sm font-medium text-zinc-200">{row.name}</span>
                           </div>
-                          <div className="mt-1 max-w-[360px] truncate font-mono text-[11px] text-zinc-500" title={row.filename}>
-                            {row.filename}
-                          </div>
                           <div className="mt-1 max-w-[420px] truncate text-zinc-500">
                             {row.description || memoryText.files.noDescription}
                           </div>
@@ -937,7 +937,7 @@ export const MemoryTab: React.FC = () => {
       {selectedFile && (
         <SettingsSection
           title={memoryText.files.detailTitle}
-          description={`${selectedFile.filename} · ${formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}`}
+          description={`${selectedFile.name} · ${formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}`}
         >
           <div className="grid gap-4 rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
             <pre
@@ -1035,7 +1035,6 @@ export const MemoryTab: React.FC = () => {
         variant="warning"
         confirmText={memoryText.files.delete}
         cancelText={memoryText.files.cancel}
-        confirmDisabled={isWebMode()}
         onConfirm={() => {
           if (deletingFile) handleDelete(deletingFile);
         }}

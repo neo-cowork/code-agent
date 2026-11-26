@@ -1,9 +1,13 @@
 import type { BrowserService } from '../infra/browserService';
 import { browserPool } from '../infra/browserPool';
+import { createLogger } from '../infra/logger';
 import type { ToolExecutionResult } from '../../tools/types';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import type { BrowserLastPageStore } from './browserLastPageStore';
 import type { KeptBrowserRegistry } from './keptBrowserRegistry';
+import { captureKeptResultSnapshot } from './keptResultSnapshot';
+
+const logger = createLogger('ManagedBrowserWindowLifecycle');
 
 /** The Surface session ends; only its physical window survives the handover. */
 export async function releaseManagedBrowserWindow(input: {
@@ -61,6 +65,20 @@ export async function releaseManagedBrowserWindow(input: {
   if (keptRegistry.isKeptServiceAlive(serviceKey)) {
     if (activeTab?.url) {
       keptRegistry.refreshTarget(identity.conversationId, activeTab.url, activeTab.title || '', serviceKey);
+    }
+    try {
+      await captureKeptResultSnapshot({
+        registry: keptRegistry,
+        conversationId: identity.conversationId,
+        serviceKey,
+        getPageHTML: () => browserService.getPageHTML(),
+        phase: 'release',
+      });
+    } catch (error) {
+      logger.warn('Kept result snapshot capture failed', {
+        reason: 'release_snapshot_capture_failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     // Pool idle reclaim and the BrowserService lease remain in force.
     browserPool.setInUse(serviceKey, false);

@@ -24,6 +24,20 @@ function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): To
 }
 
 describe('toolExecutionPresentation', () => {
+  it.each([zh, en])('uses a localized reason for a denied Reminders read', (translations) => {
+    const call = makeToolCall({
+      name: 'reminders',
+      result: {
+        toolCallId: 'tool-1',
+        success: false,
+        error: 'The complete user-facing answer is exactly this single everyday sentence',
+        metadata: { code: 'not_authorized', accessProbeDenied: true },
+      },
+    });
+    expect(humanizeToolFailureReason(call, translations)).toBe(translations.toolErrors.remindersReadDenied);
+    expect(resolveCollapsedFailureSummary(call, translations)).toBeNull();
+  });
+
   it('classifies tool source for builtin, mcp, computer, and memory tools', () => {
     expect(getToolCapabilitySource('Read')).toBe('builtin');
     expect(getToolCapabilitySource('mcp__github__get_issue')).toBe('mcp');
@@ -539,6 +553,26 @@ describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一�
     expect(reason).not.toContain('E_WHATEVER');
     expect(humanizeToolFailureReason(codeFailedCall('E_WHATEVER'), en))
       .toBe(en.toolStepHumanize.rawFailureCodeFallback);
+  });
+
+  it('日历 unavailable 的折叠行走已登记人话，不暴露小写连接器码', () => {
+    const call = makeToolCall({
+      name: 'calendar_list_events',
+      result: {
+        toolCallId: 'tool-calendar-unavailable',
+        success: false,
+        error: 'Calendar is only available in the Agent Neo desktop app on macOS. （日历只能在 macOS 的 Agent Neo 桌面版里使用。）',
+        metadata: { code: 'unavailable' },
+      },
+    });
+    const reason = humanizeToolFailureReason(call, zh);
+    expect(reason).toBe(zh.toolStepHumanize.rawFailureCodeFallback);
+    expect(reason).not.toContain('错误码');
+    expect(reason).not.toContain('unavailable');
+    const reasonEn = humanizeToolFailureReason(call, en);
+    expect(reasonEn).toBe(en.toolStepHumanize.rawFailureCodeFallback);
+    expect(reasonEn).not.toContain('Error code');
+    expect(reasonEn).not.toContain('unavailable');
   });
 
   it('数字退出码与 HTTP nnn 保持「错误码 …」原样', () => {

@@ -15,7 +15,7 @@ import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '..
 import { TurnRail } from './TurnRail';
 import { useTurnRailJump } from './useTurnRailJump';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
-import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, isContentHiddenBelow, useListResizeFollow, useScrollGeometryChange, useSessionEntryScroll } from './useSessionEntryScroll';
+import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, isContentHiddenBelow, useListResizeFollow, useScrollGeometryChange, useSessionEntryScroll, useToastReserveBottomKeep } from './useSessionEntryScroll';
 export { isScrollerNearBottom } from './useSessionEntryScroll';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -286,7 +286,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
-  const prevActiveMatchRef = useRef(-1);
+  const prevActiveMatchRef = useRef('');
   const prevFocusedTurnRef = useRef<string | null>(null);
   const prevAssistantAnchorRef = useRef<string | null>(null);
   // 进入落点由 Virtuoso 初始定位与 useSessionEntryScroll 测量结算共同负责；
@@ -690,24 +690,28 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   }, [projection.turns, scrollerElement, updateFollowedOutputTurnId]);
 
   // Scroll to active search match when it changes.
-  // Clearing the match list resets the cursor: the same index must scroll again
+  // 以命中「位置」而非下标判重：搜索栏带词打开时会用同一位置的新数组回写，
+  // 不能因此取消在途 settlement（也不能重发——位置没变）。取消只发生在
+  // 位置变了（activeDisplayScrollCancelRef 先取消旧的）或组件卸载时。
+  // Clearing the match list resets the cursor: the same match must scroll again
   // after search is re-armed, instead of being swallowed as a duplicate.
   useEffect(() => {
     if (searchMatches.length === 0) {
-      prevActiveMatchRef.current = -1;
+      prevActiveMatchRef.current = '';
       return;
     }
     const activeMatch = searchMatches[activeMatchIndex];
     if (!activeMatch) return;
-    if (activeMatchIndex === prevActiveMatchRef.current) return;
-    prevActiveMatchRef.current = activeMatchIndex;
+    const activeKey = `${activeMatch.turnIndex}:${activeMatch.nodeIndex}:${activeMatch.offset}`;
+    if (activeKey === prevActiveMatchRef.current) return;
+    prevActiveMatchRef.current = activeKey;
     keepActiveOutputVisibleRef.current = false;
     activeDisplayScrollCancelRef.current?.();
     activeDisplayScrollCancelRef.current = null;
 
     // N-MEM-JOURNAL-SOURCEJUMP r3：落点滚动用 settlement（跨帧重发，见
     // searchMatchSettlement 的头注释与真跑证据），不再是一次性 scrollToIndex。
-    return startSearchMatchSettlement({
+    startSearchMatchSettlement({
       activeMatch,
       turns: projectionTurnsRef.current,
       readTurns: () => projectionTurnsRef.current,
@@ -719,6 +723,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         scroller.querySelector<HTMLElement>(getTraceTurnSelector(turnId)),
     });
   }, [activeMatchIndex, searchMatches]);
+
+  useEffect(() => () => {
+    activeDisplayScrollCancelRef.current?.();
+    activeDisplayScrollCancelRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (focusedTurnIndex < 0 || !focusedTurnId) return;
@@ -940,6 +949,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     scroller: scrollerElement, virtuosoRef, projectionTurnsRef, keepActiveOutputVisibleRef,
     outputFollowStreamingRef, sessionEntrySettlingRef, historyPrependInProgressRef, isUserScrollSuppressed,
   });
+  // toast 让位带长出时贴底列表同帧钉底（Virtuoso 不会因 Footer 变高自己滚），见该钩子注释。
+  useToastReserveBottomKeep(scrollerElement);
 
   // 输入框变高（多行草稿、附件条、待决卡槽）会把消息区压矮：原本贴底的就重新落到底，
   // 末张卡不被吃掉；用户已上滚阅读（离底超出阈值+压缩量）时不动。
@@ -1105,8 +1116,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   }, [hasOlderMessages, isLoadingOlder, t]);
 
   // Footer 只保留呼吸间距；待决权限在 DecisionSlot，已决结果归属到对应工具步骤旁。
+  // 高度另吃 --toast-reserve（ToastContainer 发布，无 toast 时 0px）：toast 显示期间
+  // 把末条消息的操作行顶到 toast 上缘之上，不被底部居中的全局 toast 盖住。
   const Footer = useCallback(() => (
-    <div className="h-6" aria-hidden="true" />
+    <div aria-hidden="true" style={{ height: 'calc(1.5rem + var(--toast-reserve, 0px))' }} />
   ), []);
 
   return (
