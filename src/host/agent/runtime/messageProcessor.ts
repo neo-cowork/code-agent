@@ -419,6 +419,7 @@ export class MessageProcessor {
       const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
         toolsUsedInTurn: this.ctx.turn.toolsUsedInTurn,
         isSimpleTaskMode: this.ctx.turn.isSimpleTaskMode,
+        foregroundToolFace: this.ctx.foregroundToolFace,
         sessionId: this.ctx.sessionId,
         iterations,
         workingDirectory: this.ctx.workingDirectory,

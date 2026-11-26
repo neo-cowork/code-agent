@@ -483,6 +483,47 @@ describe('NudgeManager', () => {
       // 第 4 次：达到 main 上限 3，放行停止
       expect(manager.runNudgeChecks(ctx)).toBe(false);
     });
+
+    // 文字前台轮（ADR-059）只建/更清单并把执行派给后台，收尾时任务合法未完，且这个工具面
+    // 没有 TaskManager/执行工具可以照 nudge 去做。两个触发源各自单独钉：本轮写过任务
+    // （生产里唯一的活触发——reset() 没有生产调用方）和提示词里的任务关键词。
+    const openTasks = [
+      { id: 't1', subject: 'Rename photos by date', status: 'in_progress' },
+      { id: 't2', subject: 'Write changelog.md', status: 'pending' },
+    ];
+    const expectNudgeOnlyOffForeground = (arm: (nudgeManager: NudgeManager) => void) => {
+      mockGetIncompleteTasks.mockReturnValue(openTasks);
+
+      arm(manager);
+      const fgCtx = createMockContext({
+        isSimpleTaskMode: false,
+        foregroundToolFace: true,
+        toolsUsedInTurn: ['task_create', 'delegate_task'],
+      });
+      expect(manager.runNudgeChecks(fgCtx)).toBe(false);
+      expect(fgCtx.injectSystemMessage).not.toHaveBeenCalled();
+
+      const bgManager = new NudgeManager();
+      arm(bgManager);
+      const bgCtx = createMockContext({
+        isSimpleTaskMode: false,
+        foregroundToolFace: false,
+        toolsUsedInTurn: ['task_create', 'write_file'],
+      });
+      expect(bgManager.runNudgeChecks(bgCtx)).toBe(true);
+      const injected = (bgCtx.injectSystemMessage as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(injected).toContain('task-completion-check');
+    };
+
+    it('skips the incomplete-task nudge on text foreground turns when the model mutated tasks this run', () => {
+      expectNudgeOnlyOffForeground((nudgeManager) => nudgeManager.recordTaskManagerUse());
+    });
+
+    it('skips the incomplete-task nudge on text foreground turns when the prompt has task keywords', () => {
+      expectNudgeOnlyOffForeground((nudgeManager) => nudgeManager.reset(
+        [], 'Rename the 6 photos in this folder by date and write a changelog.md, plan it step by step first, then do it', '/tmp/test', [],
+      ));
+    });
   });
 
   describe('isTaskMutationToolCall (codex audit R1: TaskManager facade 也要触发 taskGate)', () => {

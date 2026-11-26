@@ -106,6 +106,7 @@ export const taskUpdateSchema: ToolSchema = {
   category: 'planning',
   permissionLevel: 'write',
   allowInPlanMode: true,
+  allowInTextForeground: true,
   accesses: [
     { kind: 'write', expression: 'resource(session, tasks)' },
   ],

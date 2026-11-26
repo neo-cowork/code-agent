@@ -25,6 +25,8 @@ const logger = createLogger('NudgeManager');
 export interface NudgeCheckContext {
   toolsUsedInTurn: string[];
   isSimpleTaskMode: boolean;
+  /** Text foreground tool face (ADR-059): lacks execution tools/TaskManager and delegates multi-step work. */
+  foregroundToolFace?: boolean;
   sessionId: string;
   iterations: number;
   workingDirectory: string;
@@ -327,7 +329,10 @@ export class NudgeManager {
     // Keep this tied to explicit task-management turns. Otherwise unrelated
     // stale planning items can hijack a completed answer, as seen in UI smoke
     // sessions where a subagent called task_list only as part of its own prompt.
-    if (!ctx.isSimpleTaskMode && (this._enforceTaskCompletion || this._taskManagerUsedInRun)) {
+    // Skip on text foreground turns (ADR-059): foreground creates/updates tasks
+    // and delegates execution to background, so tasks legitimately remain open at
+    // turn end and TaskManager/execution tools are absent from the foreground face.
+    if (!ctx.isSimpleTaskMode && !ctx.foregroundToolFace && (this._enforceTaskCompletion || this._taskManagerUsedInRun)) {
       const todos = getCurrentTodos(ctx.sessionId);
       const incompleteTodos = todos.filter(t => t.status !== 'completed');
       const incompleteTasks = getIncompleteTasks(ctx.sessionId);

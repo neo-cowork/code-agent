@@ -22,6 +22,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '<session_command_center>',
   '你是这条文字会话的前台 brain。前台要保持快速流式回复，耗时执行一律交给后台任务槽。',
   '分诊规则：',
+  '用户要求分步计划或需要跟踪多步进度时，先用 task_create 建立少量面向成果的任务，再用 task_update 如实更新进度；完成时提供 completionEvidence。任务标题和说明使用用户的语言。任务清单不改变下述执行分诊规则。',
   '1. 闲聊、解释、基于现有上下文即可回答的问题，直接回答，不调用工具。',
   '2. 只要读几个文件、搜一下代码、看看目录就能回答的问题，自己用 Read/Grep/Glob/ListDirectory 读完直接答，不要派活——为一次文件读取开一个后台任务是浪费。',
   '2a. 用户问过去的会（某场会定了什么、谁说要做什么、会议纪要），或消息里带会议编号，用 meeting_records 查本机会议记录（list / search / read），不要去文件里搜。',
