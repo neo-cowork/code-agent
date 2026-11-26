@@ -9,6 +9,7 @@ import { denyConcreteShellWritePath } from './writePathPolicyDeny';
 import { recordApprovedRmSettlementTargets } from '../../session/approvedRmSettlementTargets';
 import { rememberApprovedRmTargets, PRINTF_STATE_WRITE_WORD } from './approvedRmVerifyProbe';
 import { createLogger } from '../../services/infra/logger';
+import { sanitizeEnvValue } from '../../utils/sanitizeEnv';
 
 const approvedRmLogger = createLogger('ApprovedRmGrant');
 
@@ -174,6 +175,18 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
         if (!dashDash && arg === '--') { dashDash = true; continue; }
         if (!dashDash && arg.startsWith('-') && arg !== '-') {
           if (arg !== '-f' && arg !== '-v' && arg !== '--verbose' && !(rmSegments.length === 1 && arg === '--force')) return refuse('option');
+          continue;
+        }
+        // Owner-approved (2026-11-26): `"$HOME/x"` / `"${HOME}/x"` is the one variable spelling accepted, the same
+        // file as `~/x`. Every `$` that reaches here is double-quoted (hasUnsafeRmExpansion), HOME cannot be
+        // reassigned (assignment_control), and the value is the HOME the child shell inherits, not a host guess.
+        const homeRelative = /^\$\{HOME\}\/([^$`*?{}[\]]+)$/.exec(arg)?.[1];
+        if (homeRelative !== undefined && !homeRelative.split('/').includes('..')) {
+          if (rmSegments.length > 1 || redirected.size > 0) return refuse('command_shape:operand_not_absolute_literal');
+          const childHome = process.env.HOME ?? '';
+          if (!path.isAbsolute(childHome) || sanitizeEnvValue(childHome) !== childHome
+            || path.resolve(childHome) !== path.resolve(homedir())) return refuse('home_env');
+          operands.push(path.join(childHome, homeRelative));
           continue;
         }
         if (!arg || /[$`*?{}[\]]/.test(arg)) return refuse('literal_operand');
