@@ -131,9 +131,9 @@ describe('ToolExecutor PermissionRequest targetKind', () => {
     expect(request.details.targetKind).toBe('device');
   });
 
-  it('Write missing path carries targetKind unknown, never device', async () => {
+  it('Write missing path carries targetKind absent, never device', async () => {
     const request = await capturedRequest('/tmp/file-target-kind-missing-xyz.md');
-    expect(request.details.targetKind).toBe('unknown');
+    expect(request.details.targetKind).toBe('absent');
     expect(request.details.targetKind).not.toBe('device');
   });
 
