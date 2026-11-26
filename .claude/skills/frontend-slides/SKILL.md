@@ -132,6 +132,9 @@ node resources/skills/frontend-slides/scripts/theme-samples.mjs <slide-deck-dir>
 
 脚本取第一张内容页（只有封面时取封面），用 `corporate`、`minimal`、`bold-editorial` 各渲染一张 PNG，stdout 打印一行 JSON：`{"available":true,"samples":[{"theme":"corporate","png":"/abs/path.png"},...]}`。
 
+需要先给用户看样张时，直接运行上面的命令。无需探查工具链、另写渲染脚本或单独调用 LibreOffice。若命令需要交给后台，把完整的样张命令和已准备好的 deck 目录交过去，只委派样张渲染。
+后台任务完成后，在原对话展示三张图再提问；同一个风格问题只发一次。命令、原始 JSON、文件大小、内部路径和工具名用于执行与检查，不贴在用户可见的回复或后台任务摘要里。
+
 - `available:true`：在回复里用 markdown 图片展示 3 张（`![corporate](<png绝对路径>)`，每张标注风格名），然后调用一次 `ask_user_question`：选项为 `corporate` / `minimal` / `bold-editorial` / `直接做（用推荐风格）`。样张只体现配色与底色差异，**不要声称字体在图里不同**（本机渲染会回落到同一字体）。
 - `available:false`（没有 LibreOffice，没法出图）：明确告诉用户「这台机器没有预览」，改为文字版 `ask_user_question`，选项描述写清每种风格的配色和字体：
   - `corporate`：浅色底 `F8FAFC`，蓝色强调 `1D4ED8`，深色文字，字体 Microsoft YaHei

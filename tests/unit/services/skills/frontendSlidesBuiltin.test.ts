@@ -153,6 +153,18 @@ describe('packaged frontend-slides builtin', () => {
     expect(invocation?.skill.basePath).not.toBe('');
   });
 
+  it.each(['frontend-slides', 'ppt'])('loads the sample handoff and reply instructions through /%s', (name) => {
+    const invocation = resolveSkillInvocationFromSkills(
+      `/${name} 先给我看三种风格的样张`,
+      service.getUserInvocableSkills(),
+    );
+    const skill = invocation?.skill;
+    expect(skill?.promptContent).toContain(path.join(skill!.basePath, 'scripts', 'theme-samples.mjs'));
+    expect(skill?.promptContent).toContain('只委派样张渲染');
+    expect(skill?.promptContent).toContain('在原对话展示三张图再提问');
+    expect(skill?.promptContent).toContain('不贴在用户可见的回复或后台任务摘要里');
+  });
+
   it('finds the skill by walking up from dist/cli and dist/web', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-slides-layout-'));
     for (const [segment, marker] of [['cli', 'MARKER_DIST_CLI'], ['web', 'MARKER_DIST_WEB']] as const) {
