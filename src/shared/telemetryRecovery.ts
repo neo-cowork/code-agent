@@ -30,6 +30,15 @@ export function isTelemetryRecoveryNoticeResidue(text: string): boolean {
   return text.trim().startsWith('【历史恢复提示】');
 }
 
+/**
+ * 派生类出口（标题 / 规则摘要 / 技能复盘草稿）共用的用户文本入口：
+ * 先剥完整旧前缀留下用户原话；剥完仍以提示开头说明是截断残留，整条丢弃（空串 = 该消息视为没有正文）。
+ */
+export function stripTelemetryRecoveryNoticeOrResidue(content: string): string {
+  const stripped = stripTelemetryRecoveryNotice(content);
+  return isTelemetryRecoveryNoticeResidue(stripped) ? '' : stripped;
+}
+
 /** 新标记或旧前缀任一成立即视为「由运行记录还原」。 */
 export function isTelemetryRecoveredMessage(
   message: Pick<Message, 'role' | 'content' | 'metadata'>,
