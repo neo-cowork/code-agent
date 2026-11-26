@@ -708,10 +708,14 @@ export function PermissionCard({
           <RequestDetails request={request} hideConsequence={Boolean(faceConsequence)} />
           {quietFace && <div className="space-y-2" data-testid="permission-secondary-choices">
             {options.filter((option) => option.id === 'run' || option.id === '24h').map((option) => (
-              <Button key={option.id} size="sm" variant="ghost" className="h-auto w-full whitespace-normal text-left"
+              <Button key={option.id} size="sm" variant="ghost"
+                className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-lg border border-zinc-700 p-2.5 text-left hover:border-zinc-600"
                 onClick={() => { void handleApproval(option.id as ApprovalLevel); }}>
-                <span className="min-w-0 flex-1 break-words">{option.label}<span className="block text-xs text-zinc-400">{option.description}</span></span>
-                <kbd className="ml-2">{option.shortcut}</kbd>
+                <span className="min-w-0 flex-1 whitespace-normal break-words text-left">
+                  <span className="block text-sm font-medium text-zinc-200">{option.label}</span>
+                  <span className="mt-0.5 block text-xs font-normal text-zinc-400">{option.description}</span>
+                </span>
+                <kbd className="mt-0.5 shrink-0 rounded bg-zinc-700 px-1 py-0.5 font-mono text-2xs text-zinc-400">{option.shortcut}</kbd>
               </Button>
             ))}
             <p className="text-xs text-zinc-400">{p.keyboardHints}</p>
