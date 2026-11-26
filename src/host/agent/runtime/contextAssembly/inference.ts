@@ -842,6 +842,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       roundSucceeded = true;
     } finally {
       stopArtifactProgress();
+      if (!roundSucceeded) narrationHold.settle(false);
       // 熔断计数：断流轮 +1；只有「成功且无断流」才清零——熔断轮（预算 0 不发 reconnecting）再断流抛错时计数保持，熔断不被一次失败解除（PR #1839 ai-review Important）
       if (unattendedRun) ctx.inferenceRecovery.consecutiveStreamBreakRounds = streamBrokeThisRound ? ctx.inferenceRecovery.consecutiveStreamBreakRounds + 1 : roundSucceeded ? 0 : ctx.inferenceRecovery.consecutiveStreamBreakRounds;
     }

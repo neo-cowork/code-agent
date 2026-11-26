@@ -23,25 +23,35 @@ export function userFacingMessage(message: Message): Message {
   };
 }
 
+const CJK_RE = /[\u3400-\u9fff]/;
+const ENGLISH_PROBE = 'This is a plain English sentence used to probe the language the user asked for.';
+
 /**
- * 流式侧闸门：一整句英文候选句先扣下，之后的句子也排在它后面（保序）；
- * 整轮流结束时才知道有没有工具调用——有则丢弃候选句，没有（最终答复）则原样放出。
+ * 流式侧闸门，判据与落库侧整段判定一致：整段文本（含已扣下的）没有任何 CJK 且被检测器判为
+ * 英文旁白时才扣；一旦出现 CJK（说明整段不会被抑制）或检测器不认，已扣下的片段按原序放出，
+ * 之后的片段直通——所以中文最终答复、带英文代码行的中文答复不会被卡住。
+ * 整轮流结束（settle）时仍在扣的，带工具调用则丢弃，否则（最终答复）原样放出。
+ * 用户是英文 / 要求英文时（探针句不被判英文旁白）整个闸门不启用。
  */
 export function createNarrationHold(userPrompt: string, emit: (text: string) => void): {
   emit(text: string): void;
   settle(hasToolCalls: boolean): void;
 } {
-  const held: Array<{ text: string; english: boolean }> = [];
+  const held: string[] = [];
+  let all = '';
+  let passing = !isEnglishNarrationForZh(ENGLISH_PROBE, userPrompt, true);
+  const release = (): void => { for (const piece of held.splice(0)) emit(piece); };
   return {
     emit(text) {
-      const english = isEnglishNarrationForZh(text, userPrompt, true);
-      if (held.length > 0 || english) held.push({ text, english });
-      else emit(text);
+      if (passing) { emit(text); return; }
+      held.push(text);
+      all += text;
+      if (!all.trim()) return;
+      if (CJK_RE.test(all)) { passing = true; release(); }
     },
     settle(hasToolCalls) {
-      for (const piece of held.splice(0)) {
-        if (!(hasToolCalls && piece.english)) emit(piece.text);
-      }
+      if (!(hasToolCalls && isEnglishNarrationForZh(all, userPrompt, true))) release();
+      held.length = 0;
     },
   };
 }

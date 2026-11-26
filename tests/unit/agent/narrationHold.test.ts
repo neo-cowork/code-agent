@@ -17,8 +17,27 @@ describe('createNarrationHold (streamed delta path)', () => {
     expect(run(ZH_PROMPT, [SENTENCE], true)).toEqual([]);
   });
 
-  it('drops only the English sentence and keeps order of later Chinese text', () => {
-    expect(run(ZH_PROMPT, [SENTENCE, '好的。'], true)).toEqual(['好的。']);
+  it('releases held text in order once Chinese shows up (whole message is not suppressed, matching the persisted rule)', () => {
+    expect(run(ZH_PROMPT, [SENTENCE, '好的。'], true)).toEqual([SENTENCE, '好的。']);
+  });
+
+  it('does not stall a Chinese answer that starts with an English code/command line', () => {
+    const shown: string[] = [];
+    const hold = createNarrationHold(ZH_PROMPT, (text) => shown.push(text));
+    hold.emit('npm run build --workspace app --verbose\n');
+    expect(shown).toEqual([]);
+    hold.emit('这条命令会构建应用。\n');
+    expect(shown).toEqual(['npm run build --workspace app --verbose\n', '这条命令会构建应用。\n']);
+    hold.emit('git status --short --branch now\n');
+    expect(shown).toHaveLength(3);
+  });
+
+  it('streams Chinese text with later English code lines straight through while tool calls are pending', () => {
+    expect(run(ZH_PROMPT, ['先看目录：\n', 'ls -la some other folder\n'], true)).toEqual(['先看目录：\n', 'ls -la some other folder\n']);
+  });
+
+  it('releases held text when the round fails or is cancelled (settle(false) from the finally path)', () => {
+    expect(run(ZH_PROMPT, [SENTENCE], false)).toEqual([SENTENCE]);
   });
 
   it('releases the same sentence unchanged for a final answer (no tool calls)', () => {
