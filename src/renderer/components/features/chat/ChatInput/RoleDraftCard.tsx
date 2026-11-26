@@ -13,6 +13,7 @@ import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { resolveRoleLabel, useRoleLabels } from '../../../../stores/roleLabelsStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { getRoleToolCapabilities } from '../../../../utils/roleToolCapabilities';
 import { RoleFirstWakeCard } from '../RoleFirstWakeCard';
@@ -208,7 +209,8 @@ interface RoleDraftCardProps {
 }
 
 export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved, onDismiss, onCreated }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const roleLabels = useRoleLabels();
   const r = t.roleDraft;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -227,7 +229,8 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
       if (result?.success) {
         onResolved(draftId);
         if (!isEdit && result.roleId) onCreated?.(result.roleId);
-        toast.success(`${r.updatedToastPrefix}${result.roleId ?? ''}${r.updatedToastSuffix}${verb}`);
+        const roleLabel = result.roleId ? resolveRoleLabel(result.roleId, language, roleLabels) : '';
+        toast.success(`${r.updatedToastPrefix}${roleLabel}${r.updatedToastSuffix}${verb}`);
       } else {
         toast.error(`${r.actionFailedPrefix}${verb}${r.actionFailedSuffix}`);
       }

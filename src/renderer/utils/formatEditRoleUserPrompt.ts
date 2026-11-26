@@ -1,4 +1,4 @@
-import type { RoleLabels } from '../stores/roleLabelsStore';
+import { resolveRoleLabel, type RoleLabels } from '../stores/roleLabelsStore';
 
 const EDIT_ROLE_SINGLE_LINE_PATTERN = /^\/edit-role\s+(\S.*)$/;
 
@@ -8,7 +8,12 @@ const EDIT_ROLE_SINGLE_LINE_PATTERN = /^\/edit-role\s+(\S.*)$/;
  * (`修改专家：<roleId>` / `Edit expert: <roleId>`), leaving stored/sent/rewound
  * text and any non-matching or multi-line input unchanged.
  */
-export function formatEditRoleUserPrompt(text: string, template: string, labels: RoleLabels = {}): string {
+export function formatEditRoleUserPrompt(
+  text: string,
+  template: string,
+  labels: RoleLabels = {},
+  language: 'zh' | 'en' = 'zh',
+): string {
   if (!text || text.includes('\n') || text.includes('\r')) {
     return text;
   }
@@ -17,5 +22,5 @@ export function formatEditRoleUserPrompt(text: string, template: string, labels:
     return text;
   }
   const role = match[1].trimEnd();
-  return template.replace('{role}', () => Object.hasOwn(labels, role) ? labels[role] || role : role);
+  return template.replace('{role}', () => resolveRoleLabel(role, language, labels));
 }

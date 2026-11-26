@@ -7,7 +7,7 @@ import { HumanizedText } from '../../HumanizedText';
 // dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
-import { useRoleLabels } from '../../../stores/roleLabelsStore';
+import { resolveRoleLabel, useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
@@ -39,7 +39,6 @@ import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
 import { UI } from '@shared/constants';
-import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
@@ -712,6 +711,7 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
   const { t, language } = useI18n();
+  const roleLabels = useRoleLabels();
 
   if (node.metadata?.backgroundWakeFailed) {
     return (
@@ -729,7 +729,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
     const unchanged = !receipt.addedTools.length && !receipt.removedTools.length
       && !receipt.descriptionChanged && !receipt.promptChanged;
     const title = (receipt.diffAvailable === false ? copy.unavailable : unchanged ? copy.unchanged : copy.updated)
-      .replace('{role}', localizeBuiltinRole(receipt.roleId, { name: receipt.roleId }, language).name);
+      .replace('{role}', () => resolveRoleLabel(receipt.roleId, language, roleLabels));
     const capabilities = (toolNames: string[]) => getRoleToolCapabilities({
       toolNames,
       capabilityLabels: t.receiptPresentation.roleCapabilityLabels,

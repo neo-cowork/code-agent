@@ -7,7 +7,7 @@ import type { Message, MessageMetadata } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 import { TurnBasedTraceView, getFocusedTurnIndex, getOutputFollowTurnIndex } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
-import { useRoleLabelsStore } from '../../../src/renderer/stores/roleLabelsStore';
+import { resolveRoleLabel, useRoleLabelsStore } from '../../../src/renderer/stores/roleLabelsStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 // Static rendering reads Zustand's initial snapshot; supply the selected language explicitly.
@@ -93,6 +93,30 @@ describe('role edit receipt projection and rendering', () => {
     expect(renderRow({ ...unchanged, diffAvailable: false })).toContain(language === 'zh' ? '但无法比较本次变化。' : 'but the changes could not be compared.');
     expect(renderRow({ ...unchanged, descriptionChanged: true, promptChanged: true }))
       .toContain(language === 'zh' ? '工作规则已更新。' : 'Working rules updated.');
+  });
+  it('renders custom expert display name instead of raw roleId in receipt title', () => {
+    useAppStore.setState({ language: 'zh' });
+    useRoleLabelsStore.getState().setRoles([
+      { roleId: 'morning-briefing-helper', displayName: '晨间简报官', description: '', source: 'user', memoryCount: 0, lastWork: null },
+    ]);
+    const customReceipt: NonNullable<MessageMetadata['roleEditReceipt']> = {
+      roleId: 'morning-briefing-helper',
+      addedTools: ['web_search'],
+      removedTools: [],
+      descriptionChanged: false,
+      promptChanged: false,
+      diffAvailable: true,
+    };
+    const message: Message = { id: 'receipt-custom', role: 'system', content: 'Expert updated.', timestamp: 2, metadata: { roleEditReceipt: customReceipt } };
+    const node = projectTurns([{ id: 'user', role: 'user', content: 'Add web search', timestamp: 1 }, message], 'session', false)
+      .turns.flatMap((turn) => turn.nodes)
+      .find((item) => item.id === message.id)!;
+    const { container } = render(<TraceNodeRenderer node={node} />);
+    expect(container.textContent).toContain('已更新专家「晨间简报官」。');
+    expect(container.textContent).not.toContain('morning-briefing-helper');
+    expect(resolveRoleLabel('morning-briefing-helper', 'zh')).toBe('晨间简报官');
+    expect(resolveRoleLabel('数据分析师', 'en', {})).toBe('Zhiwei');
+    expect(resolveRoleLabel('unknown-role', 'zh', {})).toBe('unknown-role');
   });
 });
 

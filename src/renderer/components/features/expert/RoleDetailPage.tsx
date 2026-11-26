@@ -27,6 +27,7 @@ import type {
 } from "@shared/contract/roleAssets";
 import type { SkillCategory } from "@shared/contract/skillRepository";
 import ipcService from "../../../services/ipcService";
+import { useRoleLabelsStore } from "../../../stores/roleLabelsStore";
 import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
@@ -287,6 +288,11 @@ const VisualEditor: React.FC<{
         profession: visual.profession?.trim(),
         tags: (visual.tags ?? []).map((value) => value.trim()).filter(Boolean),
         quickPrompts: (visual.quickPrompts ?? []).map((value) => value.trim()).filter(Boolean),
+      });
+      useRoleLabelsStore.getState().setRoleLabel({
+        roleId,
+        displayName: visual.displayName?.trim(),
+        profession: visual.profession?.trim(),
       });
       onSaved();
     } catch (err) {

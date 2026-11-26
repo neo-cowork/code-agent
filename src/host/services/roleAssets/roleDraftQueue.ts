@@ -22,7 +22,7 @@ import { isSafeRoleId } from './roleAssetPaths';
 import { ensureRoleAssetDirs, isPersistentRole } from './roleAssetService';
 import { writeRolePersonalization } from './rolePersonalization';
 import { reloadAgentRegistry } from '../../agent/agentRegistry';
-import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
+import { parseAgentMd, parseAgentMdVisual, updateAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import { diffRoleDefinition } from './roleEditChange';
 
 interface RoleDraftInstallResult {
@@ -337,23 +337,29 @@ export async function installRoleDraft(
       return { success: false, error: `已存在同名角色定义「${meta.roleId}」，未覆盖` };
     }
 
+    let contentToWrite = agentMd;
     let change: ReturnType<typeof diffRoleDefinition> | null = null;
     if (isEdit) {
       try {
-        const previous = parseAgentMd(await fs.readFile(agentMdPath, 'utf-8'), agentMdPath);
+        const previousContent = await fs.readFile(agentMdPath, 'utf-8');
+        const previous = parseAgentMd(previousContent, agentMdPath);
         const next = parseAgentMd(agentMd, agentMdPath);
         if (!previous || !next) throw new Error('Invalid agent definition frontmatter');
         change = diffRoleDefinition(
           { description: previous.description, tools: previous.tools, systemPrompt: previous.prompt },
           { description: next.description, tools: next.tools, systemPrompt: next.prompt },
         );
+        const previousVisual = parseAgentMdVisual(previousContent);
+        if (Object.values(previousVisual).some((v) => v !== undefined && (!Array.isArray(v) || v.length > 0))) {
+          contentToWrite = updateAgentMdVisual(agentMd, previousVisual);
+        }
       } catch (error) {
         logger.warn('Role edit diff unavailable (confirm unaffected)', { roleId: meta.roleId, reason: String(error) });
       }
     }
 
     await fs.mkdir(path.dirname(agentMdPath), { recursive: true });
-    await fs.writeFile(agentMdPath, agentMd, 'utf-8');
+    await fs.writeFile(agentMdPath, contentToWrite, 'utf-8');
     // 角色资产骨架（roles/<roleId>/ MEMORY.md + memories/ + history.md），幂等。
     // 改已有时这是 no-op（目录与索引已存在），不会重置用户积累的记忆/履历。
     await ensureRoleAssetDirs(meta.roleId);
