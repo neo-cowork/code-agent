@@ -1,5 +1,6 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
 import { describeHelperFailureReasons, readHelperOutcomes } from './helperOutcomeCopy';
+import { SCHEDULE_DRAFT_FAILURE } from '@shared/constants/cronErrors';
 import { CONNECTOR_RECONNECT_ZH } from '@shared/i18n/connectorReconnect';
 import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 import type { ToolCall } from '@shared/contract';
@@ -282,6 +283,9 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'READ_DIGEST_MISMATCH',
   'READ_REQUIRED_AFTER_SEARCH',
   'COMMAND_FAILED',
+  SCHEDULE_DRAFT_FAILURE.GENERATION,
+  SCHEDULE_DRAFT_FAILURE.NOT_SHOWN,
+  SCHEDULE_DRAFT_FAILURE.DISCARDED,
 ]);
 
 /**
@@ -510,15 +514,15 @@ function mapToolFailureCodeCopy(
 
 /**
  * metadata.code 的裸工程码（ENOENT / INVALID_ARGS / FS_ERROR 这类，host 工具直发、未登记进
- * toolErrors.codes）→ 一句人话 + 下一步（FB-746）。登记表外的全大写码走 generic 兜底句；
- * 翻不动的（数字退出码 / HTTP nnn / 小写杂串）返回 null，调用方保持「错误码 X」原样。
+ * toolErrors.codes）→ 一句人话 + 下一步（FB-746）。登记表外的标识符形错误码走 generic 兜底句；
+ * 数字退出码 / HTTP nnn 返回 null，调用方保持「错误码 X」原样。
  * 原始码仍在展开详情的 error 原文里可见，不丢排错信息。
  */
 function mapRawToolCodeCopy(code: string, t: Translations): string | null {
   const table = t.toolStepHumanize.rawFailureCodes as Record<string, string | undefined>;
   const mapped = table[code];
   if (mapped) return mapped;
-  if (/^[A-Z][A-Z0-9_]*$/.test(code)) return t.toolStepHumanize.rawFailureCodeFallback;
+  if (/^[A-Za-z][A-Za-z0-9_]*$/.test(code)) return t.toolStepHumanize.rawFailureCodeFallback;
   return null;
 }
 
@@ -558,6 +562,11 @@ for (const key of Object.keys(CONNECTOR_RECONNECT_ZH) as Array<keyof typeof CONN
 }
 
 export function localizeToolUserMessage(message: string, t: Translations): string {
+  if (message === SCHEDULE_DRAFT_FAILURE.GENERATION
+      || message === SCHEDULE_DRAFT_FAILURE.NOT_SHOWN
+      || message === SCHEDULE_DRAFT_FAILURE.DISCARDED) {
+    return t.toolErrors.codes[message].summary;
+  }
   if (message === FOREIGN_SLOT_DENIAL_ZH) return t.agentError.hostReasons[HostReasonCode.ForeignDataDir].summary;
   const key = connectorMessageKeys.get(message);
   return key === undefined ? message : t.toolErrors.connectorReconnect[key];

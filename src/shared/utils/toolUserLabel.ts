@@ -31,6 +31,10 @@ const TOOL_USER_LABELS: Record<string, string> = {
   libraryadd: '放入资料库',
   browseraction: '浏览器操作',
   computeruse: '电脑操作',
+  terminalwrite: '向终端输入',
+  processwrite: '向终端输入',
+  processsubmit: '向终端输入',
+  process: '管理终端进程',
 };
 
 const TOOL_USER_LABELS_EN: Record<string, string> = {
@@ -40,6 +44,8 @@ const TOOL_USER_LABELS_EN: Record<string, string> = {
   webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search', libraryadd: 'Add to Library',
   httprequest: 'Network request',
   browseraction: 'Browser action', computeruse: 'Computer action',
+  terminalwrite: 'Type into terminal', processwrite: 'Type into terminal',
+  processsubmit: 'Type into terminal', process: 'Manage terminal processes',
 };
 
 const UNKNOWN_LABEL = '操作';

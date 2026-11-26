@@ -76,7 +76,7 @@ function sanitizePushBody(rawWithDecisions: string): string {
   const withoutSnapshots = raw.replace(snapshotBlocks, '');
   const summaryBlocks = new RegExp(CRON_SUMMARY_TAG_PATTERN.source, 'gi');
   const summaries = [...withoutSnapshots.matchAll(summaryBlocks)]
-    .map((match) => match[1].trim())
+    .map((match) => match[1].replace(/^[^\S\r\n]*urgency[^\S\r\n]*:[^\r\n]*(?:\r?\n|$)/gim, '').trim())
     .filter(Boolean);
   const plainBody = withoutSnapshots.replace(summaryBlocks, '').trim();
   return plainBody || summaries.join('\n');

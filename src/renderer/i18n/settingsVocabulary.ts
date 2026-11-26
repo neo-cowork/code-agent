@@ -1,8 +1,18 @@
 import table from './settingsTerms.json';
 import { getProviderInfo } from '@shared/constants';
+import { isDynamicCustomProviderId } from '@shared/modelRuntime';
 import type { ModelProvider } from '@shared/contract';
 
 type SettingsLanguage = 'zh' | 'en';
+
+function formatDynamicCustomProviderFallback(id: string): string {
+  return id
+    .replace(/^custom-/i, '')
+    .split('-')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join(' ');
+}
 
 function word(id: string, language: SettingsLanguage): string {
   const entry = table.terms.find((term) => term.id === id);
@@ -28,6 +38,14 @@ export function getProviderDisplayName(
   fallbackName: string,
   language: SettingsLanguage,
 ): string {
+  if (isDynamicCustomProviderId(id)) {
+    const normalizedId = id.toLowerCase();
+    const trimmedConfigured = configuredName?.trim();
+    if (trimmedConfigured && trimmedConfigured.toLowerCase() !== normalizedId) return trimmedConfigured;
+    const trimmedFallback = fallbackName.trim();
+    if (trimmedFallback && trimmedFallback.toLowerCase() !== normalizedId) return trimmedFallback;
+    return formatDynamicCustomProviderFallback(id);
+  }
   const defaultName = getProviderInfo(id)?.displayName;
   if (language === 'en') return configuredName || fallbackName || defaultName || id;
   if (configuredName && configuredName !== defaultName) return configuredName;

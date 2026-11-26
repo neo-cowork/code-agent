@@ -131,6 +131,7 @@ export const enSettingsModels = {
         unverifiedGroup: 'Advanced: unverified models',
         unverifiedHint: 'Tool calling is unverified for these models. Picking one means Neo may stall or do nothing mid-task — at your own risk.',
         contextLabel: 'Context',
+        maxOutputLabel: 'Max output',
         effortSectionLabel: 'Thinking depth',
         thinkingSectionLabel: 'Thinking',
         thinkingExternalHint: 'This engine decides its own reasoning level',

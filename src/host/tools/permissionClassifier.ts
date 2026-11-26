@@ -151,6 +151,13 @@ const DEFAULT_CONFIDENCE_THRESHOLD = 0.8;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 const MAX_CACHE_SIZE = 100;
 
+const READ_ONLY_REASON = '自动放行：只读操作';
+const NETWORK_READ_REASON = '自动放行：联网查看';
+const DELEGATION_REASON = '自动放行：派后台助手';
+const MCP_CONFIRMATION_REASON = '外部工具可能有副作用，需要确认';
+const READ_PERMISSION_REASON = '自动放行：只读权限';
+const UNKNOWN_BACKGROUND_TASK_ACTION_REASON = '无法识别后台任务操作，需要确认';
+
 // 只读工具 — 无副作用，始终自动批准
 export const READ_ONLY_TOOLS = new Set([
   'read_file', 'Read', 'glob', 'Glob',
@@ -172,15 +179,29 @@ const DELEGATION_TOOLS = new Set([
   'AgentSpawn',
 ]);
 
-const PROCESS_OBSERVATION_ACTIONS = new Set(['list', 'poll', 'log', 'output']);
-const PROCESS_CONTROL_ACTIONS = new Set(['write', 'submit', 'kill']);
+const PROCESS_OBSERVATION_REASONS = new Map([
+  ['list', '自动放行：查看后台任务列表'],
+  ['poll', '自动放行：查看后台任务进度'],
+  ['log', '自动放行：查看后台任务日志'],
+  ['output', '自动放行：查看后台任务输出'],
+]);
+const PROCESS_CONTROL_REASONS = new Map([
+  ['write', '向后台任务写入内容需要确认'],
+  ['submit', '向后台任务提交一行内容需要确认'],
+  ['kill', '停止后台任务需要确认'],
+]);
 
 // MCP 工具前缀 — 默认 ask（未知副作用）
 const MCP_TOOL_PREFIXES = ['mcp_', 'mcp:', 'MCPUnified'];
 
 // MCPUnified 的纯只读 action：不改动任何外部/本地状态（MCP 资源按协议设计为只读）。
 // invoke（任意工具调用）与 add_server（改配置、起进程）不在此列。
-const MCPUNIFIED_READ_ONLY_ACTIONS = new Set(['status', 'list_tools', 'list_resources', 'read_resource']);
+const MCPUNIFIED_READ_ONLY_REASONS = new Map([
+  ['status', '自动放行：查看外部工具状态'],
+  ['list_tools', '自动放行：查看外部工具列表'],
+  ['list_resources', '自动放行：查看外部资源列表'],
+  ['read_resource', '自动放行：读取外部资源'],
+]);
 
 // 危险 bash 模式 — 始终拒绝或要求确认
 const DANGEROUS_BASH_PATTERNS: Array<{ pattern: RegExp; reason: string; decision: PermissionDecision }> = [
@@ -348,7 +369,7 @@ export class PermissionClassifier {
     if (READ_ONLY_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
-        reason: `只读工具 ${toolName}`,
+        reason: READ_ONLY_REASON,
         confidence: 1.0,
         cached: false,
       };
@@ -358,7 +379,7 @@ export class PermissionClassifier {
     if (context.permissionLevel === 'read') {
       return {
         decision: 'approve',
-        reason: `工具权限级别为 read`,
+        reason: READ_PERMISSION_REASON,
         confidence: 1.0,
         cached: false,
       };
@@ -368,7 +389,7 @@ export class PermissionClassifier {
     if (NETWORK_READ_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
-        reason: `网络只读工具 ${toolName}`,
+        reason: NETWORK_READ_REASON,
         confidence: 0.95,
         cached: false,
       };
@@ -378,7 +399,7 @@ export class PermissionClassifier {
     if (DELEGATION_TOOLS.has(toolName)) {
       return {
         decision: 'approve',
-        reason: `内部委派工具 ${toolName}`,
+        reason: DELEGATION_REASON,
         confidence: 1.0,
         cached: false,
       };
@@ -399,21 +420,23 @@ export class PermissionClassifier {
       // R6b: MCPUnified 的纯只读 action（连接状态/工具与资源清单/读资源）没有写副作用，
       // 与 web_fetch 同级——只读操作永不进确认门（headless 下 ask = 一刀切拒，
       // status 都被 fail-closed 就是这里的 over-gating）。invoke / add_server 维持 ask。
-      if (toolName === 'MCPUnified' && MCPUNIFIED_READ_ONLY_ACTIONS.has(String(args.action ?? ''))) {
+      const readOnlyReason = toolName === 'MCPUnified'
+        ? MCPUNIFIED_READ_ONLY_REASONS.get(String(args.action ?? ''))
+        : undefined;
+      if (readOnlyReason) {
         return {
           decision: 'approve',
-          reason: `MCPUnified 只读动作: ${String(args.action)}`,
+          reason: readOnlyReason,
           confidence: 0.95,
           cached: false,
         };
       }
-      const reason = `MCP 工具 ${toolName} 可能有副作用`;
       return {
         decision: 'ask',
-        reason,
+        reason: MCP_CONFIRMATION_REASON,
         confidence: 0.9,
         cached: false,
-        traceStep: createTraceStep('permission_classifier', 'R6: mcp_tool', 'ask', reason, startTime),
+        traceStep: createTraceStep('permission_classifier', 'R6: mcp_tool', 'ask', MCP_CONFIRMATION_REASON, startTime),
       };
     }
 
@@ -429,27 +452,28 @@ export class PermissionClassifier {
     if (toolName !== 'Process') return null;
     const action = typeof args.action === 'string' ? args.action : '';
 
-    if (PROCESS_OBSERVATION_ACTIONS.has(action)) {
+    const observationReason = PROCESS_OBSERVATION_REASONS.get(action);
+    if (observationReason) {
       return {
         decision: 'approve',
-        reason: `Process 观察类动作: ${action}`,
+        reason: observationReason,
         confidence: 1.0,
         cached: false,
       };
     }
 
-    if (PROCESS_CONTROL_ACTIONS.has(action)) {
-      const reason = `Process 控制类动作需要确认: ${action}`;
+    const controlReason = PROCESS_CONTROL_REASONS.get(action);
+    if (controlReason) {
       return {
         decision: 'ask',
-        reason,
+        reason: controlReason,
         confidence: 0.95,
         cached: false,
-        traceStep: createTraceStep('permission_classifier', 'P1: process_control_action', 'ask', reason, startTime),
+        traceStep: createTraceStep('permission_classifier', 'P1: process_control_action', 'ask', controlReason, startTime),
       };
     }
 
-    const reason = 'Process action 缺失或未知，需用户确认';
+    const reason = UNKNOWN_BACKGROUND_TASK_ACTION_REASON;
     return {
       decision: 'ask',
       reason,

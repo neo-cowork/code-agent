@@ -154,6 +154,7 @@ function hasImageAttachment(attachments?: readonly MessageAttachment[]): boolean
 function getImageAnalyzeToolNamesForTurn(turn?: ForegroundImageTurn): string[] {
   if (!hasImageAttachment(turn?.attachments)) return [];
   const info = turn?.model ? resolveModelInfo(turn.model.provider, turn.model.model) : null;
+  // inference.ts removes this fallback tool after a successful vision preflight.
   return info?.supportsVision ? [] : ['image_analyze'];
 }
 

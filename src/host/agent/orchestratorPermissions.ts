@@ -20,6 +20,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation/sessi
 import { notificationService } from '../services/infra/notificationService';
 import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { terminalApprovalPreviewText } from '../tools/modules/terminal/terminalApprovalPreview';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
 import {
@@ -31,6 +32,7 @@ import {
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
+import { commandGrantKey } from '../permissions/commandGrantTarget';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { matchToolGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -91,6 +93,7 @@ function isApproveResponse(response: PermissionResponse): boolean {
 function buildParkedArgsPreview(request: PermissionRequest): string | undefined {
   const parts = [
     request.details?.command,
+    terminalApprovalPreviewText(request.tool, request.details?.preview),
     request.details?.path,
     request.details?.filePath,
     request.details?.url,
@@ -258,7 +261,12 @@ export class OrchestratorPermissionIsland {
       const req = sibling.request;
       if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
       const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
-      if (!identity || !matchToolGrant(sessionId, identity.tool, identity.target)) continue;
+      if (!identity) continue;
+      const commandTarget = commandGrantKey(req.tool, req.details?.commandGrantTarget, sessionId, req.details);
+      const tier = commandTarget
+        ? matchToolGrant(sessionId, identity.tool, identity.target, undefined, commandTarget)
+        : matchToolGrant(sessionId, identity.tool, identity.target);
+      if (!tier) continue;
       // 与 preAsk 同判据：本会话刚被拒过的同目标动作不因授权顺带放行。
       if (getDenialRegistry().refuseIfGoalDenied(req, { log: false })) continue;
       logger.info('Pending approval settled by a grant answered on a sibling card', { requestId: id, tool: req.tool, via: answered.id });
@@ -792,7 +800,9 @@ export class OrchestratorPermissionIsland {
       // 预览先挂到 fullRequest 再登记内存条目：会话卡（permission_request 事件）与
       // listPendingRequests 快照拿的是同一个对象引用，只算一份。
       const argsPreview = buildParkedArgsPreview(fullRequest);
-      if (argsPreview) fullRequest.argsPreview = argsPreview;
+      if (argsPreview && !terminalApprovalPreviewText(fullRequest.tool, fullRequest.details.preview)) {
+        fullRequest.argsPreview = argsPreview;
+      }
 
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,

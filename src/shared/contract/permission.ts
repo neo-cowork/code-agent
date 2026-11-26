@@ -214,6 +214,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** Host-only exact scope for 24h terminal/process grants. Null means the command cannot be safely stored. */
+    commandGrantTarget?: string | null;
     /** Host-only：这次询问时已记住的授权本可放行（没有任何强制确认）。同任务后来点的授权覆盖到它时自动放行。 */
     grantEligible?: boolean;
     /** Host-only action + exact origin; null means one-time permission only. */

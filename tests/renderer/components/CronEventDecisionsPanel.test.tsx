@@ -30,6 +30,10 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 import { CronJobDetail } from '../../../src/renderer/components/features/cron/CronJobDetail';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { settleEventRunDecisions } from '../../../src/host/cron/cronEventDecisions';
+import { cronFailureSourceText } from '../../../src/shared/utils/cronFailureClassification';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
+import type { ProjectSourceTrustFailureKind } from '../../../src/shared/contract/project';
 
 function eventJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
   return {
@@ -224,6 +228,81 @@ describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
     unmount();
     render(<CronJobDetail job={eventJob({ scheduleType: 'cron', schedule: { type: 'cron', expression: '0 9 * * *' }, actionMode: undefined })} />);
     expect(screen.queryByTestId('cron-event-decisions')).toBeNull();
+  });
+
+  // N-FIX-CRON-RUN-ERROR-TRUST-RAW-ENGLISH-PATH 返修 r2：事件触发的运行撞上项目文件夹信任失败时，
+  // host 把台账原因落成 "run failed: <execution.error>"，execution.error 是内部标记
+  // PROJECT_SOURCE_TRUST:<kind>:<文件夹名>。面板必须显示与运行记录同一句人话（文件夹名 + 下一步），
+  // 不露内部标记；修复前落库的英文原句 + 本机绝对路径行同样处理。
+  describe('项目文件夹信任失败的决策原因', () => {
+    /** 生产入口：host 从失败运行结算出的台账原因（execution.error 是 cronService 落库的稳定标记）。 */
+    function settledReason(kind: ProjectSourceTrustFailureKind): string {
+      return settleEventRunDecisions({
+        jobId: 'job-listen',
+        mode: 'observe',
+        carriedEventIds: ['163|INBOX|432'],
+        dropped: [],
+        execution: {
+          id: 'run-trust',
+          status: 'failed',
+          error: cronFailureSourceText(new ProjectSourceTrustError(kind, '/Users/someone/work/notes-proj')),
+        },
+        observeActionCount: () => 0,
+      })[0].reason;
+    }
+
+    const sentences = {
+      identity_changed: {
+        zh: '项目文件夹“{name}”已被替换，请重新选择并确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。',
+        en: "Project folder “{name}” has been replaced. Re-select and confirm it. Open the project's settings, re-confirm the folder, then run again.",
+      },
+      source_missing: {
+        zh: '找不到项目文件夹“{name}”。它可能已被移动或删除。请打开项目设置，重新确认这个文件夹，然后再运行一次。',
+        en: "Cannot find project folder “{name}”. It may have been moved or deleted. Open the project's settings, re-confirm the folder, then run again.",
+      },
+      not_trusted: {
+        zh: '此项目文件夹尚未获得信任，请在项目设置中确认。请打开项目设置，重新确认这个文件夹，然后再运行一次。',
+        en: "This project folder is not trusted. Confirm it in project settings. Open the project's settings, re-confirm the folder, then run again.",
+      },
+    } satisfies Record<ProjectSourceTrustFailureKind, Record<'zh' | 'en', string>>;
+
+    const trustRows = [
+      ...(Object.keys(sentences) as ProjectSourceTrustFailureKind[]).map((kind) => ({
+        label: `新标记行 ${kind}`, kind, folderName: 'notes-proj', reason: settledReason(kind),
+      })),
+      {
+        label: '存量英文行', kind: 'identity_changed' as const, folderName: 'proj',
+        reason: 'run failed: Project Source trust identity changed: /Users/x/proj',
+      },
+    ];
+
+    it('host 结算出的台账原因只带稳定标记，不带英文句和路径', () => {
+      expect(settledReason('identity_changed')).toBe('run failed: PROJECT_SOURCE_TRUST:identity_changed:notes-proj');
+      expect(settledReason('source_missing')).not.toMatch(/Project Source|\/Users\//);
+    });
+
+    it.each(trustRows.flatMap((row) => (['zh', 'en'] as const).map((language) => ({ ...row, language }))))(
+      '$label 在 $language 显示人话，不带内部标记、英文原句和路径',
+      async ({ kind, folderName, reason, language }) => {
+        useAppStore.setState({ language });
+        clientState.getEventDecisions.mockResolvedValue([{
+          ...decisions[2], id: 'd-trust', eventId: '163|INBOX|432', decision: 'unavailable', reason, runId: 'run-1',
+          createdAt: 1_762_000_002_000,
+        }]);
+        render(<CronJobDetail job={eventJob()} />);
+        const list = await screen.findByTestId('cron-event-decision-list');
+        const row = within(list).getByTestId('cron-event-decision-row');
+        const defaultLine = within(row).getByTestId('cron-event-decision-default');
+        const details = within(row).getByTestId('cron-event-decision-details');
+        process.stdout.write(`[PANEL TRUST ${language}] ${JSON.stringify({ stored: reason, rendered: defaultLine.textContent })}\n`);
+        expect(row.getAttribute('data-decision')).toBe('unavailable');
+        expect(row.textContent).not.toMatch(/PROJECT_SOURCE_TRUST|Project Source|\/Users\//);
+        const expected = (language === 'zh' ? '运行未完成（失败）：' : 'Run failed: ')
+          + sentences[kind][language].replace('{name}', folderName);
+        expect(within(defaultLine).getByText(expected)).toBeTruthy();
+        expect(within(details).getByText(expected)).toBeTruthy();
+      },
+    );
   });
 
   it('a failed switch keeps the modal open and shows the error', async () => {

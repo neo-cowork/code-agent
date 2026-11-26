@@ -54,12 +54,14 @@ import {
   useAtMentionPanel,
   type AtMentionArtifactRow,
   type AtMentionFileRow,
+  type AtMentionLibraryRow,
   type AtMentionSessionRow,
 } from './useAtMentionPanel';
 import { AtMentionPopover } from './AtMentionPopover';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { isAgentEventForCurrentSession } from '../../../../hooks/agent/agentEventSession';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
@@ -114,6 +116,7 @@ import type { InlineChipView } from './InlineComposerChip';
 import { pdfPageSentence } from './pdfPageSentence';
 import { usePinnedLibraryItems } from './PinnedLibraryChips';
 import { buildMentionAttachment } from './mentionAttachment';
+import { getAttachmentDisplayName, getCollisionHoverTitles } from './attachmentDisplayName';
 import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
@@ -444,7 +447,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     stepCount: number;
     toolNames: string[];
   } | null>(null);
-  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft } = useScheduleDraft(currentSessionId);
+  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, clearRequestDraft } = useScheduleDraft(currentSessionId);
   // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
   const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
@@ -598,12 +601,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const item = capabilityRegistry.items.find((entry) => entry.kind === 'skill' && entry.id === skillId);
       chips.push({ key: `skill:${skillId}`, kind: 'skill', id: skillId, label: item?.label ?? skillId });
     }
+    const hoverTitles = getCollisionHoverTitles(attachments, useAppStore.getState().workingDirectory ?? null);
     for (const attachment of attachments) {
       chips.push({
         key: `file:${attachment.id}`,
         kind: 'file',
         id: attachment.id,
-        label: attachment.name,
+        label: getAttachmentDisplayName(attachment.name),
+        title: hoverTitles.get(attachment.id),
         category: attachment.category,
         thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
         description: attachment.category === 'pdf'
@@ -791,8 +796,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // Listen for context-aware suggestions from agent (pushed after each turn)
   useEffect(() => {
-    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
-      if (event.type === 'suggestions_update' && Array.isArray(event.data)) {
+    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown; sessionId?: string }) => {
+      // 芯片属于事件里的那个会话。agent:event 是全局广播（收线后补播、镜像轮、别的窗口的轮都
+      // 走它），停在别的会话上的输入框不能收：点了就把与当前会话无关的指令发了出去。
+      if (
+        event.type === 'suggestions_update'
+        && Array.isArray(event.data)
+        && isAgentEventForCurrentSession(event, sessionless ? null : useSessionStore.getState().currentSessionId)
+      ) {
         setSuggestions(event.data as Array<{ id: string; text: string; source: string }>);
       }
       // Combo Skill suggestion from backend
@@ -801,7 +812,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     });
     return () => { unsubscribe?.(); };
-  }, []);
+  }, [sessionless]);
+
+  // 切换会话：上一个会话的芯片不留在新会话的输入框里
+  useEffect(() => {
+    setSuggestions([]);
+  }, [currentSessionId]);
 
   // IACT protocol: listen for inline interaction events from message bubbles
   // （!run 的执行不走这里：RunCommandCard 自己就地执行 + 渲染结果。但它的「发给 Neo」
@@ -852,7 +868,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // @ 触发面板（任务 14：资料库 pin + 工作区文件分组；任务 15：query echo + 键盘导航）
   // 文件行选中 = 触发词原位变文件 chip + 构建附件（文本类内联内容，二进制只带路径）；
-  // 目录行保留旧行为（@path 文本）；资料库行选中在 hook 内切换 pin。
+  // 目录行保留旧行为（@path 文本）；资料库行只清掉尾部 @query，chip 由 pin 对账补到末尾。
   const handleAtFileSelect = useCallback((row: AtMentionFileRow) => {
     const editor = inputAreaRef.current;
     const caret = editor?.getCaretOffset() ?? latestValueRef.current.length;
@@ -918,12 +934,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         }]);
     replaceAtTriggerWithChip({ key: `artifact:${row.id}`, kind: 'artifact', id: row.id });
   }, [replaceAtTriggerWithChip]);
+  const handleAtLibrarySelect = useCallback((row: AtMentionLibraryRow) => {
+    const editor = inputAreaRef.current;
+    if (!editor || row.kind !== 'library') return;
+    // 光标可能不在触发词末尾（← 后再 Enter）：向后吞掉词尾残字，向前找 @ 起点
+    const caret = editor.getCaretOffset();
+    const text = latestValueRef.current;
+    const tail = text.slice(caret).match(/^@?[^\s@]*/)?.[0] ?? '';
+    const end = caret + tail.length;
+    const triggerMatch = text.slice(0, end).match(/@([^\s@]*)$/);
+    if (!triggerMatch) { editor.focus(); return; }
+    editor.replaceRangeWithText(end - triggerMatch[0].length, end, '');
+    editor.focus();
+  }, []);
   const atMention = useAtMentionPanel({
     sessionId: currentSessionId ?? null,
     projectId: pinScopeProjectId,
     onFileSelect: handleAtFileSelect,
     onSessionSelect: handleAtSessionSelect,
     onArtifactSelect: handleAtArtifactSelect,
+    onLibrarySelect: handleAtLibrarySelect,
   });
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
@@ -948,13 +978,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       return;
     }
     setShowSlashPopover(false);
-    if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
+    if (isLeadingAgentMentionInput(newValue, swarmAgents, agentEntries)) {
       atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
     atMention.search(newValue, caret);
-  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents, agentEntries]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -989,8 +1019,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setValue,
     setShowSlashPopover,
     setSlashFilter,
-    setPendingAgentSelection,
-    setActiveAgentId,
+    setPendingAgentSelection, setActiveAgentId,
+    dismissAtMention: atMention.dismiss,
     onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
@@ -1023,9 +1053,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 历史命令功能
   const { addToInputHistory, getPreviousInput, getNextInput, resetInputHistoryIndex } = useSessionUIStore();
 
-  // 键盘导航分发：@ 面板与 agent 自动补全互斥打开，先问 @ 面板再交 agent 链路
+  // 键盘分发：agent 行（swarm/专家）已显示时先于 @ 引用搜索消费按键，否则搜索计时器/加载态吞 Enter
   const handleComposerAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => (
-    atMention.handleKeyDown(e) || handleAutocompleteKeyDown(e)
+    handleAutocompleteKeyDown(e) || atMention.handleKeyDown(e)
   ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
   const questionCardPlaceholder = useQuestionCardPlaceholder(currentSessionId);
@@ -1077,14 +1107,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSessionReferences,
     setArtifactReferences,
     setScheduleComposerOpen,
-    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule },
+    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule, clearRequestDraft },
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
-  useScheduleDraftRequest(currentSessionId, creatingSchedule, runScheduleCreation);
+  useScheduleDraftRequest(currentSessionId, creatingSchedule, { pendingScheduleDraft, storePendingScheduleDraft, clearRequestDraft }, formRef);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 

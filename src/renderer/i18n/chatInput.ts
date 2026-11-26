@@ -286,7 +286,7 @@ export const chatInputZh = {
     projectScope: '本项目',
     globalScope: '全局',
     pinnedBadge: '已带入对话',
-    noResults: '没有匹配的引用',
+    noResults: '没有匹配的专家或引用',
   },
   pendingCommand: {
     removeAria: '取消命令 {name}',
@@ -408,6 +408,7 @@ export const chatInputZh = {
     scheduleCreateFailedPrefix: '创建定时任务失败：',
     scheduleDraftInvalid: 'AI 返回的定时任务草案格式异常，请重试',
     scheduleGenerateFailedReason: '草案没有生成成功，请稍后重试',
+    scheduleDiscardFailed: '取消确认卡失败，请重试',
     scheduleConfirmCreateFailed: '确认创建未完成，任务没有创建。可直接重试确认，或取消后重新发起',
     contextCompactedToast: '已压缩当前会话上下文',
     contextCompactNotExecutedPrefix: '上下文压缩未执行：',
@@ -773,7 +774,7 @@ export const chatInputEn: typeof chatInputZh = {
     projectScope: 'This project',
     globalScope: 'Global',
     pinnedBadge: 'Pinned to this session',
-    noResults: 'No matching references',
+    noResults: 'No matching experts or references',
   },
   pendingCommand: {
     removeAria: 'Cancel command {name}',
@@ -895,6 +896,7 @@ export const chatInputEn: typeof chatInputZh = {
     scheduleCreateFailedPrefix: 'Failed to create the scheduled task: ',
     scheduleDraftInvalid: 'The AI returned an invalid scheduled-task draft. Please retry',
     scheduleGenerateFailedReason: 'The draft was not generated. Please retry in a moment',
+    scheduleDiscardFailed: 'Could not dismiss the confirmation card. Please try again.',
     scheduleConfirmCreateFailed: 'Confirm create did not complete — no task was created. Retry confirm directly, or cancel and start again',
     contextCompactedToast: 'Compressed the current session context',
     contextCompactNotExecutedPrefix: 'Context compression did not run: ',

@@ -11,6 +11,7 @@ import { getLocale } from '../platform/appPaths';
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import { permissionRequestTypeForLevel } from './permissionRequestType';
+import { buildTerminalApprovalPreview } from './modules/terminal/terminalApprovalPreview';
 import * as nodePath from 'path';
 import * as nodeOs from 'node:os';
 import * as nodeFs from 'node:fs/promises';
@@ -34,6 +35,7 @@ import {
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
 import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
+import { commandGrantKey, commandGrantTarget } from '../permissions/commandGrantTarget';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { classifyFileWrite } from './fileWriteClassification';
 import { classifyToolPath } from './utils/toolPathKind';
@@ -410,6 +412,7 @@ export interface ExecuteOptions {
   allowedToolNames?: readonly string[];
   // 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。
   foregroundToolFace?: boolean;
+  requestToolNames?: readonly string[];
   // strict skill 流程面（create-role/edit-role）的 canonical 工具名：白名单判定的
   // 合法补充（与 toolScope 同档，不放宽显式 deny）。边界内工具不被前台白名单拦（FB-327）。
   skillBoundaryAllowedTools?: readonly string[];
@@ -869,6 +872,9 @@ export class ToolExecutor {
         error: formatToolSchemaValidationError(executionToolName, blockingIssues),
         metadata: { code: 'ARG_VALIDATION_FAILED' },
       };
+    }
+    if (executionToolName === 'terminal_write' && params.input === '') {
+      return { success: false, error: 'input is required', metadata: { code: 'INVALID_ARGS' } };
     }
     // 未声明字段不硬拒：剥离后放行 + 上报（生产档），开发档额外 fail-loud。
     if (schemaIssues.length > 0) {
@@ -1398,6 +1404,7 @@ export class ToolExecutor {
       deniedToolNames: options.deniedToolNames,
       allowedToolNames: options.allowedToolNames,
       foregroundToolFace: options.foregroundToolFace,
+      requestToolNames: options.requestToolNames,
       skillDiscoveryService: options.skillDiscoveryService,
       telemetryCollector: this.telemetryCollector,
       planningService: options.planningService,
@@ -1967,13 +1974,12 @@ export class ToolExecutor {
     // 文件」的占位符/Markdown 残留补轮——批准即拍板，不重写、不重弹同一张审批卡。
     let userApproved = false;
     let userEditedKeys: string[] = [];
-    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
+    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (guardFabricForcesApproval && guardFabricAskRuleOnly)) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
       let boundaryAskForcesConfirmation = false;
-      // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
-      // 供下面的长期授权消费判定，以及需人工审批时透传给停车审批卡（铸权入口）。
+      const exactCommandTarget = commandGrantTarget(executionToolName, params);
       const browserSessionGrant = await resolveBrowserSessionGrant(executionToolName, params, context);
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
@@ -2247,13 +2253,14 @@ export class ToolExecutor {
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
-        standingGrantTarget,
+        standingGrantTarget, commandGrantTarget: commandGrantKey(executionToolName, exactCommandTarget, effectiveSessionId, params),
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: preAskBlocked,
       }) : null;
       if (preAsk) {
         if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
+        if (executionToolName === 'terminal_write' && preAsk.ledgerReason === 'tool_grant:24h') context.approvedToolCall = { toolName: executionToolName, args: { ...params } };
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
         grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
@@ -2387,7 +2394,8 @@ export class ToolExecutor {
         permissionRequest.argsFingerprint = survival.argsFingerprint;
         permissionRequest.ledgerFaithful = survival.ledgerFaithful;
       }
-      // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
+      if (exactCommandTarget === undefined) delete permissionRequest.details.commandGrantTarget;
+      else permissionRequest.details.commandGrantTarget = exactCommandTarget;
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
       // 与 preAsk 同一判据：没有任何强制确认、也不是按应用/浏览器站点授权的请求，才允许被同任务后点的授权顺带放行。
       permissionRequest.details.grantEligible = !preAskBlocked && !computerApp && !browserSessionGrant;
@@ -2446,11 +2454,11 @@ export class ToolExecutor {
         permissionRequest.turnOrigin = options.turnOrigin;
       }
 
-      // Attach decision trace to permission request
       permissionRequest.decisionTrace = traceBuilder.build('ask');
 
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
-      if (confirmationPreview) {
+      if (executionToolName === 'Process' && exactCommandTarget) permissionRequest.details.preview = { type: 'command', summary: exactCommandTarget };
+      else if (confirmationPreview && executionToolName !== 'terminal_write') {
         permissionRequest.details.preview = confirmationPreview;
         if (executionToolName === 'delegate_session') permissionRequest.reason = confirmationPreview.summary;
       }
@@ -2574,7 +2582,9 @@ export class ToolExecutor {
       }
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
-        context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, runId: effectiveRunId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
+        if (executionToolName !== 'terminal_write' || userApproved) {
+          context.approvedToolCall = { toolName: executionToolName, args: params, sandboxWriteFile: approvedSingleFileRmGrantForToolApproval({ approvalSource: ask.approvalSource, toolName: policyToolName, params, permissionRequest, sessionId: effectiveSessionId, runId: effectiveRunId, context, abortSignal: options.abortSignal, workingDirectory: bashWorkingDirectory, policyEnforcer }) };
+        }
         traceBuilder.addStep('plan_approval', 'ask_approved', 'allow', `审批放行（来源：${approvalSource}）`);
         // ADR-067 D4：按**实际批准生效的参数**重算指纹后复位——审批卡上改过参数时
         // params 已是编辑后的那份（上面的 applyEditedArgs 只在这里替换）：批准 B 只清
@@ -2774,12 +2784,14 @@ export class ToolExecutor {
           workspaceScope: this.runContext?.workspaceScope,
         };
       }, this.executionCwd);
-      // Execute the tool via protocol resolver
-      context.approvedToolCall = {
-        toolName: executionToolName,
-        args: params,
-        ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
-      };
+      // Terminal input may bypass its inner ask only with user approval or a matching 24h grant.
+      if (executionToolName !== 'terminal_write') {
+        context.approvedToolCall = {
+          toolName: executionToolName,
+          args: params,
+          ...(context.approvedToolCall?.sandboxWriteFile ? { sandboxWriteFile: context.approvedToolCall.sandboxWriteFile } : {}),
+        };
+      }
       logger.debug('Dispatching to protocol resolver', { toolName: executionToolName, requestedToolName });
       executionLedger.begin();
       const durableCheckpoint = await prepareNativeToolCheckpoint({
@@ -3109,7 +3121,12 @@ export class ToolExecutor {
         return {
           type: requestType,
           tool: tool.name,
-          details: { ...params },
+          details: {
+            ...params,
+            ...(tool.name === 'terminal_write' && typeof params.input === 'string'
+              ? { preview: buildTerminalApprovalPreview(params.input) }
+              : {}),
+          },
           reasonCode: PermissionRequestReason.Unknown,
           boundary: {
             id: boundaryIdForRequestType(requestType),
