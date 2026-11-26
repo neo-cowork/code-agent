@@ -589,14 +589,14 @@ describe('high-risk commands and outside-workspace reads stay visible on the fac
     expect(defaultPermissionViewMode({ ...cmd, details: { command: 'ls', commandRiskLevel: 'low' } })).toBe('compact');
   });
   it('keeps a risk consequence line for high-risk commands only', () => {
-    expect(permissionConsequence(cmd, zh)).toContain('高风险');
-    expect(permissionConsequence({ ...cmd, details: { command: 'ls', commandRiskLevel: 'medium' } }, zh)).toBeUndefined();
+    expect(permissionConsequence(cmd, zh, 'zh')).toContain('高风险');
+    expect(permissionConsequence({ ...cmd, details: { command: 'ls', commandRiskLevel: 'medium' } }, zh, 'zh')).toBeUndefined();
   });
   it('marks outside-workspace reads in the question and consequence', () => {
     const read: PermissionRequest = { ...baseRequest, tool: 'Read', type: 'file_read', boundary: { id: 'file.external_read' }, details: { path: '/Users/x/.ssh/id_rsa' } };
-    expect(permissionSummary(read, zh)).toContain('工作区外');
-    expect(permissionConsequence(read, zh)).toContain('id_rsa');
-    expect(permissionSummary({ ...read, boundary: { id: 'file.project_read' } }, zh)).not.toContain('工作区外');
+    expect(permissionSummary(read, zh, 'zh')).toContain('工作区外');
+    expect(permissionConsequence(read, zh, 'zh')).toContain('id_rsa');
+    expect(permissionSummary({ ...read, boundary: { id: 'file.project_read' } }, zh, 'zh')).not.toContain('工作区外');
   });
 });
 
@@ -605,21 +605,21 @@ describe('new files, target display and file-count grammar', () => {
   const en = decisionCardEn as never;
   const write: PermissionRequest = { ...baseRequest, tool: 'Write', type: 'file_write', boundary: { id: 'file.project_write' }, details: { path: '/workspace/contract-notes.md', targetKind: 'absent' } };
   it('only suppresses a known absent target inside the workspace', () => {
-    expect(permissionConsequence(write, zh)).toBeUndefined();
-    expect(permissionConsequence({ ...write, type: 'file_edit' }, en)).toBeUndefined();
+    expect(permissionConsequence(write, zh, 'zh')).toBeUndefined();
+    expect(permissionConsequence({ ...write, type: 'file_edit' }, en, 'en')).toBeUndefined();
     for (const targetKind of ['regular', 'unknown', undefined] as const) {
-      expect(permissionConsequence({ ...write, details: { ...write.details, targetKind } }, zh)).toContain('可能覆盖现有内容');
+      expect(permissionConsequence({ ...write, details: { ...write.details, targetKind } }, zh, 'zh')).toContain('可能覆盖现有内容');
     }
-    expect(permissionConsequence({ ...write, boundary: { id: 'file.external_write' } }, zh)).toContain('工作区外');
-    expect(permissionConsequence({ ...write, reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny }, zh)).toBe(decisionCardZh.decisionCard.permission.consequenceUncertainWriteTarget);
-    expect(permissionConsequence({ ...write, details: { path: '/dev/null', targetKind: 'device' } }, zh)).toContain('设备文件 /dev/null');
+    expect(permissionConsequence({ ...write, boundary: { id: 'file.external_write' } }, zh, 'zh')).toContain('工作区外');
+    expect(permissionConsequence({ ...write, reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny }, zh, 'zh')).toBe(decisionCardZh.decisionCard.permission.consequenceUncertainWriteTarget);
+    expect(permissionConsequence({ ...write, details: { path: '/dev/null', targetKind: 'device' } }, zh, 'zh')).toContain('设备文件 /dev/null');
   });
   it('outside-workspace write keeps the full target location and singular grammar', () => {
-    const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/shared/contract-notes.md', targetKind: 'absent' } }, en);
+    const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/shared/contract-notes.md', targetKind: 'absent' } }, en, 'en');
     expect(result).toBe('Writes /shared/contract-notes.md outside the workspace (1 file) and may overwrite existing content.');
   });
   it.each([0, 1, 2, 312])('English deletion count %i uses singular only for one', (count) => {
-    const result = permissionConsequence({ ...write, type: 'file_delete', details: { path: '/workspace/old-notes.txt', affectedFileCount: count } }, en);
+    const result = permissionConsequence({ ...write, type: 'file_delete', details: { path: '/workspace/old-notes.txt', affectedFileCount: count } }, en, 'en');
     expect(result).toBe(`Permanently deletes /workspace/old-notes.txt (${count} ${count === 1 ? 'file' : 'files'}) without using Trash.`);
   });
 });
