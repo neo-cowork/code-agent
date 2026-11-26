@@ -939,6 +939,17 @@ describe('roleProactivity', () => {
       });
       expect(await countWakesToday(RESEARCHER)).toBe(1);
     });
+
+    it('countWakesToday 在 ui.language=en 下仍按存量中文履历统计', async () => {
+      mockSettings.value = { ui: { language: 'en' } };
+      await appendRoleHistory(RESEARCHER, {
+        date: TODAY,
+        artifactLabel: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence)`,
+        artifactRef: '-',
+        summary: '今天的醒来',
+      });
+      expect(await countWakesToday(RESEARCHER)).toBe(1);
+    });
   });
 
   // event 触发链（设计 §2.2）— E2E AC5 的确定性兜底

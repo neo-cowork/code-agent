@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { NeedsInputNativeFallback } from './needsInputNativeFallback';
+import { roleWakeFallbackBody } from '../../../shared/i18n/roleWakeNotificationCopy';
 import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 // Notification Service
@@ -594,7 +595,7 @@ class NotificationService implements Disposable {
   }
 
   /** Realtime role output keeps its wake session as the notification click target. */
-  notifyRoleWakeOutput(data: { sessionId: string; title: string; body: string }): void {
+  notifyRoleWakeOutput(data: { sessionId: string; title: string; body: string; roleId: string }): void {
     if (!this.isIntentAllowed('task_complete')) return;
     if (!this.shouldNotify()) return;
 
@@ -605,12 +606,12 @@ class NotificationService implements Disposable {
       ? (en ? 'The check did not finish. Open the conversation to review progress.' : '本次巡检未完成，打开会话查看已有进展。')
       : goalStatus === 'met'
         ? (en ? 'The check is complete. Open the conversation to see the results.' : '巡检已完成，打开会话查看结果。')
-        : data.body;
+        : data.body || roleWakeFallbackBody(en ? 'en' : 'zh', data.roleId);
     const disposition = this.enqueueBudgeted({
       intent: 'task_complete',
       type: 'task_complete',
       sessionId: data.sessionId,
-      title: sanitizeNotificationText(data.title, 120, { omitIds: true }),
+      title: sanitizeNotificationText(localizeCronSessionTitle(data.title, en ? 'en' : 'zh'), 120, { omitIds: true }),
       body: sanitizeNotificationText(body, 320),
       delivery: {},
     });

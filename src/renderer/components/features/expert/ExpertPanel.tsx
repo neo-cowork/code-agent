@@ -48,6 +48,8 @@ import { RecentlyDeletedRoles } from './RecentlyDeletedRoles';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory, matchesRoleSearch } from './roleCategoryGroups';
 import { HubTabHeader } from '../capabilityHub/HubTabHeader';
+import { localizeBuiltinRoleCopy } from '@shared/localizeBuiltinRoleCopy';
+import { localizeRoleWakeTitle } from '@shared/cronSessionTitle';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 
 type ExpertTab = 'mine' | 'discover';
@@ -161,7 +163,7 @@ const ExpertCard: React.FC<{
 );
 
 export const ExpertPanel: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.expert;
   const openExpertRoleDetail = useAppStore((s) => s.openExpertRoleDetail);
   const tab = useAppStore((s) => s.expertPanelTab);
@@ -706,7 +708,10 @@ export const ExpertPanel: React.FC = () => {
                 {filteredShown.map((entry) => (
                   <ExpertCard
                     key={entry.roleId}
-                    entry={entry}
+                    entry={{
+                      ...localizeBuiltinRoleCopy(entry.roleId, entry, language),
+                      ...(entry.lastWork ? { lastWork: localizeRoleWakeTitle(entry.lastWork, language) } : {}),
+                    }}
                     tab={tab}
                     text={text}
                     sourceText={t.settings.roles.card.source}

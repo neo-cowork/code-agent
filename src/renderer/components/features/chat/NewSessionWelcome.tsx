@@ -1,3 +1,4 @@
+import { localizeBuiltinRoleCopy } from '@shared/localizeBuiltinRoleCopy';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, CalendarCheck, ClipboardList, FileSpreadsheet, Radar } from 'lucide-react';
@@ -167,7 +168,7 @@ export const NewSessionWelcome: React.FC<{
         const entry = entries.find((candidate) => candidate.roleId === expertRoleId);
         setExpert({
           name: (entry?.displayName?.trim() ? localizeBuiltinRole(expertRoleId, { name: entry.displayName.trim() }, language).name : '') || expertRoleId,
-          cards: buildExpertRoleCards(entry?.icon, entry?.quickPrompts ?? [], proposals),
+          cards: buildExpertRoleCards(entry?.icon, localizeBuiltinRoleCopy(expertRoleId, { quickPrompts: entry?.quickPrompts ?? [] }, language).quickPrompts, proposals),
         });
       })
       .catch(() => {
