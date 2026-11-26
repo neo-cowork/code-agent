@@ -16131,7 +16131,6 @@
     "src/renderer/utils/browserComputerExportRedaction.ts",
     "src/renderer/utils/dateGrouping.ts",
     "src/renderer/utils/toolDiscoveryPresentation.ts",
-    "src/renderer/utils/toolSummary.ts",
     "src/renderer/utils/workbenchBlockedReasons.ts",
     "src/renderer/utils/workspaceRevisions.ts"
   ]

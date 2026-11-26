@@ -4,7 +4,7 @@
 // emoji 字面量当图标。
 // 按 unicode 区间枚举（emoji pictograph + symbol + arrow 区）而不是按具体字符
 // 枚举——新增 emoji 形态也会被扫到。清单只覆盖本批清扫过的文件，不扫全仓
-// （toolSummary.ts / ToolCallGroup / scheduleTemplates.ts 的用户可选 emoji 字段
+// （ToolCallGroup / scheduleTemplates.ts 的用户可选 emoji 字段
 // 不归这道门管）。同套路照抄 surfaceTokenConvergence.test.ts（PR #450）。
 // ============================================================================
 
