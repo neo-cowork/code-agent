@@ -483,6 +483,8 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
+const APPROVAL_PATH_MAX_LENGTH = 60;
+
 function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
   const { t, language } = useI18n();
   const [revealed, setRevealed] = useState(false);
@@ -493,7 +495,10 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
   const visibleValue = revealed && isCode ? value : redactedValue;
   const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
   const workspaceRoot = useAppStore().workingDirectory;
-  const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatPathForDisplay(visibleValue, { workspaceRoot })) : visibleValue;
+  // 审批卡：工作区内 ./相对；工作区外保留完整位置（只折家目录），超长中段省略；title 放完整值。
+  const isPlainPath = isPath && humanPath === visibleValue;
+  const fullPathText = isPlainPath ? formatPathForDisplay(visibleValue, { workspaceRoot, keepLocation: true }) : humanPath;
+  const rawDisplayValue = isPlainPath ? formatPathForDisplay(visibleValue, { workspaceRoot, keepLocation: true, maxLength: APPROVAL_PATH_MAX_LENGTH }) : humanPath;
 
   const lines = rawDisplayValue.split('\n');
   const shouldFold = Boolean(
@@ -531,7 +536,7 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={isPath ? rawDisplayValue : redactedValue}
+        title={isPath ? fullPathText : redactedValue}
       >
         {displayValue}
       </div>

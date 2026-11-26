@@ -54,6 +54,17 @@ describe('formatPathForDisplay', () => {
     expect(formatPathForDisplay('/Users/alice/Shared/a.txt')).toBe('~/Shared/a.txt');
   });
 
+  it('keepLocation：工作区外只折家目录，保留完整位置；超长中段省略', () => {
+    const keep = { workspaceRoot: root, keepLocation: true };
+    expect(formatPathForDisplay('/etc/ssh/sshd_config', keep)).toBe('/etc/ssh/sshd_config');
+    expect(formatPathForDisplay('/private/etc/sudoers.d/x', keep)).toBe('/private/etc/sudoers.d/x');
+    expect(formatPathForDisplay('/Users/alice/Documents/a.txt', keep)).toBe('~/Documents/a.txt');
+    expect(formatPathForDisplay(`${root}/src/a.ts`, keep)).toBe('./src/a.ts');
+    expect(formatPathForDisplay('/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z.txt', { ...keep, maxLength: 20 })).toBe('/a/…/y/z.txt');
+    expect(formatPathForDisplay('/etc/ssh/sshd_config', { ...keep, maxLength: 60 })).toBe('/etc/ssh/sshd_config');
+    expect(formatPathForDisplay('/var/folders/ab/../../etc/passwd', keep)).toBe('/var/folders/ab/../../etc/passwd');
+  });
+
   it('单段与空串原样', () => {
     expect(formatPathForDisplay('notes.txt')).toBe('notes.txt');
     expect(formatPathForDisplay('/etc')).toBe('/etc');

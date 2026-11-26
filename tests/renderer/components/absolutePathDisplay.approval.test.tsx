@@ -45,10 +45,19 @@ const readOutside: PermissionRequest = {
   timestamp: 1,
 };
 
+const readOf = (path: string, id: string): PermissionRequest => ({ ...readOutside, id, details: { path } });
+const LONG_SYSTEM_PATH = '/Library/Application Support/com.example.vendor/LaunchDaemons/helpers/tools/com.example.helper.plist';
+
 afterEach(() => {
   cleanup();
-  releaseApprovalResponse(readOutside.id);
+  for (const id of [readOutside.id, 'read-sys', 'read-long']) releaseApprovalResponse(id);
 });
+
+function openCard(request: PermissionRequest) {
+  render(<PermissionCard requestOverride={request} sessionIdOverride="session-current" />);
+  fireEvent.click(screen.getByRole('button', { name: /详情|Details/ }));
+  return screen.getByTestId('permission-card');
+}
 
 describe.each(['zh', 'en'] as const)('审批卡路径不露绝对路径 (%s)', (language) => {
   it('工作区外 Read：卡上文字与所有 title 不含 /Users/，文件行显示 ~/Documents/a.txt', () => {
@@ -60,5 +69,26 @@ describe.each(['zh', 'en'] as const)('审批卡路径不露绝对路径 (%s)', (
     expect(card.textContent).toContain('~/Documents/a.txt');
     const titles = Array.from(card.querySelectorAll('[title]')).map((el) => el.getAttribute('title'));
     expect(titles).toContain('~/Documents/a.txt');
+  });
+});
+
+describe.each(['zh', 'en'] as const)('审批卡系统路径保留完整位置 (%s)', (language) => {
+  it('/etc/ssh/sshd_config：文字与 title 都是完整路径，不退化成 ssh/sshd_config', () => {
+    i18nState.language = language;
+    const card = openCard(readOf('/etc/ssh/sshd_config', 'read-sys'));
+    const row = card.querySelector('[title="/etc/ssh/sshd_config"]');
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toBe('/etc/ssh/sshd_config');
+  });
+
+  it('超过 60 字符的系统路径：可见行以根段开头并中段省略，title 是完整路径', () => {
+    i18nState.language = language;
+    expect(LONG_SYSTEM_PATH.length).toBeGreaterThan(60);
+    const card = openCard(readOf(LONG_SYSTEM_PATH, 'read-long'));
+    const row = card.querySelector(`[title="${LONG_SYSTEM_PATH}"]`);
+    expect(row).not.toBeNull();
+    expect(row!.textContent!.startsWith('/Library/…/')).toBe(true);
+    expect(row!.textContent).toContain('…');
+    expect(row!.textContent).toMatch(/\/tools\/com\.example\.helper\.plist$/);
   });
 });

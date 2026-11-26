@@ -28,7 +28,22 @@ function trimTrailingSeparators(path: string): string {
   return trimmed || path;
 }
 
-export function formatPathForDisplay(path: string, options: { workspaceRoot?: string | null } = {}): string {
+/**
+ * keepLocation：审批类界面用。工作区外的路径保留完整位置，只折家目录前缀（系统路径没有账户名，
+ * 缩成 parent/file 会让用户看不出它在系统目录）；给了 maxLength 且超长时，中段省略、保留前两段与后两段。
+ */
+function abbreviateMiddle(path: string, maxLength: number): string {
+  if (path.length <= maxLength) return path;
+  const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
+  const parts = path.split(sep);
+  if (parts.length <= 4) return path;
+  return `${parts.slice(0, 2).join(sep)}${sep}…${sep}${parts.slice(-2).join(sep)}`;
+}
+
+export function formatPathForDisplay(
+  path: string,
+  options: { workspaceRoot?: string | null; keepLocation?: boolean; maxLength?: number } = {},
+): string {
   const raw = (path ?? '').trim();
   if (!raw) return '';
 
@@ -50,6 +65,7 @@ export function formatPathForDisplay(path: string, options: { workspaceRoot?: st
   if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(raw)) return raw;
 
   const folded = foldHomePrefixForDisplay(raw);
+  if (options.keepLocation) return options.maxLength ? abbreviateMiddle(folded, options.maxLength) : folded;
   if (folded !== raw) return folded;
 
   const segments = raw.split(/[/\\]+/).filter(Boolean);
