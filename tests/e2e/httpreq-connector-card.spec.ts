@@ -168,8 +168,14 @@ for (const language of ['zh', 'en'] as const) {
     // 首载 auto-resume 与新会话的 switchSession 有一次性的 reconcile 抖动（卡可能瞬时空、
     // 随即回来）——断言统一给足重试窗口，穿过抖动期。
     await expect(permissionCard).toBeVisible({ timeout: 15_000 });
-    // 放行前用户能看出「以我的飞书身份写入这条消息」：问句 + 方法路径 + 隐私边界。
+    // 卡面保留身份问句；方法路径和隐私边界在详情中披露，放行前仍可查看。
     await expect(permissionCard).toContainText(copy.question, { timeout: 15_000 });
+    await expect(permissionCard).not.toContainText('POST /open-apis/im/v1/messages');
+    const detailsToggle = permissionCard.getByRole('button', {
+      name: language === 'zh' ? '更多选项与详情' : 'More options & details', exact: true,
+    });
+    await expect(detailsToggle).toHaveAttribute('aria-expanded', 'false');
+    await detailsToggle.click();
     await expect(permissionCard).toContainText('POST /open-apis/im/v1/messages', { timeout: 15_000 });
     await expect(permissionCard).toContainText(copy.boundary, { timeout: 15_000 });
     // 展开请求内容：消息正文可见（截图存证，证据落 test-results 产物目录）。

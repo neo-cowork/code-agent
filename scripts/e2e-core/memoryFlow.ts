@@ -62,7 +62,7 @@ export const f14: FlowDef = {
       run: (env) => pump(env, () => Number(env.scratch.modalClicks) > 0, '「确认用户规则」弹窗出现并点了「确认保存规则」'),
     },
     {
-      text: '紧接着出现第二个确认：普通审批卡（`permission-card`，同 F05），因为记忆文件写在项目目录外；点「允许一次」。',
+      text: '紧接着出现第二个确认：普通审批卡（`permission-card`，同 F05），因为记忆文件写在项目目录外；点「允许」。',
       run: async (env) => {
         await driveTurn(env.page, {
           mayBeIdle: true,

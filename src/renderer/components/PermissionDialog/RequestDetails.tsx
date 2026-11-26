@@ -28,6 +28,7 @@ import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 import { interpolatePlural } from '../../i18n/interpolate';
 
 interface RequestDetailsProps {
+  hideConsequence?: boolean;
   request: PermissionRequest;
 }
 
@@ -100,7 +101,7 @@ function sandboxStatusCopy(
   return labels.sandboxDegraded;
 }
 
-export function RequestDetails({ request }: RequestDetailsProps) {
+export function RequestDetails({ request, hideConsequence = false }: RequestDetailsProps) {
   const { language, t } = useI18n();
   const developerMode = useAppStore().developerMode === true;
   const { type, details } = request;
@@ -186,7 +187,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {peerOriginNotice}
       {pluginOriginNotice}
       {externalScopeNotice}
-      {consequence && (
+      {!hideConsequence && consequence && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {consequence}
         </p>
@@ -205,7 +206,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           label={labels.detailCommand}
           value={details.command}
           isCode
-          isDangerous={isDangerousRequestShape(request)}
+          isDangerous={isSafeDefaultDeny(request)}
           collapsible={type === 'command' && !(isDangerousRequestShape(request) || isSafeDefaultDeny(request))}
         />
       )}
@@ -514,7 +515,7 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
       <div
         className={`
           p-2 rounded font-mono text-xs
-          ${isCode ? 'whitespace-pre-wrap break-all' : 'break-all'}
+          ${isCode ? 'max-h-48 overflow-y-auto whitespace-pre-wrap break-all' : 'break-all'}
           ${
             isCode
               ? isDangerous
@@ -526,7 +527,7 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={isPath && humanPath !== visibleValue ? humanPath : redactedValue}
+        title={isCode ? undefined : (isPath && humanPath !== visibleValue ? humanPath : redactedValue)}
       >
         {displayValue}
       </div>
