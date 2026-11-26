@@ -3,7 +3,7 @@ import { collectDeliverableFileArtifacts } from '../../tools/artifacts/collectDe
 import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../../session/approvedRmSettlementTargets';
 import { settleBackgroundOnTaskComplete } from '../../task/backgroundTaskTerminal';
 import { resolveBackgroundRunSettlement } from '../../session/backgroundRunSettlement';
-import { backgroundChildAdmitted, backgroundChildSettled } from '../../session/backgroundSettlementHold';
+import { backgroundChildAdmitted, backgroundChildSettled, backgroundParentOwnsChildNotice } from '../../session/backgroundSettlementHold';
 import { notificationService } from '../infra/notificationService';
 import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
 import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
@@ -861,8 +861,13 @@ export class SessionCommandCenter {
       status = 'failed';
       task.leftoverPaths = settlement.leftoverPaths;
       task.deliverableArtifacts = undefined;
-      task.stopped = undefined;
-      detail = getDeleteIncompleteText(resolveSessionTaskResultLocale()).reason;
+      const locale = resolveSessionTaskResultLocale();
+      const incomplete = getDeleteIncompleteText(locale);
+      detail = incomplete.reason;
+      task.stopped = {
+        content: locale === 'en' ? `${incomplete.title}: ${incomplete.reason}` : `${incomplete.title}：${incomplete.reason}`,
+        kind: 'error',
+      };
       logger.warn('Background task failed', { sessionId: task.sessionId, runId: task.id, error: settlement.message });
     }
     if (status === 'failed' && !task.stopped && !task.leftoverPaths) {
@@ -884,7 +889,7 @@ export class SessionCommandCenter {
     task.resultText = composeTaskResultForModel(task, detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
-    if (task.leftoverPaths) {
+    if (task.leftoverPaths && !backgroundParentOwnsChildNotice(task.sessionId, task.id)) {
       notificationService.notifyTaskComplete({
         sessionId: task.sessionId,
         sessionTitle: task.title,
