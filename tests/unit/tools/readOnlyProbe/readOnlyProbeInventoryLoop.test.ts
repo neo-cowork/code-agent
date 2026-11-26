@@ -3,7 +3,8 @@
 // 模型在 rm 之前常写一条只读盘点：`for p in <字面量路径>; do if [ -e "$p" ]; then …; else …; fi; done`。
 // 同样的检查单条写（test -e / ls / stat）本来就免卡，写成循环却出卡 → 一次删除要点两下。
 // 全部走公共入口 ToolExecutor.execute：
-//  - 模型真实写法（引号字面量词表 + 一层 if/else + stat -f / ls / echo / printf）零审批，输出与真 sh 逐字一致
+//  - 模型真实写法（引号字面量词表 + 一层 if/else + ls / echo / printf）零审批，输出与真 sh 逐字一致（所有平台）
+//  - 写法里带 stat -f 时：macOS 同样零审批；其它平台编译得出计划、执行期放弃，整条命令回到审批链（fail-closed）
 //  - 词表、循环体里任何非字面量 / 展开 / 写操作 / 嵌套结构 → 仍出卡
 //  - 工作区外未点名的路径、用户 ask / deny 规则 → 仍出卡 / 仍拒绝
 // ============================================================================
@@ -105,6 +106,16 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     expect(result.output).toBe(realBash(command));
   }
 
+  /**
+   * 带 `stat -f` 的盘点：`-f <format>` 是 macOS 的 BSD 语法（Linux 上 `-f` 是文件系统状态，同形不同义），执行器只在 macOS 进程内跑它。
+   * macOS：免卡，输出与真 shell 逐字一致；其它平台：编译得出计划，执行到 stat 时放弃，整条命令回到审批链 —— 必须出卡。
+   */
+  async function expectStatLoop(command: string) {
+    if (process.platform === 'darwin') return expectFreed(command);
+    expect(compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform }), command).not.toBeNull();
+    await expectStillAsks(command);
+  }
+
   /** 仍出卡：审批请求带着原命令，探测没有放行。 */
   async function expectStillAsks(command: string) {
     const result = await run(command);
@@ -152,14 +163,6 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       await expectFreed(evidenceShape([a(), missing()]));
     });
 
-    it('dogfood 真跑的写法（裸词表、多行 if/else、stat -f 与 printf）免卡', async () => {
-      await expectFreed(dogfoodShape([a(), missing()]));
-    });
-
-    it('模型把循环写成单行：if … then stat … else printf … fi', async () => {
-      await expectFreed(`for f in ${a()} ${missing()}; do if [ -e "$f" ]; then stat -f '仍在 | %N | %z 字节' "$f"; else printf '已删除 | %s\\n' "$f"; fi; done`);
-    });
-
     it('引号词表 + test -e && echo（没有 if）免卡', async () => {
       await expectFreed(`for p in ${sq(a())} ${sq(path.join(fx, 'b c.txt'))}; do test -e "$p" && echo "EXISTS: $p"; done`);
     });
@@ -173,11 +176,11 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     });
 
     it('空格 + 括号的路径（引号词表）免卡', async () => {
-      await expectFreed(`for p in ${sq(path.join(fx, 'draft (v2).txt'))}; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else printf 'GONE | %s\\n' "$p"; fi; done`);
+      await expectFreed(`for p in ${sq(path.join(fx, 'draft (v2).txt'))}; do if [ -e "$p" ]; then ls -l "$p"; else printf 'GONE | %s\\n' "$p"; fi; done`);
     });
 
     it('双引号词里带单引号的路径免卡', async () => {
-      await expectFreed(`for p in "${path.join(fx, "it's.txt")}"; do if [ -e "$p" ]; then stat -f '%N' "$p"; fi; done`);
+      await expectFreed(`for p in "${path.join(fx, "it's.txt")}"; do if [ -e "$p" ]; then ls -l "$p"; fi; done`);
     });
 
     it('裸词与引号词混在一个词表里免卡', async () => {
@@ -185,7 +188,7 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     });
 
     it('双引号里的 ${p} 写法免卡', async () => {
-      await expectFreed(`for p in ${sq(path.join(fx, 'b c.txt'))}; do if [ -e "\${p}" ]; then stat -f '%N' "\${p}"; fi; done`);
+      await expectFreed(`for p in ${sq(path.join(fx, 'b c.txt'))}; do if [ -e "\${p}" ]; then ls -l "\${p}"; fi; done`);
     });
 
     it('没有 else 的 if 免卡', async () => {
@@ -220,18 +223,9 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       await expectFreed(evidenceShape([out1(), out2()]));
     });
 
-    it('dogfood 真跑（修后 run 2）的盘点原样：cd … && for f in "…" "…"; do if [ -e "$f" ]; then stat -f … -t … "$f"; else echo …; fi; done', async () => {
-      const command = `cd "${fx}" && for f in "a.txt" "b c.txt" "合同.md" "missing.md"; do if [ -e "$f" ]; then stat -f "EXISTS | %N | %z bytes | %Sm" -t "%Y-%m-%d %H:%M:%S" "$f"; else echo "MISSING | $f"; fi; done`;
-      await expectFreed(command);
-    });
-
     it('dogfood 真跑（修后 run 2）的删后复查原样：cd … && for f in "…" …; do if [ -e "$f" ]; then echo …; else echo …; fi; done', async () => {
       const command = `cd "${fx}" && for f in "a.txt" "b c.txt" "合同.md"; do if [ -e "$f" ]; then echo "STILL THERE | $f"; else echo "gone | $f"; fi; done`;
       await expectFreed(command);
-    });
-
-    it('stat 的 -t 写在 -f 前面免卡', async () => {
-      await expectFreed(`for p in ${a()}; do if [ -e "$p" ]; then stat -t '%Y-%m-%d' -f '%N | %Sm' "$p"; fi; done`);
     });
 
     it('引号括起的安全词 + 引号外的引用（command -v $t）免卡', async () => {
@@ -239,7 +233,7 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     });
 
     it('cd 到工作区里的子目录再用相对路径盘点免卡', async () => {
-      await expectFreed(`cd "${fx}" && for p in 'b c.txt' 'a.txt' 'no-such.txt'; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else echo "MISSING | $p"; fi; done`);
+      await expectFreed(`cd "${fx}" && for p in 'b c.txt' 'a.txt' 'no-such.txt'; do if [ -e "$p" ]; then ls -l "$p"; else echo "MISSING | $p"; fi; done`);
     });
 
     it('then 分支里有 cd：条件只判一次，分支里的 cd 不会让后面的语句被跳过', async () => {
@@ -262,7 +256,50 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       const named = path.join(elsewhere, 'old report 2.docx');
       await fs.writeFile(named, 'x');
       sessionMessages.push({ role: 'user', content: `删掉 ${named}` });
-      await expectFreed(`for p in ${sq(named)}; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else echo "GONE: $p"; fi; done`);
+      await expectFreed(`for p in ${sq(named)}; do if [ -e "$p" ]; then ls -l "$p"; else echo "GONE: $p"; fi; done`);
+    });
+  });
+
+  // stat -f 只在 macOS 进程内执行（见 expectStatLoop）：这一组在 macOS 上是「免卡 + 输出与真 shell 一致」，
+  // 在 Linux CI 上是「编译得出计划、执行期放弃、回到审批链」—— 两个平台都必须过，不用 skip。
+  describe('positive: 带 stat -f 的盘点循环 —— macOS 进程内执行，其它平台回到审批链', () => {
+    it('dogfood 真跑的写法（裸词表、多行 if/else、stat -f 与 printf）', async () => {
+      await expectStatLoop(dogfoodShape([a(), missing()]));
+    });
+
+    it('模型把循环写成单行：if … then stat … else printf … fi', async () => {
+      await expectStatLoop(`for f in ${a()} ${missing()}; do if [ -e "$f" ]; then stat -f '仍在 | %N | %z 字节' "$f"; else printf '已删除 | %s\\n' "$f"; fi; done`);
+    });
+
+    it('空格 + 括号的路径（引号词表）', async () => {
+      await expectStatLoop(`for p in ${sq(path.join(fx, 'draft (v2).txt'))}; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else printf 'GONE | %s\\n' "$p"; fi; done`);
+    });
+
+    it('双引号词里带单引号的路径', async () => {
+      await expectStatLoop(`for p in "${path.join(fx, "it's.txt")}"; do if [ -e "$p" ]; then stat -f '%N' "$p"; fi; done`);
+    });
+
+    it('双引号里的 ${p} 写法', async () => {
+      await expectStatLoop(`for p in ${sq(path.join(fx, 'b c.txt'))}; do if [ -e "\${p}" ]; then stat -f '%N' "\${p}"; fi; done`);
+    });
+
+    it('dogfood 真跑（修后 run 2）的盘点原样：cd … && for f in "…" "…"; do if [ -e "$f" ]; then stat -f … -t … "$f"; else echo …; fi; done', async () => {
+      await expectStatLoop(`cd "${fx}" && for f in "a.txt" "b c.txt" "合同.md" "missing.md"; do if [ -e "$f" ]; then stat -f "EXISTS | %N | %z bytes | %Sm" -t "%Y-%m-%d %H:%M:%S" "$f"; else echo "MISSING | $f"; fi; done`);
+    });
+
+    it('stat 的 -t 写在 -f 前面', async () => {
+      await expectStatLoop(`for p in ${a()}; do if [ -e "$p" ]; then stat -t '%Y-%m-%d' -f '%N | %Sm' "$p"; fi; done`);
+    });
+
+    it('cd 到工作区里的子目录再用相对路径盘点', async () => {
+      await expectStatLoop(`cd "${fx}" && for p in 'b c.txt' 'a.txt' 'no-such.txt'; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else echo "MISSING | $p"; fi; done`);
+    });
+
+    it('用户点名的带空格路径（引号词表）', async () => {
+      const named = path.join(elsewhere, 'old report 2.docx');
+      await fs.writeFile(named, 'x');
+      sessionMessages.push({ role: 'user', content: `删掉 ${named}` });
+      await expectStatLoop(`for p in ${sq(named)}; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else echo "GONE: $p"; fi; done`);
     });
   });
 
