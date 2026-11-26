@@ -166,7 +166,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
     ? t.chat.thinkingActiveWithDuration.replace('{duration}', duration)
     : showEnglishNote
       ? interpolate(t.chat.thinkingDigestEnglishNote, { duration })
-      : interpolate(interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length), { duration });
+      : interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length, { duration });
 
   return (
     <div

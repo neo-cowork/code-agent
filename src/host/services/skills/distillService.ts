@@ -17,6 +17,7 @@
 import { createHash } from 'crypto';
 import type { Message } from '../../../shared/contract';
 import { DISTILL } from '../../../shared/constants';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../../shared/telemetryRecovery';
 import {
   TranscriptHistoryService,
   type TranscriptHistoryDatabase,
@@ -279,7 +280,11 @@ export async function extractDistillSignalsFromRecentMessages(
     const messages = input.messagesBySession.get(session.id) || [];
     for (const msg of messages) {
       if (msg.role !== 'user') continue;
-      const text = compact(typeof msg.content === 'string' ? msg.content : '', DISTILL.SIGNAL_CONTENT_MAX_CHARS);
+      // 复盘共用入口：先剥旧恢复提示；只剩提示的消息清洗后为空，按普通短消息跳过。
+      const text = compact(
+        stripTelemetryRecoveryNoticeOrResidue(typeof msg.content === 'string' ? msg.content : ''),
+        DISTILL.SIGNAL_CONTENT_MAX_CHARS,
+      );
       if (text.length < 12 || !REPEAT_SIGNAL_PATTERN.test(text)) continue;
       const title = compact(text, 80);
       const normalizedTitle = normalizeText(title);

@@ -38,6 +38,7 @@ import { needsArtifactTaskBrief } from '../prompts/artifactGeneration';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getConfigService } from '../services/core/configService';
 import { deriveRuleSummaryTitle, isPlaceholderSessionTitle, isProvisionalAutoTitle } from '../../shared/sessionTitlePlaceholder';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../shared/constants/timeouts';
 import { buildHostSessionTitlePrompt } from '../session/sessionTitleHostPrompt';
 import { getDefaultWorkDirectory } from './configPaths';
@@ -174,22 +175,99 @@ function needsShortTaskTitle(message: string): boolean {
     || deriveRuleSummaryTitle(clause) !== clause;
 }
 
-/** 路径/URL 是输入材料，不是任务名；先整段移除再分句，绝不拼接斜杠两侧。 */
+/** 被整段删掉的路径/URL/代码记号留下的洞：私有区字符而不是空格，洞两侧是否悬空才看得出来。 */
+const REMOVED_TOKEN = '\uE000';
+const REMOVED_TOKEN_RUN = /\s*\uE000(?:\s*\uE000)*\s*/g;
+/** 中文悬空虚词：名字落在这些字上（或洞贴着它们）读起来是半句。 */
+const ZH_DANGLING_CHARS = new Set(Array.from('的了着过吗呢吧和与及或跟同在把被对给向为从到'));
+/** 开头只拦助词与连词：中文祈使句以介词开头（给客户写方案、从表格提取数据）本身是完整短语。 */
+const ZH_LEADING_DANGLING_CHARS = new Set(Array.from('的了着过吗呢吧及或'));
+/** 以上字收尾/起头却是实词的常见双字词，不当悬空。 */
+const ZH_CONTENT_WORDS = new Set(('目的 的确 合同 共同 相同 不同 协同 如同 认同 赞同 陪同 通过 经过 超过 不过 错过 过滤 过期 过程 过去 过往 过渡 '
+  + '存在 现在 实在 正在 所在 潜在 核对 校对 比对 派对 面对 针对 应对 相对 绝对 反对 配对 供给 补给 方向 导向 转向 面向 走向 意向 '
+  + '行为 作为 认为 成为 称为 视为 参与 普及 涉及 及时 及格 或许 或者 总和 温和 平和 缓和 服从 签到 收到 得到 达到 做到 找到 提到 报到 '
+  + '为了 除了 了解 着手 着重 酒吧 不对').split(' '));
+/** 与 sessionTitlePlaceholder 的 FUNCTION_WORDS 同表：英文名停在/起在这些词上是半截。 */
+const EN_FUNCTION_WORDS = new Set([
+  'the', 'a', 'an', 'of', 'to', 'for', 'and', 'or', 'in', 'on', 'at',
+  'with', 'by', 'from', 'into', 'about', 'as', 'is', 'are', 'be',
+]);
+/** 英文开头放过冠词与 to（The contracts need… / to build a site 是完整短语）。 */
+const EN_LEADING_DANGLING_WORDS = new Set(Array.from(EN_FUNCTION_WORDS).filter((word) => !['the', 'a', 'an', 'to'].includes(word)));
+
+function endsDangling(text: string, truncated = true): boolean {
+  const last = text.split(' ').filter(Boolean).pop() ?? '';
+  if (EN_FUNCTION_WORDS.has(last.toLowerCase())) return true;
+  const chars = Array.from(last);
+  const lastChar = chars[chars.length - 1] ?? '';
+  // 未被截断的完整分句只拒句末状态助词「了」（如「拖进来了」）；其余收尾多为完整实词（求和/横向/迟到/跳过/接着/重复的）。
+  if (!truncated) return lastChar === '了';
+  return ZH_DANGLING_CHARS.has(lastChar) && !ZH_CONTENT_WORDS.has(chars.slice(-2).join(''));
+}
+
+function startsDangling(text: string, zhChars: ReadonlySet<string>, enWords: ReadonlySet<string>): boolean {
+  const first = text.split(' ').find(Boolean) ?? '';
+  if (enWords.has(first.toLowerCase())) return true;
+  const chars = Array.from(first);
+  return zhChars.has(chars[0] ?? '') && !ZH_CONTENT_WORDS.has(chars.slice(0, 2).join(''));
+}
+
+/** 洞贴着虚词（`整理 和 的会议记录`）= 删掉的记号原本是句子成分；洞夹在两个实词之间只折叠（`整理 合同`）。 */
+function hasDanglingHole(text: string): boolean {
+  const parts = text.split(REMOVED_TOKEN).map((part) => part.trim());
+  return parts.some((part, index) => Boolean(part) && (
+    (index < parts.length - 1 && endsDangling(part))
+    || (index > 0 && startsDangling(part, ZH_DANGLING_CHARS, EN_FUNCTION_WORDS))
+  ));
+}
+
+/** 有空格却不足两个实词（`the contracts`）仍是碎片。 */
+function isFolderTitleFragment(name: string): boolean {
+  if (!name.includes(' ')) return false;
+  return name.split(' ').filter((word) => word && !EN_FUNCTION_WORDS.has(word.toLowerCase())).length < 2;
+}
+
+/** 候选分句按会话标题同款规则摘要（带 avoidFragment），再做质量检查；不合格返回 undefined。 */
+function acceptableRuleFolderTitle(segment: string, language?: 'zh' | 'en'): string | undefined {
+  const derived = deriveRuleSummaryTitle(segment, language, { avoidFragment: true });
+  if (hasDanglingHole(derived)) return undefined;
+  const truncated = !segment.endsWith(derived);
+  // 完整问句（结论合理吗）只收掉句末语气词，不当半句；了仍按悬空拒，未截断的完整实词收尾不误杀。
+  const name = sanitizeFolderTitle(derived.replace(REMOVED_TOKEN_RUN, ' ').replace(/(?<=\S{2})[吗呢吧]+$/u, ''));
+  if (!name || endsDangling(name, truncated) || isFolderTitleFragment(name)
+    || startsDangling(name, ZH_LEADING_DANGLING_CHARS, EN_LEADING_DANGLING_WORDS)) return undefined;
+  return name;
+}
+
+/**
+ * 路径/URL 是输入材料，不是任务名；先整段移除（留洞标记）再分句，绝不拼接斜杠两侧。
+ * 候选：首个分句，再加后面以请求套话开头的分句（`请逐份摘要并写入 notes.md`）；
+ * 第一个合格的胜出，全不合格返回 undefined，由调用方落到 untitled。
+ */
 function cleanRuleFolderTitle(message: string, language?: 'zh' | 'en'): string | undefined {
+  const hole = ` ${REMOVED_TOKEN} `;
   const prose = message
-    .replace(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g, ' ')
-    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s（）()【】[\]，。；：、]+/gi, ' ')
-    .replace(/(?:[a-z]:\\|~?\/|\.{1,2}\/|\b[\w.-]+[/\\])[^\s（）()【】[\]，。；：、]*/gi, ' ')
+    .replace(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g, hole)
+    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s（）()【】[\]，。；：、]+/gi, hole)
+    .replace(/(?:[a-z]:\\|~?\/|\.{1,2}\/|\b[\w.-]+[/\\])[^\s（）()【】[\]，。；：、\uE000]*/gi, hole)
     .trim();
   // 开头的【紧急】/（续）是标签不是任务：先剥掉再分句；整条只剩标签时取第一个非空段，不让首段空串吞掉全部兜底。
   const untagged = prose.replace(/^[（(［[【{｛][^）)］\]】}｝]*[）)］\]】}｝]\s*/, '');
-  const segments = (untagged || prose).split(/[（）()［］[\]【】{}｛｝：:、]|[。！？.!?；;，,\n]/);
-  const clause = segments.find((segment) => segment.trim())?.trim();
-  return clause ? sanitizeFolderTitle(deriveRuleSummaryTitle(clause, language)) : undefined;
+  const segments = (untagged || prose).split(/[（）()［］[\]【】{}｛｝：:、]|[。！？.!?；;，,\n]/)
+    .map((segment) => segment.replace(/\s+/g, ' ').trim())
+    .filter((segment) => segment.replace(REMOVED_TOKEN_RUN, '').trim());
+  // 规则摘要不再是分句前缀 = 开头的请求套话被剥掉了：这是用户真正下的指令。
+  const requests = segments.slice(1).filter((segment) => !segment.startsWith(deriveRuleSummaryTitle(segment, language)));
+  for (const candidate of [...segments.slice(0, 1), ...requests]) {
+    const title = acceptableRuleFolderTitle(candidate, language);
+    if (title) return title;
+  }
+  return undefined;
 }
 
 async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions): Promise<string | undefined> {
-  const message = options.userMessage?.trim();
+  // 文件夹命名与标题共用恢复提示清洗入口：只剩提示的消息按空消息处理，沿用附件名兜底。
+  const message = stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '').trim();
   if (!message) return undefined; // 附件名沿用既有路径。
   const started = Date.now();
   const logDecision = (source: 'model' | 'rule' | 'short-clean', reason: string) => {
@@ -236,7 +314,8 @@ async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions):
     }
   }
   logDecision('rule', reason);
-  return cleanRuleFolderTitle(message, options.language) ?? sanitizeFolderTitle(message);
+  // 没有合格候选时宁可 untitled（由 buildSessionFolderBaseName 兜底），也不把半句或原始路径当名字。
+  return cleanRuleFolderTitle(message, options.language);
 }
 
 /**
@@ -272,9 +351,11 @@ function buildSessionFolderBaseName(options: SessionWorkDirectoryOptions): strin
   const date = new Date(options.now ?? Date.now());
   const mmdd = `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const prefix = (options.language ?? readUiLanguage()) === 'en' ? 'Task' : '任务';
+  // 与 chooseFirstTurnFolderTitle 同一道恢复提示清洗：只剩提示的消息等同空消息，走附件名/untitled。
+  const userMessage = stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '');
   const title = sanitizeFolderTitle(usableSessionTitle(options.sessionTitle) ?? '')
-    ?? sanitizeFolderTitle(options.userMessage ?? '')
-    ?? (!options.userMessage?.trim() ? attachmentFolderTitle(options.attachments) : undefined)
+    ?? sanitizeFolderTitle(userMessage)
+    ?? (!userMessage.trim() ? attachmentFolderTitle(options.attachments) : undefined)
     ?? 'untitled';
   return `${prefix}_${mmdd}_${title}`;
 }
@@ -406,7 +487,8 @@ export async function planSessionWorkDirectory(
   const firstTurnTitle = useExistingTitle ? title : await chooseFirstTurnFolderTitle(options);
   const baseName = buildSessionFolderBaseName({
     ...options, sessionTitle: firstTurnTitle, userMessage: undefined,
-    attachments: options.userMessage?.trim() ? undefined : options.attachments,
+    // 附件名兜底的门槛按清洗后的正文判：只剩恢复提示的消息等同空消息。
+    attachments: stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '').trim() ? undefined : options.attachments,
   });
   return findFreeSessionWorkDirectory(root, baseName, resolveReservationSet(root, options.reservedPaths));
 }

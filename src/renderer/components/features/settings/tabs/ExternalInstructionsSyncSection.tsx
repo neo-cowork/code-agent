@@ -4,6 +4,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
 import { Button, Toggle } from '../../../primitives';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 interface PendingInstructionRule {
   instructionId: string;
@@ -103,7 +104,7 @@ export const ExternalInstructionsSyncSection: React.FC = () => {
       ? copy.statusPaused
       : sync.mode === 'on'
         ? (sync.pending.length > 0
-          ? copy.statusNew.replace('{count}', String(sync.pending.length))
+          ? interpolatePlural(copy.statusNew, sync.pending.length)
           : copy.statusOnEmpty)
         : copy.statusOff;
   const keptNeo = sync.mode === 'on' ? (sync.lastRun?.keptNeo ?? 0) : 0;
@@ -122,7 +123,7 @@ export const ExternalInstructionsSyncSection: React.FC = () => {
           </div>
           {keptNeo > 0 && (
             <div className="mt-1 text-xs text-zinc-500" data-testid="external-instructions-sync-kept-neo">
-              {copy.keptNeoLine.replace('{count}', String(keptNeo))}
+              {interpolatePlural(copy.keptNeoLine, keptNeo)}
             </div>
           )}
         </div>

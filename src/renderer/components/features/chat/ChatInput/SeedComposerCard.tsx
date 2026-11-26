@@ -3,6 +3,7 @@ import { Loader2, Target, X } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 export type SeedComposerKind = 'team' | 'role';
 
@@ -53,7 +54,7 @@ export const SeedComposerCard: React.FC<SeedComposerCardProps> = ({
     return () => { active = false; };
   }, [kind]);
 
-  const hint = expertCount === null ? undefined : t.seedComposer.availableExpertsHint.replace('{count}', String(expertCount));
+  const hint = expertCount === null ? undefined : interpolatePlural(t.seedComposer.availableExpertsHint, expertCount);
   const submit = () => {
     if (canStart) onSubmit(text.trim());
   };

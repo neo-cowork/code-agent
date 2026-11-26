@@ -208,7 +208,7 @@ describe('planSessionWorkDirectory (lazy planning)', () => {
         language: 'zh',
         env,
       });
-      expect(path.basename(dir)).toBe(`任务_1011_${expected.replace(/^帮我/, '')}`);
+      expect(path.basename(dir)).toBe(`任务_1011_${expected.replace(/^帮我把?/, '')}`);
     }
   });
 

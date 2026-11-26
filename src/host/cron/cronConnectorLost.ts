@@ -22,9 +22,11 @@ import {
   isCliConnectorId,
 } from '../connectors/cli/cliConnectorStatusCache';
 import { getSessionAutomationService } from '../services/sessionAutomation';
+import { notificationService } from '../services/infra/notificationService';
 import { getCronAutomationType, localDayKey } from './cronAutomationBridge';
 
 const recordedKeys = new Set<string>();
+const recordingKeys = new Map<string, Promise<void>>();
 
 function displayName(connectorId: string): string {
   return CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === connectorId)?.displayName ?? connectorId;
@@ -87,12 +89,21 @@ export async function recordCronConnectorLost(
   definition: CronJobDefinition,
   connectorIds: readonly string[],
   now: () => number,
+  { notify = false }: { notify?: boolean } = {},
 ): Promise<void> {
   const nowMs = now();
   const day = localDayKey(nowMs);
   for (const connectorId of new Set(connectorIds)) {
     const eventId = `connector_lost:${connectorId}:${day}`;
+    while (recordingKeys.has(eventId)) {
+      await recordingKeys.get(eventId);
+    }
     if (recordedKeys.has(eventId)) continue;
+    let resolveWrite!: () => void;
+    const writeFinished = new Promise<void>((resolve) => {
+      resolveWrite = resolve;
+    });
+    recordingKeys.set(eventId, writeFinished);
     try {
       const service = getSessionAutomationService();
       const type = getCronAutomationType(definition);
@@ -121,9 +132,21 @@ export async function recordCronConnectorLost(
         },
         eventId,
       });
-      if (recorded) recordedKeys.add(eventId);
+      if (!recorded) continue;
+      recordedKeys.add(eventId);
     } catch (error) {
       console.error('[CronService] Failed to record connector-lost automation event:', error);
+      continue;
+    } finally {
+      recordingKeys.delete(eventId);
+      resolveWrite();
+    }
+    if (notify) {
+      try {
+        notificationService.notifyCronConnectorLost({ connectorId });
+      } catch (error) {
+        console.error('[CronService] Failed to notify about a signed-out connector:', error);
+      }
     }
   }
 }
