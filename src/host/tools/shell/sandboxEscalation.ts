@@ -89,7 +89,8 @@ function flattenLiteralRmLoop(segments: ReturnType<typeof parseShellCommand>['se
     if (words[0] === 'for') {
       const name = words[1] ?? '';
       const list = words.slice(3);
-      if (items.size > 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || words[2] !== 'in' || list.length < 1) return { sawRm, reason: 'command_shape:loop_shape' };
+      // A loop variable that shadows an inherited variable (HOME above all) would make `"$HOME/x"` name another file.
+      if (items.size > 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name in process.env || words[2] !== 'in' || list.length < 1) return { sawRm, reason: 'command_shape:loop_shape' };
       if (list.some((item) => !path.isAbsolute(item) || /[\s*?[\]{}\\$`~]/.test(item))) return { sawRm, reason: 'command_shape:loop_item' };
       items.set(name, list);
       continue;
@@ -179,13 +180,13 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
         }
         // Owner-approved (2026-11-26): `"$HOME/x"` / `"${HOME}/x"` is the one variable spelling accepted, the same
         // file as `~/x`. Every `$` that reaches here is double-quoted (hasUnsafeRmExpansion), HOME cannot be
-        // reassigned (assignment_control), and the value is the HOME the child shell inherits, not a host guess.
+        // rebound by an assignment (assignment_control) or a loop variable (loop_shape), and the value is the
+        // HOME the child shell inherits, not a host guess.
         const homeRelative = /^\$\{HOME\}\/([^$`*?{}[\]]+)$/.exec(arg)?.[1];
         if (homeRelative !== undefined && !homeRelative.split('/').includes('..')) {
           if (rmSegments.length > 1 || redirected.size > 0) return refuse('command_shape:operand_not_absolute_literal');
           const childHome = process.env.HOME ?? '';
-          if (!path.isAbsolute(childHome) || sanitizeEnvValue(childHome) !== childHome
-            || path.resolve(childHome) !== path.resolve(homedir())) return refuse('home_env');
+          if (!path.isAbsolute(childHome) || sanitizeEnvValue(childHome) !== childHome) return refuse('home_env');
           operands.push(path.join(childHome, homeRelative));
           continue;
         }

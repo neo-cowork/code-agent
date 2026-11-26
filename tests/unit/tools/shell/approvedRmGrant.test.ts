@@ -142,6 +142,9 @@ describe('approved rm production approval boundary', () => {
       ["rm -- '$HOME/cache-0.tmp'", 'expansion'],
       ['rm -- "$HOME/$(id)"', 'expansion'],
       ['HOME=/tmp; rm -- "$HOME/cache-0.tmp"', 'assignment_control'],
+      ['for HOME in /tmp; do\nrm -f -- "$HOME/cache-0.tmp"\ndone', 'loop_shape'],
+      ['for HOME in /tmp; do\nrm -f -- "${HOME}/cache-0.tmp"\ndone', 'loop_shape'],
+      ['for PATH in ABS; do\nrm -f -- "$PATH"\ndone', 'loop_shape'],
       ['rm -f -- "ABS"; rm -f -- "$HOME/cache-1.tmp"', 'operand_not_absolute_literal'],
       ['rm -f -- "$HOME/cache-0.tmp" 2>&1', 'operand_not_absolute_literal'],
     ])('still refuses %s', (command, reason) => {
