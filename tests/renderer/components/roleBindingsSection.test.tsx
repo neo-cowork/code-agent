@@ -3,6 +3,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExpertContextBinding } from '../../../src/shared/contract/roleAssets';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const invokeDomain = vi.fn();
 
@@ -40,6 +41,7 @@ function makeBinding(overrides: Partial<ExpertContextBinding> = {}): ExpertConte
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useAppStore.setState({ language: 'zh' });
 });
 
 beforeEach(() => {
@@ -146,6 +148,29 @@ describe('RoleBindingsSection', () => {
     expect(within(screen.getByTestId('role-binding-bind_s1')).getByText('常驻索引')).toBeTruthy();
     expect(within(screen.getByTestId('role-binding-bind_s2')).getByText('常驻索引')).toBeTruthy();
     expect(screen.queryByText('私有')).toBeNull();
+  });
+
+  it('英文界面：内置技能的展示名走共享目录文案，用户自己起的资料标题原样显示', async () => {
+    useAppStore.setState({ language: 'en' });
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'listBindings') {
+        return Promise.resolve([
+          makeBinding({ id: 'bind_s1', kind: 'skill', target: 'literature-review', title: 'literature-review', mode: 'always' }),
+          makeBinding({ id: 'bind_f1', kind: 'file', target: '/Users/x/PRD 模板.md', title: 'PRD 模板.md', mode: 'on_demand' }),
+        ]);
+      }
+      return Promise.resolve({ removed: true });
+    });
+    vi.mocked(invokeSkillIPC).mockResolvedValue([
+      catalogSkill('literature-review', '文献综述 — 多篇论文/文章的主题归纳、方法对比、引用网络、研究空白识别，输出综述大纲。'),
+    ]);
+    render(<RoleBindingsSection roleId="万卷" />);
+    await waitFor(() => {
+      expect(screen.getByTitle('literature-review').textContent).toBe('Literature review');
+    });
+    // 用户自己的标题是资料不是界面文案：英文界面里原样显示
+    expect(within(screen.getByTestId('role-binding-bind_f1')).getByText('PRD 模板.md')).toBeTruthy();
+    expect(within(screen.getByTestId('role-binding-bind_s1')).getByText('Always indexed')).toBeTruthy();
   });
 
   it('混合场景：资料类与 skill 行都不显示「私有」标签（scope 徽标已整体下线）', async () => {
