@@ -92,7 +92,9 @@ function resolveBaseUrlRaw(config: ModelConfig): string {
       return config.baseUrl || getSettingsProviderBaseUrl(provider) || MODEL_API_ENDPOINTS.zhipuOfficial;
     }
     if (model?.useCodingEndpoint && reg?.codingBaseUrl) {
-      return reg.codingBaseUrl; // coding 端点固定，不被 config.baseUrl 覆盖（对齐旧实现）
+      // 用户在设置里填了智谱 base URL 就跟随（官方 coding 套餐地址填了却被改走第三方中转会 401）；
+      // 留空才用默认 coding 端点。顺序与相邻分支一致。
+      return config.baseUrl || getSettingsProviderBaseUrl(provider) || reg.codingBaseUrl;
     }
     return config.baseUrl || getSettingsProviderBaseUrl(provider) || reg?.baseUrl || MODEL_API_ENDPOINTS.zhipu;
   }
@@ -136,6 +138,25 @@ export function getSettingsProviderBaseUrl(provider: string): string | undefined
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 智谱视觉兜底调用（image_analyze / brand_extract / visual_edit / ppt_generate 的
+ * VLM 审查）的 baseURL：用户在设置里填了智谱 base URL 就跟随（与 #4002 coding
+ * 分支同序），留空才回落到 registry 里的默认 coding 端点。
+ * 不能换成 resolveProviderBaseUrl：视觉兜底用的模型 id 不在 PROVIDER_REGISTRY
+ * 里，会解析到普通 paas 端点而不是 coding 端点，改变留空时的默认行为。
+ */
+export function resolveZhipuVisionFallbackBaseUrl(): string {
+  const settingsBaseUrl = trimTrailingSlash(getSettingsProviderBaseUrl('zhipu') || '');
+  // 设置页给 provider 建卡时会把出厂 paas 地址种进 baseUrl（用户只存 key 也落这值），
+  // 那不是用户自定义——等同留空回落 coding 端点；否则 coding 套餐的 vision 调用被
+  // 打到 paas 路径直接 401（renderer 同款判断见 hasCustomEndpointOverride）。
+  const isFactoryDefault =
+    settingsBaseUrl === trimTrailingSlash(PROVIDER_REGISTRY.zhipu.baseUrl || '');
+  return settingsBaseUrl && !isFactoryDefault
+    ? settingsBaseUrl
+    : trimTrailingSlash(PROVIDER_REGISTRY.zhipu.codingBaseUrl || '');
 }
 
 interface ResolveApiKeyOptions {

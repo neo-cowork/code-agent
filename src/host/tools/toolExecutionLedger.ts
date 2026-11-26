@@ -8,6 +8,7 @@ import { getToolLedgerSink } from './toolLedgerSink';
 import { redactSecrets } from '../security/secretRedaction';
 import { sanitizeToolParams } from './toolExecutorHelpers';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath } from '../runtime/runContext';
+import { omitMailBodyFromDiagnostics } from './outboundGuard';
 import { TurnTraceRecorder } from '../agent/runtime/turnTrace';
 
 const fallbackTraces = new Map<string, TurnTraceRecorder>();
@@ -109,7 +110,7 @@ export function createToolExecutionLedger(input: {
   replaySafety: ToolReplaySafety;
 }) {
   const executionId = randomUUID();
-  const params = sanitizeToolParams(input.params);
+  const params = sanitizeToolParams(omitMailBodyFromDiagnostics(input.toolName, input.params));
   const summary = String(
     params.command
     || params.file_path

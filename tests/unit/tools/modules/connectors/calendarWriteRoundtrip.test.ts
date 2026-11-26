@@ -13,6 +13,7 @@ const { fake } = await vi.hoisted(async () => ({ fake: (await import('../../../c
 vi.mock('../../../../../src/host/permissions/envAssist/shellBridge/client', async (orig) => ({
   ...(await orig<object>()), resolveShellBridgeClientFromEnv: () => fake.client,
 }));
+vi.mock('../../../../../src/host/config/hostUiLocale', () => ({ getHostUiLocale: vi.fn() }));
 const store = vi.hoisted(() => ({ messages: [] as Message[], updates: [] as Array<{ id: string; updates: Partial<Message> }> }));
 vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
@@ -29,6 +30,7 @@ vi.mock('../../../../../src/host/connectors', async (orig) => {
   return { ...(await orig<object>()), getConnectorRegistry: () => ({ get: (id: string) => (id === 'calendar' ? calendarConnector : undefined) }) };
 });
 
+import { getHostUiLocale } from '../../../../../src/host/config/hostUiLocale';
 import { calendarConnector, resetCalendarConnectorReadiness } from '../../../../../src/host/connectors/native/calendar';
 import { calendarCreateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarCreateEvent';
 import { calendarUpdateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarUpdateEvent';
@@ -50,6 +52,7 @@ const run = async (mod: { createHandler(): unknown }, args: Record<string, unkno
 const uidIn = (output: string | undefined) => /uid: (\S+)/.exec(output ?? '')?.[1];
 
 beforeEach(() => {
+  vi.mocked(getHostUiLocale).mockReturnValue('zh');
   fake.reset();
   fake.state.calendars = [{ id: 'cal-id-8012', title: '日历', writable: true, isDefault: true }];
   resetCalendarConnectorReadiness();
@@ -76,6 +79,27 @@ describe('calendar write round trip (EventKit)', () => {
     const deleted = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: uid });
     expect(deleted.ok).toBe(true);
     expect(fake.state.items).toEqual([]);
+  });
+
+  it('keeps pre-write errors actionable without claiming that Calendar might have saved the event', async () => {
+    vi.mocked(getHostUiLocale).mockReturnValue('en');
+    fake.state.calendars = [{ id: 'cal-work', title: 'Work', writable: true }];
+    const handler = await calendarCreateEventModule.createHandler();
+
+    const missing = await handler.execute({ calendar: 'Personal', title: 'Review', start_ms: HOUR }, ctx(), allow);
+    expect(missing).toMatchObject({
+      ok: false,
+      error: 'Calendar create failed: No calendar named "Personal". Available calendars: Work. Omit calendar to use the first writable calendar.',
+      userMessage: 'The specified calendar could not be found. Available calendars: Work',
+    });
+
+    const inverted = await handler.execute({ title: 'Review', start_ms: 2 * HOUR, end_ms: HOUR }, ctx(), allow);
+    expect(inverted).toMatchObject({
+      ok: false,
+      error: 'Calendar create failed: end_ms must be greater than or equal to start_ms',
+      userMessage: 'The end time cannot be earlier than the start time.',
+    });
+    expect(fake.state.calls.some(({ path }) => path === '/v1/write/calendar-event')).toBe(false);
   });
 
   it('② one approval only: the card details come from the pre-execution approval; the handler asks with the exact model args (so the top-level grant short-circuits)', async () => {

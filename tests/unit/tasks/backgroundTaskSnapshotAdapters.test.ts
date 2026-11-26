@@ -21,6 +21,7 @@ vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', async (im
 }));
 
 import Database from 'better-sqlite3';
+import { getConfigService } from '../../../src/host/services/core/configService';
 import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../../src/host/task/backgroundTaskStore';
 import type { BackgroundTaskLedgerChangedData } from '../../../src/shared/contract/agent';
@@ -45,6 +46,39 @@ describe('backgroundTaskSnapshotAdapters', () => {
 
   afterEach(() => {
     shutdownEventBus();
+  });
+
+  it.each([
+    ['zh', 'Copy missing-report.txt into archive in background', '复制 missing-report.txt 到 archive'],
+    ['zh', '把缺失的报告移入归档', '把缺失的报告移入归档'],
+    ['en', '把缺失的报告移入归档', 'Copy missing-report.txt to archive'],
+  ] as const)('persists the %s shell terminal message for %s', (language, displayName, expectedTitle) => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    const getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language },
+    });
+    const db = new Database(':memory:');
+    try {
+      const ledger = new BackgroundTaskLedger({ store: new SqliteBackgroundTaskStore(db) });
+      syncShellTaskSnapshotToLedger({
+        taskId: 'missing-report', status: 'failed', command: 'cp missing-report.txt archive/',
+        displayName, cwd: '/repo', sessionId: 'session-1', startTime: 1_000, endTime: 1_250,
+        duration: 250, exitCode: 1, outputFile: '/tmp/missing-report.log',
+      }, ledger);
+
+      const row = db.prepare('SELECT notification_json FROM background_task_notifications').get() as {
+        notification_json: string;
+      };
+      expect(JSON.parse(row.notification_json)).toMatchObject({
+        message: `${expectedTitle} 失败，耗时 不到 1 秒`,
+        payload: { source: 'shell', label: expectedTitle },
+      });
+    } finally {
+      getSettings.mockRestore();
+      db.close();
+    }
   });
 
   it('does not publish invalidations during pull-driven snapshot reconciliation', () => {
@@ -200,6 +234,12 @@ describe('backgroundTaskSnapshotAdapters', () => {
   });
 
   it('shell task title uses displayName while displayCommand keeps the real command', () => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    using _getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language: 'en' },
+    });
     const ledger = new BackgroundTaskLedger();
     syncShellTaskSnapshotToLedger({
       taskId: 'named123456', status: 'running', command: 'sandbox-exec -f /tmp/p.sb /bin/sh -c "osascript -e x"',
@@ -289,7 +329,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
       expect(ledger.getTask('pty:pty-unsandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
       expect(ledger.getTask('pty:pty-sandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
       expect(ledger.getTask('pty:pty-generic')).toMatchObject({
-        title: 'Background task',
+        title: '后台命令',
         command: genericFallbackCommand,
       });
       expect(store.loadTerminalTask('pty:pty-unsandboxed')).toMatchObject({ title: 'npm', command: 'npm run dev' });
@@ -430,6 +470,12 @@ describe('backgroundTaskSnapshotAdapters', () => {
     { status: 'failed' as const, exitCode: 3, stoppedByRequest: false, expected: 'failed' },
     { status: 'failed' as const, exitCode: undefined, stoppedByRequest: true, expected: 'cancelled' },
   ])('public snapshot entries preserve $expected with missing logs', ({ status, exitCode, stoppedByRequest, expected }) => {
+    const config = getConfigService();
+    const settings = config.getSettings();
+    using _getSettings = vi.spyOn(config, 'getSettings').mockReturnValue({
+      ...settings,
+      ui: { ...settings.ui, language: 'en' },
+    });
     const ledger = new BackgroundTaskLedger();
     const shared = {
       status, exitCode, stoppedByRequest, command: 'true', displayName: 'Archive meeting notes',

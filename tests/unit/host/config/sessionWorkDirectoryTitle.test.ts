@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  materializeSessionWorkDirectory, maybeReplanSessionWorkDirectory, planSessionWorkDirectory,
+  materializeSessionWorkDirectory, maybeReplanSessionWorkDirectory, needsWorkspaceModelTitleForDeliverable, planSessionWorkDirectory,
 } from '../../../../src/host/config/sessionWorkDirectory';
 import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../../../src/shared/constants/timeouts';
 
@@ -186,5 +186,55 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
       expect(askTitle).not.toHaveBeenCalled();
       expect(`${path.basename(withAttachment)}${path.basename(bare)}`).not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
     });
+  });
+});
+
+describe('workspace model title instruction window', () => {
+  const longSources = [
+    '周一的读书会上，大家先讨论了新版借阅规则。馆员给第一次参加的人讲了怎样在手机上看自己的借阅期限，之后又安排两位志愿者在服务台轮流答疑。会上提到，上月小程序会在归还日期前一天生成提醒，但有同学关闭了消息通知，所以纸质书签上的日期仍需保留。几位家长希望周末也能续借，值班同事会先了解周六的客流，再把结果带到下周会上。开放时间先按原安排执行，周五下班前会在服务台贴一张提醒。活动结束以后还有几位听众留下来问能不能跨馆还书，馆员建议他们先查看借书时收到的短信，再联系对应的分馆确认。',
+    'At Monday’s rehearsal, the cast spent most of the evening on the quieter scenes. The stage crew said the new build of the cue app can run offline. Next week everyone will bring headphones so the sound lead can check levels without interrupting the reading. The room is booked until nine in the evening.',
+    '社区食堂这周午餐照常供应，志愿者到岗后先检查冰箱温度，再去门口挂起当天菜单。周三下雨，排队的人都挪到了走廊里，几位老人来得较晚，桌边的座位已经坐满。值班负责人建议为节假日创建独立排班表，以免换班消息混在平日通知里。周五来送米的师傅会提早半小时到，负责收货的人要记得问清下个月的送货日期。订餐电话一直开到上午十点半，有临时取消的名额由前台直接登记。负责人还请大家下周带上旧的保温袋，收餐完毕后一并分给临时过来取饭的志愿者。晚上离开前，最后一班记得关上窗户，并把桌面和走道检查一遍。',
+    'The park group met beside the west entrance after the rain. The city showed a design for a wider path along the pond. Most neighbors asked to keep the old benches and leave enough room for the Saturday market. A second walk is planned for next month once the water level returns to normal.',
+    '本月巡河从东岸桥下开始，志愿者先记录了几处新出现的浅滩，再到下游看去年补种的水草有没有返青。早上风比较大，原定在桥头的集合改到了公交站旁边。途中有居民问到附近的旧仓库将来是否会开发为社区活动室，街道工作人员说还在收集周边居民的意见。回程时大家发现南侧步道的栏杆松了，拍照后把地点交给维护组。下次巡查暂定在月底，时间要等水位预报出来再确认。两位第一次参加的居民留了联系方式，希望下一次能从东边的湿地入口出发。维护组会先看那里的砖面是否还湿滑，确认路线以后再通知大家。',
+    'The school council met to review how families hear about evening events. The office said it could generate a weekly calendar if the details arrive by Thursday. Several families asked to keep the paper notice by the main doors. The council will revisit the question after the winter concert.',
+  ];
+
+  it.each(longSources)('defers naming for a summary of pasted notes (case %#)', (source) => {
+    expect(needsWorkspaceModelTitleForDeliverable(`Summarize this for me:\n\n${source}`)).toBe(false);
+  });
+
+  it.each([
+    ['head', `做一个关于社区阅读活动的网页\n\n${longSources[0]}`],
+    ['tail', `${longSources[0]}\n\n请将摘要保存到 x.md`],
+  ])('keeps model naming for a deliverable instruction at the %s', (_edge, prompt) => {
+    expect(needsWorkspaceModelTitleForDeliverable(prompt)).toBe(true);
+  });
+
+  it.each([
+    ['Summarize these notes', false],
+    ['帮我总结这段话', false],
+    ['Build a landing page', true],
+    ['请把摘要保存到 x.md', true],
+    ['用 Excel 做预算表', true],
+    ['Summarize the design notes', true],
+    [`${'A'.repeat(93)} build ${'A'.repeat(92)}`, true],
+  ] as const)('preserves the result for short prompt %s', (prompt, expected) => {
+    expect(needsWorkspaceModelTitleForDeliverable(prompt)).toBe(expected);
+  });
+
+  it('plans a rule-titled folder using the original summary instruction', async () => {
+    const userMessage = `Summarize this for me:\n\n${longSources[0]}`;
+    const askTitle = vi.fn();
+    const folder = await planSessionWorkDirectory({
+      userMessage,
+      deferModelTitle: !needsWorkspaceModelTitleForDeliverable(userMessage),
+      askTitle,
+      env,
+      now,
+      language: 'en',
+    });
+    expect(path.basename(folder)).toBe('Task_1113_Summarize this for');
+    expect(askTitle).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/source=rule elapsedMs=\d+ reason=deferred-native-turn/));
   });
 });

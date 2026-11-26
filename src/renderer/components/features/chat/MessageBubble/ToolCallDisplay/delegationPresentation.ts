@@ -9,7 +9,8 @@ import type { ToolCall } from '@shared/contract';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../../../../../i18n/outcomeWords';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { agentFailureCopy, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
+import { agentFailureReason, backgroundTaskFailureCopy, deleteIncompleteFileNames } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import {
   isLastToolFailureVisible,
@@ -29,6 +30,7 @@ interface DelegationReceiptOutput {
 export interface DelegationPresentation {
   state: DelegationReceiptState;
   outcomeKey?: OutcomeKey;
+  leftoverPaths?: readonly string[];
   title: string;
   lastToolStep?: LastToolStep;
   guiDisclosures?: AgentTreeNode['guiDisclosures'];
@@ -210,6 +212,7 @@ function taskFailureCause(task: Task): string | undefined {
 }
 
 function fromTask(task: Task, t: Translations): DelegationPresentation {
+  const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
   const terminal = isTaskTerminalStatus(task.status);
   const state: DelegationReceiptState = !terminal
     ? 'working'
@@ -220,12 +223,15 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
         : 'failed';
   return {
     state,
-    title: displayPaths(backgroundTaskLabel(task, t)),
+    outcomeKey: incomplete ? 'delete-incomplete' : undefined,
+    leftoverPaths: incomplete ? task.leftoverPaths : undefined,
+    title: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
+      ?? displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
     guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
-    stepCount: terminal
+    stepCount: terminal && !incomplete
       ? completedStepCount(task.progress?.lastToolStep, task.progress?.current)
       : undefined,
     outputs: task.outputRefs.flatMap((ref) => {
@@ -236,8 +242,14 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     memberId: task.id,
     failureCause: state === 'failed' ? taskFailureCause(task) : undefined,
     endedAt: state === 'failed' || state === 'cancelled' ? task.completedAt ?? task.updatedAt : undefined,
-    toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
+    toolFailure: !incomplete && isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
+}
+
+export function delegatedBackgroundTaskId(toolCall: ToolCall): string | undefined {
+  const receipt = toolCall.result?.metadata?.sessionTask as { tasks?: Array<{ taskId?: unknown }> } | undefined;
+  return Array.isArray(receipt?.tasks) && receipt.tasks.length === 1 && typeof receipt.tasks[0]?.taskId === 'string'
+    ? receipt.tasks[0].taskId : undefined;
 }
 
 function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
@@ -245,18 +257,6 @@ function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
   if (typeof metadataAgentId === 'string' && metadataAgentId.trim()) return metadataAgentId.trim();
   const match = toolCall.result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m);
   return match?.[1];
-}
-
-// 重启后 failureCode/Reason 丢失时 progress 可能是子代理最后一段原始工具回显（「Tool results: …」），
-// 那不是失败原因；宁可落「原因暂不明确」，也不能把它当原因展示给用户。
-const RAW_TOOL_DUMP = /^Tool results:|^Tool \w+: (?:Success|Error|Failed)\b/;
-
-function agentFailureReason(node: AgentTreeNode, t: Translations): string | undefined {
-  const progress = node.progress?.trim();
-  const rawDump = Boolean(progress && RAW_TOOL_DUMP.test(progress));
-  const reason = node.failureReason || (rawDump ? undefined : node.progress);
-  return agentFailureCopy(node.failureCode, t, reason)
-    ?? (rawDump ? agentFailureCopy(AgentFailureCode.Unknown, t) ?? undefined : undefined);
 }
 
 function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation {
@@ -337,11 +337,8 @@ function derivePresentation(
     };
   }
   if (toolCall.name === 'delegate_task') {
-    const receipt = toolCall.result.metadata?.sessionTask as { tasks?: Array<{ taskId?: unknown }> } | undefined;
-    const taskId = Array.isArray(receipt?.tasks) && receipt.tasks.length === 1 && typeof receipt.tasks[0]?.taskId === 'string'
-      ? receipt.tasks[0].taskId : undefined;
-    const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id
-      || (taskId !== undefined && candidate.id === taskId));
+    const taskId = delegatedBackgroundTaskId(toolCall);
+    const task = tasks.find((candidate) => candidate.toolCallId === toolCall.id || candidate.id === taskId);
     return task ? fromTask(task, t) : null;
   }
   if (toolCall.name === 'spawn_agent') {

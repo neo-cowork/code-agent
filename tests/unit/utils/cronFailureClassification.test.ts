@@ -7,7 +7,9 @@ import {
 import {
   classifyCronFailure,
   cronFailureSourceText,
+  matchProjectTrustFailure,
 } from '../../../src/shared/utils/cronFailureClassification';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
 
 const GLM_WITH_FLUSH = [
   '429 Too Many Requests',
@@ -156,5 +158,59 @@ describe('cronFailureSourceText：云端调度器不可用固定句截断 cause 
     expect(cronFailureSourceText(deep))
       .toBe(`Retry stopped: repeated failures.\n${CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH}`);
     expect(cronFailureSourceText(new Error('outer', { cause: new Error('inner') }))).toBe('outer\ninner');
+  });
+});
+
+describe('项目文件夹信任失败标记', () => {
+  it('cronFailureSourceText 只落 PROJECT_SOURCE_TRUST:<kind>:<文件夹名>，不落英文句和路径', () => {
+    expect(cronFailureSourceText(new ProjectSourceTrustError('identity_changed', '/Users/x/notes-proj')))
+      .toBe('PROJECT_SOURCE_TRUST:identity_changed:notes-proj');
+    expect(cronFailureSourceText(new ProjectSourceTrustError('source_missing', 'C:\\Users\\x\\notes-proj\\')))
+      .toBe('PROJECT_SOURCE_TRUST:source_missing:notes-proj');
+    expect(cronFailureSourceText(new Error('outer', { cause: new ProjectSourceTrustError('not_trusted', '/') })))
+      .toBe('PROJECT_SOURCE_TRUST:not_trusted');
+    expect(cronFailureSourceText(new ProjectSourceTrustError('not_trusted', '/a/..')))
+      .toBe('PROJECT_SOURCE_TRUST:not_trusted');
+    // 只认自有 code + 合法 kind；别的 code 照旧拼 message
+    expect(cronFailureSourceText(Object.assign(new Error('x'), { code: 'PROJECT_SOURCE_TRUST', kind: 'bogus' }))).toBe('x');
+  });
+
+  it('classifyCronFailure 认新标记和三种存量英文前缀', () => {
+    expect(classifyCronFailure('PROJECT_SOURCE_TRUST:identity_changed:notes-proj'))
+      .toEqual({ kind: 'project_trust', trustKind: 'identity_changed', folderName: 'notes-proj' });
+    expect(classifyCronFailure('PROJECT_SOURCE_TRUST:source_missing'))
+      .toEqual({ kind: 'project_trust', trustKind: 'source_missing' });
+    expect(classifyCronFailure('PROJECT_SOURCE_TRUST:not_trusted:..'))
+      .toEqual({ kind: 'project_trust', trustKind: 'not_trusted' });
+    expect(classifyCronFailure('PROJECT_SOURCE_TRUST:bogus:x')).toEqual({ kind: 'other' });
+    expect(classifyCronFailure('Project Source trust identity changed: /Users/x/proj'))
+      .toEqual({ kind: 'project_trust', trustKind: 'identity_changed', folderName: 'proj' });
+    expect(classifyCronFailure('Project Source is missing: /Users/x/proj/'))
+      .toEqual({ kind: 'project_trust', trustKind: 'source_missing', folderName: 'proj' });
+    expect(classifyCronFailure('Project Source is not trusted: /'))
+      .toEqual({ kind: 'project_trust', trustKind: 'not_trusted' });
+  });
+
+  // 返修 r2：事件决策台账把 execution.error 原样拼进「run <status>: <原因>」，标记不在开头。
+  it('事件决策台账的原因（run <status>: <原因>）里也认标记和存量英文句，并给出可整段替换的原文', () => {
+    expect(classifyCronFailure('run failed: PROJECT_SOURCE_TRUST:identity_changed:notes-proj'))
+      .toEqual({ kind: 'project_trust', trustKind: 'identity_changed', folderName: 'notes-proj' });
+    expect(classifyCronFailure('run failed to start: Project Source is missing: /Users/x/proj/'))
+      .toEqual({ kind: 'project_trust', trustKind: 'source_missing', folderName: 'proj' });
+    expect(matchProjectTrustFailure('run failed: PROJECT_SOURCE_TRUST:not_trusted'))
+      .toEqual({
+        classification: { kind: 'project_trust', trustKind: 'not_trusted' },
+        text: 'PROJECT_SOURCE_TRUST:not_trusted',
+      });
+    expect(matchProjectTrustFailure('run failed: Project Source trust identity changed: /Users/x/proj'))
+      .toEqual({
+        classification: { kind: 'project_trust', trustKind: 'identity_changed', folderName: 'proj' },
+        text: 'Project Source trust identity changed: /Users/x/proj',
+      });
+    // 其它失败原因不受影响；紧贴字母/下划线的同形文字不算标记，kind 不合法也不算。
+    expect(matchProjectTrustFailure('run failed: provider timeout')).toBeUndefined();
+    expect(classifyCronFailure('run failed: provider timeout').kind).not.toBe('project_trust');
+    expect(classifyCronFailure('run failed: XPROJECT_SOURCE_TRUST:identity_changed:x')).toEqual({ kind: 'other' });
+    expect(classifyCronFailure('run failed: PROJECT_SOURCE_TRUST:bogus:x')).toEqual({ kind: 'other' });
   });
 });

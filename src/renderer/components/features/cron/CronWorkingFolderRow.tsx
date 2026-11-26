@@ -23,6 +23,21 @@ export function cronFolderDisplayName(folder: string): string {
   return name || folder;
 }
 
+/**
+ * 展示用：把家目录前缀折成 `~`（web 输入框未聚焦时的值，以及状态行悬停）。
+ * 认 `/Users/<name>`、`/home/<name>`、`<盘>:\Users\<name>`；后面还有路径时保留。
+ * 恰好是家目录本身时折成 `~`。不改 metadata；另一账户的家目录也会被折掉。
+ */
+export function foldHomePrefixForDisplay(path: string): string {
+  const unixHome = /^(?:\/Users|\/home)\/[^/]+\/(.*)$/.exec(path);
+  if (unixHome) return `~/${unixHome[1]}`;
+  if (/^(?:\/Users|\/home)\/[^/]+$/.test(path)) return '~';
+  const windowsHome = /^[A-Za-z]:\\Users\\[^\\]+\\(.*)$/.exec(path);
+  if (windowsHome) return `~\\${windowsHome[1]}`;
+  if (/^[A-Za-z]:\\Users\\[^\\]+$/.test(path)) return '~';
+  return path;
+}
+
 /** 把选中的文件夹写回 metadata（清除时删键；其余键原样保留）。 */
 function withCronWorkingDirectory(
   metadata: Record<string, unknown> | undefined,
@@ -36,16 +51,31 @@ function withCronWorkingDirectory(
 
 interface CronWorkingFolderRowProps {
   runsOn: CronRunsOn;
+  /** 运行位置已锁定（编辑已有任务）：不显示「切回本机」提示。 */
+  locationLocked?: boolean;
   metadata: Record<string, unknown> | undefined;
   onMetadataChange: (metadata: Record<string, unknown> | undefined) => void;
 }
 
-export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runsOn, metadata, onMetadataChange }) => {
+export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runsOn, locationLocked, metadata, onMetadataChange }) => {
   const copy = useI18n().t.cronWorkingFolder;
-  if (runsOn !== 'local') return null;
-
+  // 聚焦时展示并编辑原文；离开本地模式时清除焦点状态。
+  const [folderInputFocused, setFolderInputFocused] = React.useState(false);
+  if (runsOn !== 'local' && folderInputFocused) setFolderInputFocused(false);
   const folder = cronWorkingDirectoryFromMetadata(metadata);
+  if (runsOn !== 'local') {
+    if (runsOn !== 'cloud' || !folder || locationLocked) return null;
+    return (
+      <FormField label={copy.label}>
+        <p className="text-sm text-zinc-400" data-testid="cron-working-folder-cloud-notice">
+          {copy.cloudNotCarried.replace('{name}', cronFolderDisplayName(folder))}
+        </p>
+      </FormField>
+    );
+  }
+
   const rawFolder = metadata?.[CRON_WORKING_DIRECTORY_METADATA_KEY];
+  const storedFolder = typeof rawFolder === 'string' ? rawFolder : '';
   const setFolder = (next: string | undefined) => onMetadataChange(withCronWorkingDirectory(metadata, next));
   const handlePick = async () => {
     try {
@@ -80,11 +110,16 @@ export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runs
       ) : (
         <Input
           data-testid="cron-working-folder-input"
-          value={typeof rawFolder === 'string' ? rawFolder : ''}
+          value={folderInputFocused ? storedFolder : foldHomePrefixForDisplay(storedFolder)}
           // 输入中保留原文（含空格，如「My Notes」）；只在失焦时去首尾空白提交，
           // 空白串等于没选（保存载荷在 buildCronJobInput 里再规整一次）。
+          // 失焦瞬间 DOM 仍是聚焦时的原文，trim 提交的是它，不是折出来的 ~。
           onChange={(event) => setFolder(event.target.value || undefined)}
-          onBlur={(event) => setFolder(event.target.value.trim() || undefined)}
+          onFocus={() => setFolderInputFocused(true)}
+          onBlur={(event) => {
+            setFolderInputFocused(false);
+            setFolder(event.target.value.trim() || undefined);
+          }}
           placeholder={copy.pathPlaceholder}
         />
       )}

@@ -17,16 +17,19 @@ import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-r
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
 import { useTaskStore } from '../../../stores/taskStore';
 import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutcomes';
+import { deleteIncompleteFileNames } from '../../../utils/agentFailureCopy';
 import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
 import { IconButton } from '../../primitives';
+import { DeleteIncompleteActions } from './DeleteIncompleteActions';
 
 interface BackgroundTaskLineLabels {
   /** 终态词：统一取 outcomeWords（与任务面板同一词表） */
   words: { completed: string; failed: string; cancelled: string; failedTool: string; warnings: string };
   maxIterations: string;
+  deleteIncomplete: string;
 }
 
 /**
@@ -44,6 +47,7 @@ function resolveBackgroundTaskStatusLine(
   const isRunning = session.status === 'running' && terminal !== 'cancelled-by-user';
   if (terminal === 'cancelled-by-user') return { isRunning, line: labels.words.cancelled };
   const message = session.completionMessage;
+  if (message === BACKGROUND_TASK_DELETE_INCOMPLETE) return { isRunning: false, line: labels.deleteIncomplete };
   if (message === RUN_ERROR_CODE_MAX_ITERATIONS) return { isRunning: false, line: labels.maxIterations };
   if (message) return { isRunning: false, line: message };
   const words: Partial<Record<typeof terminal, string>> = {
@@ -103,7 +107,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
     <div
       data-testid="background-session-item"
       data-status={session.status}
-      className="flex items-center gap-1 bg-zinc-700 rounded-lg pr-1"
+      className="flex flex-wrap items-center gap-1 bg-zinc-700 rounded-lg pr-1"
     >
       <button
         onClick={onForeground}
@@ -149,6 +153,17 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
           onClick={onClear}
         />
       )}
+      {session.status === 'failed' && session.completionMessage === BACKGROUND_TASK_DELETE_INCOMPLETE && (
+        <div className="basis-full px-2 pb-1">
+          <DeleteIncompleteActions
+            key={session.startedAt}
+            sessionId={session.sessionId}
+            attemptId={`${session.sessionId}-${session.startedAt}`}
+            leftoverPaths={session.leftoverPaths}
+            openSession
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -158,9 +173,9 @@ export const BackgroundSessionPanel: React.FC = () => {
   const { t, language } = useI18n();
   const liveSessions = useSessionStore((state) => state.sessions);
   // 实时标题：智能标题落地 / 用户改名后，host 快照里的标题是旧的
-  const titleOf = (session: BackgroundSessionInfo): string => getDisplaySessionTitle(
-    liveSessions.find((item) => item.id === session.sessionId)?.title || session.title,
-    language,
+  const titleOf = (session: BackgroundSessionInfo): string => (
+    (session.completionMessage === BACKGROUND_TASK_DELETE_INCOMPLETE ? deleteIncompleteFileNames(session.leftoverPaths) : undefined)
+    ?? getDisplaySessionTitle(liveSessions.find((item) => item.id === session.sessionId)?.title || session.title, language)
   );
   // 前台已判定停止、但后台条目还没被 host 收尾时，行里的词先跟终态走（只改词，不动 Stop/Clear 按钮）
   const sessionStates = useTaskStore((state) => state.sessionStates);
@@ -185,7 +200,9 @@ export const BackgroundSessionPanel: React.FC = () => {
     minutes: t.backgroundPanel.durationMinutes,
     hours: t.backgroundPanel.durationHours,
   };
+  const incomplete = t.outcomeWords['delete-incomplete'].detail;
   const lineLabels = {
+    deleteIncomplete: t.chat.delegationReceipt.failureDetail.replace('{status}', incomplete.label).replace('{reason}', incomplete.reason),
     words: {
       completed: t.outcomeWords.completed.timeline.label,
       failed: t.outcomeWords['failed-unknown'].timeline.label,

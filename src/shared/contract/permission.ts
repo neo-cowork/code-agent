@@ -179,6 +179,9 @@ export interface PermissionRequest {
     command?: string;
     url?: string;
     changes?: string;
+    /** 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：宿主绑定的去向（群名）与本会发出的正文。 */
+    replyDestination?: string;
+    replyText?: string;
     oldContent?: string;
     newContent?: string;
     server?: string;
@@ -190,6 +193,7 @@ export interface PermissionRequest {
     userRequest?: { text: string; truncated: boolean };
     /** Host-owned: the session was started by a scheduled/background task, so there is no user quote. */
     startedByAutomation?: boolean;
+    startedByFirstWake?: boolean;
     /** Host-owned: display name of the scheduled task that started this session; never trusted from tool arguments. */
     scheduledTaskName?: string;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
@@ -198,6 +202,8 @@ export interface PermissionRequest {
     /** 删除类命令在 host 侧解析并盘点出的目标证据。 */
     affectedPath?: string;
     affectedFileCount?: number;
+    /** Host-owned：details.path 按真实上传 / 临时根分类的结论；渲染层只据此用位置词显示。 */
+    pathDisplay?: { path: string; kind: 'upload' | 'temp'; rest: string };
     /**
      * Host 对 file_path 做 path.resolve + stat 后的目标种类。
      * 渲染层只消费：device 出设备文案；regular / unknown / 缺省一律覆盖警告。
@@ -208,6 +214,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** Host-only exact scope for 24h terminal/process grants. Null means the command cannot be safely stored. */
+    commandGrantTarget?: string | null;
     /** Host-only：这次询问时已记住的授权本可放行（没有任何强制确认）。同任务后来点的授权覆盖到它时自动放行。 */
     grantEligible?: boolean;
     /** Host-only action + exact origin; null means one-time permission only. */
@@ -294,6 +302,8 @@ export interface PermissionRequest {
   resolved?: boolean;
   /** 用户选择，或 host 的 timeout / superseded 结果；仅 resolved=true 时有意义。 */
   decision?: PermissionDecision;
+  /** 本机点下决定的时刻（毫秒）；渲染端用它给「已答、结果未到」的工具行一个有限宽限，不进协议。 */
+  answeredAt?: number;
   /** 裁决来自另一个面（手机 companion）；桌面据此收卡，不记成本机点击。 */
   resolvedBy?: 'companion';
 }

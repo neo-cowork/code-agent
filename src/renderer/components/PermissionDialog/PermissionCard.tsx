@@ -40,6 +40,8 @@ import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQues
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
+import { useAgentTreeSnapshot } from '../../hooks/useAgentTreeSnapshot';
+import { agentNodeLabel } from '../../utils/agentRoleLabel';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
 
 function stringField(source: object, key: string): string | undefined {
@@ -58,6 +60,7 @@ function normalizeRequest(
   return {
     id: request.id,
     sessionId: request.sessionId,
+    agentId: request.agentId,
     forceConfirm: request.forceConfirm,
     tool: request.tool,
     type: request.type as PermissionType,
@@ -81,11 +84,13 @@ function normalizeRequest(
       purpose: request.details.purpose,
       userRequest: request.details.userRequest,
       startedByAutomation: request.details.startedByAutomation,
+      startedByFirstWake: request.details.startedByFirstWake,
       scheduledTaskName: request.details.scheduledTaskName,
       commandRiskLevel: request.details.commandRiskLevel,
       commandSecurityFlags: request.details.commandSecurityFlags,
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
+      pathDisplay: request.details.pathDisplay,
       targetKind: request.details.targetKind,
       standingGrantTarget: request.details.standingGrantTarget,
       browserSessionGrant: request.details.browserSessionGrant,
@@ -174,6 +179,16 @@ export function PermissionCard({
   )
     ? normalizeRequest(sourceRequest)
     : null;
+  const agentId = request?.agentId;
+  const requestingSessionId = request?.sessionId ?? sourceSessionId ?? currentSessionId;
+  const { snapshot } = useAgentTreeSnapshot(requestingSessionId, Boolean(agentId && requestingSessionId));
+  const role = agentId
+    ? snapshot?.nodes.find((node) => node.id === agentId || node.backgroundAgentId === agentId)?.role
+    : undefined;
+  const requesterLine = agentId ? t.decisionCard.permission.requestedBy.replace(
+    '{name}',
+    role && role !== 'background' ? agentNodeLabel({ role }, t.agentRoleLabels) : t.agentRoleLabels.assistant,
+  ) : undefined;
   const sandboxEscalation = request !== null && isSandboxEscalation(request);
   // ADR-088 敏感步骤交回卡：reasonCode 与 details.sensitiveStep 双判据（与 host 收口同口径）
   const sensitiveHandback = request !== null
@@ -473,7 +488,7 @@ export function PermissionCard({
     ...(!hideStandingGrants
       ? [
           { id: 'run', label: request.details.browserSessionGrant ? browserCopy.session : p.optionRun, description: request.details.browserSessionGrant ? browserCopy.sessionDesc : [connectorScope, p.optionRunDesc].filter(Boolean).join(' · '), shortcut: 's' },
-          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
+          ...(!request.details.browserSessionGrant ? [{ id: '24h', label: p.option24h, description: [connectorScope, sourceRequest?.details.commandGrantTarget === null ? p.option24hUnavailableDesc : sourceRequest?.details.commandGrantTarget ? p.option24hExactCommandDesc : p.option24hDesc].filter(Boolean).join(' · '), shortcut: 'a' }] : []),
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
@@ -587,6 +602,7 @@ export function PermissionCard({
     return (
       <SensitiveStepHandbackCard
         request={request}
+        requesterLine={requesterLine}
         onRespond={(level) => { void handleApproval(level); }}
         onCollapse={onCollapse}
       />
@@ -606,6 +622,7 @@ export function PermissionCard({
         icon={icon}
         title={title}
         headerMeta={w.editingBadge}
+        headerLine={requesterLine}
         headerEnd={pendingHeaderEnd}
         question={isMeetingCreate
           ? w.tmeetWriteWarning
@@ -647,6 +664,7 @@ export function PermissionCard({
       icon={icon}
       title={title}
       headerEnd={headerEnd}
+      headerLine={requesterLine}
       question={question}
       details={
         <>
@@ -697,7 +715,7 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      showActionDescriptions={Boolean(connector)}
+      showActionDescriptions={Boolean(connector || sourceRequest?.details.commandGrantTarget !== undefined)}
       primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {

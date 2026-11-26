@@ -154,6 +154,37 @@ export type RoleWakeDecision = 'advance' | 'report' | 'suggest' | 'silence';
 /** 醒来触发方式 */
 export type RoleWakeTrigger = 'cadence' | 'event';
 
+export interface RoleWakeFunnel {
+  wakes: number;
+  reports: number;
+  suppressed: number;
+  fallbackSent: number;
+  duplicates: Array<{ at: number; firstReportedAt: number }>;
+}
+
+/** 账本落盘的决策。silence 在文件里写成 silent。 */
+export type RoleWakeLedgerStoredDecision =
+  | 'advance'
+  | 'report'
+  | 'suggest'
+  | 'silent'
+  | 'suppressed_duplicate';
+
+/** 相对上一行新增的依据，只按邮件 / 日程计数，不含原始编号。 */
+export interface RoleWakeLedgerBasisCounts {
+  mail: number;
+  calendar: number;
+}
+
+/** roles IPC wakeLedgerRecent 的一行。reason 是已知原因码，或模型写下的第一句。 */
+export interface RoleWakeLedgerRecentRow {
+  at: number;
+  decision: RoleWakeLedgerStoredDecision;
+  reason: string;
+  newBasis: RoleWakeLedgerBasisCounts;
+  firstReportedAt?: number;
+}
+
 /** 首次醒来的一条可一键委托建议：title 一句话；prompt = 用户点这条时发给角色的话 */
 export interface RoleFirstWakeSuggestion {
   title: string;

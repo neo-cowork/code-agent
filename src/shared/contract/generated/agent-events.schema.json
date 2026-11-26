@@ -704,6 +704,9 @@
         "error": {
           "type": "string"
         },
+        "userMessage": {
+          "type": "string"
+        },
         "outputPath": {
           "type": "string"
         },
@@ -1211,6 +1214,9 @@
             "startedByAutomation": {
               "type": "boolean"
             },
+            "startedByFirstWake": {
+              "type": "boolean"
+            },
             "scheduledTaskName": {
               "type": "string"
             },
@@ -1249,6 +1255,16 @@
             },
             "standingGrantTarget": {
               "type": "string"
+            },
+            "commandGrantTarget": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "browserSessionGrant": {
               "type": "object",
@@ -4731,12 +4747,16 @@
         "sessionId": {
           "type": "string"
         },
+        "requestId": {
+          "type": "string"
+        },
         "description": {
           "type": "string"
         }
       },
       "required": [
         "sessionId",
+        "requestId",
         "description"
       ],
       "additionalProperties": false

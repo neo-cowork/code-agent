@@ -1,3 +1,4 @@
+import { takeApprovedRmLeftovers } from '../session/approvedRmSettlementTargets';
 import type { RunCancelReason } from '../runtime/runContext';
 import { cancelTimeWakesOnUserReturn } from '../services/wake/userReturn';
 // ============================================================================
@@ -75,6 +76,7 @@ import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
 import { createRunContext, type RunHandle } from '../runtime/runContext';
+import { executingBackgroundPrimaryRunId } from '../session/backgroundSettlementHold';
 import { selectBackgroundWorkspaceScope } from '../runtime/workspaceAuthority';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
@@ -127,6 +129,9 @@ export class AgentOrchestrator {
   // 火后即忘、不阻塞前台 turn，但链串在这个实例上，让生命周期边界（应用退出、测试拆除）
   // 有一个可等待的排空出口（drainWorkspaceServices）。两条私有链各自 catch 进 logger.warn，恒不 reject。
   private workspaceServicesChain: Promise<unknown> = Promise.resolve();
+  // finalizeRun 在终局事件之后的记忆/建议/学习是 fire-and-forget（不阻塞 UI）。
+  // 句柄留在实例上，测试拆除用 drainPostTerminalWork 等它落完再关 worker。
+  private postTerminalChain: Promise<void> = Promise.resolve();
 
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
@@ -351,6 +356,7 @@ export class AgentOrchestrator {
           });
         }
       } else {
+        this.retainPostTerminalWork();
         this.agentLoop = null;
         this.onEvent({
           type: 'agent_cancelled',
@@ -453,7 +459,7 @@ export class AgentOrchestrator {
     this.isInterrupting = false;
 
     const pending = this.pendingSteerMessages.splice(0);
-    await this.sendMessage(newMessage, attachments, options, messageMetadata, clientMessageId);
+    await this.sendMessage(newMessage, attachments, options?.displayContent ? { ...options, displayContent: newMessage } : options, messageMetadata, clientMessageId);
     this.queuePendingSteer(pending, sessionId, 'after interrupt');
     return { outcome: 'steered' };
   }
@@ -520,6 +526,20 @@ export class AgentOrchestrator {
    * 否则链上的 console 写入会晚于调用方的生命周期（N-AGENTORCH-TEARDOWN-FLAKE）。
    */
   async drainWorkspaceServices(): Promise<void> { await this.workspaceServicesChain; }
+
+  /**
+   * 等本实例各轮终局之后的后台收尾落完。sendMessage 不等它（终局事件先到 UI）；
+   * 测试 afterEach 在 vi.restoreAllMocks 之前调用，收尾日志就不会挂到 worker 关闭后的 RPC 上。
+   */
+  async drainPostTerminalWork(): Promise<void> { await this.postTerminalChain; }
+
+  private retainPostTerminalWork(): void {
+    // Lightweight loops without a run finalizer have no post-terminal work to retain.
+    const pending = this.agentLoop?.whenPostTerminalWorkSettled?.();
+    if (!pending) return;
+    const settled = pending.then(() => undefined, () => undefined);
+    this.postTerminalChain = this.postTerminalChain.then(() => settled, () => settled);
+  }
 
   /** Set once on a newly-created background orchestrator from the foreground host run. */
   setWorkspaceScopeAuthority(workspaceScope: WorkspaceScope): void {
@@ -915,7 +935,8 @@ export class AgentOrchestrator {
       ? `${baseSystemPrompt}\n\n${options.neoTag.promptLayer}`
       : baseSystemPrompt;
 
-    const nativeRunId = options?.runId?.trim() || `run-${generateMessageId()}`;
+    const primaryRunId = options?.runRegistration === 'auxiliary' ? undefined : executingBackgroundPrimaryRunId(sessionId);
+    const nativeRunId = options?.runId?.trim() || primaryRunId || `run-${generateMessageId()}`;
     let registeredRun: RunHandle | undefined;
     let runCompletedNormally = false;
     let rolePresetSessionId: string | undefined;
@@ -1046,7 +1067,7 @@ export class AgentOrchestrator {
       logger.info('========== Starting agent loop ==========');
       // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了
       // turnSystemContext 的 effectiveContent（backfill 会把那一列写回消息流）。
-      const runPromise = runLoop.run(effectiveContent, content);
+      const runPromise = runLoop.run(effectiveContent, options?.historyVisibility === 'meta' ? options.displayContent ?? content : content);
       this.activeRunPromise = runPromise;
       await runPromise;
       runCompletedNormally = true;
@@ -1066,6 +1087,9 @@ export class AgentOrchestrator {
     } finally {
       // N-PERM-POLICYVERSION：run 终点丢权限快照（begin 在角色档写入之后、try 体内，
       // 与这里严格配对；begin 未执行的异常路径 endRunPolicy 是 no-op）。
+      if (!runCompletedNormally && sessionId && options?.runRegistration !== 'auxiliary') {
+        takeApprovedRmLeftovers(sessionId, nativeRunId, 'desktop', false);
+      }
       endRunPolicy(nativeRunId);
       // 只钳这一轮：下一轮换成别的专家（或回到主会话）时回到会话自己的档。
       if (rolePresetSessionId) {
@@ -1081,6 +1105,7 @@ export class AgentOrchestrator {
       }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);
       this.messageHistory.captureCompressionState();
+      this.retainPostTerminalWork();
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
       this.activeRunPromise = null;

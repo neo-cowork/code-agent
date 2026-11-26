@@ -12,6 +12,8 @@ const texts = {
   silentLevel: '未运行：角色处于静默档，不主动醒来',
   dailyBudget: '未运行：今日唤醒次数已用满（{used}/{max}）',
   quietHours: '未运行：处于免打扰时段，本次不补',
+  connectorLost: '未运行：{names}已退出登录，重新连接后会继续',
+  nameLanguage: 'zh' as const,
 };
 
 function skipInfo(skipReason: string) {
@@ -32,6 +34,13 @@ describe('parseWakeSkipReason', () => {
   it('未登记原因返回 null（不猜）', () => {
     expect(skipInfo('on_fire')).toBeNull();
     expect(skipInfo('daily_budget_exceeded (x/y)')).toBeNull();
+  });
+
+  it('connector_lost 解析出连接器 id，不认识的尾巴不算', () => {
+    expect(skipInfo('connector_lost:feishu')).toEqual({ kind: 'connector_lost', connectorIds: ['feishu'] });
+    expect(skipInfo('connector_lost:feishu,tmeet')?.connectorIds).toEqual(['feishu', 'tmeet']);
+    expect(skipInfo('connector_lost:')).toBeNull();
+    expect(skipInfo('connector_lost:Feishu')).toBeNull();
   });
 });
 
@@ -63,6 +72,20 @@ describe('wakeSkipReasonText', () => {
 
   it('无数字的原因原样输出', () => {
     expect(wakeSkipReasonText({ kind: 'silent_level' }, texts)).toBe(texts.silentLevel);
+  });
+
+  it('connector_lost 用人话显示名，中英文都不露 id', () => {
+    const info = { kind: 'connector_lost' as const, connectorIds: ['feishu', 'tmeet'] };
+    expect(wakeSkipReasonText(info, texts)).toBe('未运行：飞书、腾讯会议已退出登录，重新连接后会继续');
+    expect(wakeSkipReasonText(info, {
+      ...texts,
+      nameLanguage: 'en',
+      connectorLost: 'Not run: {names} signed out — it will resume after you reconnect',
+    })).toBe('Not run: Feishu, Tencent Meeting signed out — it will resume after you reconnect');
+    expect(wakeSkipReasonText({ kind: 'connector_lost', connectorIds: ['notion'] }, texts)).toBeNull();
+    const shown = wakeSkipReasonText(info, texts) ?? '';
+    expect(shown).not.toContain('feishu');
+    expect(shown).not.toContain('tmeet');
   });
 });
 

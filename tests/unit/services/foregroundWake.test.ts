@@ -169,7 +169,7 @@ describe('foreground task-result wake', () => {
       mode: 'normal',
       inputHistoryVisibility: 'meta',
       runRegistration: 'auxiliary',
-      maxIterations: 4,
+      maxIterations: 8,
     });
     expect(options.historyVisibility).toBeUndefined();
     // N-FIX-BG-WAKE-TURN-KEEPS-EDIT-WRITE：无用户消息的唤醒轮是正向白名单——前台基面自带的
@@ -188,6 +188,19 @@ describe('foreground task-result wake', () => {
     expect(options.turnSystemContext?.join('\n')).not.toContain('Edit 或 Write');
     expect(options.turnSystemContext?.join('\n')).toContain('Read/Grep/ListDirectory');
     expect(manager.setSessionContext).toHaveBeenCalledWith('session-a', session.messages);
+  });
+
+  it('logs bg-return with eight steps when the wake dispatcher hands back a result', async () => {
+    const stderr = vi.spyOn(console, 'error');
+    try {
+      await createForegroundWake(dependencies())(task(), 'completed');
+
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
+        'INFO [ForegroundBrainBudget] Foreground brain budget rule=bg-return cap=8 maxIterations=8',
+      ));
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   // 正常前台轮的工具面必须原样：点名 docx/xlsx 的 prompt 仍拿到 Edit/Write/生成工具；
@@ -565,6 +578,18 @@ describe('foreground task-result wake', () => {
     expect(prompt).toContain('已失败');
     expect(prompt).toContain(conclusion);
     expect(prompt).toContain(hint);
+  });
+
+  it('tells the wake turn to name the failed step in the user language without an exit code or English error text', async () => {
+    const wake = createForegroundWake(dependencies());
+    await wake(task(), 'completed');
+    const prompt = sendMessage.mock.calls[0][0] as string;
+    expect(prompt).toContain('没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言');
+    expect(prompt).toContain('不要写退出码');
+    expect(prompt).toContain('不要照抄英文报错原文');
+    expect(prompt).toContain('用户自己写过的命令可以点名');
+    expect(prompt).toContain('不要原样引用 agent_ 开头的内部编号');
+    expect(prompt).toContain('改动在分支里时只写分支名');
   });
 
   it('falls back to the 240-char summary when the task has no resultText (legacy shape)', async () => {

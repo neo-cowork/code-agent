@@ -120,6 +120,11 @@ function createSequencedAgentEventDispatcher(
     const lastSeq = lastSeqBySession.get(sessionId);
     const dedupeSeq = permissionKey ? lastPermissionSeqByRequest.get(permissionKey) : lastSeq;
     if (dedupeSeq !== undefined && seq <= dedupeSeq) {
+      // This wake-up reads current host state by session, so arrival order and duplicates are harmless.
+      if (event.type === 'schedule_draft_requested') {
+        callback(event);
+        return;
+      }
       if (permissionKey) console.debug('[ipcService] Permission event dropped', {
         reason: 'permission_request_sequence_duplicate', requestId, seq, lastSeq: dedupeSeq,
       });

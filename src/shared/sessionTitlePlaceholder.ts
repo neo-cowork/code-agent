@@ -23,7 +23,7 @@ export function deriveInitMemorySessionTitle(
   if (!INIT_MEMORY_COMMAND.test(message.trim())) return null;
   const base = INIT_MEMORY_SESSION_TITLE[language];
   const folder = folderName?.trim();
-  return folder ? `${base} · ${folder}` : base;
+  return folder ? `${folder} · ${base}` : base;
 }
 
 /** 英文 UI 下把存量/新写入的 Appshot 固定名显示成英文；其它标题原样返回。 */
@@ -48,6 +48,12 @@ export function isPlaceholderSessionTitle(title: string | null | undefined): boo
   if (!named) return true;
   if (EXACT_PLACEHOLDER_TITLES.has(named)) return true;
   return named.startsWith('Session ') || named.startsWith('CLI Session ');
+}
+
+/** 首轮草稿标题与后台通知共用可见正文和截断规则。 */
+export function buildSessionTitle(prompt: string, attachmentName?: string): string {
+  const source = stripAppshotBlocks(prompt).trim() || attachmentName || prompt;
+  return source.length > 30 ? source.substring(0, 30) + '...' : source;
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { Message } from '../../../../shared/contract';
 import { formatToolCallForHistory } from '../../../agent/messageHandling/converter';
 import type { ModelMessage } from '../../../agent/loopTypes';
+import { modelVisibleToolOutput } from '../../../tools/toolResultMessageContent';
 
 /**
  * Project one durable ledger message into the model-message shapes that can be
@@ -14,7 +15,7 @@ export function projectLedgerMessage(message: Message): ModelMessage[] {
   if (message.role === 'tool' && message.toolResults?.length) {
     return message.toolResults.map((result) => ({
       role: 'tool',
-      content: result.output || result.error || '',
+      content: modelVisibleToolOutput(result),
       ...(result.toolCallId ? { toolCallId: result.toolCallId } : {}),
       ...(!result.success ? { toolError: true } : {}),
     }));

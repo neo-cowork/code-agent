@@ -622,6 +622,7 @@ function cloneTask(task: Task): Task {
     ...task,
     progress: task.progress ? { ...task.progress } : undefined,
     failure: task.failure ? { ...task.failure } : undefined,
+    leftoverPaths: task.leftoverPaths?.slice(),
     metadata: task.metadata ? { ...task.metadata } : undefined,
     events: task.events.map((event) => ({
       ...event,

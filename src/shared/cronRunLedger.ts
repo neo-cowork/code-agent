@@ -4,8 +4,10 @@
 // 主进程（写 cost 字段）与 renderer（运行列表/详情/每日小计）共用，不引入 IO。
 // ============================================================================
 
-/** wakeRole 落在执行记录 result.skipReason 里的原因枚举（roleProactivity 写、这里读）。 */
-type WakeSkipKind = 'silent_level' | 'daily_budget_exceeded' | 'quiet_hours';
+import { CLI_CONNECTOR_DESCRIPTORS } from './constants/cliConnectorDescriptors';
+
+/** 执行记录 result.skipReason 的原因枚举（角色唤醒与定时任务连接器跳过共用）。 */
+type WakeSkipKind = 'silent_level' | 'daily_budget_exceeded' | 'quiet_hours' | 'connector_lost';
 
 export interface WakeSkipInfo {
   kind: WakeSkipKind;
@@ -13,14 +15,18 @@ export interface WakeSkipInfo {
   used?: number;
   /** daily_budget_exceeded 时的每日上限。 */
   max?: number;
+  /** connector_lost 时的 CLI 连接器 id，顺序与 skipReason 一致。展示时换成显示名。 */
+  connectorIds?: string[];
 }
 
-/** 解析 wakeRole 的 skipReason 字符串；不认识的形状返回 null（展示侧回落原文，不猜）。 */
+/** 解析 skipReason 字符串；不认识的形状返回 null（展示侧回落通用句，不猜、不露原文）。 */
 function parseWakeSkipReason(skipReason: string): WakeSkipInfo | null {
   if (skipReason === 'silent_level') return { kind: 'silent_level' };
   if (skipReason === 'quiet_hours') return { kind: 'quiet_hours' };
   const match = skipReason.match(/^daily_budget_exceeded \((\d+)\/(\d+)\)$/);
   if (match) return { kind: 'daily_budget_exceeded', used: Number(match[1]), max: Number(match[2]) };
+  const lost = skipReason.match(/^connector_lost:([a-z0-9_-]+(?:,[a-z0-9_-]+)*)$/);
+  if (lost?.[1]) return { kind: 'connector_lost', connectorIds: lost[1].split(',') };
   return null;
 }
 
@@ -31,8 +37,8 @@ export interface WakeSkipView {
 }
 
 /**
- * 判定执行记录的 result 是否是「跳过的角色唤醒」。
- * 只认 RoleWakeResult 的 skipped 形状（status='skipped' + skipReason 字符串）；
+ * 判定执行记录的 result 是否是「带原因的跳过」。
+ * 认 status='skipped' + skipReason 字符串：角色唤醒，以及定时任务因核心 CLI 连接器未登录而跳过。
  * 空产物的安静醒来是 completed（不算 skip）、heartbeat 的 outside_active_hours 也不算。
  */
 export function readWakeSkipFromResult(result: unknown): WakeSkipView | null {
@@ -42,14 +48,31 @@ export function readWakeSkipFromResult(result: unknown): WakeSkipView | null {
   return { info: parseWakeSkipReason(record.skipReason), raw: record.skipReason };
 }
 
-/** skip 原因的人话模板（renderer 的 i18n 词条填入；{used}/{max} 逐个替换）。 */
+/** skip 原因的人话模板（renderer 的 i18n 词条填入；{used}/{max}/{names} 逐个替换）。 */
 export interface WakeSkipTexts {
   silentLevel: string;
   dailyBudget: string;
   quietHours: string;
+  /** connector_lost：`{names}` 换成连接器显示名。 */
+  connectorLost: string;
+  nameLanguage: 'zh' | 'en';
 }
 
-export function wakeSkipReasonText(info: WakeSkipInfo, texts: WakeSkipTexts): string {
+function connectorLostDisplayNames(ids: readonly string[], language: 'zh' | 'en'): string[] {
+  const names: string[] = [];
+  for (const id of ids) {
+    const descriptor = CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === id);
+    if (!descriptor) continue;
+    const name = language === 'en'
+      ? descriptor.displayNameEn ?? descriptor.displayName
+      : descriptor.displayName;
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/** 认不出显示名时返回 null，调用方改用通用句，避免把连接器 id 露给用户。 */
+export function wakeSkipReasonText(info: WakeSkipInfo, texts: WakeSkipTexts): string | null {
   switch (info.kind) {
     case 'silent_level':
       return texts.silentLevel;
@@ -59,6 +82,12 @@ export function wakeSkipReasonText(info: WakeSkipInfo, texts: WakeSkipTexts): st
       return texts.dailyBudget
         .replace('{used}', String(info.used ?? '?'))
         .replace('{max}', String(info.max ?? '?'));
+    case 'connector_lost': {
+      const names = connectorLostDisplayNames(info.connectorIds ?? [], texts.nameLanguage);
+      if (names.length === 0) return null;
+      const joined = names.join(texts.nameLanguage === 'en' ? ', ' : '、');
+      return texts.connectorLost.replace('{names}', joined);
+    }
   }
 }
 

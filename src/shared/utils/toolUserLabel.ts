@@ -6,7 +6,8 @@
 // 原始命令只放在审批卡的可展开详情里，通知只说动作。
 // ============================================================================
 
-import { PARKED_APPROVAL_ENTRY_PATH } from '../parkedApprovalLocation';
+import { APPROVAL_NOTIFICATION_TEXT } from '../i18n/approvalNotification';
+import { WAITING_ON_USER_LABELS } from '../i18n/waitingOnUserLabels';
 import { findConnectorToolMetadata, isMcpToolName } from '../contract/workbenchTools';
 import { catalogConnectorToolPhrase } from './catalogConnectorToolLabel';
 
@@ -25,10 +26,15 @@ const TOOL_USER_LABELS: Record<string, string> = {
   grep: '搜索内容',
   webfetch: '网页抓取',
   websearch: '联网搜索',
+  httprequest: '网络请求',
   memorysearch: '记忆检索',
   libraryadd: '放入资料库',
   browseraction: '浏览器操作',
   computeruse: '电脑操作',
+  terminalwrite: '向终端输入',
+  processwrite: '向终端输入',
+  processsubmit: '向终端输入',
+  process: '管理终端进程',
 };
 
 const TOOL_USER_LABELS_EN: Record<string, string> = {
@@ -36,7 +42,10 @@ const TOOL_USER_LABELS_EN: Record<string, string> = {
   docedit: 'Edit document', excelgenerate: 'Export spreadsheet', docxgenerate: 'Create document',
   read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
   webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search', libraryadd: 'Add to Library',
+  httprequest: 'Network request',
   browseraction: 'Browser action', computeruse: 'Computer action',
+  terminalwrite: 'Type into terminal', processwrite: 'Type into terminal',
+  processsubmit: 'Type into terminal', process: 'Manage terminal processes',
 };
 
 const UNKNOWN_LABEL = '操作';
@@ -56,7 +65,8 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
   if (catalog) return catalog;
   if (isMcpToolName(name)) return en ? 'External tool' : '外部工具';
   const key = name.toLowerCase().replace(/[-_\s]/g, '');
-  return (en ? TOOL_USER_LABELS_EN[key] : TOOL_USER_LABELS[key]) ?? (en ? 'Action' : UNKNOWN_LABEL);
+  const labels = en ? TOOL_USER_LABELS_EN : TOOL_USER_LABELS;
+  return Object.hasOwn(labels, key) ? labels[key] : (en ? 'Action' : UNKNOWN_LABEL);
 }
 
 /** Approval copy for host banners; only localized actions, never commands or tool ids. */
@@ -64,18 +74,12 @@ export function permissionNotice(
   toolName: string | undefined,
   language: 'zh' | 'en',
   context: 'approval' | 'parked' | 'first_wake' = 'approval',
+  sessionTitle?: string,
 ): { title: string; body: string } {
-  const en = language === 'en';
-  const title = en ? 'Approval needed' : '需要授权';
-  const label = toolName?.trim() ? toolUserLabel(toolName, language) : undefined;
-  const body = label ? `${title}${en ? ': ' : '：'}${label}` : (en ? 'Review the proposed action.' : '请求执行权限');
-  if (context === 'first_wake') {
-    return { title, body: `${body}${en
-      ? '. The task is paused. Go back to the chat where you created this expert and tap Allow.'
-      : '。任务已暂停，回到刚创建专家的对话里点「允许」。'}` };
-  }
-  if (context !== 'parked') return { title, body };
-  return { title, body: `${body}${en
-    ? '. The task is paused. Open Agent Neo to review the unattended task.'
-    : `。任务已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`}` };
+  const copy = APPROVAL_NOTIFICATION_TEXT[language];
+  const title = sessionTitle ? copy.namedTitle(sessionTitle) : copy.title;
+  const body = toolName?.trim()
+    ? WAITING_ON_USER_LABELS[language].approvalWithLabel.replace('{label}', () => toolUserLabel(toolName, language))
+    : copy.noTool;
+  return { title, body: body + copy[context] };
 }

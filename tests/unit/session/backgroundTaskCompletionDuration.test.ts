@@ -16,6 +16,7 @@ vi.mock('../../../src/host/services', async () => ({
   notificationService: (await import('../../../src/host/services/infra/notificationService')).notificationService,
   getSessionManager: () => ({
     getSession: async (sessionId: string) => ({ id: sessionId, title: 'Weekly research' }),
+    getSessionTitle: () => 'Weekly research',
   }),
 }));
 vi.mock('../../../src/host/services/roleAssets/wakeRunGuard', () => ({ isRoleWakeRunActive: () => false }));

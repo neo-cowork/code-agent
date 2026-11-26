@@ -20,7 +20,6 @@ const ALLOWLIST = [
   { file: 'scripts/desktop-shell-packaged-smoke.mjs', match: 'isDevApp', reason: '正则匹配 ps 输出里的进程命令行（只读），不执行' },
   { file: 'scripts/lib/desktop-shell-app-launch.mjs', match: "'Contents', 'MacOS'", reason: '拼 ps 命令行前缀用于只读匹配，启动走 open' },
   { file: 'scripts/tauri-install.sh', reason: 'pkill -f 按 bundle 路径前缀过滤，只匹配不执行' },
-  { file: 'scripts/tauri-install-dev.sh', reason: 'pkill -f 按 bundle 路径前缀过滤，只匹配不执行' },
   { file: 'scripts/run-dev-slot.sh', reason: '注释说明红线 + pgrep 过滤，启动走 open' },
   { file: 'scripts/neo-drive/neo-drive.mjs', reason: '仅用作 pgrep 进程命令行匹配模式，不执行' },
   { file: 'scripts/tauri-release-bundle.sh', reason: 'find 只读定位二进制做 Mach-O 检查，不执行' },

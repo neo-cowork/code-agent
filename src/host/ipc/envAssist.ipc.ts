@@ -152,8 +152,8 @@ async function withResolvedNotice<T extends EnvAssistActResult>(deps: EnvAssistD
 }
 
 const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
-/** A cua-helper grant notice is single-use: one click, one helper call. */
-const consumedHelperNotices = new Set<string>();
+/** A cua-helper card can be reused across runs, with one grant attempt per run. */
+const consumedHelperAttempts = new Set<string>();
 const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
   getAvailability: (deps: EnvAssistDependencies) => ({ available: deps.available() }),
   /** Card mount / window focus: a passive re-read, so a grant made in System Settings also closes the card. */
@@ -191,11 +191,13 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     }
     if (request.actionKind === 'request_grant' && notice.target?.id.startsWith('helper')) {
       const pane = request.payload.pane;
-      if ((pane !== 'accessibility' && pane !== 'screenCapture') || consumedHelperNotices.has(notice.id)) return { status: 'rejected' };
-      consumedHelperNotices.add(notice.id);
+      if (pane !== 'accessibility' && pane !== 'screenCapture') return { status: 'rejected' };
+      const attempt = JSON.stringify([notice.id, notice.runId]);
+      if (consumedHelperAttempts.has(attempt)) return { status: 'rejected' };
+      consumedHelperAttempts.add(attempt);
       const grant = await requestHelperGrant(mintClickToken(notice.id, deps.now), deps.cuaHelperGrantBridge ?? null, deps.now);
       const outcome = await cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane)();
-      if (grant !== 'requested' && grant !== 'rejected') consumedHelperNotices.delete(notice.id);
+      if (grant === 'not_available') consumedHelperAttempts.delete(attempt);
       // Still denied after the one helper action: fall back to the settings pane.
       if (outcome.status !== 'granted' && deps.available()) {
         return { status: await deps.open(pane) ? 'opened' : 'not_available', outcome };

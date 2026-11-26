@@ -230,6 +230,7 @@ vi.mock('../../../src/host/services', () => ({
 vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
   getCoreToolDefinitions: () => [], getLoadedDeferredToolDefinitions: () => [], getAllToolDefinitions: () => [],
   withDesignCanvasTools: (tools: unknown) => tools, withoutGenericMediaToolsInDesign: (tools: unknown) => tools,
+  withEventReplyTools: vi.fn((tools) => tools),
 }));
 vi.mock('../../../src/host/session/streamSnapshot', () => ({ createSnapshotHandler: () => () => undefined }));
 vi.mock('../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));

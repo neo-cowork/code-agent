@@ -5,6 +5,7 @@ import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
+import { failedSendAttachmentTurnCardEn, failedSendAttachmentTurnCardZh } from './failedSendAttachment';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 export const chatTranscriptZh = {
@@ -46,6 +47,7 @@ chat: {
   thinkingDigest: '思考',
   thinkingSegments: { one: ' · {count} 段', other: ' · {count} 段' },
   thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: '正在思考… · {duration}', thinkingDigestWithDuration: { one: '思考 {duration} · {count} 段', other: '思考 {duration} · {count} 段' },
+  thinkingDigestEnglishNote: '思考 {duration} · 推理原文为英文，点开可看',
   expandThinking: '展开思考',
   collapseThinking: '收起思考',
   unknownTool: '未知工具',
@@ -376,6 +378,7 @@ turnCard: {
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
   ...projectTrustTurnCardZh,
+  ...failedSendAttachmentTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -534,6 +537,7 @@ chat: {
   thinkingDigest: 'Thinking',
   thinkingSegments: { one: ' · {count} segment', other: ' · {count} segments' },
   thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: 'Thinking… · {duration}', thinkingDigestWithDuration: { one: 'Thought for {duration} · {count} segment', other: 'Thought for {duration} · {count} segments' },
+  thinkingDigestEnglishNote: 'Thought for {duration} · original reasoning is in English, expand to read',
   expandThinking: 'Expand thinking',
   collapseThinking: 'Collapse thinking',
   unknownTool: 'Unknown tool',
@@ -870,6 +874,7 @@ turnCard: {
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
   ...projectTrustTurnCardEn,
+  ...failedSendAttachmentTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',

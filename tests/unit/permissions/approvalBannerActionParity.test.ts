@@ -75,26 +75,26 @@ const PARKED_SUFFIX = {
 const CASES = [
   {
     language: 'en', tool: 'excel_generate', title: 'Approval needed', action: 'Export spreadsheet',
-    body: 'Approval needed: Export spreadsheet',
-    parkedBody: `Approval needed: Export spreadsheet${PARKED_SUFFIX.en}`,
-    nativeBody: 'Waiting for your OK: Export spreadsheet', nativeTitle: 'Quarterly close',
+    body: 'Needs your approval: Export spreadsheet',
+    parkedBody: `Needs your approval: Export spreadsheet${PARKED_SUFFIX.en}`,
+    nativeBody: 'Needs your approval: Export spreadsheet', nativeTitle: 'Quarterly close',
   },
   {
     language: 'zh', tool: 'excel_generate', title: '需要授权', action: '导出表格',
-    body: '需要授权：导出表格',
-    parkedBody: `需要授权：导出表格${PARKED_SUFFIX.zh}`,
+    body: '等你确认：导出表格',
+    parkedBody: `等你确认：导出表格${PARKED_SUFFIX.zh}`,
     nativeBody: '等你确认：导出表格', nativeTitle: '季度结算',
   },
   {
     language: 'en', tool: 'DocEdit', title: 'Approval needed', action: 'Edit document',
-    body: 'Approval needed: Edit document',
-    parkedBody: `Approval needed: Edit document${PARKED_SUFFIX.en}`,
-    nativeBody: 'Waiting for your OK: Edit document', nativeTitle: 'Quarterly close',
+    body: 'Needs your approval: Edit document',
+    parkedBody: `Needs your approval: Edit document${PARKED_SUFFIX.en}`,
+    nativeBody: 'Needs your approval: Edit document', nativeTitle: 'Quarterly close',
   },
   {
     language: 'zh', tool: 'DocEdit', title: '需要授权', action: '编辑文档',
-    body: '需要授权：编辑文档',
-    parkedBody: `需要授权：编辑文档${PARKED_SUFFIX.zh}`,
+    body: '等你确认：编辑文档',
+    parkedBody: `等你确认：编辑文档${PARKED_SUFFIX.zh}`,
     nativeBody: '等你确认：编辑文档', nativeTitle: '季度结算',
   },
 ] as const;

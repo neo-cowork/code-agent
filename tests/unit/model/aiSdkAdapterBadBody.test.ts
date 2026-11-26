@@ -5,7 +5,14 @@ import http from 'node:http';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { StreamChunk } from '../../../src/host/model/types';
 import type { ModelConfig } from '../../../src/shared/contract';
-import { INCOMPLETE_RESPONSE_DIAGNOSTIC } from '../../../src/shared/modelErrorDiagnostics';
+import { incompleteResponseDiagnostic } from '../../../src/shared/modelErrorDiagnostics';
+
+// 终态人话按 getHostUiLocale() 选 zh/en；可变 locale 桩（缺省 zh），避免拉起 configService。
+const hostUi = vi.hoisted(() => ({ locale: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/host/config/hostUiLocale', () => ({
+  getHostUiLocale: () => hostUi.locale,
+  getHostUiSurface: () => 'desktop',
+}));
 
 const warns: string[] = [];
 let port = 0;
@@ -80,7 +87,7 @@ beforeAll(async () => {
   port = (server.address() as { port: number }).port;
 });
 afterAll(() => { server.close(); });
-beforeEach(() => { warns.length = 0; hits = 0; streamRequests = 0; queue = []; });
+beforeEach(() => { warns.length = 0; hits = 0; streamRequests = 0; queue = []; hostUi.locale = 'zh'; });
 
 const MSGS = [{ role: 'user' as const, content: 'hi' }];
 function run(mode: 'generate' | 'stream') {
@@ -114,12 +121,31 @@ describe.each(['generate', 'stream'] as const)('inferenceViaAiSdk 2xx 坏响应�
     const err = await promise.then(() => null, (e: unknown) => e as Error);
     expect(err).toBeInstanceOf(Error);
     expect(hits).toBe(2);
-    expect(err!.message).toBe(`${INCOMPLETE_RESPONSE_DIAGNOSTIC.message}\n建议：${INCOMPLETE_RESPONSE_DIAGNOSTIC.suggestion}`);
+    const zh = incompleteResponseDiagnostic('zh');
+    expect(err!.message).toBe(`${zh.message}\n建议：${zh.suggestion}`);
     expect(err!.message).not.toMatch(/Failed to process|Invalid JSON|AI_|\{"/);
     expect(warns.filter((w) => w.includes('2xx 响应体不可用'))).toHaveLength(2);
     if (mode === 'stream') {
       const errChunk = chunks.find((c) => c.type === 'error');
-      expect(errChunk?.error).toContain(INCOMPLETE_RESPONSE_DIAGNOSTIC.message);
+      expect(errChunk?.error).toContain(zh.message);
+    }
+  }, 30000);
+
+  it.each(RETRYABLE.slice(0, 2))('%s：ui.language=en 时终态是全英文 + Suggestion: 前缀', async (name) => {
+    hostUi.locale = 'en';
+    queue = [name, name, name, name];
+    const { promise, chunks } = run(mode);
+    const err = await promise.then(() => null, (e: unknown) => e as Error);
+    expect(err).toBeInstanceOf(Error);
+    expect(hits).toBe(2);
+    const en = incompleteResponseDiagnostic('en');
+    expect(err!.message).toBe(`${en.message}\nSuggestion: ${en.suggestion}`);
+    expect(err!.message).not.toMatch(/[㐀-鿿]/u);
+    if (mode === 'stream') {
+      const errChunk = chunks.find((c) => c.type === 'error');
+      expect(errChunk?.error).toContain(en.message);
+      expect(errChunk?.error).toContain('Suggestion: ');
+      expect(errChunk?.error).not.toMatch(/[㐀-鿿]/u);
     }
   }, 30000);
 
@@ -129,7 +155,7 @@ describe.each(['generate', 'stream'] as const)('inferenceViaAiSdk 2xx 坏响应�
     if (mode === 'generate') {
       const err = await promise.then(() => null, (e: unknown) => e as Error);
       expect(err).toBeInstanceOf(Error);
-      expect(err!.message).not.toContain(INCOMPLETE_RESPONSE_DIAGNOSTIC.message);
+      expect(err!.message).not.toContain(incompleteResponseDiagnostic('zh').message);
       expect(hits).toBe(1);
       expect(warns.some((w) => w.includes('class=other'))).toBe(true);
     } else {

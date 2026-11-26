@@ -414,6 +414,23 @@ function formatBytes(bytes: number | undefined): string | undefined {
 const IMAGE_ANALYZE_LOAD_NOTE =
   'image_analyze 是延迟加载的工具：只有工具列表里有 ToolSearch 时，才先调用 ToolSearch（参数 {"query":"select:image_analyze"}）加载它；'
   + '工具列表里没有 ToolSearch 或 image_analyze 时就不要找它。工具名不是文件，绝不要用 Glob/Grep 搜索工具名。';
+const IMAGE_ANALYZE_ATTACHMENT_HINT =
+  `\n如果当前模型不能直接看图，先调用 image_analyze 读取这个路径，再回答用户问题。${IMAGE_ANALYZE_LOAD_NOTE}`;
+
+export function stripImageAnalyzeHintFromLastUserMessage(messages: ModelMessage[]): ModelMessage[] {
+  const index = messages.findLastIndex((message) => message.role === 'user');
+  const message = messages[index];
+  if (!Array.isArray(message?.content)) return messages;
+
+  let changed = false;
+  const content = message.content.map((part) => {
+    if (part.type !== 'text' || !part.text?.startsWith('🖼️ 用户上传了图片: ')
+      || !part.text.endsWith(IMAGE_ANALYZE_ATTACHMENT_HINT)) return part;
+    changed = true;
+    return { ...part, text: part.text.slice(0, -IMAGE_ANALYZE_ATTACHMENT_HINT.length) };
+  });
+  return changed ? messages.map((entry, i) => i === index ? { ...message, content } : entry) : messages;
+}
 
 function processImageAttachment(
   attachment: MessageAttachment,
@@ -429,12 +446,8 @@ function processImageAttachment(
 
   contents.push({
     type: 'text',
-    text: [
-      `🖼️ 用户上传了图片: ${attachment.name}${pathHint}`,
-      attachment.path && !isAppshot
-        ? `如果当前模型不能直接看图，先调用 image_analyze 读取这个路径，再回答用户问题。${IMAGE_ANALYZE_LOAD_NOTE}`
-        : appshotGuidance,
-    ].join('\n'),
+    text: `🖼️ 用户上传了图片: ${attachment.name}${pathHint}`
+      + (attachment.path && !isAppshot ? IMAGE_ANALYZE_ATTACHMENT_HINT : `\n${appshotGuidance}`),
   });
 
   if (!base64Data && attachment.path) {

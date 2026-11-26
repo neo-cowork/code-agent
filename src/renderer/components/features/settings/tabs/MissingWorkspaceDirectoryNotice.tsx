@@ -1,5 +1,5 @@
 // 当前工作目录已经不在磁盘上时，在 cwd 旁边给出警告和重新选择。
-// 文案复用侧栏标记与聊天里的「重新选择文件夹」，不在 WorkspaceSettings 里再长一段。
+// 缺失警告和按钮文案复用聊天卡片，选择目录的提示由工作区设置提供。
 
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
@@ -8,6 +8,7 @@ import type { WorkspaceDirectorySummary } from '@shared/contract';
 import { Button } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
+import { isWebMode } from '../../../../utils/platform';
 
 function directoryBasename(dir: string): string {
   const parts = dir.trim().replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
@@ -18,9 +19,11 @@ function directoryBasename(dir: string): string {
 
 export function MissingWorkspaceDirectoryNotice({
   dir,
+  pickFeedback,
   onReselect,
 }: {
   dir: string;
+  pickFeedback: 'nothingChosen' | 'failed' | null;
   onReselect: () => void;
 }): React.JSX.Element | null {
   const { t } = useI18n();
@@ -47,19 +50,32 @@ export function MissingWorkspaceDirectoryNotice({
   if (exists !== false) return null;
 
   const copy = t.turnCard.projectTrustConfirm;
+  const { reselectWebHint, pickDirectoryNothingChosen, pickDirectoryFailed } = t.settings.workspace.actions;
+  const webMode = isWebMode();
   const name = directoryBasename(dir) || copy.folder;
   const warning = copy.reasons.source_missing.replace('{name}', name);
 
   return (
     <div
       data-testid="workspace-directory-missing"
-      className="flex items-center gap-2 border-t border-zinc-700/60 px-3 py-2 text-xs text-mark-warning"
+      className="border-t border-zinc-700/60 px-3 py-2 text-xs"
     >
-      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1">{warning}</span>
-      <Button size="sm" variant="secondary" onClick={onReselect}>
-        {copy.reselect}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-2 text-mark-warning">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{warning}</span>
+        </span>
+        <Button size="sm" variant="secondary" disabled={webMode} onClick={onReselect}>
+          {copy.reselect}
+        </Button>
+        {webMode && <span className="text-zinc-300">{reselectWebHint}</span>}
+      </div>
+      {!webMode && (
+        <div role="status">
+          {pickFeedback === 'nothingChosen' && <p className="mt-1 text-zinc-300">{pickDirectoryNothingChosen}</p>}
+          {pickFeedback === 'failed' && <p className="mt-1 text-mark-warning">{pickDirectoryFailed}</p>}
+        </div>
+      )}
     </div>
   );
 }

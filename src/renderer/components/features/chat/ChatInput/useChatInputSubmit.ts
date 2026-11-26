@@ -24,8 +24,7 @@ import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
 import { cronClient } from '../../../../services/cronClient';
-import type { PendingScheduleDraft, ScheduleDraftController } from './useScheduleDraft';
-import { normalizeScheduleDraft } from './scheduleConfirm';
+import { buildPendingScheduleDraft, type ScheduleDraftController } from './useScheduleDraft';
 import { loopClient } from '../../../../services/loopClient';
 import ipcService, { invoke, DomainInvokeError } from '../../../../services/ipcService';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -194,7 +193,7 @@ async function settleSendWithinTimeout(
 }
 
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const stepLimitContinuation = useStepLimitContinue(params.currentSessionId);
   const {
     value,
@@ -239,6 +238,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   } = params;
   const {
     pendingScheduleDraft = null,
+    clearRequestDraft,
     storePendingScheduleDraft = () => true,
     discardPendingScheduleDraft = () => undefined,
     setCreatingSchedule = () => undefined,
@@ -267,24 +267,13 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     toast.info(cs.scheduleParsingToast);
     let draftInvalid = false;
     try {
-      const draft = await cronClient.generateFromPrompt(description);
-      const normalized = normalizeScheduleDraft(draft);
-      if (!normalized) {
+      const draft = await cronClient.generateFromPrompt(description, language);
+      const pending = buildPendingScheduleDraft(draft, description, currentSessionId, options.handoffPrompt);
+      if (!pending) {
         draftInvalid = true;
         throw new Error(cs.scheduleDraftInvalid);
       }
-      const handoffPrompt = options.handoffPrompt?.trim();
-      const pending: PendingScheduleDraft = {
-        input: normalized.input,
-        restatement: normalized.restatement,
-        description,
-        handoffPrompt: handoffPrompt || undefined,
-        sourceSessionId: currentSessionId,
-        eventGroupName: normalized.eventGroupName || undefined,
-      };
-      const stored = storePendingScheduleDraft(pending);
-      if (!stored) return false;
-      return true;
+      return storePendingScheduleDraft(pending);
     } catch {
       // 草案无效是我们自己抛的可读文案；其余（IPC/模型）错误不透传内部 message，只给可读提示。
       toast.error(cs.scheduleCreateFailedPrefix + (draftInvalid ? cs.scheduleDraftInvalid : cs.scheduleGenerateFailedReason));
@@ -292,12 +281,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     } finally {
       setCreatingSchedule(false);
     }
-  }, [currentSessionId, setCreatingSchedule, storePendingScheduleDraft, t]);
+  }, [currentSessionId, language, setCreatingSchedule, storePendingScheduleDraft, t]);
 
   const confirmScheduleCreation = useCallback(async (): Promise<boolean> => {
     const pending = pendingScheduleDraft;
     if (!pending) return false;
     const cs = t.chatInputSubmit;
+    const request = pending.requestId && pending.sourceSessionId
+      ? { requestId: pending.requestId, sessionId: pending.sourceSessionId }
+      : undefined;
     setCreatingSchedule(true);
     try {
       let input = pending.input;
@@ -346,7 +338,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             },
           }
         : actionBase;
-      const job = await cronClient.createJob({
+      const inputForCreate = {
         ...input,
         action,
         metadata: {
@@ -359,11 +351,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
             nextStage: { prompt: handoffPrompt, title: cs.resumeAfterWakeTitle },
           } : {}),
         },
-      });
+      } satisfies Parameters<typeof cronClient.createJob>[0];
+      const job = await (request
+        ? cronClient.createJob(inputForCreate, request)
+        : cronClient.createJob(inputForCreate));
       // 创建通知只由 host 侧 recordCronAutomationCreated 落库并广播（含下次运行时间）；
       // 这里不再乐观插入同 id 通知，否则广播先落、乐观后插会双条（FB-327）。
       toast.success(`${cs.scheduleCreatedToastPrefix}${job.name || cs.unnamedSchedule}${cs.scheduleCreatedToastSuffix}`);
-      discardPendingScheduleDraft();
+      if (request && clearRequestDraft) clearRequestDraft(request);
+      else discardPendingScheduleDraft();
       return true;
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED) {
@@ -377,7 +373,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     } finally {
       setCreatingSchedule(false);
     }
-  }, [currentSessionId, discardPendingScheduleDraft, pendingScheduleDraft, setCreatingSchedule, storePendingScheduleDraft, t]);
+  }, [clearRequestDraft, currentSessionId, discardPendingScheduleDraft, pendingScheduleDraft, setCreatingSchedule, storePendingScheduleDraft, t]);
 
   const startGoalRun = useCallback(async (
     parsed: ParsedGoalCommand,

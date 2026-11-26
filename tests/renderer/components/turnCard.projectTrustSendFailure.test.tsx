@@ -6,7 +6,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../src/shared/contract';
+import type { Message, MessageAttachment } from '../../../src/shared/contract';
 import { REQUEST_INVALID } from '../../../src/shared/contract/agentRunErrors';
 import { useAgentIPC } from '../../../src/renderer/hooks/agent/useAgentIPC';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
@@ -16,11 +16,12 @@ import {
   shouldShowStreamingState,
 } from '../../../src/renderer/utils/streamingStatePresentation';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { clearFailedSend, mergeFailedSendOutbox } from '../../../src/renderer/stores/failedSendOutbox';
+import { clearFailedSend, mergeFailedSendOutbox, recordFailedSend } from '../../../src/renderer/stores/failedSendOutbox';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
 import { projectSourceTrustCopy } from '../../../src/renderer/i18n/agentRunErrors';
 import { languages, type Language } from '../../../src/renderer/i18n';
 
@@ -316,5 +317,86 @@ describe('rejected-send vs runtime-error turn presentation', () => {
     expect(screen.queryByTestId('user-message-send-failed')).toBeNull();
     expect(screen.queryByTestId('turn-run-header')).toBeNull();
     expect(screen.queryByTestId('streaming-state-banner')).toBeNull();
+  });
+
+  it.each(['zh', 'en'] as const)('shows the missing-image notice inside user-message-send-failed in %s when an over-quota image lost its bytes', async (language) => {
+    useAppStore.setState({ language });
+    const bigDataUrl = `data:image/png;base64,${'A'.repeat(6 * 1024 * 1024)}`;
+    const bigImg: MessageAttachment = {
+      id: 'big-img', type: 'image', category: 'image', name: 'screenshot.png',
+      size: 6_000_000, mimeType: 'image/png', data: bigDataUrl, thumbnail: bigDataUrl,
+    };
+    const userMsg: Message = { id: 'u-big', role: 'user', content: 'check this screenshot and summarize it', timestamp: 10, attachments: [bigImg] };
+    const errMsg: Message = {
+      id: 'e-big', role: 'assistant', content: 'Neo could not complete the request', timestamp: 11,
+      metadata: { retryPrompt: userMsg.content, retryClientMessageId: 'u-big', retrySessionId: SESSION_ID, retryAttachments: [bigImg] },
+    };
+    recordFailedSend(SESSION_ID, userMsg, errMsg);
+
+    vi.resetModules();
+    const reloadedOutbox = await import('../../../src/renderer/stores/failedSendOutbox');
+    const restored = reloadedOutbox.mergeFailedSendOutbox(SESSION_ID, [], []);
+
+    const projection = projectTurns(restored, SESSION_ID, false);
+    render(<TurnBasedTraceView projection={projection} />);
+
+    const sendFailedBlock = screen.getByTestId('user-message-send-failed');
+    expect(sendFailedBlock.textContent).toContain(languages[language].turnCard.sendFailed);
+    expect(sendFailedBlock.textContent).toContain(languages[language].turnCard.editAndResend);
+    expect(sendFailedBlock.textContent).toContain(languages[language].turnCard.failedImageDataLost);
+  });
+
+  it('ProjectTrustConfirmCard stays mounted, keeps button usable, and does not clearFailedSend when resend is blocked by a data-lost image', async () => {
+    useAppStore.setState({ language: 'zh' });
+    useToastStore.setState({ toasts: [] });
+    const bigDataUrl = `data:image/png;base64,${'A'.repeat(6 * 1024 * 1024)}`;
+    const bigImg: MessageAttachment = {
+      id: 'big-trust', type: 'image', category: 'image', name: 'screenshot.png',
+      size: 6_000_000, mimeType: 'image/png', data: bigDataUrl, thumbnail: bigDataUrl,
+    };
+    const userMsg: Message = { id: 'u-trust-big', role: 'user', content: '帮我分析这张截图', timestamp: 10, attachments: [bigImg] };
+    const errMsg: Message = {
+      id: 'e-trust-big', role: 'assistant', content: projectSourceTrustCopy.zh, timestamp: 11,
+      metadata: {
+        retryPrompt: userMsg.content, retryClientMessageId: 'u-trust-big', retrySessionId: SESSION_ID,
+        retryAttachments: [bigImg], sendFailureCode: 'PROJECT_SOURCE_TRUST',
+      },
+    };
+    recordFailedSend(SESSION_ID, userMsg, errMsg);
+
+    // Simulate reload: drop in-memory outbox cache by loading from storage cleanly
+    const rawStored = localStorage.getItem(`neo-failed-send-outbox:${SESSION_ID}`)!;
+    clearFailedSend(SESSION_ID);
+    localStorage.setItem(`neo-failed-send-outbox:${SESSION_ID}`, rawStored);
+    const restored = mergeFailedSendOutbox(SESSION_ID, [], []);
+    useSessionStore.setState({ currentSessionId: SESSION_ID, messages: restored });
+
+    const send = vi.fn();
+    const restoreComposer = vi.fn();
+    useMessageActionStore.getState().register(send, () => useSessionStore.getState().messages, restoreComposer);
+    confirmMock.mockResolvedValueOnce({ confirmed: true });
+
+    render(<TurnBasedTraceView projection={projectTurns(restored, SESSION_ID, false)} />);
+    const confirmBtn = screen.getByRole('button', { name: '确认并重发' }) as HTMLButtonElement;
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(confirmMock).toHaveBeenCalledWith('project:confirm-source-trust', { sessionId: SESSION_ID });
+    expect(send).not.toHaveBeenCalled();
+    expect(restoreComposer).toHaveBeenCalledExactlyOnceWith({
+      content: '帮我分析这张截图',
+      attachments: [],
+      clientMessageId: 'u-trust-big',
+    });
+    expect(useToastStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ type: 'error', message: languages.zh.turnCard.failedImageDataLost }),
+    );
+    // Card remains mounted, button usable again, message and outbox entry preserved
+    expect(screen.getByTestId('project-trust-confirm')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '确认并重发' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(useSessionStore.getState().messages.some((m) => m.id === 'e-trust-big')).toBe(true);
+    expect(localStorage.getItem(`neo-failed-send-outbox:${SESSION_ID}`)).not.toBeNull();
+    expect(mergeFailedSendOutbox(SESSION_ID, [], []).map((m) => m.id)).toEqual(['u-trust-big', 'e-trust-big']);
   });
 });

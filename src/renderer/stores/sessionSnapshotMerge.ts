@@ -244,6 +244,12 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
 function mergeMetadata(snapshotMessage: Message, liveMessage: Message): Message['metadata'] {
   if (!snapshotMessage.metadata && !liveMessage.metadata) return undefined;
   const merged = { ...snapshotMessage.metadata, ...liveMessage.metadata };
+  const snapshotCorrelation = snapshotMessage.metadata?.correlation;
+  const liveCorrelation = liveMessage.metadata?.correlation;
+  if (snapshotCorrelation && liveCorrelation) {
+    // The live draft has a turnId but can omit the persisted run's traceId.
+    merged.correlation = { ...snapshotCorrelation, ...liveCorrelation };
+  }
   if (!isStreamRecoveryMessage(snapshotMessage)) return merged;
   if (snapshotMessage.metadata?.streamInterruptionReason) {
     return { ...merged, streamInterruptionReason: snapshotMessage.metadata.streamInterruptionReason };

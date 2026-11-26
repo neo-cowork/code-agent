@@ -3,6 +3,9 @@ import type {
   Message,
   SessionAutomationType,
 } from '../../shared/contract';
+import { readableCronRunText } from '../../shared/cronRunMessage';
+import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
+import { cronProjectTrustFailureText } from './cronFailureNoticeCopy';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager } from '../services/infra/sessionManager';
@@ -31,13 +34,16 @@ function truncateText(value: string, maxChars: number): string {
 }
 
 function errorText(error: unknown): string {
+  // 项目文件夹信任失败：只写文件夹名的人话，不写英文原句和本机绝对路径。
+  const trust = error == null ? undefined : cronProjectTrustFailureText(cronFailureSourceText(error));
+  if (trust) return trust;
   if (error instanceof Error) return error.message;
   return error == null ? '' : String(error);
 }
 
 function formatReceiptContent(input: CronExpertThreadReceiptInput): string {
   const ranAt = new Date(input.startedAt).toLocaleString('zh-CN');
-  const summary = truncateText(input.finalAssistantText, RECEIPT_SUMMARY_MAX_CHARS);
+  const summary = truncateText(readableCronRunText(input.finalAssistantText), RECEIPT_SUMMARY_MAX_CHARS);
   const failure = truncateText(errorText(input.error), RECEIPT_ERROR_MAX_CHARS);
   const resultLine = input.succeeded
     ? '结果：成功。'
@@ -53,7 +59,7 @@ function formatReceiptContent(input: CronExpertThreadReceiptInput): string {
     '这次的结论：',
     conclusion,
     '',
-    `[查看这次运行的全过程（会话 ${input.cronSessionId}）](neo://thread/${input.cronSessionId})`,
+    `[查看这次运行的全过程](neo://thread/${input.cronSessionId})`,
   ].join('\n');
 }
 

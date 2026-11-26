@@ -91,6 +91,10 @@ export function getRoleWakeProposalsPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.WAKE_PROPOSALS_FILENAME);
 }
 
+export function getRoleWakeLedgerPath(roleId: string): string {
+  return path.join(getRoleDir(roleId), ROLE_ASSETS.WAKE_LEDGER_FILENAME);
+}
+
 /** 角色工作履历：roles/<roleId>/history.md */
 export function getRoleHistoryPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.HISTORY_FILENAME);

@@ -521,6 +521,14 @@ export class AgentLoop {
     return this.runFinalizer.whenSessionEndMemoryWorkSettled();
   }
 
+  /**
+   * 等本轮终局事件之后的后台收尾落完。产线不用（不该堵住终局事件）；
+   * 调用方在拆掉运行时之前用它排空，避免收尾日志晚于生命周期。
+   */
+  whenPostTerminalWorkSettled(): Promise<void> {
+    return this.runFinalizer.whenPostTerminalWorkSettled();
+  }
+
   async cancel(reason?: RunCancelReason): Promise<void> {
     await this.conversationRuntime.cancel(reason);
   }

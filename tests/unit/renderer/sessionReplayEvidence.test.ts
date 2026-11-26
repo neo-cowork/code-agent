@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '../../../src/shared/contract/scriptRun';
+import { languages } from '../../../src/renderer/i18n';
 import { buildSessionReplayEvidenceMap } from '../../../src/renderer/utils/sessionReplayEvidence';
 
 describe('buildSessionReplayEvidenceMap', () => {
@@ -58,7 +59,7 @@ describe('buildSessionReplayEvidenceMap', () => {
       ],
     }];
 
-    const map = buildSessionReplayEvidenceMap(workflowRuns, tasks);
+    const map = buildSessionReplayEvidenceMap(workflowRuns, tasks, languages.zh);
 
     expect(Array.from(map.keys())).toEqual(['session-1']);
     expect(map.get('session-1')).toMatchObject([
@@ -108,7 +109,7 @@ describe('buildSessionReplayEvidenceMap', () => {
           createdAt: 2,
         },
       ],
-    }]);
+    }], languages.zh);
 
     expect(map.get('session-2')).toMatchObject([
       {
@@ -122,5 +123,20 @@ describe('buildSessionReplayEvidenceMap', () => {
         pathOrUrl: 'trace://local/run-1',
       },
     ]);
+  });
+
+  it('uses the localised background label for sourceLabel and title when the model title is foreign', () => {
+    const task = (source: Task['source'], title: string): Task => ({
+      id: 't1', sessionId: 's1', source, title, status: 'completed', createdAt: 1, updatedAt: 2, events: [],
+      outputRefs: [{ id: 'r', taskId: 't1', type: 'trace', label: 'trace.json', path: '/tmp/trace.json', createdAt: 2 }],
+    } as unknown as Task);
+    const zh = buildSessionReplayEvidenceMap({}, [task('delegate_task', 'Summarize the weekly report now')], languages.zh).get('s1')![0];
+    expect(zh.sourceLabel).toBe('助手');
+    expect(zh.title).toContain('助手');
+    expect(zh.title).not.toContain('Summarize');
+    const en = buildSessionReplayEvidenceMap({}, [task('delegate_task', '提炼合同关键条款')], languages.en).get('s1')![0];
+    expect(en.sourceLabel).toBe('Background assistant');
+    const kept = buildSessionReplayEvidenceMap({}, [task('agent', 'Weekly report now')], languages.zh).get('s1')![0];
+    expect(kept.sourceLabel).toBe('Weekly report now');
   });
 });

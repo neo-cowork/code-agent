@@ -41,7 +41,7 @@ export function memoryItemFromMarkdownContent(input: {
 }): RawMemoryImportItem | null {
   const parsed = parseImportMarkdown(input.raw, input.fallbackTitle);
   if (!parsed.body) return null;
-  const scope = parsed.kind === 'user' || parsed.kind === 'feedback' || parsed.kind === 'directive'
+  const scope = parsed.kind === 'user' || parsed.kind === 'feedback' || parsed.kind === 'people' || parsed.kind === 'directive'
     ? 'global'
     : input.scope;
   const destination = parsed.kind === 'directive' ? 'instruction' : 'memory';

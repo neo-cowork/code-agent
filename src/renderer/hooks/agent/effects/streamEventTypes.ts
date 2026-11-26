@@ -54,6 +54,7 @@ export interface AssistantMessagePayload extends TurnIdPayload {
   contentParts?: Message['contentParts'];
   artifacts?: Message['artifacts'];
   modelDecision?: ModelDecisionEventData;
+  metadata?: Pick<NonNullable<Message['metadata']>, 'correlation' | 'backgroundTaskPreannounce'>;
 }
 
 export interface RoutingResolvedPayload {

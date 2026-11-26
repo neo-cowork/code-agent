@@ -7,7 +7,13 @@
 // 先落 assistant 消息，再落合成的失败 tool 消息。
 // ============================================================================
 
+import { inabilityGatePrompt } from './backgroundWakeMessage';
+import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
+import { extractUserRequest } from '../../../shared/utils/turnScaffold';
+import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
+import { formatForegroundShellDenialFinalMessage } from '../../../shared/i18n/foregroundShellDenial';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { sanitizeToolCallsForHistory } from '../messageHandling/converter';
@@ -32,8 +38,9 @@ export async function sealBouncedToolCalls(
   handedOffCallIds?: Set<string>,
 ): Promise<'continue'> {
   const { ctx, contextAssembly } = deps;
+  const userPrompt = inabilityGatePrompt(ctx);
   const reason = kind === 'denied'
-    ? BOUNCE_REASONS.denied(ctx.turn?.runUserPrompt ?? '', 'zh')
+    ? BOUNCE_REASONS.denied(userPrompt, 'zh')
     : BOUNCE_REASONS[kind];
   if (toolCalls.length === 0) return 'continue';
   const assistantMessage: Message = {
@@ -61,12 +68,15 @@ export async function sealBouncedToolCalls(
         metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND' },
       };
     }
+    const skipped = deniedCallIds !== undefined && !deniedCallIds.has(toolCall.id);
+    const needsUserMessage = kind === 'denied' || skipped;
     return {
       toolCallId: toolCall.id,
       success: false,
-      error: deniedCallIds && !deniedCallIds.has(toolCall.id)
-        ? getInabilityReplyGuidance(ctx.turn?.runUserPrompt ?? '', 'zh')
-        : reason,
+      error: skipped ? getInabilityReplyGuidance(userPrompt, 'zh') : reason,
+      ...(needsUserMessage
+        ? { userMessage: formatForegroundShellDenialFinalMessage(detectMessageLanguage(extractUserRequest(userPrompt)) ?? readUiLanguage()) }
+        : {}),
       duration: 0,
       metadata: { skipped: true, bounced: true, ...(deniedCallIds ? { code: deniedCallIds.has(toolCall.id) ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED' } : {}) },
     };
@@ -74,7 +84,7 @@ export async function sealBouncedToolCalls(
   const toolMessage: Message = {
     id: contextAssembly.generateId(),
     role: 'tool',
-    content: JSON.stringify(results),
+    content: serializeToolResultsForModel(results),
     timestamp: Date.now(),
     toolResults: results,
   };

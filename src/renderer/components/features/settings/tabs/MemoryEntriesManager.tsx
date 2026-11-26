@@ -32,6 +32,8 @@ import { journalRestoreRequest } from './memoryJournalSnapshot';
 import { MemoryEntryHistoryList } from './MemoryEntryHistoryList';
 import { MemoryEntryAddForm } from './MemoryEntryAddForm';
 import { MEMORY_ENTRY_ADD_COPY } from '../../../../i18n/memoryEntryAdd';
+import { getMemoryConfirmWords } from '../../../../i18n/memoryConfirm';
+import type { Language } from '../../../../i18n';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -77,6 +79,7 @@ export interface MemoryEntryManagerRow {
   title: string;
   summary: string;
   statusLabel: string;
+  replacementHint?: string;
   /** 已暂停自动带进对话时的徽标文案（N-MEM-EVICT-NEVER-READ） */
   pausedLabel?: string;
   /** 最近一次变更是后台写入时的徽标文案（N-MEM-JOURNAL-SOURCEJUMP） */
@@ -93,7 +96,7 @@ function isBackgroundMemoryActor(actor: string): boolean {
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
-const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'reference', 'session', 'pattern'];
+const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'people', 'reference', 'session', 'pattern'];
 
 export function getMemoryEntryStatusLabel(
   status: MemoryEntryStatus,
@@ -139,6 +142,7 @@ export function buildMemoryEntryRows({
   sourceFilter,
   now = Date.now(),
   labels = zh.settings.memory,
+  language = 'zh',
   locale = localeForLanguage('zh'),
 }: {
   entries: MemoryEntry[];
@@ -150,9 +154,12 @@ export function buildMemoryEntryRows({
   sourceFilter: EntrySourceFilter;
   now?: number;
   labels?: MemorySettingsText;
+  language?: Language;
   locale?: string;
 }): MemoryEntryManagerRow[] {
   const query = searchQuery.trim().toLowerCase();
+  const titlesByFile = new Map(entries.map((entry) => [entry.source.filePath, entry.title]));
+  const { adoptManualReplacement } = getMemoryConfirmWords(language);
   return entries
     .filter((entry) => showArchived || entry.status !== 'archived')
     .filter((entry) => statusFilter === 'all' || entry.status === statusFilter)
@@ -170,6 +177,9 @@ export function buildMemoryEntryRows({
       title: entry.title,
       summary: entry.summary,
       statusLabel: getMemoryEntryStatusLabel(entry.status, labels.entries.statusLabels),
+      replacementHint: entry.status === 'candidate' && entry.supersedes
+        ? adoptManualReplacement(titlesByFile.get(entry.supersedes) || entry.supersedes)
+        : undefined,
       ...(entry.injectionPaused ? { pausedLabel: labels.entries.injectionPaused.badge } : {}),
       ...(entry.lastChange && isBackgroundMemoryActor(entry.lastChange.actor)
         ? { backgroundWriteLabel: labels.entries.backgroundWriteBadge }
@@ -264,6 +274,7 @@ export const MemoryEntriesManager: React.FC<{
       kindFilter,
       sourceFilter,
       labels: memoryText,
+      language,
       locale: localeForLanguage(language),
     }),
     [entries, kindFilter, language, memoryText, searchQuery, selectedEntry?.id, showArchived, sourceFilter, statusFilter],
@@ -669,7 +680,6 @@ export const MemoryEntriesManager: React.FC<{
                                     disabled
                                     aria-label={memoryText.entries.batchReview.directiveNeedsConfirmation}
                                   />
-                                  {memoryText.entries.batchReview.directiveNeedsConfirmation}
                                 </span>
                               );
                             }
@@ -694,6 +704,13 @@ export const MemoryEntriesManager: React.FC<{
                         <td className="px-3 py-3 align-top">
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>
                           <div className="mt-1 max-w-[380px] truncate text-zinc-500">{row.summary || row.id}</div>
+                          {row.replacementHint && <div className="mt-1 max-w-[380px] text-zinc-400">{row.replacementHint}</div>}
+                          {(() => {
+                            const entry = entries.find((item) => item.id === row.id);
+                            return entry?.status === 'candidate' && entry.kind === 'directive'
+                              ? <div className="mt-1 max-w-[380px] text-[11px] text-zinc-500">{memoryText.entries.batchReview.directiveNeedsConfirmation}</div>
+                              : null;
+                          })()}
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">
                           {row.statusLabel}

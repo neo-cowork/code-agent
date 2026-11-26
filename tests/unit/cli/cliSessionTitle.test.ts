@@ -171,7 +171,7 @@ describe('CLI session titles', () => {
     });
     await settle();
 
-    expect(readTitle(sessionId)).toBe('初始化项目记忆 · 家庭账本项目');
+    expect(readTitle(sessionId)).toBe('家庭账本项目 · 初始化项目记忆');
     expect(quick.prompts).toHaveLength(0);
   });
 
