@@ -1,6 +1,8 @@
-import { reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
-import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from './agentRoleLabel';
-import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
+import { isStandaloneSpawnTrace, reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
+import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
+import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
+import { agentFailureCopy, backgroundTaskFailureCopy, deleteIncompleteFileNames } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
@@ -36,6 +38,9 @@ export interface MemberRowSource {
   roleId: string;
   name: string;
   profession?: string;
+  /** Render-time localized copies (display only). */
+  displayName?: string;
+  displayProfession?: string;
   icon?: string;
   status: 'standby' | 'running' | 'completed' | 'failed' | 'cancelled';
   isLead: boolean;
@@ -47,7 +52,7 @@ export interface MemberRowSource {
   error?: string | null;
   failureCategory?: string | null;
   agent?: { error?: string | null };
-  record?: { error?: string | null; failureCategory?: string | null };
+  record?: { runId?: string; error?: string | null; failureCategory?: string | null };
 }
 
 export interface AgentRow {
@@ -56,6 +61,9 @@ export interface AgentRow {
   roleId?: string;
   name: string;
   profession?: string;
+  /** Render-time localized name/profession; render with `displayName ?? name`. Never send or store these. */
+  displayName?: string;
+  displayProfession?: string;
   icon?: string;
   isLead: boolean;
   status: AgentRowStatus;
@@ -157,20 +165,26 @@ export function buildAgentRows(input: {
   members: MemberRowSource[];
   nodes: AgentTreeNode[];
   tasks: Task[];
+  /** 调用方传会话账本全集算出的名字，避免子集序号与其他视图错位 */
+  taskLabels?: ReadonlyMap<string, string>;
 }): AgentRow[] {
   const { members, nodes, tasks } = input;
   const t = languages[useAppStore.getState().language] ?? languages.zh;
+  const taskLabels = input.taskLabels ?? backgroundTaskLabels(tasks, t);
   const rows: AgentRow[] = [];
   const memberById = new Map(members.map((member) => [member.key, member]));
 
   for (const member of members) {
+    const name = member.status !== 'standby' && member.name === member.roleId
+      ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name;
     rows.push({
       key: member.key,
       kind: 'expert',
       roleId: member.roleId,
-      name: member.status !== 'standby' && member.name === member.roleId
-        ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name,
+      name,
       profession: member.profession,
+      displayName: member.displayName !== undefined && member.displayName !== member.name ? member.displayName : undefined,
+      displayProfession: member.displayProfession !== member.profession ? member.displayProfession : undefined,
       icon: member.icon,
       isLead: member.isLead,
       status: memberRowStatus(member.status),
@@ -193,7 +207,13 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = candidate;
         row.outcomeKey = outcome;
-        if (node.background && t === languages.en) row.name = agentNodeLabel(node, t.agentRoleLabels);
+        const traceId = member.record?.runId;
+        const legacyUnnamed = t === languages.en && member.name === member.roleId
+          && !parseSwarmTraceStorageId(traceId ?? '');
+        if (node.background && (isStandaloneSpawnTrace(member.key, traceId) || legacyUnnamed)) {
+          row.name = agentNodeLabel(node, t.agentRoleLabels);
+          row.displayName = undefined;
+        }
         // Explicit lifecycle wins; weak unknown contexts retain the member terminal above.
         row.status = nodeRowStatus(outcome);
         row.stoppable = row.status === 'working';
@@ -230,20 +250,32 @@ export function buildAgentRows(input: {
 
   for (const task of tasks) {
     const status = agentRowStatus(task.status);
+    const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
     const linkedNodeId = taskLinkedNodeId(task, nodeIds);
     if (linkedNodeId) {
       // 同一个代理在 agentTree 与 Task 两边都有：只留节点行，把 Task 挂上去供成员视图取产出
       const row = rows.find((candidate) => candidate.key === linkedNodeId);
-      if (row) row.task = task;
+      if (row) {
+        row.task = task;
+        if (incomplete) {
+          row.displayName = deleteIncompleteFileNames(task.leftoverPaths) ?? row.displayName;
+          row.status = 'failed';
+          row.outcomeKey = 'delete-incomplete';
+          row.failureReason = backgroundTaskFailureCopy(task, t) ?? undefined;
+          row.stoppable = false;
+        }
+      }
       continue;
     }
     rows.push({
       key: task.id,
       kind: 'task',
-      name: backgroundTaskLabel(task, t),
+      name: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
+        ?? taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
+      outcomeKey: incomplete ? 'delete-incomplete' : undefined,
       stoppable: status === 'working',
       task,
     });

@@ -22,7 +22,7 @@ interface SupabaseAgentTableQuery<T> extends PromiseLike<SupabaseQueryResult<T[]
   eq(column: string, value: unknown): SupabaseAgentTableQuery<T>;
   order(column: string, options: { ascending: boolean }): SupabaseAgentTableQuery<T>;
   insert(value: Record<string, unknown>): SupabaseMutationQuery;
-  upsert(value: Record<string, unknown>, options?: { onConflict?: string }): SupabaseMutationQuery;
+  upsert(value: Record<string, unknown>, options?: { onConflict?: string; ignoreDuplicates?: boolean }): SupabaseMutationQuery;
   update(value: Record<string, unknown>): SupabaseAgentTableQuery<T>;
 }
 

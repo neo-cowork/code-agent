@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useAppStore } from './appStore';
 import { languages } from '../i18n';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 
 export type RoleLabels = Readonly<Record<string, string>>;
 
@@ -13,8 +14,9 @@ export const useRoleLabelsStore = create<{
   labels: { zh: {}, en: {} },
   setRoles: (roles) => {
     const forLanguage = (language: 'zh' | 'en'): RoleLabels => Object.fromEntries(roles.map((role) => {
-      const name = role.displayName?.trim();
-      const profession = role.profession?.trim();
+      const localized = localizeBuiltinRole(role.roleId, { name: role.displayName?.trim() ?? '', profession: role.profession?.trim() }, language);
+      const name = localized.name;
+      const profession = localized.profession;
       const label = name && name !== role.roleId
         ? profession && profession !== name
           ? languages[language].roleEditReceipt.expertLabel.replace('{name}', () => name).replace('{profession}', () => profession)

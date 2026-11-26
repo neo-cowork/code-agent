@@ -1,6 +1,7 @@
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { stableAgentTeamApprovalId } from './agentTeamDurableAdapter';
+import { stripWorkdirPrefix } from './workdirPrefix';
 import {
   agentTeamTaskPermissionProfile,
   getAgentTeamDurableRuntime,
@@ -38,7 +39,7 @@ export async function requestDurableAgentTeamLaunchApproval(input: {
       tasks: input.tasks.map((task) => ({
         id: task.id,
         role: task.role,
-        task: task.task.replace(/^\[工作目录:[^\]]+\]\s*所有文件路径基于此目录。\n\n/, ''),
+        task: stripWorkdirPrefix(task.task),
         dependsOn: task.dependsOn,
         tools: [...task.tools],
         writeAccess: !input.readonlyRoles.includes(task.role.toLowerCase()),

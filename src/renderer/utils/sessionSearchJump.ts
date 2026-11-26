@@ -1,7 +1,19 @@
-import type { TraceProjection } from '@shared/contract/trace';
+import type { TraceNode, TraceProjection } from '@shared/contract/trace';
 import type { CrossSessionSearchResultItem } from '@shared/ipc/types';
 import type { SearchMatch } from '../components/features/chat/ChatSearchBar';
 import type { PendingSessionSearchJump } from '../stores/sessionUIStore';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
+
+/**
+ * 会话内搜索/命中跳转能看到的节点文本：工具调用节点的 content 常为空，
+ * 用户记得的内容（命令输出、读到的文件）在 toolCall.result 里。
+ * 用户节点先剥掉旧组队配方前缀（legacyTeamRecipeDisplay.ts），与气泡展示同一口径。
+ */
+export function getTraceNodeSearchText(node: TraceNode): string {
+  const content = node.type === 'user' ? stripLegacyTeamRecipeSeed(node.content) : node.content;
+  const result = node.toolCall?.result;
+  return typeof result === 'string' && result ? `${content}\n${result}` : content;
+}
 
 export function createPendingSearchJumpFromCrossSessionResult(
   result: CrossSessionSearchResultItem,
@@ -29,7 +41,7 @@ function findQueryInTurn(
 
   for (let nodeIndex = 0; nodeIndex < turn.nodes.length; nodeIndex += 1) {
     const node = turn.nodes[nodeIndex];
-    const offset = node.content.toLowerCase().indexOf(query);
+    const offset = getTraceNodeSearchText(node).toLowerCase().indexOf(query);
     if (offset >= 0) {
       return { turnIndex, nodeIndex, offset };
     }
@@ -61,7 +73,7 @@ export function findSearchMatchForPendingJump(
           continue;
         }
 
-        const content = node.content.toLowerCase();
+        const content = getTraceNodeSearchText(node).toLowerCase();
         const queryOffset = query ? content.indexOf(query) : -1;
         if (query && queryOffset === -1) {
           fallback ??= { turnIndex, nodeIndex, offset: 0 };
@@ -71,7 +83,7 @@ export function findSearchMatchForPendingJump(
         const preferredOffset = typeof jump.matchOffset === 'number' ? jump.matchOffset : -1;
         const offset = queryOffset >= 0
           ? queryOffset
-          : preferredOffset >= 0 && preferredOffset < node.content.length
+          : preferredOffset >= 0 && preferredOffset < content.length
             ? preferredOffset
             : 0;
 

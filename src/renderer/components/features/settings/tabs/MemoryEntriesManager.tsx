@@ -18,6 +18,8 @@ import type {
   MemoryChangeJournalRow,
   MemoryEntry,
   MemoryEntryBatchReviewResult,
+  MemoryEntryCreateRequest,
+  MemoryEntryCreateResult,
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntrySourceOfTruth,
@@ -28,6 +30,10 @@ import type {
 import { findSourceSessionRef, formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
 import { journalRestoreRequest } from './memoryJournalSnapshot';
 import { MemoryEntryHistoryList } from './MemoryEntryHistoryList';
+import { MemoryEntryAddForm } from './MemoryEntryAddForm';
+import { MEMORY_ENTRY_ADD_COPY } from '../../../../i18n/memoryEntryAdd';
+import { getMemoryConfirmWords } from '../../../../i18n/memoryConfirm';
+import type { Language } from '../../../../i18n';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -47,6 +53,7 @@ type MemorySettingsText = typeof zh.settings.memory;
 
 type MemoryEntryCommand =
   | { action: 'memoryEntries' }
+  | ({ action: 'memoryEntryCreate' } & MemoryEntryCreateRequest)
   | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
   | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' }
   | { action: 'memoryEntryJournal'; entryId: string; limit?: number }
@@ -72,6 +79,7 @@ export interface MemoryEntryManagerRow {
   title: string;
   summary: string;
   statusLabel: string;
+  replacementHint?: string;
   /** 已暂停自动带进对话时的徽标文案（N-MEM-EVICT-NEVER-READ） */
   pausedLabel?: string;
   /** 最近一次变更是后台写入时的徽标文案（N-MEM-JOURNAL-SOURCEJUMP） */
@@ -88,7 +96,7 @@ function isBackgroundMemoryActor(actor: string): boolean {
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
-const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'reference', 'session', 'pattern'];
+const KIND_OPTIONS: MemoryEntryKind[] = ['directive', 'user', 'feedback', 'project', 'people', 'reference', 'session', 'pattern'];
 
 export function getMemoryEntryStatusLabel(
   status: MemoryEntryStatus,
@@ -134,6 +142,7 @@ export function buildMemoryEntryRows({
   sourceFilter,
   now = Date.now(),
   labels = zh.settings.memory,
+  language = 'zh',
   locale = localeForLanguage('zh'),
 }: {
   entries: MemoryEntry[];
@@ -145,9 +154,12 @@ export function buildMemoryEntryRows({
   sourceFilter: EntrySourceFilter;
   now?: number;
   labels?: MemorySettingsText;
+  language?: Language;
   locale?: string;
 }): MemoryEntryManagerRow[] {
   const query = searchQuery.trim().toLowerCase();
+  const titlesByFile = new Map(entries.map((entry) => [entry.source.filePath, entry.title]));
+  const { adoptManualReplacement } = getMemoryConfirmWords(language);
   return entries
     .filter((entry) => showArchived || entry.status !== 'archived')
     .filter((entry) => statusFilter === 'all' || entry.status === statusFilter)
@@ -165,6 +177,9 @@ export function buildMemoryEntryRows({
       title: entry.title,
       summary: entry.summary,
       statusLabel: getMemoryEntryStatusLabel(entry.status, labels.entries.statusLabels),
+      replacementHint: entry.status === 'candidate' && entry.supersedes
+        ? adoptManualReplacement(titlesByFile.get(entry.supersedes) || entry.supersedes)
+        : undefined,
       ...(entry.injectionPaused ? { pausedLabel: labels.entries.injectionPaused.badge } : {}),
       ...(entry.lastChange && isBackgroundMemoryActor(entry.lastChange.actor)
         ? { backgroundWriteLabel: labels.entries.backgroundWriteBadge }
@@ -259,6 +274,7 @@ export const MemoryEntriesManager: React.FC<{
       kindFilter,
       sourceFilter,
       labels: memoryText,
+      language,
       locale: localeForLanguage(language),
     }),
     [entries, kindFilter, language, memoryText, searchQuery, selectedEntry?.id, showArchived, sourceFilter, statusFilter],
@@ -483,7 +499,7 @@ export const MemoryEntriesManager: React.FC<{
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
         <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
           {[
-            [memoryText.entries.stats.total, String(entries.length), `${result?.sourceCounts.light_file ?? 0} Light / ${result?.sourceCounts.db_memory ?? 0} DB`],
+            [memoryText.entries.stats.total, String(entries.length), memoryText.entries.stats.totalCaption.replace('{files}', String(result?.sourceCounts.light_file ?? 0)).replace('{db}', String(result?.sourceCounts.db_memory ?? 0))],
             [memoryText.entries.stats.currentMatched, String(rows.length), memoryText.entries.stats.filteredCaption],
             [memoryText.entries.stats.active, String(entries.filter((entry) => entry.status === 'active').length), memoryText.entries.stats.activeCaption],
             [memoryText.entries.stats.governance, String(entries.filter((entry) => entry.status === 'candidate' || entry.status === 'stale').length), memoryText.entries.stats.governanceCaption],
@@ -509,8 +525,21 @@ export const MemoryEntriesManager: React.FC<{
 
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 border-b border-zinc-800 lg:border-b-0 lg:border-r">
-            <div className="grid gap-2 border-b border-zinc-800 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto]">
-              <div className="relative">
+            <MemoryEntryAddForm
+              language={language === 'en' ? 'en' : 'zh'}
+              disabled={busy !== null}
+              projectPath={useAppStore.getState().workingDirectory}
+              submit={(request) => invokeMemoryEntryCommand<MemoryEntryCreateResult>({ action: 'memoryEntryCreate', ...request })}
+              onCreated={async (entry, duplicate) => {
+                setSearchQuery(''); setStatusFilter('all'); setKindFilter('all'); setSourceFilter('all');
+                await loadEntries();
+                setSelectedEntryId(entry.id);
+                setMessage({ type: duplicate ? 'error' : 'success', text: MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'][duplicate ? 'duplicate' : 'saved'] });
+                await onChanged?.();
+              }}
+            />
+            <div className="flex flex-wrap gap-2 border-b border-zinc-800 px-3 py-3">
+              <div className="relative min-w-[200px] flex-1 basis-full sm:basis-[200px]">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   value={searchQuery}
@@ -527,7 +556,7 @@ export const MemoryEntriesManager: React.FC<{
                   setStatusFilter(nextStatus);
                   if (nextStatus === 'archived') setShowArchived(true);
                 }}
-                className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
+                className="min-w-[120px] rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allStatus}</option>
                 {STATUS_OPTIONS.map((status) => (
@@ -552,7 +581,7 @@ export const MemoryEntriesManager: React.FC<{
               <select
                 value={kindFilter}
                 onChange={(event) => setKindFilter(event.target.value as EntryKindFilter)}
-                className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
+                className="min-w-[120px] rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allKind}</option>
                 {KIND_OPTIONS.map((kind) => (
@@ -562,7 +591,7 @@ export const MemoryEntriesManager: React.FC<{
               <select
                 value={sourceFilter}
                 onChange={(event) => setSourceFilter(event.target.value as EntrySourceFilter)}
-                className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
+                className="min-w-[120px] rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allSource}</option>
                 <option value="light_file">{getMemoryEntrySourceLabel('light_file', memoryText.sourceLabels)}</option>
@@ -651,7 +680,6 @@ export const MemoryEntriesManager: React.FC<{
                                     disabled
                                     aria-label={memoryText.entries.batchReview.directiveNeedsConfirmation}
                                   />
-                                  {memoryText.entries.batchReview.directiveNeedsConfirmation}
                                 </span>
                               );
                             }
@@ -676,9 +704,19 @@ export const MemoryEntriesManager: React.FC<{
                         <td className="px-3 py-3 align-top">
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>
                           <div className="mt-1 max-w-[380px] truncate text-zinc-500">{row.summary || row.id}</div>
+                          {row.replacementHint && <div className="mt-1 max-w-[380px] text-zinc-400">{row.replacementHint}</div>}
+                          {(() => {
+                            const entry = entries.find((item) => item.id === row.id);
+                            return entry?.status === 'candidate' && entry.kind === 'directive'
+                              ? <div className="mt-1 max-w-[380px] text-[11px] text-zinc-500">{memoryText.entries.batchReview.directiveNeedsConfirmation}</div>
+                              : null;
+                          })()}
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">
                           {row.statusLabel}
+                          {entries.find((item) => item.id === row.id)?.source.kind === 'manual' && (
+                            <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-manual-badge">{MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually}</div>
+                          )}
                           {row.pausedLabel && (
                             <div className="mt-1 text-[11px] text-badge-warning" data-testid="memory-entry-paused-badge">{row.pausedLabel}</div>
                           )}
@@ -687,7 +725,7 @@ export const MemoryEntriesManager: React.FC<{
                           )}
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">{row.kindLabel}</td>
-                        <td className="px-3 py-3 align-top text-zinc-400">{row.sourceLabel}</td>
+                        <td className="px-3 py-3 align-top text-zinc-400">{entries.find((item) => item.id === row.id)?.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : row.sourceLabel}</td>
                         <td className="px-3 py-3 align-top text-zinc-400">{row.updatedAtLabel}</td>
                       </tr>
                     ))}
@@ -715,9 +753,8 @@ export const MemoryEntriesManager: React.FC<{
                       ) : (
                         <Database className="h-4 w-4 text-badge-info" />
                       )}
-                      <span className="truncate">{getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth)}</span>
+                      <span className="truncate">{selectedEntry.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth, memoryText.sourceLabels)}</span>
                     </div>
-                    <div className="mt-1 truncate font-mono text-[11px] text-zinc-500">{selectedEntry.id}</div>
                   </div>
                   <button
                     type="button"
@@ -842,13 +879,7 @@ export const MemoryEntriesManager: React.FC<{
                 <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
                   <div className="mb-2 font-medium text-zinc-400">{memoryText.entries.evidence}</div>
                   {selectedEntry.evidence.length > 0 ? (
-                    <div className="space-y-1">
-                      {selectedEntry.evidence.slice(0, 4).map((item, index) => (
-                        <div key={`${selectedEntry.id}-evidence-${index}`} className="truncate font-mono text-[11px]">
-                          {item.filePath || item.memoryId || item.sessionId || item.candidateId || item.source || 'unknown'}
-                        </div>
-                      ))}
-                    </div>
+                    <div>{memoryText.entries.evidenceCount.replace('{count}', String(selectedEntry.evidence.length))}</div>
                   ) : (
                     <div>{memoryText.entries.noEvidence}</div>
                   )}

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
-import { getConnectorCardPresentation } from '../../../src/renderer/utils/connectorCardPresentation';
+import {
+  countConnectedMcpServers,
+  getConnectorCardPresentation,
+} from '../../../src/renderer/utils/connectorCardPresentation';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 
 const baseServer: WorkbenchMcpRegistryItem = {
@@ -70,5 +73,19 @@ describe('getConnectorCardPresentation', () => {
     );
 
     expect(presentation.description).toBe('Connection timed out');
+  });
+});
+
+describe('countConnectedMcpServers', () => {
+  it('matches the card rule and excludes installing or disabled connected entries', () => {
+    const disabledServer = { ...baseServer, id: 'disabled', enabled: false };
+    const lazyServer = {
+      ...baseServer,
+      id: 'lazy',
+      lifecycle: { ...baseServer.lifecycle, connectionState: 'lazy' as const },
+    };
+
+    expect(countConnectedMcpServers([baseServer, disabledServer, lazyServer])).toBe(1);
+    expect(countConnectedMcpServers([baseServer], new Set(['search']))).toBe(0);
   });
 });

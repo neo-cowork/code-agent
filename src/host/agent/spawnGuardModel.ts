@@ -28,6 +28,7 @@ export interface ManagedAgent {
   background?: boolean;
   id: string;
   completion?: { title?: string; kind?: SubagentCompletionKind };
+  completionByBackgroundRegistry?: boolean;
   role: string;
   treeId: string;
   sessionId?: string;
@@ -93,6 +94,7 @@ export interface RegisterOptions {
   slotAcquired?: boolean;
   scope?: SwarmRunScope;
   completion?: { title?: string; kind?: SubagentCompletionKind };
+  completionByBackgroundRegistry?: boolean;
 }
 
 export interface SpawnGuardScopeFilter {

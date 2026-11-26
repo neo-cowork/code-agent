@@ -1,20 +1,24 @@
 import { toast, useToastStore } from '../../../../hooks/useToast';
+import { useComposerAttachmentLimitStore } from '../../../../stores/composerAttachmentLimitStore';
 import type { AttachmentMergeResult } from './attachmentDedupe';
 
 interface AttachmentMergeCopy {
   attachmentAlreadyAdded: string;
   attachmentAlreadyAddedMany: string;
-  attachmentLimitReached: string;
-  attachmentLimitReachedNone: string;
 }
 
-// 同一时刻最多一条「附件已满」提示：新的出现前先撤掉旧的，旧数字不会和新数字并存。
-let limitToastId: string | null = null;
+// 重复附件警告走全局 toast，addToast 只追加不替换，连续重复添加会堆叠（FB-1745）。
+// 记住最后一条的 id：下一次弹出前先移除旧的，且发送 / 切会话 / 移除附件时随
+// dismissAttachmentLimitToast 一并清掉（先例 osNotification.ts 的 lastFallbackToastId）。
+let lastDuplicateToastId: string | null = null;
 
+// 清掉「附件已满」单槽提示和重复附件的全局警告 toast。
 export function dismissAttachmentLimitToast(): void {
-  if (limitToastId === null) return;
-  useToastStore.getState().removeToast(limitToastId);
-  limitToastId = null;
+  useComposerAttachmentLimitStore.getState().clear();
+  if (lastDuplicateToastId !== null) {
+    useToastStore.getState().removeToast(lastDuplicateToastId);
+    lastDuplicateToastId = null;
+  }
 }
 
 export function notifyAttachmentMerge(
@@ -22,22 +26,20 @@ export function notifyAttachmentMerge(
   copy: AttachmentMergeCopy,
 ): void {
   if (result.skippedCount > 0) {
+    if (lastDuplicateToastId !== null) useToastStore.getState().removeToast(lastDuplicateToastId);
     const duplicateName = result.duplicates[0]?.incoming.name ?? '';
     const template = result.skippedCount > 1 ? copy.attachmentAlreadyAddedMany : copy.attachmentAlreadyAdded;
-    toast.show(
+    lastDuplicateToastId = toast.show(
       'warning',
       template.replace('{name}', duplicateName).replace('{count}', String(result.skippedCount)),
     );
   }
   if (result.overflowCount > 0) {
-    const template = result.addedCount > 0 ? copy.attachmentLimitReached : copy.attachmentLimitReachedNone;
-    dismissAttachmentLimitToast();
-    limitToastId = toast.show(
-      'warning',
-      template
-        .replace('{added}', String(result.addedCount))
-        .replace('{dropped}', String(result.overflowCount))
-        .replace('{max}', String(result.cap)),
-    );
+    useComposerAttachmentLimitStore.getState().show({
+      added: result.addedCount,
+      dropped: result.overflowCount,
+      max: result.cap,
+      kind: result.addedCount > 0 ? 'partial' : 'none',
+    });
   }
 }

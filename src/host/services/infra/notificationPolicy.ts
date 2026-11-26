@@ -1,3 +1,4 @@
+import { stripModelMarkup } from '../../../shared/modelMarkupStrip';
 import { humanizeInternalText } from '../../../shared/humanizeInternalText';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 // ============================================================================
@@ -57,7 +58,7 @@ function stripMarkdownForBanner(text: string): string {
 export function sanitizeNotificationText(value: unknown, maxLength = 240, options: { omitIds?: boolean } = {}): string {
   const language = readUiLanguage();
   // Resolve internal names before Markdown can remove double underscores from tool ids.
-  const plain = stripMarkdownForBanner(humanizeInternalText(String(value ?? ''), language, options).text);
+  const plain = stripMarkdownForBanner(humanizeInternalText(stripModelMarkup(String(value ?? '')), language, options).text);
   const full = scrubUserFacingText(plain, {
     surface: 'desktop_notification',
     maxLength: Math.max(maxLength * 4, 1000),

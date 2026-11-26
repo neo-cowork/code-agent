@@ -1,10 +1,18 @@
 import { readableBrowserPage, browserPageFromOutput } from '../../agent/subagentStepCapConclusion';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
+import { collectDeliverableFileArtifacts } from '../../tools/artifacts/collectDeliverableFileArtifacts';
+import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../../session/approvedRmSettlementTargets';
+import { settleBackgroundOnTaskComplete } from '../../task/backgroundTaskTerminal';
+import { resolveBackgroundRunSettlement } from '../../session/backgroundRunSettlement';
+import { backgroundChildAdmitted, backgroundChildSettled } from '../../session/backgroundSettlementHold';
+import { notificationService } from '../infra/notificationService';
+import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
+import { getDeleteIncompleteText } from '../../../shared/i18n/deleteIncomplete';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
-import type { ToolResult } from '../../../shared/contract/tool';
+import type { ToolCall, ToolResult } from '../../../shared/contract/tool';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { AgentRunOptions } from '../../research/types';
@@ -39,13 +47,15 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
-  composeSessionCommandTaskResultText,
+  composeSessionCommandTaskDisplayText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
+import { composeTaskResultForModel } from './taskResultHandback';
+import { appendBashStep, bashStepFromProgress, withToolCallOutcome } from '../../agent/bashStepOutcome';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -70,10 +80,13 @@ export interface SessionCommandTask {
   createdAt: number;
   updatedAt: number;
   detail?: string;
+  leftoverPaths?: string[];
   summary?: string;
   /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
   resultText?: string;
   stopped?: { content: string; kind: 'step_cap' | 'no_conclusion' | 'error' };
+  /** 这个任务自己的工具调用确认产出的文件交付物（按 taskId 归属的 tool_call_end 累积，终态写进 [任务结果]）。 */
+  deliverableArtifacts?: NormalizedToolArtifactMeta[];
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -270,6 +283,7 @@ export class SessionCommandCenter {
       toolCallId: input.toolCallId,
     };
     this.tasks(input.sessionId).set(id, task);
+    backgroundChildAdmitted(task);
     this.projectTask(task);
     if (admission.outcome === 'started') this.launch(task);
     return { outcome: admission.outcome, task: { ...task } };
@@ -543,6 +557,7 @@ export class SessionCommandCenter {
       taskId?: unknown;
       error?: unknown;
       conclusion?: unknown;
+      detail?: unknown;
       artifacts?: unknown;
     } | undefined;
     const id = typeof data?.taskId === 'string' ? data.taskId : undefined;
@@ -580,7 +595,8 @@ export class SessionCommandCenter {
           : {}),
       });
       if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
-      await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined);
+      await this.settle(task, stopped.status, stopped.detail, stopped.status === 'completed' ? artifacts : undefined,
+        stopped.kind !== 'step_cap');
       return;
     }
     if (event.type === 'task_error') {
@@ -596,7 +612,7 @@ export class SessionCommandCenter {
       return;
     }
     if (event.type === 'task_cancelled') {
-      await this.settle(task, 'cancelled', '任务已取消。');
+      await this.settle(task, 'cancelled', typeof data?.detail === 'string' ? data.detail : '任务已取消。');
     }
   }
 
@@ -615,9 +631,7 @@ export class SessionCommandCenter {
       ? (event.data as ToolProgressData | undefined)?.inactiveMs
       : undefined;
     if (typeof heartbeatInactiveMs === 'number' && Number.isFinite(heartbeatInactiveMs)) {
-      if (!this.taskAwaitsApproval(taskId)) {
-        this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
-      }
+      if (!this.taskAwaitsApproval(taskId)) this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
     } else {
       this.ledger(sessionId).touch(taskId);
     }
@@ -626,15 +640,21 @@ export class SessionCommandCenter {
       this.stepCapHitTasks.add(taskId);
     }
 
-    // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
-    // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
+    // Keep the tool name for tool_call_end and publish the disclosure before approval.
     if (event.type === 'tool_call_start') {
-      const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
+      const call = event.data as Partial<ToolCall> | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
-        const url = (call.arguments as { url?: unknown } | undefined)?.url;
+        const disclosure = call.guiTakeoverDisclosure;
+        const guiDisclosures = task.progress?.guiDisclosures ?? [];
+        if (disclosure?.code === 'gui_takeover' && !guiDisclosures.some((entry) => entry.callId === call.id)) {
+          task.progress = { ...task.progress, guiDisclosures: [...guiDisclosures, { app: disclosure.app, callId: call.id }] };
+          task.updatedAt = Date.now();
+          this.projectTask(task);
+        }
+        const url = call.arguments?.url;
         if (typeof url === 'string' && url && url !== 'about:blank') this.lastUrlByTask.set(taskId, readableBrowserPage(url));
-        const command = (call.arguments as { command?: unknown } | undefined)?.command;
+        const command = call.arguments?.command;
         if (/bash|shell/i.test(call.name) && typeof command === 'string') {
           this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
         }
@@ -648,6 +668,11 @@ export class SessionCommandCenter {
         const page = browserPageFromOutput(result.output);
         if (page) this.lastUrlByTask.set(taskId, page);
       }
+      const produced = collectDeliverableFileArtifacts([result]);
+      if (produced.length) {
+        const known = task.deliverableArtifacts ?? [];
+        task.deliverableArtifacts = [...known, ...produced.filter((a) => !known.some((k) => k.path === a.path))];
+      }
       this.applyToolCallEnd(task, result);
       return;
     }
@@ -660,6 +685,9 @@ export class SessionCommandCenter {
       ...task.progress,
       ...(current === undefined ? {} : { current }),
       ...(data.toolTotal === undefined ? {} : { total: data.toolTotal }),
+      ...(data.tool === 'Bash' || data.tool === 'bash'
+        ? { bashSteps: appendBashStep(task.progress?.bashSteps, bashStepFromProgress(data)) }
+        : {}),
       ...(data.progress === undefined ? {} : { percent: data.progress }),
       ...(data.step ? { label: data.step } : {}),
       lastToolStep: {
@@ -667,6 +695,9 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        ...(data.action ? { action: data.action } : {}),
+        ...(data.description ? { description: data.description } : {}),
+        ...(data.toolCallId ? { callId: data.toolCallId } : {}),
         at: Date.now(),
       },
     };
@@ -701,8 +732,13 @@ export class SessionCommandCenter {
       return;
     }
 
+    task.progress = { ...withToolCallOutcome(task.progress, result), failedToolCalls: (task.progress?.failedToolCalls ?? 0) + 1 };
+    task.updatedAt = Date.now();
     const code = result.metadata?.code;
-    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) return;
+    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) {
+      this.projectTask(task);
+      return;
+    }
     const alternatives = result.metadata?.alternatives;
     task.progress = {
       ...task.progress,
@@ -815,9 +851,21 @@ export class SessionCommandCenter {
     status: TerminalTaskStatus,
     detail?: string,
     artifacts?: NormalizedToolArtifactMeta[],
+    checkDelete = status === 'completed',
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
-    if (status === 'failed' && !task.stopped) {
+    const trackedDelete = hasApprovedRmSettlementTargets(task.sessionId, task.id);
+    const leftoverPaths = takeApprovedRmLeftovers(task.sessionId, task.id, 'delegated', checkDelete);
+    const settlement = resolveBackgroundRunSettlement({ status: 'completed', leftoverPaths });
+    if (settlement.leftoverPaths) {
+      status = 'failed';
+      task.leftoverPaths = settlement.leftoverPaths;
+      task.deliverableArtifacts = undefined;
+      task.stopped = undefined;
+      detail = getDeleteIncompleteText(resolveSessionTaskResultLocale()).reason;
+      logger.warn('Background task failed', { sessionId: task.sessionId, runId: task.id, error: settlement.message });
+    }
+    if (status === 'failed' && !task.stopped && !task.leftoverPaths) {
       const stopped = resolveStoppedTaskOutcome({ status: 'failed', detail, lastUrl: this.lastUrlByTask.get(task.id) });
       task.stopped = { content: stopped.notice ?? stopped.detail, kind: stopped.kind ?? 'error' };
     }
@@ -833,9 +881,18 @@ export class SessionCommandCenter {
     );
     // 模型侧文本与 UI/账本 summary 分家：240 字硬切会截断 SSRF 拒绝提示里的
     // 「改走 Bash curl 审批」整句，前台拿不到可执行的下一步（FB-577）。
-    task.resultText = composeSessionCommandTaskResultText(detail);
+    task.resultText = composeTaskResultForModel(task, detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
+    if (task.leftoverPaths) {
+      notificationService.notifyTaskComplete({
+        sessionId: task.sessionId,
+        sessionTitle: task.title,
+        toolsUsed: [],
+        succeeded: false,
+        code: BACKGROUND_TASK_DELETE_INCOMPLETE,
+      }, { force: true });
+    }
     if (status === 'completed' && artifacts?.length) {
       try {
         this.projectOutputRefs(task, artifacts);
@@ -847,18 +904,25 @@ export class SessionCommandCenter {
       }
     }
 
-    // 账本落终态必须**先于**下面那个 await：task.status 在上面已经同步变成 failed 且投影出去了，
-    // 而账本要等投影 Promise 落地才记终态。中间这段窗口里，前台从 task_status 已经看得到
-    // failed，立刻用同一 submissionKey 重试——账本里那个 slot 还是 running，admit() 返回
-    // reused，重试静默失效。正是这条改动要消灭的形态，只是窗口更窄。
+    // Settle the slot synchronously so a retry cannot reuse an already terminal task.
+    // Only then release any waiting parent.
     const startable = this.ledger(task.sessionId).settle(task.id, status);
+    if (!backgroundChildSettled(task) && trackedDelete && status === 'completed') {
+      void settleBackgroundOnTaskComplete(task.sessionId, task.id, {}, () => (
+        this.manager.getSessionState(task.sessionId).status === 'running' || this.manager.hasActivePrimaryRun(task.sessionId)
+      )).catch((error: unknown) => {
+        logger.warn('Unable to send completion notice', { taskId: task.id, message: String(error) });
+      });
+    }
 
     // 投影与唤醒各用各的 try：投影失败（登录恢复窗口里 addMessageToSession 抛
     // Session not found）绝不能把唤醒一起跳过——旧代码两者同一个 try，一抛就只剩
     // 一行 warn，结果行/唤醒/失败句全丢。settle 也只等投影的首次尝试，重试全部
     // 离线进行，不推迟下面 startable 的下一轮 launch。
+    let terminalResultDelivered = false;
     try {
       await this.projectTerminalResult(task, status);
+      terminalResultDelivered = true;
       clearSessionCommandTaskMarker(task.id);
     } catch (error) {
       logger.warn('Failed to project text command task result', {
@@ -885,12 +949,20 @@ export class SessionCommandCenter {
         clearSessionCommandTaskMarker(task.id);
       }
     }
-    void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
-      logger.warn('Failed to wake text foreground brain after task settlement', {
-        taskId: task.id,
-        message: error instanceof Error ? error.message : String(error),
+    if (task.leftoverPaths) {
+      // The plain result and failure notification already report the outcome. A wake
+      // turn would also emit a generic completion notification for the same session.
+      logger.info('foreground_wake_skipped_delete_incomplete', { taskId: task.id });
+    } else if (terminalResultDelivered && (task.stopped?.kind === 'step_cap' || task.stopped?.kind === 'no_conclusion')) {
+      logger.info('foreground_wake_skipped_stop_note_delivered', { taskId: task.id, kind: task.stopped.kind });
+    } else {
+      void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
+        logger.warn('Failed to wake text foreground brain after task settlement', {
+          taskId: task.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+    }
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);
@@ -916,8 +988,9 @@ export class SessionCommandCenter {
         startedAt: task.status === 'running' ? task.updatedAt : undefined,
         completedAt: TERMINAL.has(task.status) ? task.updatedAt : undefined,
         progress: task.progress,
+        ...(task.leftoverPaths ? { leftoverPaths: task.leftoverPaths } : {}),
         ...(task.status === 'failed' && task.detail
-          ? { failure: { message: task.detail, reason: 'session_command_task_failed' } }
+          ? { failure: { message: task.detail, reason: task.leftoverPaths ? BACKGROUND_TASK_DELETE_INCOMPLETE : 'session_command_task_failed' } }
           : {}),
         metadata: {
           shortName: task.shortName,
@@ -927,6 +1000,9 @@ export class SessionCommandCenter {
           retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
+          ...(TERMINAL.has(task.status) && task.detail
+            ? { resultMarkdown: composeSessionCommandTaskDisplayText(task.detail) }
+            : {}),
         },
       });
     } catch (error) {

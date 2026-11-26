@@ -1,7 +1,9 @@
 import {
   BACKGROUND_HANDOFF_GUIDANCE, BACKGROUND_HANDOFF_PENDING_REPLY, BACKGROUND_HANDOFF_PENDING_REPLY_EN,
+  BACKGROUND_HANDOFF_SENTENCE, BACKGROUND_HANDOFF_SENTENCE_EN,
   OUT_OF_SCOPE_REPLY, OUT_OF_SCOPE_REPLY_EN,
 } from '../../services/commandCenter/delegationGuidance';
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { resolveTurnToolFace } from './turnToolFace';
@@ -89,8 +91,14 @@ function runtimeToolPolicy(ctx: RuntimeContext): RunToolPolicy {
   };
 }
 
-function canHandOffToBackground(ctx: RuntimeContext): boolean {
+export function canHandOffToBackground(ctx: RuntimeContext): boolean {
   return ctx.foregroundToolFace === true && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task');
+}
+
+/** The one sentence the user sees after a same-turn handoff. Names no tool. */
+export function backgroundHandoffUserSentence(ctx: RuntimeContext): string {
+  const zh = (detectMessageLanguage(ctx.turn?.runUserPrompt ?? '') ?? readUiLanguage()) === 'zh';
+  return zh ? BACKGROUND_HANDOFF_SENTENCE : BACKGROUND_HANDOFF_SENTENCE_EN;
 }
 
 /** User-visible last word once denied calls exhaust the retries: names no tool, grants none. */
@@ -106,7 +114,7 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   if (canHandOffToBackground(ctx)) return BACKGROUND_HANDOFF_GUIDANCE;
-  return getInabilityReplyGuidance(currentTurnUserPrompt(ctx)) + '\n' + (askDenied
+  return getInabilityReplyGuidance(ctx.turn?.runUserPrompt ? inabilityGatePrompt(ctx) : currentTurnUserPrompt(ctx)) + '\n' + (askDenied
     ? 'If user input is needed, state the missing input in your final text instead of calling an interactive tool.'
     : 'AskUserQuestion remains available; call it directly when the current task requires user input.');
 }

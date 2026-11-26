@@ -34,7 +34,7 @@ function runFixture(count: number, failing = false, dirOf: (index: number) => st
     for (const name of ['check-provider-symmetry.sh', 'check-prompt-version-bump.sh', 'check-hardcoded-models.sh']) {
       write(`scripts/${name}`, 'exit 0\n');
     }
-    for (const name of ['shell-fail-loud-lint.mjs', 'tsc-tests-ratchet.mjs', 'ci/check-casebank-answers.mjs', 'ci/shared-host-boundary.mjs', 'ci/user-visible-leak.mjs']) {
+    for (const name of ['shell-fail-loud-lint.mjs', 'tsc-tests-ratchet.mjs', 'ci/check-casebank-answers.mjs', 'ci/shared-host-boundary.mjs', 'ci/user-visible-leak.mjs', 'ci/check-no-direct-app-exec.mjs']) {
       write(`scripts/${name}`, name === 'tsc-tests-ratchet.mjs' && opts.ratchet ? opts.ratchet : 'process.exit(0);\n');
     }
     // commit-checks runs ESLint too, using a fixture config without repo rules.

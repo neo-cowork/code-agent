@@ -99,25 +99,30 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector?: (state: typeof storeState) => unknown) => (
-    selector ? selector(storeState) : storeState
+  useAppStore: Object.assign(
+    (selector?: (state: typeof storeState) => unknown) => (selector ? selector(storeState) : storeState),
+    { getState: () => storeState },
   ),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: Object.assign(
-    (selector: (state: { currentSessionId: string | null; messages: Message[] }) => unknown) => (
-      selector({ currentSessionId: currentSession.id, messages: [] })
+    (selector: (state: { currentSessionId: string | null; messages: Message[]; sessions: never[] }) => unknown) => (
+      selector({ currentSessionId: currentSession.id, messages: [], sessions: [] })
     ),
-    { getState: () => ({ currentSessionId: currentSession.id, messages: [] }) },
+    { getState: () => ({ currentSessionId: currentSession.id, messages: [], sessions: [] }) },
   ),
 }));
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({
   usePermissionStore: () => ({ checkMemory: () => null, saveMemory: vi.fn() }),
 }));
+// 代理行成员数据会顺带读一次 swarm 账本（与审批无关），不计入审批 invoke 的调用断言
+const approvalInvoke = vi.hoisted(() => (channel: string, ...args: unknown[]) => (
+  channel === 'swarm:list-trace-runs' ? Promise.resolve([]) : invoke(channel, ...args)
+));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { isAvailable: () => true, invoke },
+  default: { isAvailable: () => true, invoke: approvalInvoke },
   ipcService: {
-    invoke,
+    invoke: approvalInvoke,
     on: (_channel: string, callback: (payload: unknown) => void) => {
       stallListeners.add(callback);
       return () => { stallListeners.delete(callback); };
@@ -172,7 +177,7 @@ describe('DecisionSlot', () => {
     expect(workflow).toBeGreaterThan(slot);
     expect(traceSource).not.toContain('PermissionCard');
     expect(traceSource).not.toContain('resolvedPermissionRequests');
-    expect(traceSource).toContain('<div className="h-6" aria-hidden="true" />');
+    expect(traceSource).toContain('calc(1.5rem + var(--toast-reserve, 0px))');
   });
 
   it('三张请求只展示危险卡，卡头显示剩余两项，并按展示请求 id 裁决', async () => {
@@ -188,10 +193,10 @@ describe('DecisionSlot', () => {
     expect(slot.getAttribute('aria-label')).toBe('待你决定');
     expect(slot.className).toContain('chat-col-pad');
     expect(slot.className).not.toContain('overflow-y-auto');
-    expect(screen.getByText('执行命令')).toBeTruthy();
+    expect(screen.getByText('运行命令')).toBeTruthy();
     expect(screen.getAllByText('危险')).toHaveLength(1);
     expect(screen.getByText('还有 2 项')).toBeTruthy();
-    expect(screen.queryByText('创建文件')).toBeNull();
+    expect(screen.queryByText('写入文件')).toBeNull();
     expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
     expect(screen.getByTestId('permission-card-pinned-options').className).toContain('shrink-0');
     expect(screen.queryByTestId('permission-card-actions')).toBeNull();
@@ -230,7 +235,7 @@ describe('DecisionSlot', () => {
 
     expect(screen.getByText('发送邮件')).toBeTruthy();
     expect(screen.getByText('还有 2 项')).toBeTruthy();
-    expect(screen.queryByText('创建文件')).toBeNull();
+    expect(screen.queryByText('写入文件')).toBeNull();
   });
 
   it('常规权限卡默认高亮主按钮，Enter = 允许一次', async () => {
@@ -542,6 +547,18 @@ describe('DecisionSlot', () => {
     expect(effectStart).toBeGreaterThan(signalStart);
     expect(activitySignal).not.toMatch(/PermissionRequest|queuedPermissionRequests/u);
     expect(appSource).toContain('syncTaskWorkbenchForActivity(currentSessionId, taskWorkbenchActivityKey)');
+  });
+
+  it('只有提问卡时数字键选中第二项', () => {
+    render(<DecisionSlot userQuestion={userQuestion} />);
+
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+    expect(screen.queryByTestId('permission-card')).toBeNull();
+    expect(screen.queryByTestId('plan-approval-card')).toBeNull();
+    expect(screen.getByTestId('user-question-key-hint').textContent).toContain('1-3');
+
+    fireEvent.keyDown(window, { key: '2' });
+    expect(screen.getByRole('button', { name: /方案 B/ }).className).toContain('ring-1');
   });
 
   it('提问卡和计划卡进入同一槽位：提问优先，Esc 迷你条汇总数量且保留已选状态', () => {

@@ -21,6 +21,10 @@ function isImageAttachment(attachment: MessageAttachment): boolean {
   return attachment.category === 'image' || attachment.type === 'image';
 }
 
+export function isImageAttachmentMissingData(attachment: MessageAttachment): boolean {
+  return isImageAttachment(attachment) && !attachment.data && !attachment.path;
+}
+
 function isMediaAttachment(attachment: MessageAttachment): boolean {
   return (
     isImageAttachment(attachment)

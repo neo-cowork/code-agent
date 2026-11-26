@@ -4,6 +4,7 @@ import type { MessageAttachment } from '../../../../../shared/contract';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { consumeComposerDraftHold } from './composerDraftStore';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
+import { dismissAttachmentLimitToast } from './attachmentMergeToast';
 
 interface ChatInputSessionScope {
   currentSessionId: string | null;
@@ -47,6 +48,7 @@ export function useChatInputSessionScope(
     if (!consumeComposerDraftHold()) setValue('');
     setAttachments([]);
     useComposerRejectedUploadsStore.getState().clear();
+    dismissAttachmentLimitToast();
     onSessionDraftReset?.();
   }, [currentSessionId, setValue, setAttachments, onSessionDraftReset]);
 

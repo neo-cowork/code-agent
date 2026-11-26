@@ -8,6 +8,8 @@ import { getSettingsVocabulary } from './settingsVocabulary';
 const v = getSettingsVocabulary('zh');
 
 export const zhSettingsCore = {
+    pageLoadFailed: '这个设置页面暂时无法打开。',
+    reloadPage: '重新载入',
     tabs: {
       general: '权限与安全',
       model: '通用模型',
@@ -209,6 +211,8 @@ export const zhSettingsCore = {
         unknownDescription: '可到系统设置确认通知是否已开启。',
         openSettings: '打开系统设置',
         openSettingsFailed: '无法打开系统设置，请手动打开“通知”。',
+        deniedNotice: '系统通知已被关闭，任务提醒不会弹出',
+        deniedNoticeAction: '去开启',
       },
       permissions: {
         readOnlyLookups: {

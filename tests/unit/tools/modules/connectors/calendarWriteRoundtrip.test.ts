@@ -13,6 +13,7 @@ const { fake } = await vi.hoisted(async () => ({ fake: (await import('../../../c
 vi.mock('../../../../../src/host/permissions/envAssist/shellBridge/client', async (orig) => ({
   ...(await orig<object>()), resolveShellBridgeClientFromEnv: () => fake.client,
 }));
+vi.mock('../../../../../src/host/config/hostUiLocale', () => ({ getHostUiLocale: vi.fn() }));
 const store = vi.hoisted(() => ({ messages: [] as Message[], updates: [] as Array<{ id: string; updates: Partial<Message> }> }));
 vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
@@ -29,6 +30,7 @@ vi.mock('../../../../../src/host/connectors', async (orig) => {
   return { ...(await orig<object>()), getConnectorRegistry: () => ({ get: (id: string) => (id === 'calendar' ? calendarConnector : undefined) }) };
 });
 
+import { getHostUiLocale } from '../../../../../src/host/config/hostUiLocale';
 import { calendarConnector, resetCalendarConnectorReadiness } from '../../../../../src/host/connectors/native/calendar';
 import { calendarCreateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarCreateEvent';
 import { calendarUpdateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarUpdateEvent';
@@ -50,6 +52,7 @@ const run = async (mod: { createHandler(): unknown }, args: Record<string, unkno
 const uidIn = (output: string | undefined) => /uid: (\S+)/.exec(output ?? '')?.[1];
 
 beforeEach(() => {
+  vi.mocked(getHostUiLocale).mockReturnValue('zh');
   fake.reset();
   fake.state.calendars = [{ id: 'cal-id-8012', title: '日历', writable: true, isDefault: true }];
   resetCalendarConnectorReadiness();
@@ -76,6 +79,27 @@ describe('calendar write round trip (EventKit)', () => {
     const deleted = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: uid });
     expect(deleted.ok).toBe(true);
     expect(fake.state.items).toEqual([]);
+  });
+
+  it('keeps pre-write errors actionable without claiming that Calendar might have saved the event', async () => {
+    vi.mocked(getHostUiLocale).mockReturnValue('en');
+    fake.state.calendars = [{ id: 'cal-work', title: 'Work', writable: true }];
+    const handler = await calendarCreateEventModule.createHandler();
+
+    const missing = await handler.execute({ calendar: 'Personal', title: 'Review', start_ms: HOUR }, ctx(), allow);
+    expect(missing).toMatchObject({
+      ok: false,
+      error: 'Calendar create failed: No calendar named "Personal". Available calendars: Work. Omit calendar to use the first writable calendar.',
+      userMessage: 'The specified calendar could not be found. Available calendars: Work',
+    });
+
+    const inverted = await handler.execute({ title: 'Review', start_ms: 2 * HOUR, end_ms: HOUR }, ctx(), allow);
+    expect(inverted).toMatchObject({
+      ok: false,
+      error: 'Calendar create failed: end_ms must be greater than or equal to start_ms',
+      userMessage: 'The end time cannot be earlier than the start time.',
+    });
+    expect(fake.state.calls.some(({ path }) => path === '/v1/write/calendar-event')).toBe(false);
   });
 
   it('② one approval only: the card details come from the pre-execution approval; the handler asks with the exact model args (so the top-level grant short-circuits)', async () => {
@@ -113,11 +137,11 @@ describe('calendar write round trip (EventKit)', () => {
     expect(fake.state.calls.at(-1)).toMatchObject({ path: '/v1/read/calendar-event', body: { eventId: args.event_uid } });
   });
 
-  it('start-only updates retain a feasible old end, but never project an end earlier than the proposed start', async () => {
+  it('start-only updates never project the old end (the end moves with the start), whether the start moves earlier or later', async () => {
     fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼' });
     const earlier = Object.freeze({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 0 });
     expect(await calendarApprovalDetails('calendar_update_event', earlier)).toEqual({
-      title: '评审', end_ms: 2 * HOUR, location: '三楼', calendarApprovalSnapshotFields: ['title', 'end_ms', 'location'],
+      title: '评审', location: '三楼', calendarApprovalSnapshotFields: ['title', 'location'],
     });
     const later = Object.freeze({ ...earlier, start_ms: 3 * HOUR });
     expect(await calendarApprovalDetails('calendar_update_event', later)).toEqual({
@@ -157,9 +181,10 @@ describe('calendar write round trip (EventKit)', () => {
     }
   });
 
-  it('a failed get_event leaves update approval usable and does not request native permission', async () => {
+  it('a not_found get_event propagates (no card); not_authorized still leaves approval usable and requests no native permission', async () => {
     const args = Object.freeze({ calendar: '日历', event_uid: 'missing', start_ms: 3 * HOUR });
-    expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({});
+    await expect(calendarApprovalDetails('calendar_update_event', args)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(calendarApprovalDetails('calendar_delete_event', args)).rejects.toMatchObject({ code: 'not_found' });
     fake.state.status = 2;
     expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({});
     expect(args).toEqual({ calendar: '日历', event_uid: 'missing', start_ms: 3 * HOUR });

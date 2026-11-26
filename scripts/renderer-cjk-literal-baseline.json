@@ -183,7 +183,10 @@
     "src/shared/contract/roleToolAbility.ts": 17,
     "src/shared/contract/sessionFork.ts": 2,
     "src/shared/contract/sessionForkPortability.ts": 2,
-    "src/shared/contract/sessionWorkspace.ts": 22,
+    "src/shared/contract/sessionWorkspace.ts": {
+      "count": 23,
+      "reason": "FB-2291 r1：summary/labels 的 MCP server slug 换人话（cua-driver→电脑操作），与文件内既有 zh 展示字面量（工作区/连接器/技能）同一口径，展示字段非协议键"
+    },
     "src/shared/contract/teamRecipe.ts": 11,
     "src/shared/contract/voiceTranscription.ts": 34,
     "src/shared/contract/workbenchTools.ts": 12,

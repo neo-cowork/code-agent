@@ -320,7 +320,7 @@ describe('useSidebarDerivedSessions search results', () => {
     expect(calls[0][1].options).not.toHaveProperty('sessionIds');
   });
 
-  it('keeps the id restriction in current-project scope and ignores remote hits', async () => {
+  it('sends a projectScope (no sessionIds) in current-project scope and lists host hits outside the loaded window', async () => {
     ipc.invoke.mockImplementation(async (channel: string) => {
       if (channel !== IPC_CHANNELS.SESSION_SEARCH) return {};
       return searchResponse({
@@ -340,10 +340,14 @@ describe('useSidebarDerivedSessions search results', () => {
     await waitFor(() => {
       expect(ipc.invoke).toHaveBeenCalledWith(IPC_CHANNELS.SESSION_SEARCH, {
         query: 'needle',
-        options: { limit: 80, sessionIds: ['message-hit', 'metadata-hit'] },
+        options: { limit: 80, projectScope: { projectId: 'project-1' } },
       });
     });
-    expect(screen.getByTestId('ids').textContent).not.toContain('old-session');
+    await waitFor(() => {
+      expect(screen.getByTestId('ids').textContent).toContain('old-session');
+    });
+    const scoped = ipc.invoke.mock.calls.filter(([channel]) => channel === IPC_CHANNELS.SESSION_SEARCH);
+    expect(scoped[scoped.length - 1][1].options).not.toHaveProperty('sessionIds');
   });
 
   it('shows the failed copy instead of the no-signal copy when the search request rejects', async () => {

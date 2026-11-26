@@ -7,3 +7,9 @@ export const CHOOSE_FOLDER_ENTRY_LABEL: Readonly<Record<'zh' | 'en', string>> = 
   zh: '选择文件夹',
   en: 'Choose folder',
 };
+
+export function getInitMemoryNoFolderHint(locale: 'zh' | 'en'): string {
+  return locale === 'en'
+    ? `No folder has been chosen yet; click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" in the sidebar, then send /init-memory again.`
+    : `尚未选择文件夹，请在侧栏点击“${CHOOSE_FOLDER_ENTRY_LABEL.zh}”，然后再次发送 /init-memory。`;
+}

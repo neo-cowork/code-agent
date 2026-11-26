@@ -1,3 +1,4 @@
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { localizeCronSessionTitle, parseCronSessionTitle } from '@shared/cronSessionTitle';
 import type { SessionStatus } from '@shared/contract/session';
@@ -91,7 +92,9 @@ function localizeRoleChatSessionTitle(title: string, language: Language): string
 
 export function getDisplaySessionTitle(title: string | null | undefined, language: Language): string {
   const cleanTitle = humanizeInternalText(title ?? '', language, { omitIds: true }).text;
-  return localizeDisplaySessionTitle(cleanTitle, language);
+  // Expert threads are titled with the roleId; show the localized nickname. Display only: never write this back.
+  const roleTitle = cleanTitle.trim();
+  return localizeDisplaySessionTitle(localizeBuiltinRole(roleTitle, { name: roleTitle }, language).name, language);
 }
 
 function localizeDisplaySessionTitle(title: string, language: Language): string {
@@ -101,7 +104,7 @@ function localizeDisplaySessionTitle(title: string, language: Language): string 
   const stripped = stripAppshotBlocks(rawTitle);
   if (stripped && !stripped.trim().startsWith('<appshot')) {
     // [Channel] 档沿用 #3218 的渲染（本地化渠道前缀 + 剥离尾部群聊 UUID）；
-    // Schedule/Heartbeat/Cron 走共享 localizer（本单 option A：zh `[定时] `、en `[Schedule] `）。
+    // Schedule/Heartbeat/Cron 走共享 localizer。
     const channelMatch = /^\[Channel\]\s*(.*)$/i.exec(stripped);
     if (channelMatch) {
       const t = languages[language];
@@ -210,6 +213,9 @@ export function getSessionStatusPresentation(args: {
   }
   if (sessionStatus === 'completed') {
     return PRESENTATION.done;
+  }
+  if (sessionStatus === 'cancelled') {
+    return PRESENTATION.idle;
   }
 
   // P3: messageCount fallback for sessions without explicit status

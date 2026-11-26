@@ -166,6 +166,13 @@ describe('automation titles stay localized at display time', () => {
     expect(getDisplaySessionTitle('[Channel] Work · EngineeringCommunicationChannel', 'en')).toBe('Channel · Work · EngineeringCommunicationChannel');
     expect(getDisplaySessionTitle('Ordinary · title', 'zh')).toBe('Ordinary · title');
   });
+
+  it('displays legacy and new /init-memory titles unchanged without migrating stored text', () => {
+    expect(getLocalizedSessionTitle('初始化项目记忆 · 家庭账本项目', 'zh')).toBe('初始化项目记忆 · 家庭账本项目');
+    expect(getLocalizedSessionTitle('初始化项目记忆 · 家庭账本项目', 'en')).toBe('初始化项目记忆 · 家庭账本项目');
+    expect(getLocalizedSessionTitle('家庭账本项目 · 初始化项目记忆', 'zh')).toBe('家庭账本项目 · 初始化项目记忆');
+    expect(getLocalizedSessionTitle('Family Ledger · Set up project memory', 'en')).toBe('Family Ledger · Set up project memory');
+  });
 });
 
 describe('automatic-session run titles', () => {

@@ -23,6 +23,7 @@ import type {
   SidebarProjectMeta,
 } from '../../../utils/sidebarProjectSummary';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import type { Translations } from '../../../i18n';
 import ipcService from '../../../services/ipcService';
 import {
@@ -32,6 +33,7 @@ import {
   renameProject,
   setProjectStatus,
 } from '../../../services/projectClient';
+import { projectArtifactKindLabel } from '../../../utils/projectArtifactKind';
 
 export interface SidebarProjectDetailProps {
   projectId?: string;
@@ -67,18 +69,6 @@ function getGoalStatusLabel(status: SidebarProjectGoalMeta['status'], t: Transla
   }
 }
 
-function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Translations): string {
-  const k = t.sidebarProject.artifactKind;
-  switch (kind) {
-    case 'process-output':
-      return k.processOutput;
-    case 'process-log':
-      return k.processLog;
-    default:
-      return k[kind] ?? kind;
-  }
-}
-
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
   if (status === 'met') return <CheckCircle2 className="h-3 w-3 text-badge-success" />;
   if (status === 'aborted') return <XCircle className="h-3 w-3 text-badge-danger" />;
@@ -99,7 +89,7 @@ function getGoalCounts(goals: SidebarProjectGoalMeta[] | undefined): Record<Side
 }
 
 function formatRecentArtifactLine(artifact: SidebarProjectArtifactMeta, t: Translations, language: 'zh' | 'en'): string {
-  const parts = [getArtifactKindLabel(artifact.kind, t)];
+  const parts = [projectArtifactKindLabel(artifact.kind, t.sidebarProject.artifactKind)];
   if (artifact.toolName?.trim()) {
     parts.push(artifact.toolName.trim());
   }
@@ -118,6 +108,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
   onMetaChange,
 }) => {
   const { t, language } = useI18n();
+  const localizeRole = useLocalizeRole();
   const p = t.sidebarProject;
   const sessionCount = meta?.sessionCount ?? fallbackSessionCount;
   const goalFallback = meta ? p.goalCountFallback.replace('{count}', String(meta.goalCount ?? 0)) : p.detailLoading;
@@ -532,7 +523,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                     className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-zinc-800 disabled:opacity-50"
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] text-zinc-300">{role.roleId}</span>
+                      <span className="block truncate text-[11px] text-zinc-300">{localizeRole(role.roleId, { name: role.roleId }).name}</span>
                       {role.description?.trim() && (
                         <span className="block truncate text-[10px] text-zinc-600">{role.description}</span>
                       )}

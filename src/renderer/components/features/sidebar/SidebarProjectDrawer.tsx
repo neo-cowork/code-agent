@@ -27,7 +27,9 @@ import type {
 import type { ProjectStatus } from '@shared/contract/project';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import type { Language, Translations } from '../../../i18n';
+import { projectArtifactKindLabel } from '../../../utils/projectArtifactKind';
 
 export interface SidebarProjectDrawerSession {
   id: string;
@@ -84,18 +86,6 @@ function getGoalStatusLabel(status: SidebarProjectGoalMeta['status'], t: Transla
   }
 }
 
-function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Translations): string {
-  const k = t.sidebarProject.artifactKind;
-  switch (kind) {
-    case 'process-output':
-      return k.processOutput;
-    case 'process-log':
-      return k.processLog;
-    default:
-      return k[kind] ?? kind;
-  }
-}
-
 function getProjectStatusLabel(status: ProjectStatus, t: Translations): string {
   const p = t.sidebarProject;
   if (status === 'idle') return p.statusIdle;
@@ -119,7 +109,7 @@ function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.Reac
 
 function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translations, language: 'zh' | 'en'): string {
   return [
-    getArtifactKindLabel(artifact.kind, t),
+    projectArtifactKindLabel(artifact.kind, t.sidebarProject.artifactKind),
     artifact.toolName?.trim(),
     artifact.sessionTitle ? getDisplaySessionTitle(artifact.sessionTitle, language) : undefined,
   ].filter(Boolean).join(' · ');
@@ -150,6 +140,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
   onSetProjectStatus,
 }) => {
   const { t, language } = useI18n();
+  const localizeRole = useLocalizeRole();
   const p = t.sidebarProject;
   const [editingProject, setEditingProject] = React.useState(false);
   const [draftName, setDraftName] = React.useState(title);
@@ -548,7 +539,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   <div className="mt-1 flex flex-wrap gap-1">
                     {visibleRoles.map((roleId) => (
                       <span key={roleId} className="rounded border border-zinc-800 bg-zinc-950/50 px-1.5 py-0.5 text-[10px] text-zinc-500">
-                        {roleId}
+                        {localizeRole(roleId, { name: roleId }).name}
                       </span>
                     ))}
                   </div>

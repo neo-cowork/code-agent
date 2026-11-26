@@ -12,6 +12,7 @@ Supported actions:
 - list_events
 
 Use this for local calendar inspection in office workflows.
+For list_events, use from_local / to_local for any user date range. Resolve relative dates using Today's date and Local timezone in <env> (the host-local zone used by Calendar.app). Do not use the UTC date as the local date. Give local timestamps only, not relative-range keywords; never compute epoch milliseconds. The host converts local times, including daylight saving. Legacy from_ms / to_ms remain accepted; when both forms of the same bound are given, the local field wins.
 
 ${CONNECTION_STATE_HONESTY}`,
   outputSchema: { type: 'string' },
@@ -26,6 +27,14 @@ ${CONNECTION_STATE_HONESTY}`,
       calendar: {
         type: 'string',
         description: 'Optional calendar name for list_events.',
+      },
+      from_local: {
+        type: 'string',
+        description: 'Preferred inclusive start for list_events: local wall-clock YYYY-MM-DD HH:mm (24-hour) in the user local timezone shown in <env>, which is the host-local zone used by Calendar.app. Never an epoch, UTC time, or offset-bearing string. Nonexistent DST wall-clock times are rejected. Takes priority over from_ms.',
+      },
+      to_local: {
+        type: 'string',
+        description: 'Preferred inclusive end for list_events, same local wall-clock YYYY-MM-DD HH:mm format as from_local. Takes priority over to_ms.',
       },
       from_ms: {
         type: 'number',

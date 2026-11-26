@@ -12,9 +12,10 @@ import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { isWebMode } from '../../../../utils/platform';
 import { modelKeyOptionLabel } from './modelKeyOptionLabel';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
-import { translateCatalogText } from '../../../../utils/catalogText';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
 // 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
@@ -82,8 +83,8 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     };
   }, [providerConfigs, settings, strategy]);
 
-  const optionLabel = (provider: ModelProvider, label: string) => modelKeyOptionLabel(
-    label, provider, providerConfigs[provider], t.settings.model.header.keyNeededSuffix,
+  const optionLabel = (provider: ModelProvider, modelId: string, label: string) => modelKeyOptionLabel(
+    localizeModelLabel(modelId, label, language), provider, providerConfigs[provider], t.settings.model.header.keyNeededSuffix,
   );
   const memoryRoute = settings?.models.routing.memory;
   const effectiveMemoryRoute = memoryRoute ?? settings?.models.routing.fast;
@@ -177,6 +178,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     });
   };
 
+  const webNote = isWebMode() ? t.settings.webModeBanner.taskStrategyDesktopOnly : undefined;
   const selectedOptionSet = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
   // 记忆整理不自愈（用户显式选过的路由不静默改写），但要说清原因并给一键回到跟随快速模型。
   const memoryRouteUnavailable = Boolean(memoryRoute && !selectedOptionSet.has(optionValue(memoryRoute.provider, memoryRoute.model)));
@@ -197,9 +199,11 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           checked={strategy.mode === 'auto'}
           onChange={(checked) => patchStrategy({ mode: checked ? 'auto' : 'manual' })}
           disabled={disabled}
+          title={webNote}
           aria-label={strategyText.toggleAriaLabel}
         />
       </label>
+      {webNote ? <p className="text-xs text-zinc-500">{webNote}</p> : null}
 
       {strategy.mode === 'auto' && (
         <div className="grid gap-2 sm:grid-cols-2">
@@ -225,14 +229,15 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                     if (parsed) patchProfile(profile, parsed);
                   }}
                   disabled={disabled}
+                  title={webNote}
                   className="w-full"
                 >
-                  {unavailable ? <option value={value}>{optionLabel(slot.provider, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
+                  {unavailable ? <option value={value}>{optionLabel(slot.provider, slot.model, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
                   {groupedOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (
                         <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                          {optionLabel(option.provider, translateCatalogText(option.label, language))}
+                          {optionLabel(option.provider, option.model, option.label)}
                         </option>
                       ))}
                     </optgroup>
@@ -262,20 +267,21 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
               if (parsed) onMemoryRouteChange(parsed);
             }}
             disabled={disabled}
+            title={webNote}
             className="w-full"
             aria-label={strategyText.memory.label}
           >
             <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
             {memoryRoute && memoryRouteUnavailable ? (
               <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
-                {optionLabel(memoryRoute.provider, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
+                {optionLabel(memoryRoute.provider, memoryRoute.model, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
               </option>
             ) : null}
             {groupedOptions.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.options.map((option) => (
                   <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                    {optionLabel(option.provider, translateCatalogText(option.label, language))}
+                    {optionLabel(option.provider, option.model, option.label)}
                   </option>
                 ))}
               </optgroup>
@@ -284,7 +290,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           {memoryRouteUnavailable ? (
             <div data-testid="memory-route-unavailable" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-badge-warning/30 bg-badge-warning px-2.5 py-2">
               <p className="min-w-0 flex-1 text-xs text-badge-warning">{strategyText.memory.unavailableHint}</p>
-              <Button size="sm" variant="secondary" onClick={() => onMemoryRouteChange(null)} disabled={disabled}>
+              <Button size="sm" variant="secondary" onClick={() => onMemoryRouteChange(null)} disabled={disabled} title={webNote}>
                 {strategyText.memory.resetToFollowFast}
               </Button>
             </div>

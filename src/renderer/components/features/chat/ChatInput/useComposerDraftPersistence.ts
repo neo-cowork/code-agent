@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UI } from '@shared/constants';
 import type { MessageAttachment } from '@shared/contract';
 import { mergeAttachments } from './attachmentDedupe';
+import { discardRejectedAttachments } from './attachmentDiscard';
 import {
   COMPOSER_DRAFT_ADOPTED_EVENT,
   COMPOSER_DRAFT_DEBOUNCE_MS,
   COMPOSER_DRAFT_SEND_TIMEOUT_MS,
   composerDraftPreview,
+  clearComposerDraftRoundtrip,
   composerDraftStorageKey,
+  markComposerDraftRoundtrip,
+  peekComposerDraftRoundtripText,
   createComposerDraftWriter,
   hasComposerDraftContent,
   readComposerDraftEntry,
@@ -43,6 +47,15 @@ interface ComposerDraftPersistence {
    * resolves true. false, a throw, and a timeout all leave the stored draft.
    */
   trackSend: (send: () => boolean | Promise<boolean>) => Promise<boolean | 'timeout'>;
+}
+
+/** Initial composer text for a mount that follows an in-app roundtrip (Settings -> back); '' otherwise. */
+export function readComposerRoundtripText(
+  sessionId: string | null,
+  sessionless: boolean,
+  scopeProjectId: string | null,
+): string {
+  return peekComposerDraftRoundtripText(composerDraftStorageKey(sessionId, sessionless, scopeProjectId));
 }
 
 export function useComposerDraftPersistence(args: {
@@ -95,7 +108,19 @@ export function useComposerDraftPersistence(args: {
       },
     });
     writerRef.current = writer;
+    clearComposerDraftRoundtrip(keyRef.current);
     return () => {
+      // Unmount (e.g. the Settings page replaces the chat): write the draft now so
+      // the pending debounce is not lost, and remember the key for the return trip.
+      const unmountKey = keyRef.current;
+      if (wasSuspendedRef.current || !hasComposerDraftContent(valueRef.current, attachmentsRef.current)) {
+        // Empty box: an untouched stored draft must stay for the bar, so only run what was already scheduled.
+        writer.flushPending();
+        clearComposerDraftRoundtrip(unmountKey);
+      } else {
+        writer.flushNow(unmountKey, valueRef.current, () => sendInFlightRef.current, attachmentsRef.current);
+        markComposerDraftRoundtrip(unmountKey);
+      }
       writer.dispose();
       if (writerRef.current === writer) writerRef.current = null;
     };
@@ -216,12 +241,13 @@ export function useComposerDraftPersistence(args: {
       setValue(entry.text);
     }
     if (hasAttachments && setAttachments) {
-      const { attachments: merged } = mergeAttachments(
+      const result = mergeAttachments(
         attachmentsRef.current,
         entry.attachments,
         UI.MAX_ATTACHMENTS,
       );
-      setAttachments(merged);
+      setAttachments(result.attachments);
+      discardRejectedAttachments(result);
     }
   }, [setAttachments, setValue]);
 

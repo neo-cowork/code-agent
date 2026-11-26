@@ -64,6 +64,11 @@ describe('cleanXmlResidues', () => {
       expect(cleanXmlResidues('hello world')).toBe('hello world');
     });
 
+    it('preserves whitespace in ordinary file content and edit anchors', () => {
+      const input = { content: '  - a\n- b\n- c\n', edits: [{ old_text: '  before\n', new_text: '  after\n' }] };
+      expect(cleanXmlResidues(input)).toEqual(input);
+    });
+
     it('should handle empty string', () => {
       expect(cleanXmlResidues('')).toBe('');
     });
@@ -174,6 +179,13 @@ describe('cleanXmlResidues', () => {
     it('should not strip legitimate HTML in tool output', () => {
       const input = '<html><body>content</body></html>';
       expect(cleanXmlResidues(input)).toBe('<html><body>content</body></html>');
+    });
+  });
+
+  describe('identifier trimming stays out of cleanXmlResidues', () => {
+    it('keeps padded path and command values byte-exact (trim happens at the input boundary)', () => {
+      expect(cleanXmlResidues({ file_path: '\n/tmp/a.txt ', command: '  ls\n' }))
+        .toEqual({ file_path: '\n/tmp/a.txt ', command: '  ls\n' });
     });
   });
 });

@@ -32,6 +32,7 @@ export interface ElectronAPI {
   ) => void;
 
   // Electron 33+ 获取文件的本地路径
+  discardUploadedFiles?: (paths: string[]) => Promise<void>;
   getPathForFile: (file: File) => string | Promise<string>;
 
   /** Browser transports only; native bridges retain their real file paths. */
@@ -55,6 +56,8 @@ export interface ElectronAPI {
       rowCount: number;
       /** 缺省即 A1；仅非 A1 used range 才序列化。 */
       rangeStart?: SheetRangeStart;
+      /** The first row of the used range is data. */
+      headerless?: boolean;
     }>;
     sheetCount: number;
   } | null>;

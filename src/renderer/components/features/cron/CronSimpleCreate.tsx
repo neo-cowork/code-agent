@@ -20,11 +20,13 @@ import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
 import { interpolate } from '../../../i18n/interpolate';
 import { useI18n } from '../../../hooks/useI18n';
-import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import { listProjects } from '../../../services/projectClient';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
+import { CronWorkingFolderRow } from './CronWorkingFolderRow';
 import { CronResultChannelField } from './CronResultChannel';
 import { CronRunBudgetField } from './CronRunBudgetField';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
@@ -71,6 +73,24 @@ export function compileSimpleSchedule(input: SimpleScheduleInput): Partial<CronJ
   }
 }
 
+/** compileSimpleSchedule 的逆：只认 `M H * * D`（D = * / 1-5 / 单个 0-6），其余返回 null。 */
+export function decompileSimpleSchedule(
+  expression: string,
+): { freq: 'daily' | 'weekdays' | 'weekly'; time: string; weekday: string } | null {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) return null;
+  const [m, h, dom, mon, dow] = fields;
+  if (!/^\d{1,2}$/.test(m) || !/^\d{1,2}$/.test(h) || dom !== '*' || mon !== '*') return null;
+  const minute = Number(m);
+  const hour = Number(h);
+  if (minute > 59 || hour > 23) return null;
+  const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  if (dow === '*') return { freq: 'daily', time, weekday: '1' };
+  if (dow === '1-5') return { freq: 'weekdays', time, weekday: '1' };
+  if (/^[0-6]$/.test(dow)) return { freq: 'weekly', time, weekday: dow };
+  return null;
+}
+
 /** 目标 + 名称 + 调度 → 完整 draft（agent action，agentType 与 LLM 生成路径同款 "default"） */
 export function buildSimpleDraft(
   goal: string,
@@ -82,6 +102,7 @@ export function buildSimpleDraft(
   resultChannel = '',
   urgencyCriteria = '',
   maxRunBudget = '',
+  metadata?: Record<string, unknown>,
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -95,6 +116,7 @@ export function buildSimpleDraft(
     resultChannel,
     agentUrgencyCriteria: urgencyCriteria,
     maxRunBudget,
+    ...(metadata ? { metadata } : {}),
     ...schedule,
   };
 }
@@ -122,7 +144,9 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
   const [resultChannel, setResultChannel] = useState('');
   const [urgencyCriteria, setUrgencyCriteria] = useState('');
   const [maxRunBudget, setMaxRunBudget] = useState('');
+  const [folderMetadata, setFolderMetadata] = useState<Record<string, unknown> | undefined>(undefined);
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
+  const localizeRole = useLocalizeRole();
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [cloudUnconfigured, setCloudUnconfigured] = useState(false);
@@ -181,14 +205,14 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
     onDraftChange?.({
       ...buildSimpleDraft(
         goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }),
-        roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget,
+        roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget, folderMetadata,
       ),
       // Switching forms preserves unfinished input, without creation-time defaults or validation.
       name,
       agentPrompt: goal,
     });
   }, [onDraftChange, goal, name, freq, time, weekday, intervalHours, onceAt,
-    roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget]);
+    roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget, folderMetadata]);
 
   const handleSubmit = async () => {
     if (!goal.trim()) {
@@ -209,6 +233,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
         resultChannel,
         runsOn === 'local' ? urgencyCriteria : '',
         runsOn === 'local' ? maxRunBudget : '',
+        runsOn === 'local' ? folderMetadata : undefined,
       );
       await gateOrPersist(buildCronJobInput(draft), 'create');
     } catch (err) {
@@ -253,7 +278,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
       {cloudUnconfigured && <CronCloudCreateNotice
         onSwitchLocal={() => { setRunsOn('local'); setCloudUnconfigured(false); }}
         onSettings={() => {
-          stashCronEditorDraft(buildSimpleDraft(goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }), roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget));
+          stashCronEditorDraft(buildSimpleDraft(goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }), roleId, libraryProjectId, runsOn, resultChannel, urgencyCriteria, maxRunBudget, folderMetadata));
           openCloudCronSettings();
         }}
       />}
@@ -299,7 +324,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
             onChange={(e) => setRoleId(e.target.value)}
             options={[
               { value: '', label: cc.simpleRoleNone },
-              ...roles.map((role) => ({ value: role.roleId, label: role.displayName || role.roleId })),
+              ...roles.map((role) => ({ value: role.roleId, label: localizeRole(role.roleId, { name: role.displayName ?? '' }).name || role.roleId })),
             ]}
           />
         </FormField>
@@ -309,7 +334,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
             onChange={(e) => setLibraryProjectId(e.target.value)}
             options={[
               { value: '', label: cc.simpleArchiveNone },
-              ...projects.map((project) => ({ value: project.id, label: getProjectDisplayName(project, t.sidebarProject) })),
+              ...projects.map((project) => ({ value: project.id, label: getProjectDisplayName(project, t) })),
             ]}
           />
         </FormField>
@@ -318,6 +343,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
       <CronResultChannelField value={resultChannel} onChange={setResultChannel} />
 
       <CronRunsOnSelector value={runsOn} onChange={setRunsOn} />
+      <CronWorkingFolderRow runsOn={runsOn} metadata={folderMetadata} onMetadataChange={setFolderMetadata} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label={cc.simpleFreqLabel}>

@@ -73,6 +73,20 @@ function createSequencedAgentEventDispatcher(
       callback(event);
       return;
     }
+    // task_start 是 run 流里宿主直发的首帧，不带 streamEpoch/seq，却携带本次发送的
+    // clientMessageId——发送占位靠它确认「这一条已被受理」。只放行带身份的 task_start，
+    // 且不碰序列账（activeStreamEpoch/lastSeqBySession）、不触发快照补拉；其余缺
+    // epoch/seq 的事件照旧丢弃，已带 epoch/seq 的 task_start 走下面的正常序列路径。
+    if ((event.type as string) === 'task_start' && !event.streamEpoch && event.seq === undefined) {
+      const data: unknown = event.data;
+      const record = data && typeof data === 'object' ? data as Record<string, unknown> : undefined;
+      const taskSessionId = event.sessionId || record?.sessionId;
+      if (typeof taskSessionId === 'string' && taskSessionId.length > 0
+        && typeof record?.clientMessageId === 'string' && record.clientMessageId.length > 0) {
+        callback(event);
+        return;
+      }
+    }
     const { streamEpoch, sessionId, seq } = event;
     if (
       typeof streamEpoch !== 'string'
@@ -106,6 +120,11 @@ function createSequencedAgentEventDispatcher(
     const lastSeq = lastSeqBySession.get(sessionId);
     const dedupeSeq = permissionKey ? lastPermissionSeqByRequest.get(permissionKey) : lastSeq;
     if (dedupeSeq !== undefined && seq <= dedupeSeq) {
+      // This wake-up reads current host state by session, so arrival order and duplicates are harmless.
+      if (event.type === 'schedule_draft_requested') {
+        callback(event);
+        return;
+      }
       if (permissionKey) console.debug('[ipcService] Permission event dropped', {
         reason: 'permission_request_sequence_duplicate', requestId, seq, lastSeq: dedupeSeq,
       });
@@ -254,21 +273,29 @@ async function invokeDomainRaw<T = unknown>(
  * 组件并发触发（如 settings get 13 次），共享同一 Promise 安全且显著减少请求。
  * 写操作（set / create / update / delete 等）返回 null，绝不去重。
  */
+const domainWriteGenerations = new Map<string, number>();
+
 function dedupeKeyForDomainInvoke(domain: string, action: string, payload?: unknown): string | null {
   if (!/^(get|list)/.test(action)) {
     return null;
   }
-  return `${domain}:${action}:${payload === undefined ? '' : JSON.stringify(payload)}`;
+  return `${domain}:${domainWriteGenerations.get(domain) ?? 0}:${action}:${payload === undefined ? '' : JSON.stringify(payload)}`;
 }
 
 const dedupedInvokeDomain = createInflightDedupe(invokeDomainRaw, dedupeKeyForDomainInvoke);
 
-export function invokeDomain<T = unknown>(
+export async function invokeDomain<T = unknown>(
   domain: string,
   action: string,
   payload?: unknown
 ): Promise<T> {
-  return dedupedInvokeDomain(domain, action, payload) as Promise<T>;
+  const result = await dedupedInvokeDomain(domain, action, payload) as T;
+  // A pre-write read can still be in flight when a mutation succeeds. Subsequent
+  // refreshes must start a new request rather than share that older snapshot.
+  if (!/^(get|list)/.test(action)) {
+    domainWriteGenerations.set(domain, (domainWriteGenerations.get(domain) ?? 0) + 1);
+  }
+  return result;
 }
 
 export const ipcService = {
@@ -278,6 +305,7 @@ export const ipcService = {
   on,
   off,
   getPathForFile,
+  get discardUploadedFiles() { return commandApi()?.discardUploadedFiles; },
   get uploadFolderBatch() { return commandApi()?.uploadFolderBatch; },
   extractPdfText,
   extractExcelText,

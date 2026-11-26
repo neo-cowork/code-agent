@@ -2,12 +2,15 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
+import { findConnectorToolMetadata } from '@shared/contract/workbenchTools';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
+import { CronRunWorkingFolderStatus } from './CronWorkingFolderStatus';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Button } from '../../primitives/Button';
@@ -24,9 +27,11 @@ import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
+import { wakeDecisionOf } from './wakeDecision';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 import { cronRunResultView } from './cronRunResultView';
 import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
+import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -53,7 +58,7 @@ function permissionDeniedReasonText(
 function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' | 'rerun' | null {
   if (kind === 'quota') return 'model';
   if (kind === 'auth') return 'account';
-  if (kind === 'rate_limit' || kind === 'timeout' || kind === 'network' || kind === 'cloud_unavailable') return 'rerun';
+  if (kind === 'rate_limit' || kind === 'timeout' || kind === 'network' || kind === 'cloud_unavailable' || kind === 'runtime_starting') return 'rerun';
   return null;
 }
 
@@ -125,7 +130,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     can_wait: cc.inboxUrgencySectionCanWait,
     fyi: cc.inboxUrgencySectionFyi,
   }[resultView.urgency];
-  const statusMeta = getLatestExecutionStatus(execution, cc);
+  const statusMeta = getLatestExecutionStatus(execution, cc, t.cronWakeCadence);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
     ? (execution.result as { permissionDenied?: unknown }).permissionDenied
@@ -135,7 +140,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     silentLevel: cc.wakeSkipSilentLevel,
     dailyBudget: cc.wakeSkipDailyBudget,
     quietHours: cc.wakeSkipQuietHours,
+    connectorLost: t.cronWakeCadence.connectorLost,
+    nameLanguage: language,
+    generic: t.cronWakeCadence.skipGeneric,
   });
+  const wakeDecision = wakeDecisionOf(execution);
   const pushNoteText = execution.pushNote && {
     pushed: cc.pushNotePushed,
     duplicate: cc.pushNoteDuplicate,
@@ -224,6 +233,8 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         </div>
       </div>
 
+      <CronRunWorkingFolderStatus sessionId={execution.sessionId} runsOn={runsOn} />
+
       {execution.status === 'running' && awaitingRun != null && (
         <div
           className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
@@ -262,10 +273,24 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
         <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
-        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
-        <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
-        <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
+        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn, execution.flatFee ? cc.costFlatFee : undefined)} testId="cron-execution-cost" />
       </div>
+      {(execution.status === 'failed' || (execution.status === 'completed' && !wakeSkip && !permissionDenied)) && execution.retryAttempt > 0 && (
+        <p className="mt-3 text-sm text-zinc-300" data-testid="cron-exec-retry-note">
+          {interpolatePlural(
+            execution.status === 'failed' ? cc.execRetryFailedNote : cc.execRetrySucceededNote,
+            execution.retryAttempt,
+          )}
+        </p>
+      )}
+      {/* 重试次数/退出码是工程字段（N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT）：默认折叠，排在信息网格后。 */}
+      <details className="mt-3" data-testid="cron-exec-technical-fields">
+        <summary className="cursor-pointer text-xs text-zinc-400">{cc.failureTechnical}</summary>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
+          <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
+        </div>
+      </details>
       {hasRunBudget && <div className="mt-3"><FlatFeeBudgetNote variant="center" /></div>}
 
       {stopReason && stopReason.sessionId === reasonSessionId && (
@@ -283,6 +308,12 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           <p className="text-sm text-zinc-100" data-testid="cron-wake-skip-sentence">{wakeSkip}</p>
         </section>
       )}
+      {wakeDecision && (
+        <section className="mt-4" data-testid="cron-wake-decision-detail">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{t.cronWakeCadence.decisionTitle}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-wake-decision-label">{t.cronWakeCadence.decision[wakeDecision]}</p>
+        </section>
+      )}
       {pushNoteText && (
         <section className="mt-4" data-testid="cron-push-note-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.pushNoteTitle}</h5>
@@ -292,13 +323,19 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       {permissionDenied && (
         <section className="mt-4" data-testid="cron-permission-denied-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-warning">{cc.permissionDeniedTitle}</h5>
-          {permissionDenied.steps.map((step, index) => (
-            <p key={`${step.tool}-${index}`} className="text-sm text-zinc-100" data-testid="cron-permission-denied-sentence">
-              {cc.permissionDeniedSentence
-                .replace('{summary}', step.summary)
-                .replace('{reason}', permissionDeniedReasonText(cc, step.reason))}
-            </p>
-          ))}
+          {permissionDenied.steps.map((step, index) => {
+            const labels = t.receiptPresentation.humanToolLabels;
+            const label = step.summary === step.tool
+              ? findConnectorToolMetadata(step.tool)?.action?.[language] ?? getHumanToolLabel({ toolName: step.tool, labels })
+              : step.summary;
+            return (
+              <p key={`${step.tool}-${index}`} className="text-sm text-zinc-100" data-testid="cron-permission-denied-sentence">
+                {cc.permissionDeniedSentence
+                  .replace('{summary}', label === step.tool ? labels.unknownTool : label)
+                  .replace('{reason}', permissionDeniedReasonText(cc, step.reason))}
+              </p>
+            );
+          })}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -392,7 +429,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           <details className="mt-3" data-testid="cron-failure-technical">
             <summary className="cursor-pointer text-xs text-zinc-400">{cc.failureTechnical}</summary>
             <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400 whitespace-pre-wrap">
-              {execution.error}
+              {classified?.kind === 'project_trust' ? failureSentence : execution.error}
             </pre>
           </details>
         </section>

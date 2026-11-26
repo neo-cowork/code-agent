@@ -88,7 +88,7 @@ function executor(requestPermission: ConstructorParameters<typeof ToolExecutor>[
 describe('reminder wall-clock normalization before executor approval', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
+    vi.setSystemTime(new Date('2026-11-08T15:30:00Z'));
     resetToolResolver();
     vi.stubEnv('TZ', 'Asia/Shanghai');
     mocks.getSchemas.mockReturnValue([remindersCreateModule.schema]);
@@ -109,7 +109,7 @@ describe('reminder wall-clock normalization before executor approval', () => {
     mocks.connectorExecute.mockResolvedValue({ data: { id: 'actual', list: '提醒事项', title: 'Report', completed: false, remindAtMs: ms } });
     const args = { title: 'Report', remind_at_local: '2026-11-09 09:00' };
     const result = await executor(requestPermission).execute('reminders_create', args, { sessionId: `local-${++session}` });
-    expect(result).toMatchObject({ success: true, output: expect.stringContaining('提醒时间：2026-11-09 09:00 (UTC+8)（周一，Asia/Shanghai）') });
+    expect(result).toMatchObject({ success: true, output: expect.stringContaining('提醒时间：2026-11-09 09:00 (UTC+8)（明天，周一，Asia/Shanghai）') });
     expect(requestPermission).toHaveBeenCalledOnce();
     expect(mocks.connectorExecute).toHaveBeenCalledWith('create_reminder', { title: 'Report', remind_at_ms: ms });
     expect(args).not.toHaveProperty('remind_at_ms');
@@ -164,6 +164,29 @@ describe('reminder wall-clock normalization before executor approval', () => {
     expect(mocks.connectorExecute).not.toHaveBeenCalled();
   });
 
+  it('rejects the exact 2026-11-14 20:30 bug case at 23:17 PST with no success text, approval or connector call', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    vi.setSystemTime(new Date('2026-11-14T23:17:00-08:00'));
+    const requestPermission = vi.fn(async () => true);
+    const result = await executor(requestPermission).execute('reminders_create', { title: '买菜', remind_at_local: '2026-11-14 20:30' }, { sessionId: `bugclock-${++session}` });
+    expect(result).toMatchObject({ success: false, metadata: { code: 'REMINDER_TIME_IN_PAST' } });
+    expect(result.error).toContain('2026-11-14 20:30');
+    expect(result.error).toContain('2026-11-14 23:17');
+    expect(result.error).toContain('2026-11-15 20:30');
+    expect(result.error).not.toContain('已创建提醒');
+    expect(result.error).not.toContain('提醒时间：');
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(mocks.connectorExecute).not.toHaveBeenCalled();
+    // Control: the same args at 18:00 PST the same evening are in the future
+    // and must still reach the approval card, so the rejection above is the
+    // past-time guard and not argument parsing.
+    vi.setSystemTime(new Date('2026-11-14T18:00:00-08:00'));
+    const controlPermission = vi.fn(async () => false);
+    await executor(controlPermission).execute('reminders_create', { title: '买菜', remind_at_local: '2026-11-14 20:30' }, { sessionId: `bugclock-ctrl-${++session}` });
+    expect(controlPermission).toHaveBeenCalledOnce();
+    expect(mocks.connectorExecute).not.toHaveBeenCalled();
+  });
+
   it('rejects a past remind_at_ms passed directly', async () => {
     vi.setSystemTime(new Date('2026-11-09T15:17:00Z'));
     const requestPermission = vi.fn(async () => true);
@@ -177,6 +200,53 @@ describe('reminder wall-clock normalization before executor approval', () => {
     const requestPermission = vi.fn(async () => false);
     await executor(requestPermission).execute('reminders_create', { title: 'x', remind_at_local: '2026-11-09 09:00' }, { sessionId: `grace-${++session}` });
     expect(requestPermission).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { title: '给牙医打电话', notes: '提醒：给牙医打电话' },
+    { title: '买菜', notes: '提醒：买菜' },
+    { title: '发周报', notes: '发周报' },
+  ])('approval card omits a note that restates the title: %j', async (input) => {
+    const ms = Date.parse('2026-11-09T01:00:00Z');
+    const requestPermission = vi.fn(async (request: PermissionRequestData) => {
+      expect(request.details).not.toHaveProperty('notes');
+      expect(request.details).toMatchObject({ title: input.title, remind_at_ms: ms });
+      return true;
+    });
+    mocks.connectorExecute.mockResolvedValue({
+      data: { id: 'dropped-note', list: '提醒事项', title: input.title, completed: false, remindAtMs: ms },
+    });
+    const result = await executor(requestPermission).execute(
+      'reminders_create',
+      { ...input, remind_at_local: '2026-11-09 09:00' },
+      { sessionId: `notes-${++session}` },
+    );
+    expect(result.success).toBe(true);
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(mocks.connectorExecute).toHaveBeenCalledWith('create_reminder', { title: input.title, remind_at_ms: ms });
+    expect(JSON.stringify(result)).not.toContain('备注');
+  });
+
+  it('approval card keeps a note the user wrote', async () => {
+    const ms = Date.parse('2026-11-09T01:00:00Z');
+    const requestPermission = vi.fn(async (request: PermissionRequestData) => {
+      expect(request.details).toMatchObject({ title: '发周报', notes: '带上Q3数据', remind_at_ms: ms });
+      return true;
+    });
+    mocks.connectorExecute.mockResolvedValue({
+      data: { id: 'kept-note', list: '提醒事项', title: '发周报', completed: false, remindAtMs: ms },
+    });
+    const result = await executor(requestPermission).execute(
+      'reminders_create',
+      { title: '发周报', notes: '带上Q3数据', remind_at_local: '2026-11-09 09:00' },
+      { sessionId: `kept-note-${++session}` },
+    );
+    expect(result.success).toBe(true);
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(mocks.connectorExecute).toHaveBeenCalledWith(
+      'create_reminder',
+      { title: '发周报', notes: '带上Q3数据', remind_at_ms: ms },
+    );
   });
 
   it('rejects an approval-card edit to a past instant at dispatch', async () => {

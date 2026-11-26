@@ -1,17 +1,19 @@
+import { cronRunRecordZh, cronRunRecordEn } from './cronRunRecord';
 import { turnDiffEn, turnDiffZh } from './turnDiff';
 import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
+import { failedSendAttachmentTurnCardEn, failedSendAttachmentTurnCardZh } from './failedSendAttachment';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 export const chatTranscriptZh = {
   ...turnRailZh,
 chat: {
   thinking: '正在思考…',
-  // 回响信号（等模型）
   waitingModel: '信号传输中，正在等待模型回响…',
-  waitingApproval: '等你批准，请处理审批卡…',
+  waitingApproval: `${WAITING_ON_USER_LABELS.zh.approval}，请处理审批卡…`,
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
@@ -19,7 +21,7 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '{name}正在处理', completed: '{name}已完成', failed: '{name}没有完成', cancelled: '{name}已取消' },
+    headlines: { working: '{name} · 正在处理', completed: '{name} · 已完成', failed: '{name} · 没有完成', cancelled: '{name} · 已取消' },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
@@ -40,10 +42,12 @@ chat: {
   // 巡航信号旁的强制停止按钮
   longToolStop: '停止',
   sendingMessage: '正在发送消息…', queuedStarting: '已排队，正在启动…', preparingReply: '正在准备…', organizingStreamingReply: '正在整理回复…',
+  slowStarting: '启动比平时慢，请稍候…',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: { one: ' · {count} 段', other: ' · {count} 段' },
   thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: '正在思考… · {duration}', thinkingDigestWithDuration: { one: '思考 {duration} · {count} 段', other: '思考 {duration} · {count} 段' },
+  thinkingDigestEnglishNote: '思考 {duration} · 推理原文为英文，点开可看',
   expandThinking: '展开思考',
   collapseThinking: '收起思考',
   unknownTool: '未知工具',
@@ -137,6 +141,9 @@ chatSearch: {
   roleUser: '用户',
   roleAssistant: '助手',
   roleSystem: '系统',
+  roleTool: '工具输出',
+  messageHitPrefix: '消息命中',
+  toolHitPrefix: '工具输出命中',
   turnNumber: '第 {n} 轮',
 },
 forkLineage: {
@@ -242,6 +249,7 @@ toolGroup: {
 // 消费方 ToolStepGroup 的步骤行；原工具名/参数仍在展开详情（ToolHeader/ToolDetails）里，不删信息。
 toolStepHumanize: {
   ...toolStepVerbsZh,
+  excelRead: '读取 {target}', excelWrite: '写入 {target}',
   declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
     tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议', tmeetRecordList: '查了腾讯会议录制', tmeetRecordRead: '读了腾讯会议转写和纪要', feishuMinutesSearch: '搜了飞书妙记', feishuMinutesRead: '读了一条飞书妙记', meetingRecords: '查了会议记录' },
   intent: { tmeetMeetingListUpcoming: '查待开始/进行中的会议', tmeetMeetingListEnded: '查近 30 天已结束的会议',
@@ -257,6 +265,10 @@ toolStepHumanize: {
   searchFallback: '搜索了内容',
   listDir: '查看了 {target} 目录',
   listDirFallback: '查看了目录',
+  listDirWorking: '查看了当前工作目录',
+  listDirHome: '查看了主目录',
+  office: { excel: '导出了表格', docx: '生成了文档', ppt: '生成了演示文稿', pdf: '生成了 PDF', chart: '生成了图表', docEdit: '编辑了文档' },
+  fileStat: '查看了 {target} 的文件信息', fileStatFallback: '查看了文件信息',
   webSearch: '搜索了网页 {query}',
   webSearchFallback: '搜索了网页',
   webFetch: '打开了 {target}',
@@ -266,6 +278,7 @@ toolStepHumanize: {
   channelNames: { lark: '飞书', feishu: '飞书', slack: 'Slack', telegram: 'Telegram' } as Record<string, string>,
   subagentSpawn: '启动了代理 — {description}',
   subagentSpawnFallback: '启动了一个代理',
+  subagentSpawnParallel: '启动了 {count} 个代理 — {names}',
   subagentMessage: '给代理发了条消息',
   agentConversation: '正在跟 {name} 说话',
   agentConversationFallback: '正在跟代理说话',
@@ -326,6 +339,7 @@ toolStatus: {
     Glob: { preparing: '准备搜索…', running: '搜索文件…' },
     Grep: { preparing: '准备搜索…', running: '搜索内容…' },
     list_directory: { preparing: '准备浏览…', running: '浏览目录…' },
+    ListDirectory: { preparing: '准备浏览…', running: '浏览目录…' },
     WebSearch: { preparing: '准备搜索…', running: '搜索网络…' },
     web_fetch: { preparing: '准备抓取…', running: '抓取网页…' },
     task: { preparing: '准备任务…', running: '执行任务…' },
@@ -364,6 +378,7 @@ turnCard: {
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
   ...projectTrustTurnCardZh,
+  ...failedSendAttachmentTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -468,27 +483,7 @@ forkSourceHint: { source: '由此分支 · {parentTitle}', imported: '续接自 
 // 定时任务运行记录会话（origin cron/heartbeat）：首气泡上方的来源小标 + 气泡下方的
 // 状态行（N-UI-CRON-RUN-RECORD-CLEAR）。四种状态一眼可分：运行中（呼吸点+流逝时间）、
 // 等批准（带批准/拒绝）、已中断（带再跑一次）、已完成（带用时）。
-cronRunRecord: {
-  kindLabel: '定时任务自动运行',
-  running: '正在运行 · 已 {elapsed}',
-  elapsedHm: '{h} 时 {m} 分',
-  elapsedMs: '{m} 分 {s} 秒',
-  elapsedS: '{s} 秒',
-  awaiting: '等你批准',
-  awaitingWithLabel: '等你批准：{label}',
-  awaitingBashPrefix: '运行 ',
-  approve: '批准',
-  reject: '拒绝',
-  approvalStale: '这条批准已经失效（发起它的运行已结束），已标记过期',
-  approvalFailed: '操作没有生效，请重试',
-  interrupted: `${outcomeWordsZh.outcomeWords['interrupted-restart'].timeline.label}，没有结果`,
-  failedDenied: '没跑成：命令被拒绝',
-  failedGeneric: '没跑成',
-  cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
-  rerun: '再跑一次',
-  rerunFailed: '没能重新运行，请稍后再试',
-  finished: '已完成 · 用时 {duration}',
-},
+cronRunRecord: cronRunRecordZh,
 
 // 工具调用展示（LiveToolOutput / ToolDetails / ToolResultMediaDisplays / CodeBlock / AbilityMenu）的零碎 UI 文案。
 toolDisplay: {
@@ -512,7 +507,7 @@ chat: {
   thinking: 'Thinking…',
   // Echo signal (waiting on the model)
   waitingModel: 'Signal sent, awaiting model echo…',
-  waitingApproval: 'Waiting for your approval — please review the approval card…',
+  waitingApproval: `${WAITING_ON_USER_LABELS.en.approval} — please review the approval card…`,
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
@@ -520,7 +515,7 @@ chat: {
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
     failureDetail: '{status}: {reason}',
-    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish", cancelled: '{name} was cancelled' },
+    headlines: { working: '{name} · is working', completed: '{name} · finished', failed: "{name} · didn't finish", cancelled: '{name} · was cancelled' },
     working: 'Agent working',
     completed: 'Completed',
     failed: 'Not completed',
@@ -541,10 +536,12 @@ chat: {
   // Force-stop button next to the cruise signal
   longToolStop: 'Stop',
   sendingMessage: 'Sending message…', queuedStarting: 'Queued, starting…', preparingReply: 'Preparing…', organizingStreamingReply: 'Organizing the reply…',
+  slowStarting: 'Taking longer than usual to start…',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: { one: ' · {count} segment', other: ' · {count} segments' },
   thinkingDurationSeconds: '{seconds}s', thinkingActiveWithDuration: 'Thinking… · {duration}', thinkingDigestWithDuration: { one: 'Thought for {duration} · {count} segment', other: 'Thought for {duration} · {count} segments' },
+  thinkingDigestEnglishNote: 'Thought for {duration} · original reasoning is in English, expand to read',
   expandThinking: 'Expand thinking',
   collapseThinking: 'Collapse thinking',
   unknownTool: 'Unknown tool',
@@ -638,6 +635,9 @@ chatSearch: {
   roleUser: 'User',
   roleAssistant: 'Assistant',
   roleSystem: 'System',
+  roleTool: 'Tool output',
+  messageHitPrefix: 'Message match',
+  toolHitPrefix: 'Tool output match',
   turnNumber: 'Turn {n}',
 },
 forkLineage: {
@@ -726,7 +726,7 @@ traceView: {
 
 // Tool step group (ToolStepGroup)
 toolGroup: {
-  statusRunning: 'running',
+  statusRunning: 'In progress',
   statusPartial: 'Some steps need attention',
   statusFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
   statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
@@ -746,6 +746,7 @@ toolGroup: {
 // The raw tool name/args still show in the expanded detail (ToolHeader/ToolDetails).
 toolStepHumanize: {
   ...toolStepVerbsEn,
+  excelRead: 'Read {target}', excelWrite: 'Write {target}',
   declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
     tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings', tmeetRecordList: 'Checked Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Searched Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Checked meeting records' },
   intent: { tmeetMeetingListUpcoming: 'Check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Check meetings ended in the last 30 days',
@@ -762,6 +763,10 @@ toolStepHumanize: {
   searchFallback: 'Searched',
   listDir: 'Viewed the {target} directory',
   listDirFallback: 'Viewed a directory',
+  listDirWorking: 'Viewed the working folder',
+  listDirHome: 'Viewed the home folder',
+  office: { excel: 'Exported spreadsheet', docx: 'Created a document', ppt: 'Created a presentation', pdf: 'Created a PDF', chart: 'Created a chart', docEdit: 'Edited a document' },
+  fileStat: 'Checked file info for {target}', fileStatFallback: 'Checked file info',
   webSearch: 'Searched the web for {query}',
   webSearchFallback: 'Searched the web',
   webFetch: 'Opened {target}',
@@ -771,6 +776,7 @@ toolStepHumanize: {
   channelNames: { lark: 'Lark', feishu: 'Feishu', slack: 'Slack', telegram: 'Telegram' } as Record<string, string>,
   subagentSpawn: 'Started an agent — {description}',
   subagentSpawnFallback: 'Started an agent',
+  subagentSpawnParallel: 'Started {count} agent tasks — {names}',
   subagentMessage: 'Sent a message to an agent',
   agentConversation: 'Talking to {name}',
   agentConversationFallback: 'Talking to an agent',
@@ -831,6 +837,7 @@ toolStatus: {
     Glob: { preparing: 'Preparing search…', running: 'Searching files…' },
     Grep: { preparing: 'Preparing search…', running: 'Searching content…' },
     list_directory: { preparing: 'Preparing…', running: 'Listing directory…' },
+    ListDirectory: { preparing: 'Preparing…', running: 'Listing directory…' },
     WebSearch: { preparing: 'Preparing search…', running: 'Searching the web…' },
     web_fetch: { preparing: 'Preparing fetch…', running: 'Fetching page…' },
     task: { preparing: 'Preparing task…', running: 'Running task…' },
@@ -871,6 +878,7 @@ turnCard: {
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
   ...projectTrustTurnCardEn,
+  ...failedSendAttachmentTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
@@ -977,27 +985,7 @@ forkSourceHint: { source: 'Branched from · {parentTitle}', imported: 'Continued
 // label above the first bubble + the status line under it. Four visually
 // distinct states: running (pulsing dot + elapsed), awaiting approval (with
 // approve/reject), interrupted (with run-again), finished (with duration).
-cronRunRecord: {
-  kindLabel: 'Ran automatically by a scheduled task',
-  running: 'Running · {elapsed} elapsed',
-  elapsedHm: '{h}h {m}m',
-  elapsedMs: '{m}m {s}s',
-  elapsedS: '{s}s',
-  awaiting: 'Needs your approval',
-  awaitingWithLabel: 'Needs your approval: {label}',
-  awaitingBashPrefix: 'Run ',
-  approve: 'Approve',
-  reject: 'Reject',
-  approvalStale: 'This approval is stale (its run has ended) and was marked expired',
-  approvalFailed: 'That did not go through — please retry',
-  interrupted: `${outcomeWordsEn.outcomeWords['interrupted-restart'].timeline.label} — no result`,
-  failedDenied: "Didn't run: command was denied",
-  failedGeneric: "Didn't finish",
-  cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
-  rerun: 'Run again',
-  rerunFailed: 'Could not start another run — try again later',
-  finished: 'Finished · took {duration}',
-},
+cronRunRecord: cronRunRecordEn,
 
 toolDisplay: {
   liveOutput: 'Live output',

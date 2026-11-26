@@ -23,6 +23,43 @@
   ],
   "rules": [
     {
+      "id": "host-connector-copy",
+      "paths": [
+        "src/cli/tui-app/events.ts",
+        "src/host/agent/confirmationGate.ts",
+        "src/host/agent/runtime/messageProcessor.ts",
+        "src/host/agent/runtime/streamHandler.ts",
+        "src/host/agent/runtime/toolExecutionEngine.ts",
+        "src/host/agent/toolExecution/parallelStrategy.ts",
+        "src/host/config/hostUiLocale.ts",
+        "src/host/connectors/native/calendar.ts",
+        "src/host/connectors/native/mail.ts",
+        "src/host/connectors/native/reminders.ts",
+        "src/host/tools/artifacts/artifactMeta.ts",
+        "src/host/tools/dispatch/connectorReconnectGuidance.ts",
+        "src/host/tools/modules/connectors/appleScriptWriteFailure.ts",
+        "src/host/tools/modules/connectors/calendar*Event.ts",
+        "src/host/tools/modules/connectors/calendar.ts",
+        "src/host/tools/modules/connectors/connectorStatusText.ts",
+        "src/host/tools/modules/connectors/connectorTime.ts",
+        "src/host/tools/modules/connectors/mailDraft.ts",
+        "src/host/tools/modules/connectors/mailSend.ts",
+        "src/host/tools/modules/connectors/reminders*.ts",
+        "src/renderer/utils/toolResultDisplayText.ts",
+        "src/shared/i18n/connectorReconnect.ts",
+        "src/shared/i18n/hostConnectorCopy.ts",
+        "src/shared/i18n/hostTurnProgress.ts",
+        "src/shared/utils/calendarReceiptText.ts",
+        "src/shared/utils/connectorReceiptText.ts",
+        "src/shared/utils/toolProgressLabel.ts"
+      ],
+      "files": [
+        "tests/unit/agent/hostConnectorCopy.test.ts",
+        "tests/unit/agent/messageProcessor.textClose.test.ts",
+        "tests/unit/cli/tui-app/events.test.ts"
+      ]
+    },
+    {
       "id": "contracts",
       "paths": [
         "src/shared/contract/**",
@@ -377,6 +414,19 @@
         "tests/unit/scripts/acceptance/jevRealSitesLib.test.ts",
         "tests/unit/scripts/acceptance/jevRealSitesArtifact.test.ts"
       ]
+    },
+    {
+      "id": "tauri-native-command-acl",
+      "note": "Every generate_handler! registration needs exactly one permissions/*.toml grant; the renderer facade is the third enum point that must stay in sync. A missing grant only surfaces as a packaged-build silent failure, so any touch of either side re-runs the reconciliation test.",
+      "paths": [
+        "src-tauri/src/main.rs",
+        "src-tauri/permissions/**",
+        "src-tauri/src/native_*.rs",
+        "src/renderer/services/nativeCommandFacade.ts"
+      ],
+      "files": [
+        "tests/scripts/tauriCommandAcl.test.ts"
+      ]
     }
   ],
   "sharedPackageInputs": [
@@ -401,6 +451,7 @@
     "private": 30000,
     "src-typecheck": 45000,
     "shell": 10000,
+    "no-direct-app-exec": 10000,
     "commit-checks": 45000,
     "vitest": 90000,
     "package-typechecks": 45000,

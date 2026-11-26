@@ -3315,9 +3315,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getSessionRuntimeState(sessionId);
   }
-  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): import('./repositories').StoredSession[] {
+  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null, projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope): import('./repositories').StoredSession[] {
     this.ensureDb();
-    return this.sessionRepo.listArchivedSessions(limit, offset, userId);
+    return this.sessionRepo.listArchivedSessions(limit, offset, userId, projectScope);
   }
   /** 懒开目录撞名判定用的名字占用表：未删除会话行已记下的工作目录（DISTINCT）。 */
   listRecordedWorkingDirectories(exceptSessionId?: string): string[] {
@@ -3328,19 +3328,29 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.archiveSession(sessionId);
   }
-  unarchiveSession(sessionId: string): import('./repositories').StoredSession | null {
+  unarchiveSession(sessionId: string, updatedAt?: number): import('./repositories').StoredSession | null {
     this.ensureDb();
-    return this.sessionRepo.unarchiveSession(sessionId);
+    return this.sessionRepo.unarchiveSession(sessionId, updatedAt);
   }
-  getSessionSearchMeta(sessionIds: string[], userId: string | null): SessionSearchMetaRow[] {
+  getSessionSearchMeta(
+    sessionIds: string[],
+    userId: string | null,
+    projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope,
+  ): SessionSearchMetaRow[] {
     this.ensureDb();
     if (!this.db) throw new Error('Database not opened');
-    return getSessionSearchMetaRows(this.db, sessionIds, userId);
+    return getSessionSearchMetaRows(this.db, sessionIds, userId, projectScope);
   }
-  searchSessionTitles(query: string, userId: string | null, limit: number): SessionSearchMetaRow[] {
+  searchSessionTitles(
+    query: string,
+    userId: string | null,
+    limit: number,
+    projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope,
+    includeArchived?: boolean,
+  ): SessionSearchMetaRow[] {
     this.ensureDb();
     if (!this.db) throw new Error('Database not opened');
-    return searchSessionTitleRows(this.db, query, userId, limit);
+    return searchSessionTitleRows(this.db, query, userId, limit, projectScope, includeArchived);
   }
   searchSessionMessagesFts(
     query: string,

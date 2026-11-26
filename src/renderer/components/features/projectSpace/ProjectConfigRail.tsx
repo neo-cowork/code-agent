@@ -24,7 +24,8 @@ import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
-import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
+import { getJobDisplayName } from '../cron/builtinJobDisplay';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
 import { cronClient } from '../../../services/cronClient';
@@ -70,6 +71,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   membersContent,
 }) => {
   const { t, language } = useI18n();
+  const localizeRole = useLocalizeRole();
   const ps = t.projectSpace;
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -108,15 +110,18 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   const loadRoles = useCallback(() => {
     rolesClient.listRoles()
-      .then((entries) => setRoleOptions(entries.map((entry) => ({
-        id: entry.roleId,
-        label: entry.displayName ?? entry.roleId,
-        description: entry.description || undefined,
-        icon: entry.icon,
-        profession: entry.profession || undefined,
-      }))))
+      .then((entries) => setRoleOptions(entries.map((entry) => {
+        const localized = localizeRole(entry.roleId, { name: entry.displayName ?? '', profession: entry.profession });
+        return {
+          id: entry.roleId,
+          label: entry.displayName ? localized.name : entry.roleId,
+          description: entry.description || undefined,
+          icon: entry.icon,
+          profession: localized.profession || undefined,
+        };
+      })))
       .catch(() => setRoleOptions([]));
-  }, []);
+  }, [localizeRole]);
 
   const nativeConnectorDescriptions = ps.nativeConnectorDescriptions as Record<string, string | undefined>;
   const loadConnectors = useCallback(() => {
@@ -288,12 +293,12 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   // ---- 自动化（cron agent 任务的 libraryProjectId） ----
   const automationSelected = agentJobs
     .filter((job) => job.action.type === 'agent' && job.action.libraryProjectId === projectId)
-    .map((job) => ({ id: job.id, label: getBuiltinJobDisplay(job, language)?.name ?? job.name }));
+    .map((job) => ({ id: job.id, label: getJobDisplayName(job, language) }));
   const automationOptions = agentJobs
     .filter((job) => !(job.action.type === 'agent' && job.action.libraryProjectId === projectId))
     .map((job) => ({
       id: job.id,
-      label: getBuiltinJobDisplay(job, language)?.name ?? job.name,
+      label: getJobDisplayName(job, language),
       // 调度时间人话复用侧栏能力区 formatNextRun 样板（utils/formatNextRun），不重写
       description: job.nextRunAt != null
         ? ps.automationNextRun.replace(

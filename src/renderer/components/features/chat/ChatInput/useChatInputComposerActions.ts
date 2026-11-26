@@ -1,13 +1,18 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import type { SpeechTranscribeResult } from '@shared/contract';
 import type { ConversationVoiceInputMetadata } from '@shared/contract/conversationEnvelope';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
+import { toast } from '../../../../hooks/useToast';
+import { createLogger } from '../../../../utils/logger';
 import { mergeAttachments } from './attachmentDedupe';
-import { dismissAttachmentLimitToast, notifyAttachmentMerge } from './attachmentMergeToast';
+import { dismissAttachmentLimitToast } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import type { InputAreaRef } from './InputArea';
+
+const logger = createLogger('useChatInputComposerActions');
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -41,9 +46,11 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
   } = params;
   const { t } = useI18n();
 
-  // 附件清空（发送后或用户逐个移除）后，「附件已满」提示不再适用
+  const previousAttachmentCount = useRef(attachmentCount);
+  // Removing attachments or sending makes the previous limit warning stale.
   useEffect(() => {
-    if (attachmentCount === 0) dismissAttachmentLimitToast();
+    if (attachmentCount < previousAttachmentCount.current) dismissAttachmentLimitToast();
+    previousAttachmentCount.current = attachmentCount;
   }, [attachmentCount]);
 
   const appendAttachments = useCallback((incoming: MessageAttachment[]) => {
@@ -55,13 +62,24 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     });
   }, [setAttachments, t.chatInput]);
 
+  // processFile 抛异常时不能静默：否则用户选了文件却既没有 chip 也没有任何提示
+  const processFileOrToast = async (file: File): Promise<MessageAttachment | null> => {
+    try {
+      return await processFile(file);
+    } catch (error) {
+      logger.error('processFile threw', error, { fileName: file.name });
+      toast.show('error', t.chatInput.uploadProcessFailed.replace('{name}', file.name));
+      return null;
+    }
+  };
+
   // 处理文件选择
   const handleFileSelect = async (files: FileList) => {
     setIsUploading(true);
     try {
       const newAttachments: MessageAttachment[] = [];
       for (const file of Array.from(files)) {
-        const attachment = await processFile(file);
+        const attachment = await processFileOrToast(file);
         if (attachment) newAttachments.push(attachment);
       }
       appendAttachments(newAttachments);
@@ -74,12 +92,18 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
   const handleImagePaste = useCallback(async (file: File) => {
     setIsUploading(true);
     try {
-      const attachment = await processFile(file);
+      let attachment: MessageAttachment | null = null;
+      try {
+        attachment = await processFile(file);
+      } catch (error) {
+        logger.error('processFile threw', error, { fileName: file.name });
+        toast.show('error', t.chatInput.uploadProcessFailed.replace('{name}', file.name));
+      }
       if (attachment) appendAttachments([attachment]);
     } finally {
       setIsUploading(false);
     }
-  }, [processFile, appendAttachments, setIsUploading]);
+  }, [processFile, appendAttachments, setIsUploading, t.chatInput]);
 
   // 移除附件
   const removeAttachment = (id: string) => {

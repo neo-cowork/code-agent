@@ -16,13 +16,17 @@ import type { RuntimeInputMode } from '@shared/contract/conversationEnvelope';
 import { generateMessageId } from '@shared/utils/id';
 import ipcService from '../../../services/ipcService';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 
 export interface MemberInputTarget {
   key: string;
   kind: MemberInputKind;
+  /** Raw name: this is what is sent and stored (memberName). */
   name: string;
+  /** Render-time label for placeholders/hints; falls back to a localized `name`. Never sent. */
+  displayName?: string;
   /** 还在干活（能收话）；收工/失败/取消 = false */
   live: boolean;
 }
@@ -59,6 +63,9 @@ export const MemberInputBar: React.FC<{
 }> = ({ sessionId, runId, member }) => {
   const { t } = useI18n();
   const text = t.expert.memberBar;
+  // Display only: member.name (raw) is what goes to IPC / the session store.
+  const localizedName = useLocalizeRole()(member.name, { name: member.name }).name;
+  const shownName = member.displayName ?? localizedName;
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
   const [receipts, setReceipts] = useState<LocalReceipt[]>([]);
@@ -174,13 +181,13 @@ export const MemberInputBar: React.FC<{
         <div className="composer-elevated flex items-end gap-2 rounded-2xl px-3 py-2">
           <textarea
             data-testid="member-input"
-            aria-label={text.inputAriaLabel.replace('{name}', member.name)}
+            aria-label={text.inputAriaLabel.replace('{name}', shownName)}
             rows={1}
             value={value}
             disabled={sending}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={text.inputPlaceholder.replace('{name}', member.name)}
+            placeholder={text.inputPlaceholder.replace('{name}', shownName)}
             className="max-h-32 min-h-[28px] flex-1 resize-none bg-transparent text-sm text-zinc-100 placeholder-zinc-500 outline-none"
           />
           <button /* ds-allow:button: 输入条内的图标发送键，与主输入框同档紧凑变体 */
@@ -196,7 +203,7 @@ export const MemberInputBar: React.FC<{
         </div>
       ) : (
         <p data-testid="member-input-finished" className="rounded-2xl bg-zinc-900/60 px-3 py-2 text-center text-xs text-zinc-500">
-          {text.finishedHint.replace('{name}', member.name)}
+          {text.finishedHint.replace('{name}', shownName)}
         </p>
       )}
     </div>

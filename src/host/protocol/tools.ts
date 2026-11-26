@@ -27,7 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '@shared/contract/conversationEnvelope';
-import type { PermissionApprovalSource, PermissionRequestReason } from '@shared/contract/permission';
+import type { PermissionApprovalSource, PermissionDenialSource, PermissionRequestReason } from '@shared/contract/permission';
 import type { SwarmRunScope } from '@shared/contract/swarm';
 import type { WorkspaceScope } from '@shared/contract/project';
 import type { AgentEvent } from './events';
@@ -231,6 +231,8 @@ export interface ToolContext {
   readonly allowedToolNames?: readonly string[];
   /** 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。 */
   readonly foregroundToolFace?: boolean;
+  /** 本次 LLM 请求实际下发的工具名列表（来自 requestManifest）；缺省表示未知。 */
+  readonly requestToolNames?: readonly string[];
   /** Opaque run-scoped SkillDiscoveryService handle. */
   readonly skillDiscoveryService?: unknown;
   /** Opaque run-scoped telemetry owner for spawned agents. */
@@ -423,7 +425,7 @@ export type CanUseToolFn = (
 
 export type CanUseToolResult =
   | { allow: true; approvalSource?: PermissionApprovalSource }
-  | { allow: false; reason: string };
+  | { allow: false; reason: string; denialSource?: PermissionDenialSource };
 
 // ----------------------------------------------------------------------------
 // 进度回调 — 独立参数，非 ctx 字段
@@ -443,7 +445,7 @@ export interface ToolProgress {
 
 export type ToolResult<Output = unknown> =
   | { ok: true; output: Output; meta?: Record<string, unknown> }
-  | { ok: false; error: string; code?: string; meta?: Record<string, unknown> };
+  | { ok: false; error: string; userMessage?: string; code?: string; meta?: Record<string, unknown> };
 
 // ----------------------------------------------------------------------------
 // Registry 接口（main/tools/registry.ts 实现）

@@ -2,6 +2,9 @@
 // Calendar (P0-6.3 Batch 6 — connectors: native ToolModule rewrite)
 // ============================================================================
 
+import { getHostConnectorCopy } from '../../../../shared/i18n/hostConnectorCopy';
+import { getHostUiLocale } from '../../../config/hostUiLocale';
+import { stripCalendarListUids } from '../../../../shared/utils/connectorReceiptText';
 import type {
   ToolHandler,
   ToolModule,
@@ -10,11 +13,14 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { normalizeCalendarListWindow } from '../../calendarEventTime';
 import { getConnectorRegistry } from '../../../connectors';
 import { isCalendarFailure } from '../../../connectors/native/calendar';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
-import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import { formatConnectorStatus, formatConnectorUnavailableMessage } from './connectorStatusText';
+import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
+import { describeCalendarFailureForUser } from './appleScriptWriteFailure';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
@@ -28,9 +34,9 @@ interface CalendarEvent {
   uid?: string;
 }
 
-function formatEvent(event: CalendarEvent): string {
-  const start = event.startAtMs ? formatConnectorTime(event.startAtMs) : '未知开始时间';
-  const end = event.endAtMs ? formatConnectorTime(event.endAtMs) : '未知结束时间';
+function formatEvent(event: CalendarEvent, copy: ReturnType<typeof getHostConnectorCopy>['calendar']): string {
+  const start = event.startAtMs ? formatConnectorTime(event.startAtMs) : copy.unknownStart;
+  const end = event.endAtMs ? formatConnectorTime(event.endAtMs) : copy.unknownEnd;
   const location = event.location ? ` | ${event.location}` : '';
   const uid = event.uid ? `\n  uid: ${event.uid}` : '';
   return `- [${event.calendar}] ${event.title}\n  ${start} -> ${end}${location}${uid}`;
@@ -41,19 +47,22 @@ function buildCalendarMeta(
   action: string,
   output: string,
   metadata: Record<string, unknown>,
+  name: string,
+  modelGuidance?: string,
 ): Record<string, unknown> {
   return {
     action,
     connector: 'calendar',
     ...metadata,
+    ...(modelGuidance ? { modelGuidance } : {}),
     artifact: createVirtualArtifact({
       sourceTool: schema.name,
       kind: 'text',
       sessionId: ctx.sessionId,
-      name: `calendar-${action}`,
+      name,
       mimeType: 'text/markdown',
       contentLength: output.length,
-      preview: output.slice(0, 500),
+      preview: stripCalendarListUids(output).slice(0, 500),
       metadata: {
         connector: 'calendar',
         action,
@@ -78,7 +87,15 @@ async function executeCalendar(
     return { ok: false, error: `Unsupported calendar action: ${action}`, code: 'INVALID_ARGS' };
   }
 
-  const permit = await canUseTool(schema.name, args);
+  let connectorArgs = args;
+  if (action === 'list_events') {
+    const window = normalizeCalendarListWindow(args);
+    if (!window.ok) return window;
+    connectorArgs = window.args;
+  }
+
+  // Ask about the normalized window the connector will actually read.
+  const permit = await canUseTool(schema.name, connectorArgs);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
   }
@@ -88,6 +105,9 @@ async function executeCalendar(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
+  const locale = getHostUiLocale();
+  const catalog = getHostConnectorCopy(locale);
+  const { separator, calendar: copy } = catalog;
   const connector = getConnectorRegistry().get('calendar');
   if (!connector) {
     if (action === 'get_status') {
@@ -97,52 +117,52 @@ async function executeCalendar(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = formatConnectorStatusOutput('calendar', status);
+      const { output, guidance } = formatConnectorStatus('calendar', status);
       return {
         ok: true,
         output,
-        meta: buildCalendarMeta(ctx, action, output, { status }),
+        meta: buildCalendarMeta(ctx, action, output, { status }, copy.read.status, guidance),
       };
     }
     return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'read'), code: 'NOT_INITIALIZED' };
   }
 
   try {
-    const result = await connector.execute(action, args);
+    const result = await connector.execute(action, connectorArgs);
     ctx.logger.debug('calendar', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
-      const output = formatConnectorStatusOutput('calendar', status);
+      const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
+      const { output, guidance } = formatConnectorStatus('calendar', status);
       return {
         ok: true,
         output,
-        meta: buildCalendarMeta(ctx, action, output, { status }),
+        meta: buildCalendarMeta(ctx, action, output, { status }, copy.read.status, guidance),
       };
     }
 
     if (action === 'list_calendars') {
       const calendars = result.data as string[];
       const output = calendars.length > 0
-        ? `可用日历 (${calendars.length})：\n- ${calendars.join('\n- ')}`
-        : '没有找到可访问的日历。';
+        ? `${copy.read.collections} (${calendars.length})${separator.trimEnd()}\n- ${calendars.join('\n- ')}`
+        : copy.read.emptyCollections;
       return {
         ok: true,
         output,
-        meta: buildCalendarMeta(ctx, action, output, { count: calendars.length, calendars }),
+        meta: buildCalendarMeta(ctx, action, output, { count: calendars.length, calendars }, copy.read.collections),
       };
     }
 
     // list_events
     const events = result.data as CalendarEvent[];
     const baseOutput = events.length > 0
-      ? `日历事件 (${events.length})：\n${events.map(formatEvent).join('\n')}`
-      : '没有找到匹配的日历事件。';
-    const output = `${formatConnectorNow()}\n${baseOutput}`;
+      ? `${copy.read.items} (${events.length})${separator.trimEnd()}\n${events.map((event) => formatEvent(event, copy)).join('\n')}`
+      : copy.read.emptyItems;
+    const output = `${formatConnectorNow(undefined, undefined, locale)}\n${baseOutput}`;
     return {
       ok: true,
       output,
-      meta: buildCalendarMeta(ctx, action, output, { count: events.length, events }),
+      meta: buildCalendarMeta(ctx, action, output, { count: events.length, events }, copy.read.items),
     };
   } catch (error) {
     // EventKit 失败带机器码（not_authorized 走授权卡 / 停车续做）；文案不含原生细节
@@ -157,6 +177,7 @@ async function executeCalendar(
         ? error.message
         : `Calendar connector failed: ${error instanceof Error ? error.message : String(error)}`,
       code: calendarFailure ? error.code : 'CONNECTOR_FAILED',
+      ...(locale === 'en' ? { userMessage: describeCalendarFailureForUser(copy, separator, error) } : {}),
     };
   }
 }

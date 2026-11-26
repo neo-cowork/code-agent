@@ -12,20 +12,25 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
-import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
+import { createSingleSpawnRunId, createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
+let translations: typeof zh = zh;
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined; messages: Array<{ id: string; from: string; to: string; content: string; timestamp: number; messageType: string }> } = {
   agents: [], activeSessionId: undefined, messages: [],
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: translations }) }));
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({ useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState) }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -84,6 +89,7 @@ function treeSnapshot(node: AgentTreeNode): AgentTreeSnapshot {
 
 describe('成员对话页', () => {
   beforeEach(() => {
+    translations = zh;
     invokeMock.mockReset();
     invokeMock.mockImplementation((channel: unknown) => {
       if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
@@ -104,6 +110,111 @@ describe('成员对话页', () => {
   });
   afterEach(() => cleanup());
 
+  it.each([
+    { t: zh, name: '调研员', progress: 'Tool results: Read denied', failureCode: AgentFailureCode.PermissionDenied },
+    { t: en, name: 'Researcher', progress: 'Error: internal provider response', failureCode: AgentFailureCode.Timeout },
+    { t: zh, name: '调研员', progress: 'Tool results: Read denied' },
+    { t: en, name: 'Researcher', progress: 'Error: internal provider response' },
+    { t: en, name: 'Researcher', progress: 'Permission denied: provider workspace', failureCode: AgentFailureCode.PermissionDenied },
+    { t: zh, name: '调研员', progress: '已核对两份统计表，口径一致。', failureCode: AgentFailureCode.StepCapReached,
+      readable: '已核对两份统计表，口径一致。' },
+    { t: en, name: 'Researcher', progress: 'Permission denied: provider workspace', failureCode: AgentFailureCode.PermissionDenied,
+      ledgerOutput: 'Both source tables use the same definition.', readable: 'Both source tables use the same definition.' },
+  ])('uses one role label and localized failure copy across the receipt and member view (%#)', async ({
+    t, name, progress, failureCode, ledgerOutput, readable,
+  }) => {
+    translations = t;
+    const node: AgentTreeNode = {
+      id: 'report-agent', role: 'explore', displayName: 'explore-交接笔记', background: true, status: 'failed',
+      statusLabel: '', progress, failureCode, children: [], worktreeState: { status: 'none' },
+      budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'],
+    };
+    const id = createSwarmTraceStorageId({
+      sessionId: 'session-1', runId: createSingleSpawnRunId(node.id), treeId: 'session-1',
+    });
+    const run = { ...ledgerRun, id, totalAgents: 1 };
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve({
+        ...ledgerDetail, run: { ...ledgerDetail.run, ...run },
+        agents: [{ ...record, runId: id, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: ledgerOutput ?? progress }],
+      });
+      return Promise.resolve(null);
+    });
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => (
+      domain === IPC_DOMAINS.AGENT && action === 'getTree' ? Promise.resolve(treeSnapshot(node)) : Promise.resolve(null)
+    ));
+    useMemberViewStore.setState({ viewingMemberId: node.id });
+    const receipt = deriveDelegationPresentation({
+      id: 'report-call', name: 'spawn_agent', arguments: {},
+      result: { toolCallId: 'report-call', success: true, metadata: { agentId: node.id } },
+    }, [], [node], t);
+    expect(receipt).toBeTruthy();
+    if (!receipt) throw new Error('Expected delegation receipt');
+    render(<>
+      <DelegationHeader presentation={receipt} />
+      <DelegationReceipt presentation={receipt} />
+      <MemberConversationView sessionId="session-1" />
+    </>);
+    const output = await screen.findByTestId('member-final-output');
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(name);
+    expect(screen.getByTestId('delegation-headline').textContent).toContain(`${name} · `);
+    const reason = { ...t.toolStepHumanize.failureCodes, ...t.toolStepHumanize.agentFailureReasons }[
+      failureCode ?? AgentFailureCode.Unknown
+    ];
+    expect(screen.getByTestId('delegation-failure').textContent).toBe(reason);
+    expect(output.textContent).toContain(reason);
+    if (readable) expect(output.textContent).toContain(readable);
+    if (progress !== readable) expect(output.textContent).not.toContain(progress);
+  });
+
+  it.each([
+    ['zh', '市场组调研员', zh, '市场组调研员', '调研员'],
+    ['en', 'Market Research Lead', en, 'Market Research Lead', 'Researcher'],
+    ['zh', 'explore', zh, '调研员', undefined],
+    ['en', 'explore', en, 'Researcher', undefined],
+  ] as const)('localizes the background Team member header and preserves its report (%s, %s)', async (
+    _locale, instanceName, t, title, roleLabel,
+  ) => {
+    translations = t;
+    const runId = createSwarmTraceStorageId({ sessionId: 'session-1', runId: 'team-run', treeId: 'team-tree' });
+    const run = { ...ledgerRun, id: runId, status: 'running' as const };
+    const teamMember = { ...record, runId, name: instanceName, role: 'explore', status: 'running' as const };
+    const detail: SwarmRunDetail = {
+      run: { ...ledgerDetail.run, ...run },
+      agents: [teamMember, { ...writerRecord, runId }],
+      events: [{
+        id: 1, runId, seq: 1, timestamp: 1_000, eventType: 'swarm:agent:updated',
+        agentId: teamMember.agentId, level: 'info', title: '市场组已开始核对口径', summary: '', payload: null,
+      }],
+    };
+    invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
+      channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [run] : detail,
+    ));
+    invokeDomainMock.mockResolvedValue(treeSnapshot({
+      id: teamMember.agentId, role: teamMember.role, displayName: teamMember.name, background: true,
+      status: 'running', statusLabel: '', progress: '正在搜索资料',
+      children: [], worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [],
+      sources: ['parallelCoordinator', 'backgroundRegistry'],
+    }));
+    swarmState.messages = [{
+      id: 'market-progress', from: teamMember.agentId, to: 'lead', content: '已找到原始统计表',
+      timestamp: 1, messageType: 'result',
+    }];
+    useMemberViewStore.setState({ viewingMemberId: teamMember.agentId });
+    await act(async () => { render(<MemberConversationView sessionId="session-1" />); });
+
+    const heading = screen.getByRole('heading', { level: 2 });
+    const header = heading.closest('header');
+    expect(header?.textContent).not.toContain('explore');
+    expect(heading.textContent).toBe(title);
+    expect(header?.querySelector('p')?.textContent).toBe(roleLabel);
+    expect(screen.getByTestId('role-initial-avatar-explore').getAttribute('aria-label')).toBe(title);
+    expect(screen.getByTestId('member-process-messages').textContent).toContain('已找到原始统计表');
+    expect(screen.getByTestId('member-run-trail').textContent).toContain('市场组已开始核对口径');
+    expect(screen.getByTestId('member-final-output').textContent).toContain(teamMember.finalOutput);
+  });
+
   it('进入成员对话页，展示下发任务和产出', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });
 
@@ -113,6 +224,85 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-final-output').textContent).toContain('三处口径不一致');
     // 只显示这一位，不串到别人
     expect(screen.getByTestId('member-conversation-view').textContent).not.toContain('初稿');
+  });
+
+  it.each([
+    ['zh', zh, '接下来我会直接操作「Keynote」的界面——这件事没有现成的连接器或网页路径可用。'],
+    ['en', en, "Next I'll operate Keynote directly on screen — there's no connector or browser route for this."],
+  ] as const)('shows the host disclosure once on Team and plain member pages (%s)', async (_locale, t, expected) => {
+    translations = t;
+    const guiDisclosures = [{ app: 'Keynote', callId: 'keynote-call' }];
+    swarmState.agents = [agentOf({
+      finalOutput: '',
+      contextSnapshot: {
+        currentTokens: 1, maxTokens: 100, usagePercent: 1, messageCount: 1, warningLevel: 'normal',
+        lastUpdated: 1, tools: [], attachments: [], previews: [], truncatedMessages: 0, guiDisclosures,
+      },
+    })];
+    const detail = { ...ledgerDetail, agents: [{ ...record, finalOutput: '' }] };
+    invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
+      channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [ledgerRun] : detail,
+    ));
+
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    const team = render(<MemberConversationView sessionId="session-1" />);
+    expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
+    team.unmount();
+
+    invokeDomainMock.mockResolvedValue(treeSnapshot({
+      id: 'plain-agent', role: 'Coder', status: 'running', statusLabel: '', children: [],
+      worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'], guiDisclosures,
+    }));
+    useMemberViewStore.setState({ viewingMemberId: 'plain-agent' });
+    render(<MemberConversationView sessionId="session-1" />);
+    expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
+  });
+
+  it.each([
+    ['zh', zh, '接下来我会直接操作「Calculator」的界面——这件事没有现成的连接器或网页路径可用。'],
+    ['en', en, "Next I'll operate Calculator directly on screen — there's no connector or browser route for this."],
+  ] as const)('plain member page and delegation receipt render the same disclosure (%s)', async (_locale, t, expected) => {
+    translations = t;
+    const guiDisclosures = [{ app: 'Calculator', callId: 'launch-name' }];
+    const task: Task = {
+      id: 'task-calc',
+      sessionId: 'session-1',
+      source: 'session_command_center',
+      toolCallId: 'call-delegate',
+      title: _locale === 'zh' ? '打开计算器并读显示' : 'Check the calculator display',
+      status: 'completed',
+      createdAt: 1,
+      updatedAt: 2,
+      events: [],
+      outputRefs: [],
+      progress: { current: 2, guiDisclosures },
+    };
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: task.id });
+
+    const member = render(<MemberConversationView sessionId="session-1" />);
+    const memberNotice = (await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent);
+    expect(memberNotice).toEqual([expected]);
+    member.unmount();
+
+    const presentation = deriveDelegationPresentation({
+      id: 'call-delegate',
+      name: 'delegate_task',
+      arguments: { title: task.title, task: '打开计算器，读当前显示' },
+      result: {
+        toolCallId: 'call-delegate',
+        success: true,
+        output: 'ok',
+        metadata: { sessionTask: { tasks: [{ taskId: task.id }] } },
+      },
+    }, [task], [], t);
+    if (!presentation) throw new Error('expected a delegation presentation');
+    expect(presentation.guiDisclosures).toEqual(guiDisclosures);
+    render(<DelegationReceipt presentation={presentation} />);
+    const receiptNotice = screen.getAllByTestId('gui-takeover-disclosure').map((row) => row.textContent);
+    expect(receiptNotice).toEqual(memberNotice);
   });
 
   it('点顶部「← 返回主会话」回主会话', async () => {
@@ -175,6 +365,32 @@ describe('成员对话页', () => {
 
     // S3：当前动作置顶高亮 = 最近一条动作
     expect(screen.getByTestId('member-current-action').textContent).toBe(zh.toolStepHumanize.bashFallback);
+  });
+
+  it('成员的多条 Bash 各自一行（带人话描述），命令样描述退通用文案、命令不外露', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 100, maxTokens: 1000, usagePercent: 10, messageCount: 3,
+          warningLevel: 'normal', lastUpdated: 1, attachments: [], previews: [], truncatedMessages: 0,
+          tools: ['Bash'],
+          bashSteps: [
+            { description: '列出工作区目录内容', command: 'ls -la /tmp/ws' },
+            { description: '统计 csv 文件个数', command: 'find /tmp/ws -name "*.csv" | wc -l' },
+            { description: 'find /tmp/ws -name x', command: 'find /tmp/ws -name x' },
+          ],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+
+    const texts = screen.getAllByTestId('member-recent-action').map((node) => node.textContent);
+    expect(texts).toEqual([zh.toolStepHumanize.bashFallback, '统计 csv 文件个数', '列出工作区目录内容']);
+    expect(screen.getByTestId('member-recent-actions').textContent).not.toContain('/tmp/ws');
   });
 
   it('还没动手时给空态文案，不留一个空壳区块', async () => {
@@ -298,6 +514,49 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-current-action').textContent).toContain('发送了邮件');
   });
 
+  it('已完成的委派任务页逐条列出 Bash 步骤：两条人话 + 一条缺描述退通用文案，命令不外露', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-9', sessionId: 'session-1', source: 'delegate_task', title: '数 csv', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        lastToolStep: { tool: 'Bash', target: 'du -h /tmp/ws', description: '找出最大的 csv', at: 2 },
+        bashSteps: [
+          { description: '列出工作区目录内容', command: 'ls -la /tmp/ws' },
+          { command: 'find /tmp/ws -name "*.csv" | wc -l' },
+          { description: '找出最大的 csv', command: 'du -h /tmp/ws' },
+        ],
+      },
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-9' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-bash-steps')).toBeTruthy());
+    const rows = screen.getAllByTestId('member-bash-step').map((node) => node.textContent);
+    expect(rows).toEqual(['列出工作区目录内容', zh.toolStepHumanize.bashFallback, '找出最大的 csv']);
+    expect(screen.getByTestId('member-bash-steps').textContent).not.toContain('/tmp/ws');
+  });
+
+  it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 1, maxTokens: 10, usagePercent: 1, messageCount: 1, warningLevel: 'normal', lastUpdated: 1,
+          attachments: [], previews: [], truncatedMessages: 0, tools: ['Bash'],
+          bashSteps: [{ description: '列出工作区目录内容', command: 'ls' }, { command: 'wc -l x' }],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+    expect(screen.getAllByTestId('member-recent-action').map((node) => node.textContent))
+      .toEqual([zh.toolStepHumanize.bashFallback, '列出工作区目录内容']);
+  });
+
   it('普通代理按 delegate_task 后台任务渲染：标题 / 摘要 / 产出引用 / 耗时', async () => {
     invokeMock.mockReset();
     invokeMock.mockResolvedValue([]);
@@ -315,7 +574,7 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-dispatched-task').textContent).toContain('核对发布清单');
     expect(screen.getByTestId('member-final-output').textContent).toContain('清单已核对');
     expect(screen.getByTestId('member-output-ref').textContent).toContain('发布清单.md');
-    expect(screen.getByTestId('member-usage').textContent).toContain('5s');
+    expect(screen.getByTestId('member-usage').textContent).toContain('5 秒');
     // 没有工具步时不渲染虚构的当前动作
     expect(screen.queryByTestId('member-current-action')).toBeNull();
   });
@@ -645,5 +904,91 @@ describe('成员对话页', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zh.expert.memberBar.sentNotRecorded));
     expect(input.value).toBe('');
     expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('queued');
+  });
+  describe('产出区渲染 markdown 并折叠长命令输出', () => {
+    const lsLines = Array.from({ length: 12 }, (_, n) => `-rw-r--r--  1 u  staff  ${n}00 Nov 1 报表${n}.xlsx`).join('\n');
+    const rich = `共找到 **3** 个表格，命令 \`ls -la\` 输出：\n\n\`\`\`\n${lsLines}\n\`\`\`\n`;
+    const short = '结果：\n\n```\na.xlsx\nb.xlsx\nc.xlsx\n```\n';
+
+    const plainNode = (progress: string): AgentTreeNode => ({
+      id: 'agent-9', role: '审阅代理', status: 'completed', statusLabel: '已完成',
+      task: '审阅改动', progress, children: [], worktreeState: { status: 'none' },
+      budgetSummary: { tokensUsed: 1, toolCalls: 1, costUsd: 0 }, evidenceRefs: [], sources: ['spawnGuard'],
+    });
+    const openPlain = async (progress: string) => {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue([]);
+      invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+        if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(treeSnapshot(plainNode(progress)));
+        return Promise.resolve(null);
+      });
+      useMemberViewStore.setState({ viewingMemberId: 'agent-9' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    };
+    const openExpert = async (finalOutput: string) => {
+      const detail = { ...ledgerDetail, agents: [{ ...record, finalOutput }, writerRecord] };
+      invokeMock.mockImplementation((channel: unknown) => {
+        if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
+        if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+        return Promise.resolve(null);
+      });
+      useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    };
+    const expectRendered = () => {
+      const box = screen.getByTestId('member-final-output');
+      expect(box.textContent).not.toContain('**');
+      expect(box.querySelector('strong')?.textContent).toBe('3');
+      expect(box.querySelector('code')?.textContent).toBe('ls -la');
+      const block = box.querySelector('[data-code-block-lines]') as HTMLElement;
+      expect(block.getAttribute('data-code-block-lines')).toBe('12');
+      expect(block.getAttribute('data-code-highlighted-lines')).toBe('0');
+      expect(box.textContent).not.toContain('报表11.xlsx');
+      fireEvent.click(screen.getByText('展开全部 (12 行)'));
+      expect(box.textContent).toContain('报表11.xlsx');
+      fireEvent.click(screen.getByText('收起'));
+      expect(box.textContent).not.toContain('报表11.xlsx');
+    };
+
+    it('专家成员分支：markdown 渲染，12 行 ls 默认折叠、点击展开/收起', async () => {
+      await openExpert(rich);
+      expectRendered();
+    });
+    it('普通代理分支：markdown 渲染，12 行 ls 默认折叠、点击展开/收起', async () => {
+      await openPlain(rich);
+      expectRendered();
+    });
+    it('delegate_task 后台任务（真实载荷形状）：summary 是 240 字单行，完整结果在 metadata.resultMarkdown，页面不出现孤立 ``` 且 ls 折叠', async () => {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue([]);
+      const flat = rich.replace(/\s+/g, ' ').slice(0, 240);
+      const task: Task = {
+        id: 'task-8', sessionId: 'session-1', source: 'session_command_center', title: '清点 Downloads 里的表格文件',
+        summary: flat, status: 'completed', createdAt: 1, updatedAt: 2, durationMs: 5_000,
+        metadata: { resultMarkdown: rich.trim() }, events: [], outputRefs: [],
+      };
+      useBackgroundTaskStore.setState({ tasks: [task] });
+      useMemberViewStore.setState({ viewingMemberId: 'task-8' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+      expectRendered();
+      expect(screen.getByTestId('member-final-output').textContent).not.toContain('```');
+    });
+    it('≤5 行的代码块保持展开', async () => {
+      await openExpert(short);
+      const box = screen.getByTestId('member-final-output');
+      expect(box.querySelector('[data-code-block-lines]')?.getAttribute('data-code-highlighted-lines')).toBe('3');
+      expect(box.textContent).toContain('c.xlsx');
+      expect(screen.queryByText(/展开全部/)).toBeNull();
+    });
+    it('空产出仍显示无产出文案（两个分支）', async () => {
+      await openExpert('');
+      expect(screen.getByTestId('member-final-output').textContent).toContain(zh.expert.workRecord.noOutput);
+      cleanup();
+      await openPlain('');
+      expect(screen.getByTestId('member-final-output').textContent).toContain(zh.expert.workRecord.noOutput);
+    });
   });
 });

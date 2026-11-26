@@ -8,6 +8,7 @@ import { HumanizedText } from '../../HumanizedText';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { MessageMetadata } from '@shared/contract/message';
+import { plainEvidenceText } from '@shared/plainEvidenceText';
 import { useI18n } from '../../../hooks/useI18n';
 
 export interface WakeRationaleFields {
@@ -43,6 +44,7 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
   const text = t.wakeRationale;
   const [open, setOpen] = useState(false);
   const { rationale, evidence } = fields;
+  const cleanEvidence = evidence ? plainEvidenceText(evidence) : '';
   const showMissing = fields.missing || !rationale?.trim();
 
   return (
@@ -68,9 +70,9 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
           ) : (
             <>
               <p data-testid="wake-rationale-text"><HumanizedText text={rationale ?? ''} /></p>
-              {evidence && evidence !== rationale ? (
+              {cleanEvidence && cleanEvidence !== rationale ? (
                 <p data-testid="wake-rationale-evidence" className="mt-1 text-zinc-500">
-                  {text.evidenceLabel}{t.punctuation.colon}<HumanizedText text={evidence} />
+                  {text.evidenceLabel}{t.punctuation.colon}<HumanizedText text={cleanEvidence} />
                 </p>
               ) : null}
             </>

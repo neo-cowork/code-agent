@@ -194,6 +194,7 @@ export function wrapFilePathsInBackticks(markdown: string): string {
 // ============================================================================
 
 const TICKET_PATTERN = /\b[A-Z]{2,10}-\d{1,6}\b/g;
+const NON_TICKET_PREFIXES = new Set(['UTC', 'GMT', 'UTF', 'ISO', 'SHA', 'AES', 'RFC']);
 
 function processTicketSegment(text: string): string {
   TICKET_PATTERN.lastIndex = 0;
@@ -206,6 +207,7 @@ function processTicketSegment(text: string): string {
     const matched = match[0];
     const matchIndex = match.index;
 
+    if (NON_TICKET_PREFIXES.has(matched.slice(0, matched.indexOf('-')))) continue;
     if (isInsideMarkdownLink(text, matchIndex, matched.length, linkSpans)) continue;
 
     // Skip if already wrapped in backticks

@@ -3,6 +3,10 @@ import type { ParsedSkill } from '@shared/contract/agentSkill';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { getAgentCommandOptions } from './agentCommand';
+import type { Language } from '../../../../i18n';
+import { en } from '../../../../i18n/en';
+import { zh } from '../../../../i18n/zh';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 
 export type SlashCandidateKind = 'command' | 'prompt' | 'agent' | 'skill' | 'connector' | 'mcp';
 
@@ -241,29 +245,35 @@ export function createPromptCandidate(
 
 export function createAgentCandidates(
   agents: AgentListEntry[],
-  labels: SlashPickerLabels,
+  // labels/language 都是必填位置参数：漏传在 typecheck 就红；传 undefined 的 labels 按 language 取语言包，不回落中文
+  labels: SlashPickerLabels | undefined,
+  language: Language,
 ): SlashPickerCandidate[] {
   // 与 /agent 面板同源：无 Default 项（2026-07-29 起，去掉专家 chip 即恢复默认路由）
-  return getAgentCommandOptions(agents).map((option) => ({
+  return getAgentCommandOptions(agents).map((option) => {
+    const shown = localizeBuiltinRole(option.id ?? '', { name: option.name, profession: option.profession }, language);
+    return {
     id: `agent:${option.id ?? 'default'}`,
     kind: 'agent',
     group: 'agent',
     actionKind: 'select-agent',
-    label: option.name,
-    sublabel: option.profession,
+    label: shown.name,
+    sublabel: shown.profession,
     description: option.description,
     slashText: `/agent ${option.token}`,
-    effectLabel: labels.setAgentForTurn,
+    effectLabel: labels?.setAgentForTurn ?? (language === 'en' ? en : zh).slashCommands.picker.setAgentForTurn,
     agentToken: option.token,
     agentId: option.id,
     searchText: buildSearchText([
       option.id || '',
       option.name,
+      shown.name,
       option.description,
       option.token,
       `/agent ${option.token}`,
     ]),
-  }));
+    };
+  });
 }
 
 export function deriveSkillLibraryId(skill: ParsedSkill): string {

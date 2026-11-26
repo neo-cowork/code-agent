@@ -218,7 +218,11 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
     expect(resolverState.execute).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(String(result.result)).toContain('SENSITIVE_STEP_SKIPPED_BY_USER');
+    expect(String(result.result)).toContain('I did NOT perform this step');
     expect(String(result.result)).toContain('Do not retry this step');
+    // 用户已经用「跳过」做了选择：回话不许再让模型反问「怎么办」（与 userDeniedGoalStickyError
+    // 的拒绝后纪律同口径）——只能继续其余步骤，或明说缺了哪一步。
+    expect(String(result.result)).not.toMatch(/ask the user|how to proceed|ask them/i);
     expect(result.metadata).toMatchObject({ code: 'SENSITIVE_STEP_HANDBACK', outcome: 'skipped' });
     // deny 的权限失败形态（PermissionDenied failureCode）不得出现——跳过不是失败
     expect(result.metadata?.failureCode).toBeUndefined();

@@ -54,6 +54,7 @@ export interface AssistantMessagePayload extends TurnIdPayload {
   contentParts?: Message['contentParts'];
   artifacts?: Message['artifacts'];
   modelDecision?: ModelDecisionEventData;
+  metadata?: Pick<NonNullable<Message['metadata']>, 'correlation' | 'backgroundTaskPreannounce'>;
 }
 
 export interface RoutingResolvedPayload {
@@ -71,7 +72,9 @@ export interface RoutingResolvedPayload {
 export interface ModelFallbackPayload {
   reason: string;
   from: string;
-  to: string;
+  /** 缺省 = 链耗尽（exhausted: true），没有"切到哪个模型"可报。 */
+  to?: string;
+  exhausted?: boolean;
   category?: string;
   strategy?: ModelFallbackStrategy;
   tried?: ModelFallbackTraceStep[];

@@ -6,6 +6,8 @@ export interface AttachmentMergeResult {
   overflowCount: number;
   skippedCount: number;
   duplicates: Array<{ incoming: MessageAttachment; existing: MessageAttachment }>;
+  rejectedIncoming: MessageAttachment[];
+  existingAttachments: MessageAttachment[];
   cap: number;
 }
 
@@ -41,6 +43,8 @@ export function mergeAttachments(
     overflowCount,
     skippedCount: duplicates.length,
     duplicates,
+    rejectedIncoming: [...duplicates.map(({ incoming }) => incoming), ...merged.slice(Math.max(cap, existing.length))],
+    existingAttachments: existing,
     cap,
   };
 }

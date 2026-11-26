@@ -17,7 +17,29 @@
 // 必须显式 retry 或 cancel 才能放行后续流程。
 // ============================================================================
 
-export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing';
+export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access' | 'channel_pairing' | 'outbound_draft';
+
+export interface OutboundDraftInboxItem {
+  id: string;
+  revision: string;
+  scheduledTaskName?: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  body: string;
+  attachmentNames: string[];
+  needsReconfirm: boolean;
+}
+
+export type OutboundDraftActionCode =
+  | 'OUTBOUND_DRAFT_SENT'
+  | 'OUTBOUND_DRAFT_DISCARDED'
+  | 'OUTBOUND_DRAFT_EXPIRED'
+  | 'OUTBOUND_DRAFT_CLOSED'
+  | 'OUTBOUND_DRAFT_RECONFIRM'
+  | 'OUTBOUND_DRAFT_ATTACHMENT_UNAVAILABLE'
+  | 'OUTBOUND_DRAFT_SEND_FAILED';
 
 /**
  * kind='tool_approval' 停车行的 payload（B2）。无人值守会话的工具审批请求超时不再 deny，
@@ -49,13 +71,18 @@ export interface ToolApprovalPayload {
    * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
    */
   standingGrantTarget?: string | null;
+  /** 后台任务/子代理 lane 发起的审批（请求带 runId/agentId）：放弃前台停靠 run 时不得连带作废，它的内存等待者仍活着。 */
+  backgroundLane?: true;
   /** Must-confirm requests offer only one-time approval. */
   forceConfirm?: boolean;
   /** Host-owned origin of the request (copied from permission details): scheduled-task flag/name or the user's own quote. */
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
+  /** host 停车时已校验的应用目标（computer_use / cua-driver）；重启恢复只读这份落盘身份，不在点击时重推。 */
+  targetApp?: { bundleId?: string; name: string };
   /**
    * 「一键授权此任务写这个文件夹」候选（realpath 后的绝对路径）。仅无人值守 cron/heartbeat 的
    * file_write/file_edit 在守卫通过时由 host 写入；缺省 = 不出按钮、逐文件审批。
@@ -96,6 +123,8 @@ export interface ParkedApprovalInboxItem {
   /** 原始 assistant tool_call id；渲染端据此把「等批准」精确对到会话里那一步。老行没有。 */
   toolCallId?: string;
   sessionTitle?: string;
+  /** Channel label sessions: task name from the last user message preceding this approval’s tool call. */
+  taskTitle?: string;
   tool: string;
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */
@@ -111,6 +140,7 @@ export interface ParkedApprovalInboxItem {
   forceConfirm?: boolean;
   /** Host-owned origin: scheduled-task flag/name, or the user's own quote for manual turns. */
   startedByAutomation?: boolean;
+  startedByFirstWake?: boolean;
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */

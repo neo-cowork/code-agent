@@ -3,6 +3,7 @@
 // 轮询未分析的截图，调用本地 Qwen3-VL 生成语义描述
 // ============================================================================
 
+import { stripModelMarkup } from '../../../shared/modelMarkupStrip';
 import fs from 'fs';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
@@ -124,7 +125,7 @@ async function analyzeScreenshot(imagePath: string): Promise<string | null> {
   if (!content) return null;
 
   // 去除 Qwen3 可能输出的 <think>...</think> 标签
-  return content.replace(/<think>[\s\S]*?<\/think>/g, '').trim() || null;
+  return stripModelMarkup(content).trim() || null;
 }
 
 function sqlEscape(value: string): string {

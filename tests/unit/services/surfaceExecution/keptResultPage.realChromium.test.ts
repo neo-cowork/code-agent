@@ -13,7 +13,7 @@
 import { createServer, type Server } from 'http';
 import type { AddressInfo } from 'net';
 import { execFileSync } from 'child_process';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.CODE_AGENT_BROWSER_PROVIDER = 'playwright-bundled';
 
@@ -38,6 +38,7 @@ import {
   getKeptResultPageHandler,
 } from '../../../../src/host/ipc/workspaceKeptResultPage';
 import { browserPool } from '../../../../src/host/services/infra/browserPool';
+import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../../../../src/host/services/infra/browser/managedBrowserHelpers';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
 
 const TIMEOUT_MS = 120_000;
@@ -70,11 +71,15 @@ describe('kept result page claim path (real chromium)', () => {
   });
 
   afterAll(async () => {
-    await Promise.all(browserPool.listAgents().map((key) => browserPool.releaseAgent(key)));
     await new Promise<void>((resolve) => {
       if (!server?.listening) return resolve();
       server.close(() => resolve());
     });
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await Promise.all(browserPool.listAgents().map((key) => browserPool.releaseAgent(key)));
   });
 
   beforeEach(() => {
@@ -160,6 +165,115 @@ describe('kept result page claim path (real chromium)', () => {
     expect(getKeptResultPageHandler(links, { conversationId }).state).toBe('kept');
     expect(service!.isRunning()).toBe(true);
     expect(await tab.page.locator('#note').inputValue()).toBe('user typed this');
+  }, TIMEOUT_MS);
+
+  it.each(['session switch', 'still bound'] as const)(
+    'expires a kept page 30 minutes after the last user input (%s)',
+    async (variant) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const keptAt = Date.now();
+      const conversationId = 'smoke-conv-idle';
+      const input = { conversationId, workspace: process.cwd() };
+      const links = new UserBrowserLinkService();
+      await submitAndKeep(conversationId);
+      const adopted = await adoptKeptResultPageHandler(links, input);
+      const service = adoptedService(conversationId, adopted.runId);
+      const expiryLog = vi.spyOn(service.logger, 'log');
+      const close = vi.spyOn(service, 'close');
+      const note = service.getActiveTab()!.page.locator('#note');
+      const box = (await note.boundingBox())!;
+      await links.dispatchUserInput({
+        ...input,
+        input: { kind: 'click', x: box.x + box.width / 2, y: box.y + box.height / 2 },
+      });
+
+      await vi.advanceTimersByTimeAsync((18 * 60 + 20) * 1000);
+      const inputAt = Date.now();
+      await links.dispatchUserInput({ ...input, input: { kind: 'insertText', text: 'a note' } });
+      expect(await note.inputValue()).toBe('a note');
+      const expiresAtMs = service.getSessionState().lease?.expiresAtMs;
+      console.log('[smoke] kept lease after user input:', { variant, keptAt, inputAt, expiresAtMs });
+      if (variant === 'session switch') await links.end(conversationId, 'session-switch');
+
+      const keptState = () => getKeptResultPageHandler(links, input).state;
+      await vi.advanceTimersByTimeAsync((11 * 60 + 40) * 1000);
+      await close.mock.results.at(-1)?.value;
+      expect.soft(keptState(), 'kept at T0+30:00').toBe('kept');
+      await vi.advanceTimersByTimeAsync(18 * 60 * 1000);
+      expect.soft(keptState(), 'kept at T0+48:00').toBe('kept');
+      expect.soft(expiresAtMs, 'expiry after user input').toBe(inputAt + 30 * 60 * 1000);
+
+      // A bound window keeps its in-use protection until the user leaves.
+      if (variant === 'still bound') await links.end(conversationId, 'session-switch');
+      await vi.advanceTimersByTimeAsync(21 * 1000);
+      await close.mock.results.at(-1)?.value;
+      expect.soft(keptState(), 'closed at T0+48:21').toBe('closed');
+      expect(expiryLog).toHaveBeenCalledWith('WARN', expect.stringContaining('Managed browser lease expired'));
+    },
+    TIMEOUT_MS,
+  );
+
+  it.each(['history', 'open', 'adopt'] as const)(
+    '%s renews the existing user binding while viewport updates do not',
+    async (action) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const conversationId = 'smoke-conv-activity';
+      const input = { conversationId, workspace: process.cwd() };
+      const links = new UserBrowserLinkService();
+      await submitAndKeep(conversationId);
+      const adopted = await adoptKeptResultPageHandler(links, input);
+      const service = adoptedService(conversationId, adopted.runId);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      if (action === 'history') await links.history({ ...input, action: 'back' });
+      else if (action === 'open') await links.open({ ...input, url: origin });
+      else await adoptKeptResultPageHandler(links, input);
+      const expectedExpiry = Date.now() + MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS;
+      expect(service.getSessionState().lease?.expiresAtMs).toBe(expectedExpiry);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await links.setViewport({ ...input, width: 900, height: 650 });
+      expect(service.getSessionState().lease?.expiresAtMs).toBe(expectedExpiry);
+      await links.end(conversationId, 'session-switch');
+    },
+    TIMEOUT_MS,
+  );
+
+  it.each(['close_tab', 'native page close'])('keeps the result until the last managed page closes via %s', async (closePath) => {
+    const conversationId = `smoke-conv-last-tab-${closePath}`;
+    const links = new UserBrowserLinkService();
+    const { identity, exec } = startAgentRun(conversationId);
+    try {
+      await exec({ action: 'navigate', url: origin });
+      await exec({ action: 'keep_result_page' });
+      const service = getManagedBrowserProviderAdapter().getBrowserService(identity);
+      const resultTab = service.getActiveTab()!;
+      const context = resultTab.page.context();
+      const poll = () => getKeptResultPageHandler(links, { conversationId });
+      expect(poll().state).toBe('kept');
+
+      await exec({ action: 'new_tab', url: origin });
+      expect(service.listTabs()).toHaveLength(2);
+      await exec({ action: 'close_tab', tabId: service.getActiveTab()!.id });
+      const afterNonLast = poll();
+      console.log('[smoke] poll after non-last close:', JSON.stringify(afterNonLast));
+      expect(afterNonLast.state).toBe('kept');
+
+      if (closePath === 'close_tab') {
+        await exec({ action: 'close_tab', tabId: resultTab.id });
+      } else {
+        await resultTab.page.close();
+      }
+      console.log('[smoke] Chromium pages after last managed close:', JSON.stringify(
+        context.pages().filter((page) => !page.isClosed()).map((page) => page.url()),
+      ));
+      const afterLast = poll();
+      console.log('[smoke] poll after last close:', JSON.stringify(afterLast));
+      expect(afterLast.state).toBe('closed');
+      expect(afterLast.url).toBe(afterNonLast.url);
+    } finally {
+      await getSurfaceExecutionRuntime().endRun(identity);
+    }
   }, TIMEOUT_MS);
 
   it('closing the browser -> state closed with url retained -> adopt rejects with a plain sentence', async () => {

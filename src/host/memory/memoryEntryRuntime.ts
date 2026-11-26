@@ -28,6 +28,7 @@ import {
   writeLightMemoryFile,
   type LightMemoryFile,
 } from '../lightMemory/lightMemoryIpc';
+import { archiveSupersededManualMemory } from '../lightMemory/manualMemoryGuard';
 import { hashInboxContent } from './knowledgeInboxDecision';
 import { resolveProjectMemoryKey } from './projectMemoryKey';
 import {
@@ -35,9 +36,11 @@ import {
   scopeMatches,
   scoreMemoryEntry,
   tokenizeQuery,
+  expandTokensWithWordSegments,
   type ProjectMemoryMatch,
 } from './memoryEntryScoring';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import { MEMORY } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { formatMemoryAgeLine, withPackedWrittenLine } from './memoryAge';
@@ -99,61 +102,44 @@ export function memoryEntryKindForInboxKind(kind: string | undefined): MemoryEnt
   }
 }
 
+const LIGHT_TYPE_KINDS: Readonly<Record<string, MemoryEntryKind>> = {
+  directive: 'directive',
+  user: 'user',
+  feedback: 'feedback',
+  project: 'project',
+  people: 'people',
+};
+
+const KIND_LIGHT_TYPES: Readonly<Partial<Record<MemoryEntryKind, string>>> = {
+  directive: 'directive',
+  user: 'user',
+  feedback: 'feedback',
+  project: 'project',
+  people: 'people',
+  pattern: 'project',
+  session: 'project',
+};
+
+const KIND_CATEGORIES: Readonly<Partial<Record<MemoryEntryKind, string>>> = {
+  directive: 'user_requirement',
+  user: 'preference',
+  feedback: 'user_requirement',
+  project: 'flush_decision',
+  people: 'preference',
+  pattern: 'pattern',
+  session: 'user_requirement',
+};
+
 function memoryEntryKindForLightType(type: string): MemoryEntryKind {
-  switch (type) {
-    case 'directive':
-      return 'directive';
-    case 'user':
-      return 'user';
-    case 'feedback':
-      return 'feedback';
-    case 'project':
-      return 'project';
-    case 'reference':
-      return 'reference';
-    default:
-      return 'reference';
-  }
+  return Object.hasOwn(LIGHT_TYPE_KINDS, type) ? LIGHT_TYPE_KINDS[type] : 'reference';
 }
 
 function lightTypeForMemoryEntryKind(kind: MemoryEntryKind): string {
-  switch (kind) {
-    case 'directive':
-      return 'directive';
-    case 'user':
-      return 'user';
-    case 'feedback':
-      return 'feedback';
-    case 'project':
-      return 'project';
-    case 'pattern':
-      return 'project';
-    case 'session':
-      return 'project';
-    case 'reference':
-    default:
-      return 'reference';
-  }
+  return KIND_LIGHT_TYPES[kind] ?? 'reference';
 }
 
 function categoryForMemoryEntryKind(kind: MemoryEntryKind): string {
-  switch (kind) {
-    case 'directive':
-      return 'user_requirement';
-    case 'user':
-      return 'preference';
-    case 'feedback':
-      return 'user_requirement';
-    case 'project':
-      return 'flush_decision';
-    case 'pattern':
-      return 'pattern';
-    case 'session':
-      return 'user_requirement';
-    case 'reference':
-    default:
-      return 'reference';
-  }
+  return KIND_CATEGORIES[kind] ?? 'reference';
 }
 
 function scopeForEntry(kind: MemoryEntryKind, projectPath?: string | null, sessionId?: string | null): MemoryEntryScope {
@@ -234,6 +220,7 @@ const VALID_ENTRY_KINDS = new Set<MemoryEntryKind>([
   'user',
   'feedback',
   'project',
+  'people',
   'reference',
   'session',
   'pattern',
@@ -278,6 +265,7 @@ export function lightMemoryFileToEntry(file: LightMemoryFile): MemoryEntry {
     schemaVersion: 2,
     status: file.status || 'active',
     deprecatedBy: file.deprecatedBy ?? null,
+    supersedes: file.supersedes ?? null,
     kind,
     scope: file.scope || scopeForEntry(kind, file.projectPath, file.sessionId),
     title: file.name || file.filename.replace(/\.md$/, ''),
@@ -389,16 +377,21 @@ export function buildActiveMemoryEntryFromInbox(input: BuildActiveMemoryEntryInp
   };
 }
 
+/** 所有落盘到 light memory 文件的文本（手动添加 / 导入 / 编辑）统一过敏感串门。 */
+function guardEntryText(value: string): string {
+  return guardSensitiveText(value, { surface: 'memory', mode: 'local-persist' });
+}
+
 export async function writeEntryToLightMemory(
   entry: MemoryEntry,
   options: { directiveConfirmedByUser?: boolean } = {},
 ): Promise<LightMemoryFile> {
   const file = await writeLightMemoryFile({
     filename: entry.source.filePath || memoryEntryFilenameForId(entry.id),
-    name: entry.title,
-    description: entry.summary,
+    name: guardEntryText(entry.title),
+    description: guardEntryText(entry.summary),
     type: lightTypeForMemoryEntryKind(entry.kind),
-    content: entry.content,
+    content: guardEntryText(entry.content),
     entryId: entry.id,
     status: entry.status,
     deprecatedBy: entry.deprecatedBy,
@@ -497,7 +490,7 @@ export async function rebuildMemoryMirrorFromLightFiles(
   options: { journal?: MemoryChangeJournalContext } = {},
 ): Promise<MemoryMirrorRebuildResult> {
   const files = await listMemoryFiles();
-  const existingMirrors = db.listMemories({ includeArchived: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
+  const existingMirrors = db.listMemories({ includeArchived: true, includeCandidates: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
     .filter((memory) => memoryEntryMetadata(memory)?.sourceOfTruth === 'light_file');
   const existingByEntryId = new Map<string, MemoryRecord>();
   const existingByFilePath = new Map<string, MemoryRecord>();
@@ -607,7 +600,9 @@ export async function packMemoryEntries(
   const kinds = request.kinds?.length ? new Set<MemoryEntryKind>(request.kinds) : null;
   const excludedEntryIds = new Set(request.excludeEntryIds || []);
   const query = (request.query || '').trim();
-  const tokens = tokenizeQuery(query);
+  const baseTokens = tokenizeQuery(query);
+  const requireMatch = Boolean(request.requireQueryMatch) && baseTokens.length > 0;
+  const tokens = requireMatch ? expandTokensWithWordSegments(query, baseTokens) : baseTokens;
   const entries = (await listUnifiedMemoryEntries(db)).entries;
 
   // 混合召回（roadmap 2.5）：listUnifiedMemoryEntries 的 DB 侧只取最近窗口，
@@ -657,6 +652,7 @@ export async function packMemoryEntries(
       return { entry, score: scored.score, reasons: scored.reasons };
     })
     .filter((item) => tokens.length === 0 || item.score > 0)
+    .filter((item) => !requireMatch || item.reasons.some((reason) => reason.startsWith('query-match:')))
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return b.entry.updatedAt - a.entry.updatedAt;
@@ -902,20 +898,22 @@ export async function updateMemoryEntry(
   if (current.source.sourceOfTruth === 'light_file') {
     const file = await writeLightMemoryFile({
       filename: current.source.filePath || memoryEntryFilenameForId(current.id),
-      name: next.title,
-      description: next.summary,
+      name: guardEntryText(next.title),
+      description: guardEntryText(next.summary),
       type: lightTypeForMemoryEntryKind(next.kind),
-      content: next.content,
+      content: guardEntryText(next.content),
       entryId: next.id,
       status: next.status,
       deprecatedBy: next.deprecatedBy,
-      source: current.source.kind,
+      supersedes: current.supersedes,
+      source: current.supersedes ? current.evidence[0]?.source ?? current.source.kind : current.source.kind,
       schemaVersion: next.schemaVersion,
       scope: next.scope,
       projectPath: next.projectPath,
       sessionId: next.sessionId,
       importProvenance: next.source.importProvenance,
     });
+    if (current.status === 'candidate' && file.status === 'active') await archiveSupersededManualMemory(file);
     await rebuildLightMemoryIndex();
     const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db, { journal: options.journal });
     return {
@@ -983,10 +981,10 @@ export async function deleteMemoryEntry(
 async function writeImportedLightEntry(entry: MemoryEntry): Promise<string> {
   const file = await writeLightMemoryFile({
     filename: entry.source.filePath || memoryEntryFilenameForId(entry.id),
-    name: entry.title,
-    description: entry.summary,
+    name: guardEntryText(entry.title),
+    description: guardEntryText(entry.summary),
     type: lightTypeForMemoryEntryKind(entry.kind),
-    content: entry.content,
+    content: guardEntryText(entry.content),
     entryId: entry.id,
     status: entry.status,
     deprecatedBy: entry.deprecatedBy,

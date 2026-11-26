@@ -458,4 +458,85 @@ describe('searchSessions — FTS 主路径', () => {
         .toEqual(['sess-partial-cache']);
     }
   });
+
+  // 旧组队配方行：用户消息以「【组队 · 配方名】」开头（气泡已剥掉前缀，legacyTeamRecipeDisplay.ts）。
+  // SQL 层按库内原文召回；内存里的定位 / 相关度 / 摘要只看剥掉前缀后的用户原话。
+  describe('旧组队配方前缀', () => {
+    const STRIPPED = '会员增长方案';
+    const RAW = `【组队 · 产品规格】${STRIPPED}`;
+
+    it('摘要只含用户原话，偏移按剥掉前缀后的文本计（DB-only 首搜回填 + 缓存命中二搜）', () => {
+      insertSession(db, 'sess-legacy');
+      repo.addMessage('sess-legacy', makeMessage('legacy-1', RAW, 'user', 1));
+
+      for (const cached of [false, true]) {
+        const result = searchSessions('增长方案', {}, cache, ftsSource);
+        expect(cache.getSession('sess-legacy')?.messages[0].content, `cached=${cached}`).toBe(RAW);
+        expect(result.results, `cached=${cached}`).toHaveLength(1);
+        expect(result.results[0], `cached=${cached}`).toMatchObject({
+          sessionId: 'sess-legacy',
+          messageIndex: 0,
+          turnNumber: 1,
+          snippet: '会员**增长方案**',
+        });
+        expect(result.results[0].message.content, `cached=${cached}`).toBe(RAW);
+        expect(result.results[0].matches[0].start, `cached=${cached}`).toBe(STRIPPED.indexOf('增长方案'));
+      }
+    });
+
+    it('2 字中文短查询（LIKE 兜底召回）同样按剥掉前缀后的文本定位', () => {
+      insertSession(db, 'sess-legacy-short');
+      repo.addMessage('sess-legacy-short', makeMessage('legacy-short-1', RAW, 'user', 1));
+
+      const result = searchSessions('增长', {}, cache, ftsSource);
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].snippet).toBe('会员**增长**方案');
+      expect(result.results[0].matches[0].start).toBe(STRIPPED.indexOf('增长'));
+    });
+
+    // 组队 = 2 字词走 LIKE 兜底；产品规格 = 4 字走 trigram MATCH：两条召回都被覆盖
+    it.each(['组队', '产品规格'])('查询词只出现在前缀里时不返回该消息（%s：SQL 已召回，内存定位零命中）', (query) => {
+      insertSession(db, 'sess-legacy-prefix');
+      repo.addMessage('sess-legacy-prefix', makeMessage('legacy-prefix-1', RAW, 'user', 1));
+
+      // 前提：这一行在 SQL 层确实被召回，零结果来自内存定位这一步
+      expect(repo.searchSessionMessagesFts(query, { shortQueryFallback: true }).map((hit) => hit.messageId))
+        .toEqual(['legacy-prefix-1']);
+
+      const result = searchSessions(query, {}, cache, ftsSource);
+
+      expect(result.results).toEqual([]);
+      expect(result.totalMatches).toBe(0);
+      expect(result.sessionsWithMatches).toBe(0);
+    });
+
+    it('命中消息超出回填窗口（FTS 行兜底构造结果）时同样剥掉前缀', () => {
+      insertSession(db, 'sess-legacy-long');
+      const windowSize = SESSION_SEARCH.HYDRATE_MESSAGE_LIMIT;
+      for (let i = 0; i < windowSize; i++) {
+        repo.addMessage('sess-legacy-long', makeMessage(`pad-${i}`, `普通内容 ${i}`, 'user', i + 1));
+      }
+      repo.addMessage('sess-legacy-long', makeMessage('tail-legacy', RAW, 'user', windowSize + 1));
+
+      const result = searchSessions('增长方案', {}, cache, ftsSource);
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].message.id).toBe('tail-legacy');
+      expect(result.results[0].messageIndex).toBe(-1);
+      expect(result.results[0].snippet).toBe('会员**增长方案**');
+      expect(result.results[0].matches[0].start).toBe(STRIPPED.indexOf('增长方案'));
+      expect(searchSessions('产品规格', {}, cache, ftsSource).results).toEqual([]);
+    });
+
+    it('整段旧编排 brief 行不返回结果', () => {
+      insertSession(db, 'sess-brief');
+      repo.addMessage('sess-brief', makeMessage('brief-1', `你是主理人。主题是 ${STRIPPED}\n执行铁律：第一步必须调用 spawn_agent；\nagents JSON：[{"role":"溯真"}]`, 'user', 1));
+
+      const result = searchSessions('会员增长', {}, cache, ftsSource);
+
+      expect(result.results).toEqual([]);
+      expect(result.totalMatches).toBe(0);
+    });
+  });
 });

@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../primitives';
 import { UI } from '@shared/constants';
-import { TraceNodeRenderer } from './TraceNodeRenderer';
+import { TraceNodeRenderer } from './TraceNodeRenderer'; import { getFallbackDuplicateChipNodeIds } from '../../../utils/fallbackChipDedup';
 import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
@@ -33,7 +33,8 @@ import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
 import { isBareInterruptionNode } from '../../../utils/bareInterruptionNode';
 import { envParkedTurnDuration } from '../../../utils/envParkedTurn';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
+import { getTurnChipOwnerId, getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
+import { hasUsedMemory } from './MemorySourceChip';
 import { TurnFeedback } from './TurnFeedback';
 import { MessageContextMenu } from './MessageContextMenu';
 import { TurnCompactionMarker } from './TurnCompactionMarker';
@@ -57,6 +58,7 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
 import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
@@ -66,7 +68,7 @@ import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
 import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
-import { resolveBusySignal } from '../../../utils/turnBusySignal';
+import { useBusySignal } from '../../../hooks/useBusySignal';
 import { useTurnCardExpansion } from './useTurnCardExpansion';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
 import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
@@ -170,6 +172,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const foldedView = useMemo(() => ({
     userNode: getTurnUserNode(turn),
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
+    chipOwnerId: getTurnChipOwnerId(turn, isVoiceTurn, (node) => Boolean(node.metadata?.turnQuality && hasUsedMemory(node.metadata.turnQuality))), dupChipIds: getFallbackDuplicateChipNodeIds(turn.nodes),
   }), [turn, isVoiceTurn]);
   const observedCronRunStatus = useSyncExternalStore(subscribeObservedCronRunStatus, () => getObservedCronRunStatusForSession(sessionId), () => null);
   const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn); const hasLiveExternalStatusLine = hasExternalStatusLine && isLiveCronRunStatusKind(observedCronRunStatus?.kind);
@@ -188,7 +191,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const lastIndex = displayNodes.length - 1;
   const lastDisplay = displayNodes[lastIndex];
   const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
-  const busySignal = resolveBusySignal(turn);
+  const busySignal = useBusySignal(turn, sessionId);
   const lastNodeIsStreamingText =
     busySignal === 'text-caret' &&
     !!lastDisplayNode &&
@@ -225,7 +228,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const preparationPhase = busySignal === 'text-caret' && !lastNodeIsStreamingText
     ? hasTimelineActivity ? 'organizing' : undefined
     : undefined;
-  const streamingIndicator = isStreaming && !suppressBusySignal ? (
+  // 合成行仅在无任何思考文本时渲染；有思考段时底部指示器照常（活跃思考时它本就让位）。
+  const pendingThinkingSince = isStreaming && !suppressBusySignal && !waitingForApproval
+    && busySignal === 'text-caret' && !lastNodeIsStreamingText && thinkingSegments.length === 0
+    && !displayNodes.some((d) => d.kind === 'tool_group')
+    ? turn.startTime : undefined;
+  const streamingIndicator = isStreaming && !suppressBusySignal && pendingThinkingSince === undefined ? (
     <StreamingIndicator
       startTime={turn.startTime}
       runningToolStartTime={!waitingForApproval && busySignal === 'text-caret' ? runningToolStartTime : undefined}
@@ -401,6 +409,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               activeSegmentId={activeThinkingSegmentId}
               hasNonThinkingContentAfterThinking={hasNonThinkingContentAfterThinking}
               turnEndTime={turn.endTime}
+              pendingSinceMs={pendingThinkingSince}
             />}
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
@@ -437,7 +446,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined} showMemoryChip={node.id === foldedView.chipOwnerId} hideRouteChip={foldedView.dupChipIds.has(node.id)}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
@@ -474,7 +483,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.finalTextNode}
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
-            inVoiceDispatchCard={isVoiceTurn}
+            inVoiceDispatchCard={isVoiceTurn} showMemoryChip={foldedView.finalTextNode.id === foldedView.chipOwnerId} hideRouteChip={!folded && foldedView.dupChipIds.has(foldedView.finalTextNode.id)}
             onStreamingDisplayUpdate={handleAnchorStreamingDisplayUpdate}
           />
         )}
@@ -567,6 +576,7 @@ const VoiceDispatchCardHeader: React.FC<{
   onToggle: () => void;
 }> = ({ title, speaker, expanded, onToggle }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   return (
     <Button
       type="button"
@@ -585,7 +595,7 @@ const VoiceDispatchCardHeader: React.FC<{
           data-testid="voice-task-speaker"
           className="shrink-0 rounded-md border border-border-muted bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-400"
         >
-          {speaker.displayName}
+          {localizeRole(speaker.displayName, { name: speaker.displayName }).name}
         </span>
       )}
       {expanded ? (

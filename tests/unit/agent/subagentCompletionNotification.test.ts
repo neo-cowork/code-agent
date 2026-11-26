@@ -46,7 +46,11 @@ describe('subagent completion response contract', () => {
     expect(record.content).toContain('"completion_kind": "shell"');
     expect(record.content).toContain('用简短、非技术化的话');
     expect(record.content).toContain('执行结果和下一步');
-    expect(record.content).toContain('不要只罗列退出码、日志或命令细节');
+    expect(record.content).toContain('没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言');
+    expect(record.content).toContain('不要写退出码');
+    expect(record.content).toContain('不要照抄英文报错原文');
+    expect(record.content).toContain('用户自己写过的命令可以点名');
+    expect(record.content).not.toContain('不要只罗列退出码');
   });
 
   it('defaults missing kind to internal and requires the recorded title instead of a generic agent label', () => {
@@ -58,7 +62,7 @@ describe('subagent completion response contract', () => {
     expect(record.content).toContain('禁止使用 [agent]、[worker]、agent 或 worker 等泛称');
     expect(reminder).toContain('- 依赖核验: completed, duration_ms=150');
     expect(reminder).not.toContain('reviewer');
-    expect(record.content).toContain('回复中不要提及内部角色名、工具名或标识符。');
+    expect(record.content).toContain('回复中不要提及内部角色名、工具名或标识符；不要原样引用 agent_ 开头的内部编号');
   });
 
   it.each(['user_visible', 'internal', 'shell'] as const)('keeps role on the record but out of the %s notification payload', (kind) => {

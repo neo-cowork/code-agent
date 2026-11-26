@@ -133,6 +133,34 @@ describe('CronSimpleCreate · 无角色任务先复述后保存', () => {
     expect(pendingRowValue('result')).toBe(chatInputZh.scheduleConfirm.reviewInbox);
   });
 
+  it('选了归档项目：卡上出 archive 行显示项目名（非 id）；不选则没有该行', async () => {
+    mocks.listProjects.mockResolvedValue([{ id: 'proj-abc', name: '季度复盘' }]);
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    await screen.findByRole('option', { name: '季度复盘' });
+    const archiveSelect = screen.getByRole('option', { name: '季度复盘' }).closest('select') as HTMLSelectElement;
+    fireEvent.change(archiveSelect, { target: { value: 'proj-abc' } });
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每天盯一下竞品发布' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建自动化' }));
+    await waitFor(() => expect(pendingCard()).toBeTruthy());
+    await waitFor(() => expect(pendingRowValue('archive')).toBe('季度复盘'));
+    expect(pendingCard().textContent).toContain('产出归档到');
+    expect(pendingCard().textContent).not.toContain('proj-abc');
+    fireEvent.click(screen.getByTestId('cron-pending-routine-back'));
+    await waitFor(() => expect(screen.queryByTestId('cron-pending-routine-restate')).toBeNull());
+    expect((screen.getByRole('option', { name: '季度复盘' }).closest('select') as HTMLSelectElement).value).toBe('proj-abc');
+  });
+
+  it('不归档：确认卡包含估算和原有复述行，没有 archive 行', async () => {
+    mocks.listProjects.mockResolvedValue([{ id: 'proj-abc', name: '季度复盘' }]);
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '每天盯一下竞品发布' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建自动化' }));
+    await waitFor(() => expect(pendingCard()).toBeTruthy());
+    const keys = Array.from(pendingCard().querySelectorAll('[data-pending-routine-row]'))
+      .map((el) => el.getAttribute('data-pending-routine-row'));
+    expect(keys).toEqual(['what', 'when', 'estimate', 'notifyWhen', 'result']);
+  });
+
   it('「确认保存」后 createJob 恰好一次，随后关闭（onDone）', async () => {
     mocks.createJob.mockResolvedValue(savedRoleLessJob());
     const onDone = vi.fn();

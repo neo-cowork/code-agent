@@ -157,12 +157,20 @@ function buildSessionListQuery(filter: SessionFilter, offset: number, limit: num
 
 /**
  * 防御性前端过滤：host 已在 SQL 层保证归档语义，正常路径下这里一行都不会删；
- * 保留它只是为 host 行为漂移兜底（与改动前的前端过滤语义一致），因此
- * sessions.length 始终等于已从 DB 取出的原始条数，可直接当 offset 用。
+ * 保留它只是为 host 行为漂移兜底（与改动前的前端过滤语义一致）。
  */
 function applyClientFilter(sessions: SessionListMeta[], filter: SessionFilter): SessionListMeta[] {
   if (filter !== 'active' && filter !== 'archived') return sessions;
   return sessions.filter((s) => (filter === 'archived' ? s.isArchived : !s.isArchived));
+}
+
+// Creating a replacement session can refresh the list during the undo window.
+// The host still has the pending rows until the timer commits the deletion.
+function excludePendingDeletes(sessions: SessionListMeta[]): SessionListMeta[] {
+  const pending = useSessionUIStore.getState().pendingDelete;
+  if (!pending) return sessions;
+  const deleted = new Set(pending.ids);
+  return sessions.filter((session) => !deleted.has(session.id));
 }
 
 export async function executeLoadSessions(
@@ -172,7 +180,7 @@ export async function executeLoadSessions(
   const { get, set } = deps;
   // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
   const silent = options?.silent ?? false;
-  const { filter } = useSessionUIStore.getState();
+  const { filter, pendingDelete } = useSessionUIStore.getState();
   const requestVersion = ++listRequestVersion;
   const readiness = useSessionListLoadStore.getState();
   useSessionListLoadStore.setState({ loading: !silent || !readiness.settled || readiness.loading, error: false, errorCode: null });
@@ -183,7 +191,12 @@ export async function executeLoadSessions(
     // 静默刷新保持已加载窗口：用户已翻到 N 条就按 N 条重取同一窗口，
     // 否则每次云端同步广播都会把列表收回第一页，翻出来的历史会话瞬间消失。
     const loadedCount = silent ? windowSessionCount(get().sessions) : 0;
-    const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount);
+    // The host page can still contain pending rows and a replacement that has
+    // yet to be inserted locally. Leave room for them so the loaded tail stays visible.
+    const reservedSlots = silent && pendingDelete
+      ? pendingDelete.ids.length + Number(Boolean(pendingDelete.replacement))
+      : 0;
+    const limit = Math.max(SESSION_LIST_PAGE_SIZE, loadedCount + reservedSlots);
     const sessions = await invokeSession<Session[]>('list', buildSessionListQuery(filter, 0, limit));
 
     if (requestVersion !== listRequestVersion) return;
@@ -197,10 +210,10 @@ export async function executeLoadSessions(
       (sessions || []).map((session) => normalizeSession(session as Session & { messageCount?: number; turnCount?: number })),
       filter,
     );
-    const sessionsWithMeta = preserveParkedContinueOnRefresh(
+    const sessionsWithMeta = excludePendingDeletes(preserveParkedContinueOnRefresh(
       get().sessions,
       keepOpenedOutsideWindow(get().sessions, refreshedWindow),
-    );
+    ));
 
     useSessionListLoadStore.setState({ settled: true, loading: false, error: false, errorCode: null });
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
@@ -235,7 +248,7 @@ export async function executeLoadOlderSessions(deps: SessionListPaginationDeps):
   set({ isLoadingOlderSessions: true });
   const localVersionAtStart = getSessionsLocalVersion();
   try {
-    // sessions.length 恒等于已从 DB 取出的原始条数（见 applyClientFilter），直接当 offset。
+    // 待撤销的行可能让本地窗口偏短。下一页会与已有行重叠，追加时按 id 去重。
     const offset = windowSessionCount(state.sessions);
     const page = await invokeSession<Session[]>('list', buildSessionListQuery(filter, offset, SESSION_LIST_PAGE_SIZE));
 
@@ -254,7 +267,7 @@ export async function executeLoadOlderSessions(deps: SessionListPaginationDeps):
     // 重复扫到上一页末尾若干行——按 id 去重，只追加真正的新行。
     const current = get().sessions;
     const knownIds = new Set(current.map((session) => session.id));
-    const fresh = pageWithMeta.filter((session) => !knownIds.has(session.id));
+    const fresh = excludePendingDeletes(pageWithMeta).filter((session) => !knownIds.has(session.id));
 
     set({
       sessions: fresh.length > 0 ? [...current, ...fresh] : current,

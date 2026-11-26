@@ -11,10 +11,12 @@ import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import {
   buildCronJobInput,
   buildDraftFromJob,
+  copiedWorkingDirectoryMetadata,
   createDefaultCronJobDraft,
   type CronJobDraft,
 } from './types';
@@ -42,6 +44,7 @@ import { CronResultChannelField } from './CronResultChannel';
 import { CronRunBudgetField } from './CronRunBudgetField';
 import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
+import { CronEventLimitFields } from './CronEventLimitFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
 import { CronTemplateRoleField } from './CronTemplateRoleField';
@@ -52,6 +55,7 @@ import { useCronWebhookGate } from './useCronWebhookGate';
 import { stashCronEditorDraft, takeCronEditorDraft } from './cronEditorDraftStash';
 import { openCloudCronSettings as gotoCloudSettingsForCreate } from '../../../utils/cronCloudSettingsNavigation';
 import { useScrollToEventValidation } from './useScrollToEventValidation';
+import { stripLocationSuffix, withLocationSuffix } from './copyJobName';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -163,26 +167,35 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   // update/copy 路径刚设上的复述视图会被立即重置回编辑表单（r2）。ref 记上一次
   // isOpen，身份抖动不碰 savedJob。
   const wasOpenRef = useRef(false);
+  // 副本草稿自动生成的位置后缀名：记住最近一次自动名与剥掉后缀的基名，runsOn
+  // 变化时（任一控件或 event 护栏）只重写仍等于自动名的名字框，用户改过的名不碰。
+  const autoCopyNameRef = useRef<{ name: string; base: string } | null>(null);
   useEffect(() => {
     const reopened = !wasOpenRef.current;
     wasOpenRef.current = isOpen;
     if (!isOpen) return;
     if (reopened) { setSavedJob(null); setWebhookJobId(null); resetPending(); }
     if (job) {
+      autoCopyNameRef.current = null;
       setDraft(buildDraftFromJob(job));
       setStep('manual');
     } else if (copySource) {
+      // 后缀由副本自己的 runsOn 决定（来源位置的反面），先剥来源名上旧的位置后缀，
+      // 对副本再复制不会叠出「X (云端) (本地)」。
+      const copyRunsOn = copySource.runsOn === 'local' ? 'cloud' : 'local';
+      const copyNameBase = stripLocationSuffix(copySource.name);
+      autoCopyNameRef.current = { base: copyNameBase, name: withLocationSuffix(copyNameBase, copyRunsOn, cc) };
       setDraft({
         ...buildDraftFromJob(copySource),
-        name: `${copySource.name} (${copySource.runsOn === 'local' ? cc.locationCloud : cc.locationLocal})`,
-        runsOn: copySource.runsOn === 'local' ? 'cloud' : 'local',
+        name: autoCopyNameRef.current.name,
+        runsOn: copyRunsOn,
         enabled: false,
-        // 副本是新任务：不继承原任务的 metadata（artifactRefresh 等绑定指向原文件路径，
-        // 复制过去会让副本在别的 runsOn 上顶着同一份刷新绑定）。
-        metadata: undefined,
+        // 副本只带走工作文件夹；artifactRefresh 等绑定原文件路径的 metadata 不继承（云端副本保存时剥文件夹）。
+        metadata: copiedWorkingDirectoryMetadata(copySource, useSessionStore.getState().sessions),
       });
       setStep('manual');
     } else {
+      autoCopyNameRef.current = null;
       // 从「去设置」回来：取回暂存草稿，不让用户重填整张表单。
       const stashed = takeCronEditorDraft();
       setDraft(stashed ?? createDefaultCronJobDraft());
@@ -193,7 +206,19 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     setErrors({});
     setEventValidationArmed(false);
     setActiveTab('basic');
-  }, [isOpen, job, copySource, cc.locationCloud, cc.locationLocal]);
+  }, [isOpen, job, copySource, cc]);
+
+  // 副本的自动位置后缀跟随 runsOn：runsOn 的每个改法（位置选择器、云端未配置
+  // 「留在本机」、event 护栏钉本机）都汇到 draft.runsOn，在这里统一换后缀。
+  useEffect(() => {
+    const auto = autoCopyNameRef.current;
+    if (!copySource || job || !auto) return;
+    if (draft.name !== auto.name) return;
+    const name = withLocationSuffix(auto.base, draft.runsOn, cc);
+    if (name === auto.name) return;
+    autoCopyNameRef.current = { base: auto.base, name };
+    setDraft((current) => (current.name === auto.name ? { ...current, name } : current));
+  }, [copySource, job, draft.runsOn, draft.name, cc]);
 
   const title = job
     ? cc.editTitle
@@ -316,6 +341,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           accountId: draft.eventAccountId,
           chatId: draft.eventChatId,
           budget: draft.maxRunBudget,
+          prefilter: draft.eventPrefilter,
+          maxRunsPerHour: draft.eventMaxRunsPerHour,
         }, templateLanguage)
         : selectedTemplate.generate(templateValues, templateLanguage);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
@@ -358,7 +385,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           return;
         }
       }
-      const input = buildCronJobInput(draft, cc.editorChrome.validation);
+      const input = buildCronJobInput(draft, cc.editorChrome.validation, Boolean(job));
       await gateOrPersist(input, job ? 'update' : 'create');
     } catch (error) {
       setErrors(error instanceof Error && 'code' in error && error.code === CRON_CLOUD_NOT_CONFIGURED
@@ -609,6 +636,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           ))}
 
           {selectedTemplate.event ? (
+            <>
             <CronEventScheduleFields
               accountId={draft.eventAccountId}
               chatId={draft.eventChatId}
@@ -621,6 +649,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 return violation ? cc.eventValidation[violation.reason] : null;
               })()}
             />
+            <CronEventLimitFields
+              prefilter={draft.eventPrefilter}
+              maxRunsPerHour={draft.eventMaxRunsPerHour}
+              onPrefilterChange={(value) => setEventField('eventPrefilter', value)}
+              onMaxRunsPerHourChange={(value) => setEventField('eventMaxRunsPerHour', value)}
+            />
+            </>
           ) : (
             <>
               <CronRunsOnSelector
@@ -797,6 +832,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   violation={eventValidationArmed ? eventViolation : null}
                 />
               )}
+
+              {isEventScheduleKind(draft.scheduleType) && (
+                <CronEventLimitFields
+                  prefilter={draft.eventPrefilter}
+                  maxRunsPerHour={draft.eventMaxRunsPerHour}
+                  onPrefilterChange={(value) => setEventField('eventPrefilter', value)}
+                  onMaxRunsPerHourChange={(value) => setEventField('eventMaxRunsPerHour', value)}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -864,7 +908,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           )}
 
           {draft.actionType === 'agent' && (
-            <CronAgentActionFields draft={draft} setField={setField} errors={errors} />
+            <CronAgentActionFields draft={draft} setField={setField} errors={errors} isEditing={Boolean(job)} />
           )}
 
           {draft.actionType === 'webhook' && (

@@ -43,10 +43,30 @@ function entry(overrides: Partial<MemoryEntry>): MemoryEntry {
 }
 
 describe('MemoryEntriesManager helpers', () => {
+  it('omits the background badge on both rows changed by a user review', () => {
+    const lastChange = { actor: 'user_manual', operation: 'update', timestamp: now } as const;
+    const original = entry({ id: 'original', status: 'archived', lastChange });
+    const adopted = entry({ id: 'adopted', status: 'active', supersedes: 'project.md', lastChange });
+    const rejected = entry({ id: 'rejected', status: 'rejected', supersedes: 'project.md', lastChange });
+    const rows = buildMemoryEntryRows({
+      entries: [original, adopted, rejected],
+      selectedEntryId: null,
+      searchQuery: '',
+      statusFilter: 'all',
+      showArchived: true,
+      kindFilter: 'all',
+      sourceFilter: 'all',
+      now,
+    });
+    expect(rows.map((row) => [row.id, row.backgroundWriteLabel])).toEqual([
+      ['original', undefined], ['adopted', undefined], ['rejected', undefined],
+    ]);
+  });
+
   it('labels entry status, kind, source, and updated time', () => {
     expect(getMemoryEntryStatusLabel('archived')).toBe('归档');
     expect(getMemoryEntryKindLabel('pattern')).toBe('经验');
-    expect(getMemoryEntrySourceLabel('db_memory')).toBe('DB memory');
+    expect(getMemoryEntrySourceLabel('db_memory')).toBe('应用内记忆');
     expect(formatMemoryEntryUpdatedAt(now, now)).toBe('今天');
     expect(formatMemoryEntryUpdatedAt(now - 24 * 60 * 60 * 1000, now)).toBe('昨天');
   });
@@ -91,7 +111,7 @@ describe('MemoryEntriesManager helpers', () => {
         title: 'DB Pattern',
         statusLabel: '归档',
         kindLabel: '经验',
-        sourceLabel: 'DB memory',
+        sourceLabel: '应用内记忆',
         selected: true,
       }),
     ]);

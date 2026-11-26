@@ -1,4 +1,5 @@
 import { statSync } from 'fs';
+import { BACKGROUND_COMMAND_TITLE, resolveBackgroundTaskTitle } from '../../shared/backgroundTaskTitle';
 import { looksSandboxWrapped } from '../sandbox/wrapperMarkers';
 import type {
   Task,
@@ -58,6 +59,7 @@ function buildFailure(
       : 'Process failed',
     exitCode,
     category: 'command_failed',
+    reason: 'shell_command_failed',
   };
 }
 
@@ -96,7 +98,6 @@ function buildTerminalMessage(args: {
   label: string;
   status: TaskStatus;
   durationMs?: number;
-  exitCode?: number;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
 }): string {
@@ -107,9 +108,8 @@ function buildTerminalMessage(args: {
   if (args.status === 'cancelled') {
     return `${args.label} 已停止${duration}`;
   }
-  const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
-    `${args.label} 失败${exitCode}${duration}`,
+    `${args.label} 失败${duration}`,
     args.locale ?? 'zh',
     args.automationPromptLikely,
   );
@@ -136,6 +136,7 @@ function queueTerminalNotification(args: {
     return;
   }
 
+  const language = args.locale ?? getAutomationPromptLocale(args.sessionId);
   args.ledger.queueNotification({
     id: `${args.taskId}:terminal:${args.status}`,
     taskId: args.taskId,
@@ -151,10 +152,9 @@ function queueTerminalNotification(args: {
         ? '任务已停止'
         : '后台任务失败',
     message: buildTerminalMessage({
-      label: args.title,
+      label: resolveBackgroundTaskTitle(args, language, BACKGROUND_COMMAND_TITLE[language]),
       status: args.status,
       durationMs: args.durationMs,
-      exitCode: args.exitCode,
       automationPromptLikely: args.automationPromptLikely,
       locale: args.locale,
     }),
@@ -162,9 +162,11 @@ function queueTerminalNotification(args: {
       taskId: args.taskId,
       source: args.source,
       status: args.status,
+      label: args.title,
       outputFile: args.outputFile,
       exitCode: args.exitCode,
       durationMs: args.durationMs,
+      ...(args.automationPromptLikely ? { automationPromptLikely: true } : {}),
       ...(args.timedOut && args.status === 'failed'
         ? { reason: 'timeout', maxRuntimeMs: args.maxRuntimeMs }
         : {}),
@@ -235,6 +237,7 @@ export function syncShellTaskSnapshotToLedger(
       originalTaskId: task.taskId,
       exitCode: task.exitCode,
       recoveryStatus,
+      ...(automationPromptLikely ? { automationPromptLikely: true } : {}),
       recoveryPlan: buildBackgroundTaskRecoveryPlan({
         status,
         recoveryStatus,

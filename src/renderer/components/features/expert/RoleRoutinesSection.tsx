@@ -12,7 +12,9 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
+import { isUnattendedBudgetUsedUpError } from '@shared/i18n/unattendedBudgetUsedUp';
 import { isCronExecutionPermissionDenialError } from '../chat/cronRunSessionStatus';
+import { getRoleWakeJobLabel } from '../cron/builtinJobDisplay';
 import { Button } from '../../primitives/Button';
 import { SettingsSection } from '../settings/SettingsLayout';
 
@@ -52,6 +54,7 @@ function statusLabel(status: RoleBoundCronJob['lastStatus'], words: CronStatusTe
 // 取消、中断也用运行记录文案；host 原始执行错误（如 ECONNRESET socket hang up）绝不进专家页。
 function cronRunRecordStatus(job: RoleBoundCronJob, record: CronRunRecordText): string | null {
   if (job.lastStatus === 'failed') {
+    if (isUnattendedBudgetUsedUpError(job.lastError)) return record.failedBudget;
     return isCronExecutionPermissionDenialError(job.lastError) ? record.failedDenied : record.failedGeneric;
   }
   if (job.lastStatus === 'cancelled') return record.cancelled;
@@ -143,7 +146,7 @@ export const RoleRoutinesSection: React.FC<RoleRoutinesSectionProps> = ({
               <div key={job.id} data-testid={`role-bound-automation-${job.id}`} className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm text-zinc-200">{job.name}</div>
+                    <div className="truncate text-sm text-zinc-200">{(job.actionType === 'role_wake' ? getRoleWakeJobLabel(job.name, language, false) : null) ?? job.name}</div>
                     <div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text, language)} · {nextRun}</div>
                     <div data-testid={`role-bound-automation-last-${job.id}`} className={`mt-1 text-xs ${failed ? 'text-badge-danger' : 'text-zinc-500'}`}>{lastRunLine(job, text, statusWords, recordWords, language)}</div>
                   </div>

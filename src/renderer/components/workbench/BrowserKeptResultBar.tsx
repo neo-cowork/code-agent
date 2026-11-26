@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import { Button } from '../primitives';
+import { Button, Modal } from '../primitives';
 import { useSurfaceExecutionStore } from '../../stores/surfaceExecutionStore';
 import { browserStageOverlayMarker } from '../../utils/browserStageInteractionGate';
 import {
@@ -12,8 +12,8 @@ import {
 import { openHttpLinkInRailAsync } from '../../services/userBrowserLink';
 
 // N-BROWSER-KEEP-RESULT-PAGE：agent run 终态时叠加在留影/摘要卡底部的结果页条。
-// 三态：none（不渲染）/ kept（窗还活着，一键认领接上活页继续操作）/ closed（窗已被
-// 闲置回收或关闭，只留 URL 供一键重开——重开不恢复表单内容）。
+// 三态：none（不渲染）/ kept（窗还活着，认领接上活页继续操作）/ closed（窗已被
+// 闲置回收或关闭）。无 query 且有保存页时，重新打开先显示只读快照；否则只恢复网址。
 
 /** 终态可见期间的低频轮询：30 分钟闲置回收发生时把「已保留」翻成「已关闭」。 */
 const KEPT_STATE_POLL_MS = 30_000;
@@ -47,6 +47,11 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   const [kept, setKept] = useState<KeptResultPage>({ state: 'none', url: null, title: null, reason: null });
   const [busy, setBusy] = useState<'adopt' | 'reopen' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const keptSnapshot = useSurfaceExecutionStore((state) => (
+    conversationId ? state.keptResultSnapshotByConversation[conversationId] : undefined
+  ));
+  const snapshotOpen = keptSnapshot?.snapshotOpen ?? false;
+  const snapshotHtml = keptSnapshot?.snapshotHtml ?? null;
   const mountedRef = useRef(true);
   const turnActiveRef = useRef(turnActive);
   turnActiveRef.current = turnActive;
@@ -95,7 +100,7 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
     }
   }, [conversationId, workspace, copy.adoptFailed, refresh]);
 
-  const onReopen = useCallback(async () => {
+  const reopenByUrl = useCallback(async () => {
     if (!kept.url || !conversationId || turnActiveRef.current) return;
     setBusy('reopen');
     setError(null);
@@ -113,12 +118,71 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
     }
   }, [kept.url, conversationId, workspace, copy.reopenFailed]);
 
+  const reopenMode = kept.state === 'none' ? undefined : kept.reopenMode;
+
+  const closeSnapshot = useCallback(() => {
+    if (!conversationId) return;
+    const current = useSurfaceExecutionStore.getState().keptResultSnapshotByConversation[conversationId];
+    useSurfaceExecutionStore.getState().noteKeptResultSnapshot(conversationId, {
+      url: current?.url ?? '',
+      snapshotHtml: current?.snapshotHtml ?? '',
+      snapshotOpen: false,
+    });
+  }, [conversationId]);
+
+  const onReopen = useCallback(async () => {
+    if (!kept.url || !conversationId || turnActiveRef.current) return;
+    if (kept.state === 'closed' && reopenMode === 'snapshot') {
+      setBusy('reopen');
+      setError(null);
+      let openedSnapshot = false;
+      try {
+        const detailed = await getKeptResultPage(conversationId, { includeSnapshot: true });
+        if (detailed.state !== 'none') {
+          const html = detailed.snapshotHtml?.trim() ?? '';
+          if (html) {
+            useSurfaceExecutionStore.getState().noteKeptResultSnapshot(conversationId, {
+              url: kept.url,
+              snapshotHtml: detailed.snapshotHtml ?? html,
+              snapshotOpen: true,
+            });
+            openedSnapshot = true;
+          }
+        }
+      } catch {
+        // Empty or failed fetch falls through to the URL path while this bar is still mounted.
+      } finally {
+        if (mountedRef.current) setBusy(null);
+      }
+      // The Browser tab may have unmounted while the snapshot was in flight.
+      // Opening the POST URL from here shows an empty form, so leave the saved page in the store.
+      if (openedSnapshot || !mountedRef.current) return;
+    }
+    await reopenByUrl();
+  }, [kept.url, kept.state, reopenMode, conversationId, reopenByUrl]);
+
+  const onTryOriginal = useCallback(async () => {
+    closeSnapshot();
+    await reopenByUrl();
+  }, [closeSnapshot, reopenByUrl]);
+
   // N-FIX-FIX-BROWSER-SECRETREF-HARDEN：takeover 停靠不经过本条（聊天里的「继续」卡
   // 负责），避免同一扇窗出现两个不同口径的入口。
   const openedLivePage = kept.state === openedState && (kept.state === 'kept' || pageRunning);
   if (turnActive || openedLivePage || kept.state === 'none' || kept.reason === 'takeover') return null;
 
+  const closedHint = kept.state === 'closed' && reopenMode === 'snapshot'
+    ? copy.keptClosedSnapshotHint
+    : copy.keptClosedHint;
+  const showSavedSnapshot = snapshotOpen
+    && kept.state === 'closed'
+    && reopenMode === 'snapshot'
+    && kept.url != null
+    && keptSnapshot?.url === kept.url
+    && Boolean(snapshotHtml?.trim());
+
   return (
+    <>
     <div
       {...browserStageOverlayMarker}
       data-testid={`browser-kept-result-bar-${kept.state}`}
@@ -131,8 +195,8 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
       <div className="max-w-full truncate text-[11px] text-zinc-400" title={kept.url ?? undefined}>
         {kept.title || kept.url}
       </div>
-      <div className="max-w-full text-[11px] leading-relaxed text-zinc-500">
-        {kept.state === 'kept' ? copy.keptHint : copy.keptClosedHint}
+      <div className="max-w-full text-[11px] leading-relaxed text-zinc-500" data-testid="browser-kept-result-hint">
+        {kept.state === 'kept' ? copy.keptHint : closedHint}
       </div>
       {kept.state === 'kept' ? (
         <Button
@@ -161,5 +225,37 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
         <div className="max-w-full text-[11px] leading-relaxed text-badge-danger">{error}</div>
       )}
     </div>
+    <Modal
+      isOpen={showSavedSnapshot}
+      onClose={closeSnapshot}
+      title={copy.snapshotTitle}
+      size="full"
+      portal
+    >
+      <p className="mb-3 text-sm text-zinc-300" data-testid="browser-kept-result-snapshot-note">
+        {copy.snapshotNote}
+      </p>
+      <iframe
+        title={copy.snapshotTitle}
+        srcDoc={snapshotHtml ?? ''}
+        sandbox=""
+        data-testid="browser-kept-result-snapshot-frame"
+        className="pointer-events-none h-[480px] w-full border-0 bg-white"
+        style={{ pointerEvents: 'none' }}
+      />
+      <div className="mt-3 flex justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={busy === 'reopen'}
+          disabled={busy !== null}
+          onClick={() => void onTryOriginal()}
+          data-testid="browser-kept-result-snapshot-try-original"
+        >
+          {copy.snapshotTryOriginal}
+        </Button>
+      </div>
+    </Modal>
+    </>
   );
 };

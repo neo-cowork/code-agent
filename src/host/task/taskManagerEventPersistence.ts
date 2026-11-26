@@ -35,6 +35,8 @@ export interface TaskManagerEventPersistenceDeps {
   backgroundPermissionOwners: Map<string, string>;
   backgroundRunTerminalErrors: Map<string, BackgroundRunErrorRecord>;
   messageDeltaAccumulator: MessageDeltaAccumulator;
+  isPrimaryRunActive?: () => boolean;
+  primaryRunId?: string;
 }
 
 /**
@@ -152,7 +154,7 @@ export async function persistTaskManagerEvent(
         }
         notificationService.notifyNeedsInput({
           sessionId,
-          ...buildApprovalNotification(req.tool),
+          ...buildApprovalNotification(req.tool, undefined, sessionId),
           tool: req.tool,
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
@@ -166,7 +168,7 @@ export async function persistTaskManagerEvent(
     // task_complete 收口 + 后台条目终态收线（逻辑在 backgroundTaskTerminal：本文件贴
     // effective-line 硬限；task_complete 与 agent 终态两收口点共用 running-guard 幂等）。
     if (event.type === 'task_complete' && event.data) {
-      await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data);
+      await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data, deps.isPrimaryRunActive, deps.primaryRunId);
     }
     // run 级终态 error 记账（可恢复 error 不记）；agent 终态到点仍 running → 收线（r4 决策表见 backgroundTaskTerminal）。
     if (event.type === 'error' && eventKey === sessionId) {
@@ -176,7 +178,7 @@ export async function persistTaskManagerEvent(
       // 主跑终态先落 session 状态并广播（settlePrimaryRunSessionStatus 只读 error 账，
       // 必须排在会消费账目的 closeBackgroundRunAtTerminal 之前——顺序见该函数头注释）。
       await settlePrimaryRunSessionStatus(sessionId, event.type, deps.backgroundRunTerminalErrors);
-      await closeBackgroundRunAtTerminal(sessionId, event.type, deps.backgroundRunTerminalErrors);
+      await closeBackgroundRunAtTerminal(sessionId, event.type, deps.backgroundRunTerminalErrors, deps.primaryRunId);
     }
   } catch (error) {
     logger.error(`Failed to persist event for session ${sessionId}`, error);

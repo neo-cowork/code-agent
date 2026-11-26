@@ -33,6 +33,7 @@ import type {
 } from '@shared/contract';
 import type { AppshotCapture } from '@shared/contract/appshot';
 import { AppshotChip } from '../ChatInput/AppshotChip';
+import { getAttachmentDisplayName } from '../ChatInput/attachmentDisplayName';
 import type { ChannelAttachment, RetryChannelMediaAttachmentResult } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -275,7 +276,9 @@ const AttachmentItem: React.FC<{
       .then((dataUrl) => {
         if (!cancelled) setLazyAppshotSrc(dataUrl);
       })
-      .catch(() => {});
+      .catch((error) => {
+        console.warn('[appshot] Failed to restore appshot image by id', error);
+      });
     return () => {
       cancelled = true;
     };
@@ -386,7 +389,7 @@ const AttachmentItem: React.FC<{
               src={previewRetryNonce > 0 && imageSrc.startsWith('/api/')
                 ? `${imageSrc}${imageSrc.includes('?') ? '&' : '?'}_r=${previewRetryNonce}`
                 : imageSrc}
-              alt={displayAttachment.name}
+              alt={getAttachmentDisplayName(displayAttachment.name)}
               className="max-h-[150px] w-full object-cover transition-colors group-hover:border-badge-accent/50"
               onError={() => setImageLoadFailed(true)}
             />
@@ -442,7 +445,7 @@ const AttachmentItem: React.FC<{
       <div className="max-w-[260px] rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <div className="mb-2 flex items-center gap-2 text-xs text-zinc-300">
           <Music className="h-4 w-4 text-badge-accent" />
-          <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
+          <span className="truncate" title={getAttachmentDisplayName(displayAttachment.name)}>{getAttachmentDisplayName(displayAttachment.name)}</span>
           {stateBadge}
         </div>
         {mediaSrc ? (
@@ -484,7 +487,7 @@ const AttachmentItem: React.FC<{
         )}
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-300">
           <Video className="h-4 w-4 shrink-0 text-badge-info" />
-          <span className="truncate" title={displayAttachment.name}>{displayAttachment.name}</span>
+          <span className="truncate" title={getAttachmentDisplayName(displayAttachment.name)}>{getAttachmentDisplayName(displayAttachment.name)}</span>
           {stateBadge}
           {mediaAsset && (
             <div className="ml-auto">
@@ -532,8 +535,8 @@ const AttachmentItem: React.FC<{
       <div className="flex max-w-[240px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
         <Archive className="mt-0.5 h-5 w-5 shrink-0 text-badge-warning" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
-            {displayAttachment.name}
+          <div className="truncate text-sm text-zinc-200" title={getAttachmentDisplayName(displayAttachment.name)}>
+            {getAttachmentDisplayName(displayAttachment.name)}
           </div>
           <div className="text-xs text-zinc-500">
             {archiveManifest
@@ -562,13 +565,13 @@ const AttachmentItem: React.FC<{
   const { icon, color, label } = getAttachmentIconConfig(category, t.attachmentPreview);
   const displayName = displayAttachment.name.includes('/')
     ? displayAttachment.name.split('/').pop() || displayAttachment.name
-    : displayAttachment.name;
+    : getAttachmentDisplayName(displayAttachment.name);
 
   return (
     <div className="flex max-w-[200px] items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
       <span className={color}>{icon}</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
+        <div className="truncate text-sm text-zinc-200" title={displayName}>
           {displayName}
         </div>
         <div className="flex items-center gap-1 text-xs text-zinc-500">

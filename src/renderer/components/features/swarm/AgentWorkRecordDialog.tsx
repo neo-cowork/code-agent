@@ -2,10 +2,12 @@ import React from 'react';
 import { Clock, Wrench, Zap } from 'lucide-react';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { RoleInitialAvatar } from '../expert/RoleInitialAvatar';
+import { MemberOutputMarkdown } from '../expert/MemberOutputMarkdown';
 import { Modal } from '../../primitives/Modal';
 
 type RecordData = Pick<SwarmRunAgentRecord, 'dispatchedTask' | 'finalOutput' | 'finalOutputTruncated' | 'finalOutputArchiveItemId' | 'durationMs' | 'tokensIn' | 'tokensOut' | 'toolCalls' | 'costUsd'>;
@@ -25,8 +27,10 @@ export const AgentWorkRecordDialog: React.FC<{
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
   // 副标题优先显示职业（「内容主理人」比裸角色 id 更像人话），查不到才回落角色 id
   const roleId = agent.role || agent.id;
-  const subtitle = useAgentRegistryStore((state) => state.entries).find((entry) => entry.id === roleId)?.profession
+  const localizeRole = useLocalizeRole();
+  const rawSubtitle = useAgentRegistryStore((state) => state.entries).find((entry) => entry.id === roleId)?.profession
     ?? agent.role;
+  const subtitle = rawSubtitle ? localizeRole(roleId, { name: agent.name || agent.id, profession: rawSubtitle }).profession : rawSubtitle;
   const output = record?.finalOutput ?? agent.finalOutput;
   const task = record?.dispatchedTask ?? agent.dispatchedTask;
   const tokens = record ? record.tokensIn + record.tokensOut : (agent.tokenUsage?.input ?? 0) + (agent.tokenUsage?.output ?? 0);
@@ -39,13 +43,13 @@ export const AgentWorkRecordDialog: React.FC<{
       <section data-testid="agent-work-record">
         <header className="flex items-center gap-3 border-b border-zinc-800 px-1 pb-3">
           <RoleInitialAvatar roleId={roleId} name={agent.name || agent.role} />
-          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold text-zinc-100">{agent.name || agent.id}</h2><p className="truncate text-xs text-zinc-400">{subtitle}</p></div>
+          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold text-zinc-100">{localizeRole(roleId, { name: agent.name || agent.id }).name}</h2><p className="truncate text-xs text-zinc-400">{subtitle}</p></div>
         </header>
         <div className="space-y-4 overflow-y-auto py-4 text-sm">
           {loading ? <p className="text-zinc-400">{t.expert.workRecord.loading}</p> : <>
             <RecordSection title={t.expert.workRecord.receivedTask} testId="agent-work-task">{task || t.expert.workRecord.noTask}</RecordSection>
             <RecordSection title={t.expert.workRecord.activity} testId="agent-work-activity"><span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{t.expert.workRecord.tools.replace('{count}', String(toolCalls))}</span><span className="ml-3 inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{duration(elapsed)}</span><span className="ml-3">{t.expert.workRecord.iterations.replace('{count}', String(agent.iterations))}</span></RecordSection>
-            <RecordSection title={t.expert.workRecord.output} testId="agent-work-output"><pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{output || t.expert.workRecord.noOutput}</pre>{record?.finalOutputTruncated && record.finalOutputArchiveItemId ? <div className="mt-2 flex items-center gap-2 text-xs text-badge-warning"><span>{t.expert.workRecord.archived}</span><button /* ds-allow:button: 归档入口与截断提示同一紧凑行 */ type="button" onClick={() => openWorkspacePreview()} className="text-badge-accent hover:text-badge-accent">{t.expert.workRecord.openArchive}</button></div> : null}</RecordSection>
+            <RecordSection title={t.expert.workRecord.output} testId="agent-work-output"><MemberOutputMarkdown output={output} fallback={t.expert.workRecord.noOutput} />{record?.finalOutputTruncated && record.finalOutputArchiveItemId ? <div className="mt-2 flex items-center gap-2 text-xs text-badge-warning"><span>{t.expert.workRecord.archived}</span><button /* ds-allow:button: 归档入口与截断提示同一紧凑行 */ type="button" onClick={() => openWorkspacePreview()} className="text-badge-accent hover:text-badge-accent">{t.expert.workRecord.openArchive}</button></div> : null}</RecordSection>
             <RecordSection title={t.expert.workRecord.usage} testId="agent-work-usage"><span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5" />{tokens}</span><span className="ml-3">${cost.toFixed(4)}</span></RecordSection>
           </>}
         </div>

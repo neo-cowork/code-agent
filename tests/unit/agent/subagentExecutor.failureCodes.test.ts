@@ -41,4 +41,13 @@ describe('subagentExecutor 结构化失败码 producer', () => {
       '初始预算耗尽返回应携带统一 AgentFailureCode',
     ).toMatch(/failureCode:\s*AgentFailureCode\.BudgetExhausted/);
   });
+
+  it('步数上限的失败返回使用 StepCapReached，不复用额度码', () => {
+    const source = readFileSync(SUBAGENT_EXECUTOR_PATH, 'utf8');
+    const idx = source.indexOf("return earlyFailure('Max iterations reached'");
+    expect(idx, '应存在步数上限早退').toBeGreaterThan(-1);
+    const block = source.slice(idx, idx + 700);
+    expect(block).toMatch(/failureCode:\s*AgentFailureCode\.StepCapReached/);
+    expect(block).not.toMatch(/AgentFailureCode\.BudgetExhausted/);
+  });
 });

@@ -106,6 +106,8 @@ export interface ManagedBrowserLaunchOptions {
   leaseOwner?: string;
   leaseTtlMs?: number;
   proxy?: ManagedBrowserProxyInput | null;
+  /** Conversation whose login archive and last page may be restored. Absent = no resume. */
+  conversationId?: string;
 }
 
 export interface ManagedBrowserProxyInput {

@@ -8,14 +8,16 @@
 // 其余原样展示；running 条目才有 spinner 与计时。
 
 import React from 'react';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
+import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import type { BackgroundSessionInfo } from '../../../src/shared/contract/sessionState';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 
 function backgroundTask(overrides: Partial<BackgroundSessionInfo>): BackgroundSessionInfo {
   return {
@@ -81,6 +83,43 @@ describe('状态行映射（经渲染）', () => {
 
     renderPanelWith(backgroundTask({ status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED }));
     expect(itemLine()).toBe('已取消');
+  });
+
+  it.each([
+    ['zh', '任务未完成', '已完成', '删除没有成功，文件还在', '重试', '换个方式'],
+    ['en', 'Task incomplete', 'Completed', 'The files are still there because the deletion did not succeed', 'Retry', 'Try another way'],
+  ] as const)('shows both %s recovery actions only on the incomplete background row', (language, incomplete, completed, reason, retry, alternate) => {
+    useAppStore.setState({ language });
+    try {
+      renderPanelWith(backgroundTask({
+        title: '已完成删除 / Deleted all files',
+        status: 'failed',
+        completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
+        leftoverPaths: ['/temporary/exports/export.csv'],
+      }));
+      expect(screen.getByRole('button', { name: retry })).toBeTruthy();
+      expect(screen.getByRole('button', { name: alternate })).toBeTruthy();
+      expect(screen.getByTestId('background-session-clear')).toBeTruthy();
+      const row = screen.getByTestId('background-session-item');
+      expect(row.textContent).toContain('export.csv');
+      expect(row.textContent).not.toMatch(/已完成|Deleted all files/);
+      expect(itemLine()).toContain(incomplete);
+      expect(itemLine()).toContain(reason);
+      expect(itemLine().replace(incomplete, '')).not.toMatch(/完成|completed|DELETE_INCOMPLETE|\/temporary/i);
+      cleanup();
+      renderPanelWith(backgroundTask({ status: 'completed' }));
+      expect(itemLine()).toBe(completed);
+      expect(screen.queryByTestId('delete-incomplete-actions')).toBeNull();
+      cleanup();
+      renderPanelWith(backgroundTask({ status: 'failed' }));
+      expect(screen.queryByTestId('delete-incomplete-actions')).toBeNull();
+      cleanup();
+      renderPanelWith(backgroundTask({ completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE }));
+      expect(screen.queryByTestId('delete-incomplete-actions')).toBeNull();
+    } finally {
+      cleanup();
+      useAppStore.setState({ language: 'zh' });
+    }
   });
 
   it('其余消息原样展示（engine 终态消息直通）', () => {
@@ -221,5 +260,91 @@ describe('后台行的失败判定（唯一一步失败不能写「已完成」�
     renderPanelWith(backgroundTask({ status: 'completed' }));
     await waitFor(() => expect(invoke).toHaveBeenCalled());
     expect(itemLine()).toBe('已完成');
+  });
+});
+
+describe('面板行主名读实时会话标题', () => {
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ backgroundSessions: [], sessions: [] });
+  });
+
+  it('会话 store 里的实时标题优先于 host 快照；不在 store 时回落快照；改名后无需重载', () => {
+    useSessionStore.setState({
+      sessions: [{ id: 's1', title: '服务合同要点' }] as never,
+      backgroundSessions: [backgroundTask({ title: '看看 workspace' })],
+    });
+    render(<BackgroundSessionPanel />);
+    const row = () => screen.getByTestId('background-session-foreground').textContent ?? '';
+    expect(row()).toContain('服务合同要点');
+    expect(row()).not.toContain('看看 workspace');
+
+    act(() => {
+      useSessionStore.setState({ sessions: [{ id: 's1', title: '合同摘要（改名）' }] as never });
+    });
+    expect(row()).toContain('合同摘要（改名）');
+
+    act(() => { useSessionStore.setState({ sessions: [] }); });
+    expect(row()).toContain('看看 workspace');
+  });
+});
+
+
+describe('incomplete background row actions', () => {
+  const failedDelete = () => backgroundTask({
+    status: 'failed',
+    completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
+    leftoverPaths: ['/home/fixture/exports/spring.csv'],
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    useSessionStore.setState({ currentSessionId: null, backgroundSessions: [], messages: [], runningSessionIds: new Set() });
+  });
+
+  it('opens the owning session and sends the selected prompt once', async () => {
+    useSessionStore.setState({ currentSessionId: 'other-session' });
+    const sendPrompt = vi.spyOn(useMessageActionStore.getState(), 'sendPrompt').mockResolvedValue();
+    const open = vi.spyOn(useSessionStore.getState(), 'switchSession').mockImplementation(async (sessionId) => {
+      useSessionStore.setState({ currentSessionId: sessionId });
+    });
+    renderPanelWith(failedDelete());
+
+    fireEvent.click(screen.getByRole('button', { name: '换个方式' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(sendPrompt).toHaveBeenCalledTimes(1));
+    expect(open).toHaveBeenCalledExactlyOnceWith('s1');
+    expect(sendPrompt).toHaveBeenCalledWith('上次删除受阻，这些文件还在：spring.csv。请试试别的办法。', {
+      clientMessageId: expect.stringMatching(/^delete-incomplete-retry-s1-/),
+    });
+  });
+
+  it('rechecks persisted retries after opening the owning session', async () => {
+    const task = failedDelete();
+    useSessionStore.setState({ currentSessionId: 'other-session' });
+    const sendPrompt = vi.spyOn(useMessageActionStore.getState(), 'sendPrompt').mockResolvedValue();
+    vi.spyOn(useSessionStore.getState(), 'switchSession').mockImplementation(async (sessionId) => {
+      useSessionStore.setState({
+        currentSessionId: sessionId,
+        messages: [{
+          id: `delete-incomplete-retry-s1-${task.startedAt}-previous`,
+          role: 'user',
+          content: 'previous retry',
+          timestamp: task.startedAt + 100,
+        }],
+      });
+    });
+    renderPanelWith(task);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
+    expect(sendPrompt).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: '换个方式' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('disables both panel actions while the owning session is active', () => {
+    useSessionStore.setState({ currentSessionId: 'other-session', runningSessionIds: new Set(['s1']) });
+    renderPanelWith(failedDelete());
+    expect((screen.getByRole('button', { name: '重试' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '换个方式' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

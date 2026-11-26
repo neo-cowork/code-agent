@@ -1,3 +1,4 @@
+import { EXCEL_READ_ACTIONS } from '../../shared/constants/excelActions';
 import { createRunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { createWorkspaceScope, isPathWithinRoot } from '../runtime/workspaceScope';
@@ -15,6 +16,7 @@ import { isTaskOutputFileWriteAuthorized } from '../tools/fileWriteClassificatio
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
 import type { SubagentEventIdentity } from './subagentLifecycleEvents';
+import { getBackgroundSubagentRegistry } from './backgroundSubagentRegistry';
 
 /**
  * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE 修复轮 2：worktree 子代理重建 scope 时保留
@@ -135,9 +137,19 @@ export function createSubagentToolRuntime(input: {
         )
         // acceptEdits 下连接器写以 type:'file_write' 进来，档位判据只看 type 会放过工具名——
         // 出站 / 不可逆 / 进程类工具（mustAskUnderAcceptEdits）仍要落到 permission.request。
-        && !(mode === 'acceptEdits' && mustAskUnderAcceptEdits(request.tool))
+        && !(mode === 'acceptEdits' && (mustAskUnderAcceptEdits(request.tool) || request.tool === 'ExcelAutomate'))
       ) return true;
-      return context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity });
+      const result = await context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity });
+      // 只记真人的决定：批准看 approvalSource==='user'，拒绝只认显式的 denialSource==='user'（裸 false 来源不明，不记）。
+      const agentId = input.identity.agentId;
+      if (agentId && typeof result === 'object') {
+        if (result.approved && result.approvalSource === 'user') {
+          getBackgroundSubagentRegistry().recordUserApprovalDecision(agentId, 'approved');
+        } else if (!result.approved && result.denialSource === 'user') {
+          getBackgroundSubagentRegistry().recordUserApprovalDecision(agentId, 'denied');
+        }
+      }
+      return result;
     },
   });
   const policyName = input.policyName || 'subagent pipeline';
@@ -156,7 +168,7 @@ export function createSubagentToolRuntime(input: {
           workingDirectory: context.cwd,
         }),
         toolName,
-        permissionLevel: definition?.permissionLevel ?? 'read',
+        permissionLevel: toolName === 'ExcelAutomate' && EXCEL_READ_ACTIONS.has(String(params.action ?? '')) ? 'read' : definition?.permissionLevel ?? 'read',
         path: (params.path as string | undefined) ?? (params.file_path as string | undefined),
         command: params.command as string | undefined,
         url: params.url as string | undefined,

@@ -26,10 +26,10 @@ import {
   getServerReconnectingMessage,
   reportServerUnreachable,
 } from '../utils/serverConnectionMonitor';
-import { getServerConnectionStatus } from '../stores/serverConnectionStore';
+import { getServerConnectionStatus, useServerConnectionStore } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 import { useAppStore } from '../stores/appStore';
-import { domainFailureMessage, httpFailureMessage, readRetryAfterSeconds, UploadFailureError, uploadFailureMessage } from '../utils/httpFailureMessage';
+import { domainFailureMessage, httpFailureMessage, readProjectSourceTrustHttpFields, readRetryAfterSeconds, UploadFailureError, uploadFailureMessage } from '../utils/httpFailureMessage';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -189,12 +189,6 @@ function normalizeIpcTransportFailure(channel: string, status: number | null, me
   };
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
-}
-
 function normalizeUnknownRows(value: unknown): unknown[][] {
   return Array.isArray(value)
     ? value.filter((row): row is unknown[] => Array.isArray(row)).map((row) => [...row])
@@ -246,10 +240,13 @@ function normalizeExcelJsonResult(value: unknown): ExtractExcelJsonResult {
       const rangeStart = normalizeSheetRangeStart(sheet.rangeStart);
       return {
         name: getStringField(sheet, 'name') ?? '',
-        headers: normalizeStringArray(sheet.headers),
+        headers: Array.isArray(sheet.headers)
+          ? sheet.headers.filter((item): item is string => typeof item === 'string')
+          : [],
         rows,
         rowCount: getNumberField(sheet, 'rowCount') ?? rows.length,
         ...(rangeStart ? { rangeStart } : {}),
+        ...(typeof sheet.headerless === 'boolean' ? { headerless: sheet.headerless } : {}),
       };
     });
 
@@ -371,6 +368,56 @@ function parseHttpErrorCode(errorBody: string): string | undefined {
   return isRecord(parsed.error) && typeof parsed.error.code === 'string'
     ? parsed.error.code
     : undefined;
+}
+
+/**
+ * 附件正文抽取失败（pdf/excel 通道共用）：非 2xx、fetch 异常或 200 但正文
+ * 解不出来都落成它，code 是给上层与测试的稳定判别位。不许像旧实现一样吞成
+ * 空对象成功——损坏文件会因此伪装成空正文附件混进 composer。
+ */
+class AttachmentExtractError extends Error {
+  readonly code = 'ATTACHMENT_EXTRACT_FAILED';
+}
+
+function toAttachmentExtractError(error: unknown, label: string): Error {
+  if (error instanceof UploadFailureError || error instanceof AttachmentExtractError) {
+    return error;
+  }
+  const detail = error instanceof Error ? error.message : String(error);
+  return new AttachmentExtractError(`${label} failed: ${detail}`, { cause: error });
+}
+
+/**
+ * 附件抽取通道共用请求：非 2xx / fetch 异常 / 200 但正文解不出 → 抛错
+ * （auth 过期走 UploadFailureError，其余 ATTACHMENT_EXTRACT_FAILED）。
+ */
+async function callExtractApi<T>(
+  baseUrl: string, endpoint: string, filePath: string, label: string,
+  normalize: (value: unknown) => T,
+): Promise<T> {
+  try {
+    const res = await fetch(`${baseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ filePath }),
+    });
+    if (res.ok) {
+      const result = normalize(await readJsonResponse(res));
+      if (!result) {
+        throw new AttachmentExtractError(`${label} failed: unparsable response body`);
+      }
+      return result;
+    }
+    const errorBody = await res.text();
+    const errorMessage = parseHttpErrorMessage(errorBody);
+    const authError = getRecoverableAuthTokenError(res.status, errorMessage);
+    if (authError) {
+      throw new UploadFailureError(authError.message);
+    }
+    throw new AttachmentExtractError(`${label} failed (HTTP ${res.status})${errorMessage ? `: ${errorMessage}` : ''}`);
+  } catch (error) {
+    throw toAttachmentExtractError(error, label);
+  }
 }
 
 function getRecoverableAuthTokenError(status: number, errorMessage: string): AuthTokenRecovery | null {
@@ -526,6 +573,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
     const query = params.toString();
     const sseUrl = query ? `${baseUrl}/api/events?${query}` : `${baseUrl}/api/events`;
     eventSource = new EventSource(sseUrl);
+    eventSource.onopen = () => useServerConnectionStore.getState().markEventStreamConnected();
 
     eventSource.onmessage = (event) => {
       // EventSource 从 `id:` 行解析出的 lastEventId 是字符串。broadcastSSE 用单调
@@ -692,9 +740,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 带上 status：调用方要能区分「这个 session 正忙」（409，可排队重发）
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
           // message 只按 status/code 出一句话；原始响应体挂 rawErrorBody 留诊断，不进 message。
+          const trustFields = readProjectSourceTrustHttpFields(errorBody);
           throw Object.assign(
             new Error(httpFailureMessage({ status: response.status, code: errorCode, language: useAppStore.getState().language })),
-            { status: response.status, ...(errorCode ? { code: errorCode } : {}), rawErrorBody: errorMessage || errorBody },
+            { status: response.status, ...(errorCode ? { code: errorCode } : {}), ...trustFields, rawErrorBody: errorMessage || errorBody },
           );
         }
 
@@ -999,6 +1048,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       }
     }) as CommandBridgeAPI['off'],
 
+    discardUploadedFiles: async (paths) => (await import('./discardTempUpload')).createDiscardTempUpload(baseUrl, getAuthHeaders)(paths),
     uploadFolderBatch: createFolderBatchUpload(baseUrl, getAuthHeaders),
 
     getPathForFile: async (_file: File) => {
@@ -1040,53 +1090,14 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       return uploadedPath;
     },
 
-    extractPdfText: async (_filePath: string) => {
-      try {
-        const res = await fetch(`${baseUrl}/api/extract/pdf`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ filePath: _filePath }),
-        });
-        if (res.ok) {
-          return normalizePdfResult(await readJsonResponse(res));
-        }
-        const errorBody = await res.text();
-        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
-      } catch { /* fallthrough */ }
-      return { text: '', pageCount: 0 };
-    },
+    extractPdfText: async (_filePath: string) =>
+      callExtractApi(baseUrl, '/api/extract/pdf', _filePath, 'extract pdf', normalizePdfResult),
 
-    extractExcelText: async (_filePath: string) => {
-      try {
-        const res = await fetch(`${baseUrl}/api/extract/excel`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ filePath: _filePath }),
-        });
-        if (res.ok) {
-          return normalizeExcelTextResult(await readJsonResponse(res));
-        }
-        const errorBody = await res.text();
-        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
-      } catch { /* fallthrough */ }
-      return { text: '', sheetCount: 0, rowCount: 0 };
-    },
+    extractExcelText: async (_filePath: string) =>
+      callExtractApi(baseUrl, '/api/extract/excel', _filePath, 'extract excel', normalizeExcelTextResult),
 
-    extractExcelJson: async (_filePath: string) => {
-      try {
-        const res = await fetch(`${baseUrl}/api/extract/excel-json`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ filePath: _filePath }),
-        });
-        if (res.ok) {
-          return normalizeExcelJsonResult(await readJsonResponse(res));
-        }
-        const errorBody = await res.text();
-        getRecoverableAuthTokenError(res.status, parseHttpErrorMessage(errorBody));
-      } catch { /* fallthrough */ }
-      return null;
-    },
+    extractExcelJson: async (_filePath: string) =>
+      callExtractApi(baseUrl, '/api/extract/excel-json', _filePath, 'extract excel-json', normalizeExcelJsonResult),
 
     extractDocxHtml: async (_filePath: string) => {
       try {

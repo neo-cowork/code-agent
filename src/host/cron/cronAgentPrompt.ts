@@ -55,6 +55,12 @@ const PERSONAL_CHAT_SOURCE_RULE: Record<SessionTitleLanguage, string> = {
     'If the task involves personal chat sources such as WeChat/IM, do not search for or call any tool, skill, or command line that reads personal chat history; instead output a single line: "Not read: WeChat/IM (scheduled jobs don\'t read personal chats by default; to allow it, tick "Allow this task to use these personal skills" on the "Action" page of the task editor)". Keep that quoted line verbatim, character for character; do not reword the page or option names.',
 };
 
+function mentionsChatSource(prompt: string): boolean {
+  return /微信|即时消息|聊天/.test(prompt)
+    || /\bIM\b/.test(prompt)
+    || /\b(?:wechat|wecom|instant\s+messages?|chat\s+(?:history|messages))\b/i.test(prompt);
+}
+
 /**
  * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
  *
@@ -62,6 +68,11 @@ const PERSONAL_CHAT_SOURCE_RULE: Record<SessionTitleLanguage, string> = {
  * 要吐标记，第一次必然拿不到快照，就只能退而求其次拿整段回答顶替，
  * 于是把一坨叙述性文字当成状态注回下一轮。
  */
+/** 运行会话没有工作文件夹时追加的系统提示：别在主目录/数据目录里翻找，也别说「文件夹是空的」。 */
+export const CRON_NO_WORKING_FOLDER_NOTICE =
+  '本任务没有选定工作文件夹，当前运行目录不是用户的文件夹：不要到主目录、应用数据目录或其他位置翻找文件，也不要说「文件夹是空的」。'
+  + '如果任务需要读取用户的文件或文件夹，请直接告诉用户「这个任务还没有选择工作文件夹」，请他先编辑任务选一个文件夹再运行，然后停止；不需要文件的任务照常完成。';
+
 export function buildCronAgentPrompt(
   prompt: string,
   snapshot: unknown,
@@ -92,7 +103,7 @@ export function buildCronAgentPrompt(
   // 判不出语言才跟 UI。en 行里的选项/页面名必须与 en i18n 真实词条一致：
   // 「允许本任务使用这些个人技能」= cronPersonalSkills.en.label、
   // 「执行动作」= cronEditorChrome en tabs.action —— 改词条时两处同步。
-  const personalChatSourceRule = personalSkillIds?.length ? '' : PERSONAL_CHAT_SOURCE_RULE[
+  const personalChatSourceRule = personalSkillIds?.length || !mentionsChatSource(prompt) ? '' : PERSONAL_CHAT_SOURCE_RULE[
     detectMessageLanguage(prompt) ?? readUiLanguage()
   ];
   const personalSourceInstruction = personalSkillIds?.length
@@ -105,7 +116,8 @@ export function buildCronAgentPrompt(
   const mustTodayDefinition = trimmedCriteria ? `must_today = ${trimmedCriteria}` : 'must_today = 今天需要用户处理';
   const deliveryDigestInstruction =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
-    + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`;
+    + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`
+    + '结果摘要正文请用非技术读者也能看懂的日常用语，不要提及工具名、函数名、参数名、字段名、内部标识符或文件系统内部细节，只说明实际发生了什么，例如「你拒绝了创建提醒的请求，因此没有创建提醒」。';
   const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   // notifyWhen 打扰判据（N-CRON-RESTATE-HUMAN-WHEN）：设置后让模型自判本次是否
   // 值得打扰——满足判据才输出 <cron_alert>，host 侧按该标记门通知与推送。

@@ -12,7 +12,7 @@ const harness = vi.hoisted(() => ({
   configDir: '',
   registry: null as null | import('../../../../src/host/connectors/registry').ConnectorRegistry,
   logs: { info: [] as string[], warn: [] as string[] },
-  runnerCalls: [] as Array<{ prompt: string }>,
+  runnerCalls: [] as Array<{ prompt: string; allowedToolNames?: string[] }>,
 }));
 const mockSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
@@ -31,7 +31,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     getCurrentSessionId: () => null,
-    getSession: vi.fn(),
+    getSession: async () => ({ messages: [{ id: 'intro', role: 'assistant', content: 'I can review your calendar.' }] }),
     createSession: async () => ({ id: `fw-${Date.now()}`, workingDirectory: undefined, messages: [] }),
     updateMessage: vi.fn(),
   }),
@@ -43,7 +43,7 @@ vi.mock('../../../../src/host/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: () => ({ provider: 'test', model: 'test' }),
 }));
 vi.mock('../../../../src/host/task', () => ({
-  getTaskManager: () => ({ getOrCreateCurrentOrchestrator: () => undefined, setWorkingDirectory: vi.fn(), cleanup: vi.fn() }),
+  getTaskManager: () => ({ getOrCreateCurrentOrchestrator: () => ({ sendMessage: vi.fn() }), setWorkingDirectory: vi.fn(), cleanup: vi.fn() }),
 }));
 vi.mock('../../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => ({
@@ -51,9 +51,8 @@ vi.mock('../../../../src/host/services/sessionAutomation', () => ({
     recordEvent: vi.fn().mockResolvedValue(undefined),
   }),
 }));
-vi.mock('../../../../src/host/agent/agentRegistry', () => ({ resolveAgent: () => undefined }));
 vi.mock('../../../../src/host/tools/dispatch/toolDefinitions', () => ({
-  getAllToolDefinitions: () => [{ name: 'Read', permissionLevel: 'read' }],
+  getAllToolDefinitions: () => ['Read', 'calendar', 'mail', 'reminders', 'photos'].map((name) => ({ name, permissionLevel: 'read' })),
 }));
 vi.mock('../../../../src/host/mcp/mcpClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../src/host/mcp/mcpClient')>();
@@ -96,6 +95,8 @@ vi.mock('../../../../src/host/connectors', async (importOriginal) => ({
 // Cold module loading must not consume the state assertion's default wait budget.
 import '../../../../src/host/services/capabilities/capabilityCenterService';
 import { listConnectedSourceNames, enqueueFirstWake } from '../../../../src/host/services/roleAssets/roleFirstWake';
+import { disposeAgentRegistry, reloadAgentRegistry, resolveAgent } from '../../../../src/host/agent/agentRegistry';
+import { confirmRoleDraft, enqueueRoleDraft } from '../../../../src/host/services/roleAssets/roleDraftQueue';
 import { resolveWakeExternalDelta } from '../../../../src/host/services/roleAssets/roleWakeFindWork';
 import { ConnectorRegistry } from '../../../../src/host/connectors/registry';
 import { resetCalendarConnectorReadiness } from '../../../../src/host/connectors/native/calendar';
@@ -106,6 +107,44 @@ const previousDataDir = process.env.CODE_AGENT_DATA_DIR;
 function enableCalendar(enabled: boolean): void {
   mockSettings.value = { connectors: { enabledNative: enabled ? ['calendar'] : [] } };
   harness.registry!.configure(enabled ? ['calendar'] : []);
+}
+
+const connectorIds = ['calendar', 'reminders', 'mail', 'photos'] as const;
+
+function watchAllConnectorProbes() {
+  mockSettings.value = { connectors: { enabledNative: [...connectorIds] } };
+  harness.registry!.configure([...connectorIds]);
+  return Object.fromEntries(connectorIds.map((id) => {
+    const connector = harness.registry!.get(id)!;
+    const execute = vi.spyOn(connector, 'execute');
+    // The real calendar implementation uses the fake EventKit bridge above.
+    if (id !== 'calendar') {
+      const status = connector.getCachedStatus!();
+      vi.spyOn(connector, 'getCachedStatus').mockReturnValue({ ...status, readiness: 'unchecked' });
+      execute.mockResolvedValue({ data: status });
+    }
+    return [id, execute] as const;
+  }));
+}
+
+function probeCalls(spies: ReturnType<typeof watchAllConnectorProbes>) {
+  return Object.fromEntries(Object.entries(spies).map(([id, spy]) => [id, spy.mock.calls]));
+}
+
+async function seedCalendarRole(roleId: string) {
+  const agentsDir = path.join(harness.configDir, 'agents');
+  await fs.mkdir(agentsDir, { recursive: true });
+  await fs.writeFile(path.join(agentsDir, `${roleId}.md`), `---\nname: ${roleId}\ndescription: Calendar expert\ntools: [calendar]\n---\nReview the calendar.`);
+  await reloadAgentRegistry();
+}
+
+async function completedWake(roleId: string) {
+  const statePath = path.join(harness.configDir, 'roles', roleId, 'first-wake.json');
+  return vi.waitFor(async () => {
+    const state = JSON.parse(await fs.readFile(statePath, 'utf-8')) as { state: string; sourcesMode: string; sourceNames: string[] };
+    expect(state.state).toBe('completed');
+    return state;
+  });
 }
 
 beforeEach(async () => {
@@ -123,6 +162,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  await disposeAgentRegistry();
   Object.defineProperty(process, 'platform', realPlatform);
   if (previousDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
   else process.env.CODE_AGENT_DATA_DIR = previousDataDir;
@@ -130,8 +171,30 @@ afterEach(async () => {
 });
 
 describe('醒来前探测 unchecked 的 native 连接器', () => {
+  it('install confirmation loads calendar tools before first wake probes', async () => {
+    const spies = watchAllConnectorProbes();
+    const roleId = 'calendar-install';
+    const { draft } = await enqueueRoleDraft({
+      roleId,
+      description: 'Calendar expert',
+      systemPrompt: 'Review the calendar.',
+      tools: ['calendar'],
+      sessionId: 'creation-session',
+    });
+    // Exercise the interval before the debounced watcher reloads the new file.
+    expect(resolveAgent(roleId)).toBeUndefined();
+    expect(await confirmRoleDraft(draft!.id)).toMatchObject({ success: true, roleId });
+    const state = await completedWake(roleId);
+
+    const calls = probeCalls(spies);
+    console.info('Install confirmation connector calls:', JSON.stringify(calls));
+    expect(calls).toEqual({ calendar: [['probe_access', {}]], reminders: [], mail: [], photos: [] });
+    expect(state).toMatchObject({ sourcesMode: 'connected', sourceNames: ['Calendar'] });
+  });
+
   it('(a) 已启用+未检查+已授权 → 计入已连接源，首次醒来 sourcesMode=connected', async () => {
     enableCalendar(true);
+    await seedCalendarRole('cal-role');
     expect(harness.registry!.get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
 
     await enqueueFirstWake('cal-role', {
@@ -156,7 +219,7 @@ describe('醒来前探测 unchecked 的 native 连接器', () => {
     enableCalendar(true);
     fake.state.status = 2;
 
-    await expect(listConnectedSourceNames()).resolves.toEqual([]);
+    await expect(listConnectedSourceNames(['calendar'])).resolves.toEqual([]);
     expect(calendarReads()).toBe(0);
     expect(fake.state.grants).toBe(0);
     expect(harness.registry!.get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
@@ -165,9 +228,9 @@ describe('醒来前探测 unchecked 的 native 连接器', () => {
   it('(c) 未启用（不在注册表）→ 不计入，日志说明 not enabled，且不碰原生桥', async () => {
     enableCalendar(false);
 
-    await expect(listConnectedSourceNames()).resolves.toEqual([]);
+    await expect(listConnectedSourceNames(['calendar'])).resolves.toEqual([]);
     expect(fake.state.calls).toEqual([]);
-    expect(harness.logs.info.some((line) => /not enabled: \[calendar,/.test(line))).toBe(true);
+    expect(harness.logs.info).toContain('Native connectors not counted as sources — not enabled: [calendar]; probe-failed: []; unavailable: []');
   });
 
   it('(d) 已 ready 的连接器不再补探', async () => {
@@ -182,18 +245,66 @@ describe('醒来前探测 unchecked 的 native 连接器', () => {
   it('(e) 之前没授权、后来在任一入口允许了：下一次醒来被动重探就计入（不会卡在 failed）', async () => {
     enableCalendar(true);
     fake.state.status = 2;
-    await expect(listConnectedSourceNames()).resolves.toEqual([]);
+    await expect(listConnectedSourceNames(['calendar'])).resolves.toEqual([]);
     fake.state.status = 3;
-    await expect(listConnectedSourceNames()).resolves.toEqual(['Calendar']);
+    await expect(listConnectedSourceNames(['calendar'])).resolves.toEqual(['Calendar']);
     expect(fake.state.grants).toBe(0);
   });
 
-  it('(f) 每日醒来 resolveWakeExternalDelta（不注入源名）也看到日历', async () => {
-    enableCalendar(true);
+  it('(f) declared calendar in daily wake probes only calendar and lists it', async () => {
+    const spies = watchAllConnectorProbes();
 
-    const delta = await resolveWakeExternalDelta({ roleId: 'cal-daily-role', hasProducts: false });
+    const delta = await resolveWakeExternalDelta({
+      roleId: 'cal-daily-role', hasProducts: false, roleToolNames: ['calendar'],
+    });
     expect(delta.sourceNames).toEqual(['Calendar']);
     expect(delta.section).toContain('Calendar');
     expect(calendarReads()).toBe(1);
+    expect(probeCalls(spies)).toEqual({ calendar: [['probe_access', {}]], reminders: [], mail: [], photos: [] });
+  });
+
+  it('(g) 角色只声明 calendar：首次醒来不探测、不列 reminders / mail（FB-2206）', async () => {
+    const probes = watchAllConnectorProbes();
+    await seedCalendarRole('cal-only-role');
+
+    await enqueueFirstWake('cal-only-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: '你好。' };
+      },
+    });
+    const statePath = path.join(harness.configDir, 'roles', 'cal-only-role', 'first-wake.json');
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await fs.readFile(statePath, 'utf-8'))).toMatchObject({ state: 'completed' });
+    });
+
+    expect(harness.runnerCalls[0]!.allowedToolNames).toContain('calendar');
+    expect(harness.runnerCalls[0]!.prompt).toContain('Calendar');
+    expect(harness.runnerCalls[0]!.prompt).not.toMatch(/Reminders|Mail|Photos/);
+    expect(probeCalls(probes)).toEqual({ calendar: [['probe_access', {}]], reminders: [], mail: [], photos: [] });
+  });
+
+  it.each([false, true])('(h) undeclared first and daily wake probe nothing and retain ready calendar (ready=%s)', async (ready) => {
+    const spies = watchAllConnectorProbes();
+    if (ready) {
+      await harness.registry!.get('calendar')!.execute('probe_access', {});
+      spies.calendar!.mockClear();
+    } else {
+      // The inventory passively reads EventKit status even without probe_access.
+      fake.state.status = 2;
+    }
+    const expectedSources = ready ? ['Calendar'] : [];
+
+    const roleId = 'undeclared-role';
+    await enqueueFirstWake(roleId);
+    const state = await completedWake(roleId);
+    expect(state).toMatchObject({ sourcesMode: ready ? 'connected' : 'none', sourceNames: expectedSources });
+    expect(probeCalls(spies)).toEqual({ calendar: [], reminders: [], mail: [], photos: [] });
+
+    const delta = await resolveWakeExternalDelta({ roleId, hasProducts: false });
+    expect(delta.sourceNames).toEqual(expectedSources);
+    if (ready) expect(delta.section).toContain('Calendar');
+    else expect(delta.section).toBeUndefined();
+    expect(probeCalls(spies)).toEqual({ calendar: [], reminders: [], mail: [], photos: [] });
   });
 });

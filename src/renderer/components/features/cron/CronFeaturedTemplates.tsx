@@ -5,7 +5,7 @@
 // 「开启」是卡片唯一主操作，统一走 Button primitive 品牌主按钮。
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import { CalendarClock, CalendarRange, Check, ClipboardCheck, Sparkles, Sunrise, type LucideIcon } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
@@ -13,6 +13,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import { useI18n } from '../../../hooks/useI18n';
 import { Button } from '../../primitives/Button';
+import { Modal } from '../../primitives/Modal';
 import { formatCronTimeZoneSuffix } from '../../../utils/formatCronJobTime';
 import {
   FEATURED_CRON_TEMPLATES,
@@ -24,7 +25,12 @@ import {
 } from './cronTemplates';
 import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
 import { CronCloudCreateNotice } from './CronCloudCreateNotice';
+import { PendingRoutineRestate } from './PendingRoutineRestate';
+import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
 import { buildCronJobInput } from './types';
+
+/** 一键开启前先出保存前复述卡的推荐模板（N-CRON-MORNING-TRIAGE-REST2）。 */
+const RESTATE_BEFORE_CREATE_TEMPLATE_IDS = new Set(['morning-triage']);
 
 /** 模板 id → lucide 图标；未登记的模板（测试桩、未来新增）回退 Sparkles */
 const TEMPLATE_ICONS: Record<string, LucideIcon> = {
@@ -68,6 +74,45 @@ export const CronFeaturedTemplates: React.FC = () => {
   const [cloudTemplate, setCloudTemplate] = useState<CronTemplate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gateHint, setGateHint] = useState<{ templateId: string; missing: TemplateConnectorStatus[] } | null>(null);
+  const [pendingTemplate, setPendingTemplate] = useState<CronTemplate | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [restateError, setRestateError] = useState<string | null>(null);
+  const pendingTemplateRef = useRef<CronTemplate | null>(null);
+
+  const persistPending = async (pending: PendingRoutineSave): Promise<boolean> => {
+    const template = pendingTemplateRef.current;
+    setConfirming(true);
+    setRestateError(null);
+    setError(null);
+    setCloudTemplate(null);
+    try {
+      await createJob(pending.input);
+      pendingTemplateRef.current = null;
+      setPendingTemplate(null);
+      return true;
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) {
+        setCloudTemplate(template);
+        pendingTemplateRef.current = null;
+        setPendingTemplate(null);
+        backPending();
+        return false;
+      }
+      setRestateError(err instanceof Error && err.message ? err.message : cc.templateEnableFailed);
+      return false;
+    } finally {
+      setConfirming(false);
+    }
+  };
+  const { pending: pendingSave, gateOrPersist, confirm: confirmPending, back: backPending } =
+    usePendingRoutineGate(persistPending);
+
+  const handleCloseRestate = () => {
+    pendingTemplateRef.current = null;
+    setPendingTemplate(null);
+    setRestateError(null);
+    backPending();
+  };
 
   const handleEnable = async (
     template: CronTemplate,
@@ -86,7 +131,15 @@ export const CronFeaturedTemplates: React.FC = () => {
         await updateJob(existingJob.id, { enabled: true });
       } else {
         const input = buildCronJobInput(template.generate({}, language === 'en' ? 'en' : 'zh'), cc.editorChrome.validation);
-        await createJob(runsOn ? { ...input, runsOn } : input);
+        const inputWithRunsOn = runsOn ? { ...input, runsOn } : input;
+        if (!runsOn && RESTATE_BEFORE_CREATE_TEMPLATE_IDS.has(template.id)) {
+          pendingTemplateRef.current = template;
+          setPendingTemplate(template);
+          setRestateError(null);
+          await gateOrPersist(inputWithRunsOn, 'create');
+        } else {
+          await createJob(inputWithRunsOn);
+        }
       }
     } catch (err) {
       if (err instanceof Error && 'code' in err && err.code === CRON_CLOUD_NOT_CONFIGURED) setCloudTemplate(template);
@@ -217,6 +270,24 @@ export const CronFeaturedTemplates: React.FC = () => {
           );
         })}
       </div>
+
+      {pendingSave && (
+        <Modal
+          isOpen
+          onClose={confirming ? undefined : handleCloseRestate}
+          title={pendingTemplate ? getTemplateDisplayCopy(pendingTemplate, cc.templates).name : cc.pendingRestateTitle}
+          size="lg"
+        >
+          <PendingRoutineRestate
+            input={pendingSave.input}
+            mode={pendingSave.mode}
+            confirming={confirming}
+            error={restateError}
+            onConfirm={() => void confirmPending()}
+            onBack={handleCloseRestate}
+          />
+        </Modal>
+      )}
     </section>
   );
 };

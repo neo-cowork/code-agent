@@ -3,7 +3,7 @@
 
 import { PROMPT_REQUIRED, REQUEST_INVALID } from '@shared/contract/agentRunErrors';
 import type { Language } from './index';
-import { sessionConflictLabels } from './projectTrust';
+import { projectTrustTurnCardEn, projectTrustTurnCardZh, sessionConflictLabels } from './projectTrust';
 
 const promptRequiredCopy: Record<Language, string> = {
   zh: '请补一句话说明想让我做什么，然后再发送一次。',
@@ -30,10 +30,10 @@ export const httpFailureCopy = {
     zh: '上一轮还没结束，请稍候再发送。',
     en: 'The previous turn is still finishing. Try again in a moment.',
   },
-  // A parked old run needs an explicit action before the next message can be sent.
+  // 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
   sessionHeldByOldRun: {
-    zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
-    en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
+    zh: `这条消息没发出去：这个会话里还有一个在等你确认的旧任务。点「${sessionConflictLabels.zh.retry}」会先结束旧任务，再把你的消息重新发送。`,
+    en: `This message was not sent: an earlier task in this conversation is still waiting for your confirmation. "${sessionConflictLabels.en.retry}" ends that task first, then sends your message again.`,
   },
   tooManyRequests: {
     zh: '发送太频繁了，请稍等片刻再重试。',
@@ -56,6 +56,15 @@ export function rejectedRequestMessage(error: unknown, language: Language): stri
   if (typeof error !== 'object' || error === null) return undefined;
   const { status, code } = error as { status?: unknown; code?: unknown };
   if (code === 'PROJECT_SOURCE_TRUST') {
+    const kind = (error as { kind?: unknown }).kind;
+    if (kind === 'source_missing') {
+      const copy = language === 'en' ? projectTrustTurnCardEn : projectTrustTurnCardZh;
+      const rawName = (error as { folderName?: unknown }).folderName;
+      const name = typeof rawName === 'string' && rawName.trim() && !rawName.includes('/') && !rawName.includes('\\')
+        ? rawName.trim()
+        : copy.projectTrustConfirm.folder;
+      return copy.projectTrustConfirm.reasons.source_missing.replace('{name}', name);
+    }
     return projectSourceTrustCopy[language] ?? projectSourceTrustCopy.zh;
   }
   if (code === REQUEST_INVALID) {

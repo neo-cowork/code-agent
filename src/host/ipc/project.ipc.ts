@@ -19,6 +19,7 @@ import {
   getProjectCollaborationService,
   ProjectCollaborationError,
 } from '../services/project/projectCollaborationService';
+import { ProjectUpdateError } from '../services/project/projectUpdateError';
 import { getCollabCardSyncService } from '../services/project/collabCardSyncService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
@@ -119,7 +120,7 @@ function notFound(message: string): IPCResponse {
 }
 function toProjectError(error: unknown): { code: string; message: string } {
   logger.error('Project IPC error', error);
-  if (error instanceof ProjectCollaborationError) {
+  if (error instanceof ProjectCollaborationError || error instanceof ProjectUpdateError) {
     return { code: error.code, message: error.message };
   }
   return { code: 'PROJECT_ERROR', message: error instanceof Error ? error.message : 'Unknown error' };
@@ -254,7 +255,7 @@ const projectHandlers: RawDomainRouteHandlers<ProjectDomainRequest, void> = {
     const { projectId } = (payload ?? {}) as DetailPayload;
     if (!projectId?.trim()) return invalid('projectId is required');
     if (projectId === UNSORTED_PROJECT_ID) {
-      return invalid('the unsorted project cannot be promoted to a cloud space');
+      return invalid('the unsorted project cannot be promoted to a cloud Space');
     }
     return {
       success: true,

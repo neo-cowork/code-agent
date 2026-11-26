@@ -18,6 +18,13 @@ export const SSE_INACTIVITY_TIMEOUT =
 export const STREAM_RECONNECT_MAX =
   (typeof process !== 'undefined' && Number(process.env?.STREAM_RECONNECT_MAX)) || 2;
 
+/** B2 断流续答去重（ADR-068 as-built 9）：续答开头与已保留文本的公共前缀占已保留文本的比例
+ *  不低于此值，且不少于 STREAM_B2_DEDUP_MIN_CHARS，才判定为"复述开头"并在宿主侧裁掉。 */
+export const STREAM_B2_DEDUP_MIN_RATIO = 0.6;
+
+/** B2 断流续答去重的最少公共前缀字符数：过短的巧合重合不裁，原样展示。 */
+export const STREAM_B2_DEDUP_MIN_CHARS = 10;
+
 /** 无人值守轮（cron/heartbeat/channel 会话、async_agent、goal、loop）的断流续接预算（ADR-068 D4）：
  *  没人盯着手动重试，续跑取高预算；前台轮仍用 STREAM_RECONNECT_MAX。env 可覆盖，形状同上。 */
 export const UNATTENDED_STREAM_RECONNECT_MAX =

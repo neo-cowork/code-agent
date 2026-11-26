@@ -1,3 +1,4 @@
+import { CRON_WORKING_DIRECTORY_METADATA_KEY, cronSourceSessionIdFromDefinition, cronWorkingDirectoryFromMetadata } from '@shared/cronWriteScope';
 import { normalizePersonalSkillIds } from '@shared/cronPersonalSkills';
 import type {
   AgentAction,
@@ -19,7 +20,8 @@ import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } 
 import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
 import { cronEditorChromeZh } from '../../../i18n/cronEditorChrome';
 import { formatDateTime } from '../../../utils/formatDateTime';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { readWakeSkipFromResult } from '@shared/cronRunLedger';
+import { getBuiltinJobDisplay, roleWakeActionLabel } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -55,6 +57,10 @@ export interface CronJobDraft {
    * 'event-mail' 调度：绑定的 Mail 账号名（mail connector 的账号名，非通道账号 id）。
    */
   eventMailAccountId: string;
+  /** 事件调度（三种来源共用）：只处理符合这句话的消息；空串 = 不筛。 */
+  eventPrefilter: string;
+  /** 事件调度（三种来源共用）：每小时最多运行次数；空串 = 缺省值（不落键）。 */
+  eventMaxRunsPerHour: string;
   /**
    * 'event-mail' 调度：监听邮箱名；空串 = 缺省 INBOX（保存时不落 mailbox 键）。
    */
@@ -128,6 +134,8 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     eventChatId: '',
     eventMailAccountId: '',
     eventMailMailbox: '',
+    eventPrefilter: '',
+    eventMaxRunsPerHour: '',
     actionType: 'shell',
     shellCommand: '',
     shellCwd: '',
@@ -201,6 +209,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     // 上，保存时仅覆盖 accountId/mailbox，可选窗口字段原样保留（round-trip）。
     // webhook 源没有账号表单：分型为 'event-webhook' 并带出原绑定。若落进通用 'event'
     // 分支，保存会当成 channel（没账号存不了；补上账号则 source 被改写、窗口被清掉）。
+    draft.eventPrefilter = job.schedule.prefilter ?? '';
+    draft.eventMaxRunsPerHour = job.schedule.maxRunsPerHour !== undefined ? String(job.schedule.maxRunsPerHour) : '';
     if (job.schedule.source === 'channel') {
       draft.eventAccountId = job.schedule.accountId;
       draft.eventChatId = job.schedule.chatId || '';
@@ -282,9 +292,56 @@ function parseJsonValue(value: string, fieldName: string): Record<string, unknow
   }
 }
 
+/** 保存前规整 metadata.workingDirectory：去首尾空白，空白串视为没选（删键）。 */
+function normalizeWorkingDirectory(metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const raw = metadata?.workingDirectory;
+  if (!metadata || typeof raw !== 'string') return metadata;
+  const { workingDirectory: _raw, ...rest } = metadata;
+  const trimmed = raw.trim();
+  return trimmed ? { ...rest, workingDirectory: trimmed } : rest;
+}
+
+/** 本机文件夹路径在云端没有意义：云端任务不落 workingDirectory。 */
+function metadataForRunsOn(
+  metadata: Record<string, unknown> | undefined,
+  runsOn: CronJobDraft['runsOn'],
+): Record<string, unknown> | undefined {
+  if (!metadata || runsOn === 'local' || !(CRON_WORKING_DIRECTORY_METADATA_KEY in metadata)) return metadata;
+  const { [CRON_WORKING_DIRECTORY_METADATA_KEY]: _folder, ...rest } = metadata;
+  return rest;
+}
+
+/**
+ * 复制任务时只带走工作文件夹，其余 metadata 不继承。文件夹取原任务实际用的那个：
+ * metadata.workingDirectory（绝对路径）优先，否则来源会话的工作目录（同样要求绝对路径）。
+ * 写进副本自己的 metadata，副本不再依赖来源会话是否还在。
+ */
+export function copiedWorkingDirectoryMetadata(
+  source: Pick<CronJobDefinition, 'metadata' | 'action'>,
+  sessions: ReadonlyArray<{ id: string; workingDirectory?: string | null }>,
+): Record<string, unknown> | undefined {
+  const sourceSessionId = cronSourceSessionIdFromDefinition(source);
+  const sessionFolder = sourceSessionId ? sessions.find((session) => session.id === sourceSessionId)?.workingDirectory : undefined;
+  const folder = cronWorkingDirectoryFromMetadata(source.metadata)
+    ?? cronWorkingDirectoryFromMetadata({ [CRON_WORKING_DIRECTORY_METADATA_KEY]: sessionFolder });
+  return folder ? { [CRON_WORKING_DIRECTORY_METADATA_KEY]: folder } : undefined;
+}
+
+/** 事件调度共用的两项限额：空值不落键（host 归一落缺省）；mail/webhook 的原绑定值被表单值覆盖。 */
+function eventLimitsFromDraft(draft: CronJobDraft): { prefilter?: string; maxRunsPerHour?: number } {
+  const prefilter = draft.eventPrefilter.trim();
+  const cap = Number(draft.eventMaxRunsPerHour);
+  return {
+    ...(prefilter ? { prefilter } : {}),
+    ...(draft.eventMaxRunsPerHour.trim() && Number.isFinite(cap) ? { maxRunsPerHour: cap } : {}),
+  };
+}
+
 export function buildCronJobInput(
   draft: CronJobDraft,
   validation = cronEditorChromeZh.editorChrome.validation,
+  /** 编辑已有任务：位置只读，不能擅自删掉它已存的文件夹。 */
+  isEditing = false,
 ): Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'> {
   if (!draft.name.trim()) {
     throw new Error(validation.nameRequired);
@@ -311,7 +368,7 @@ export function buildCronJobInput(
       .map((tag) => tag.trim())
       .filter(Boolean),
     // 原样回写编辑前的 metadata（编辑器无 metadata 表单）；新建任务没有底稿 → 空。
-    metadata: draft.metadata ?? {},
+    metadata: metadataForRunsOn(normalizeWorkingDirectory(draft.metadata), isEditing ? 'local' : draft.runsOn) ?? {},
   };
   if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
     throw new Error(validation.budgetInvalid);
@@ -369,6 +426,10 @@ export function buildCronJobInput(
       ...(mailbox ? { mailbox } : {}),
     };
     if (!mailbox) delete schedule.mailbox;
+    // 原绑定里的限额不能在用户清空表单后残留。
+    delete schedule.prefilter;
+    delete schedule.maxRunsPerHour;
+    Object.assign(schedule, eventLimitsFromDraft(draft));
   } else if (draft.scheduleType === 'event-webhook') {
     // 已落库的 webhook 任务：整份回写原绑定（含窗口）。通道账号字段不参与——
     // 补选账号不能把 source 改成 channel。改成别的调度类型则走对应分支，原绑定作废。
@@ -379,6 +440,7 @@ export function buildCronJobInput(
       eventName: 'message',
       ...(source?.batchWindowSec !== undefined ? { batchWindowSec: source.batchWindowSec } : {}),
       ...(source?.minRunIntervalSec !== undefined ? { minRunIntervalSec: source.minRunIntervalSec } : {}),
+      ...eventLimitsFromDraft(draft),
     };
   } else {
     // 'event'（通道源）：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号
@@ -390,6 +452,7 @@ export function buildCronJobInput(
       accountId: draft.eventAccountId.trim(),
       eventName: 'message',
       ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
+      ...eventLimitsFromDraft(draft),
     };
   }
 
@@ -514,9 +577,13 @@ export function formatDuration(ms: number | null | undefined, lang: CronHumanLan
   return text.join(' ');
 }
 
-/** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
-export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud'): string {
-  if (runsOn === 'cloud' || value == null || !Number.isFinite(value)) return '—';
+/**
+ * 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash；
+ * 包月运行（无美元读数）传入 flatFeeLabel 显示「不按美元计费」，不编造美元数。
+ */
+export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud', flatFeeLabel?: string): string {
+  if (runsOn === 'cloud') return '—';
+  if (value == null || !Number.isFinite(value)) return flatFeeLabel ?? '—';
   return `$${value.toFixed(4)}`;
 }
 
@@ -585,6 +652,8 @@ export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang)
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
       return job.action.channel;
+    case 'role-wake':
+      return roleWakeActionLabel(lang);
     default:
       return (job.action as { type: string }).type;
   }
@@ -645,12 +714,16 @@ export function prettyJson(value: unknown): string {
 export function getLatestExecutionStatus(
   execution: CronJobExecution | null | undefined,
   copy: { status: Record<CronJobStatus | 'none', string>; permissionDeniedBadge: string },
+  wakeCopy?: { skippedBadge: string },
 ): { label: string; className: string } {
   if (!execution) {
     return { label: copy.status.none, className: 'text-zinc-300 bg-zinc-500/10' };
   }
   if (isPermissionDeniedExecution(execution)) {
     return { label: copy.permissionDeniedBadge, className: 'text-badge-warning bg-amber-500/10' };
+  }
+  if (wakeCopy && readWakeSkipFromResult(execution.result)) {
+    return { label: wakeCopy.skippedBadge, className: 'text-zinc-300 bg-zinc-500/10' };
   }
   return { label: copy.status[execution.status], className: getExecutionStatusMeta(execution.status).className };
 }

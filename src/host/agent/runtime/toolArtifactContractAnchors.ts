@@ -185,7 +185,7 @@ function findContractMethodRegion(
         if (content[end] === ',') end += 1;
 
         return {
-          oldText: content.slice(start, end).trimEnd(),
+          oldText: content.slice(start, end).trim(),
           diagnostics: `expanded ${methodName} replacement inside ${contractRegion.diagnostics}`,
         };
       }

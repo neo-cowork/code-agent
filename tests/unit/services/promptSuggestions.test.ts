@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const ui = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 const quickTask = vi.fn();
 vi.mock('../../../src/host/model/quickModel', () => ({ quickTask }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: ui.language } }) }),
+}));
 
 import { generateContextSuggestions } from '../../../src/host/services/core/promptSuggestions';
 
 const reply = (content: string) => quickTask.mockResolvedValue({ success: true, content });
 
 describe('generateContextSuggestions', () => {
-  beforeEach(() => quickTask.mockReset());
+  beforeEach(() => {
+    quickTask.mockReset();
+    ui.language = 'zh';
+  });
 
   it('prompt carries the refusal and plain-language rules, and an old ban beyond the old window', async () => {
     reply('把页面内容贴给我');
@@ -22,6 +29,18 @@ describe('generateContextSuggestions', () => {
     expect(prompt).toContain('不要出现命令行、终端、端口、进程、shell、ping、工具、后台任务、代理等技术字眼');
     expect(prompt).toContain('请不要用 Bash 或 curl'); // 9th-from-last message, outside old 6-window
     expect(prompt).toContain('TAIL_MARK'); // beyond old 300-char cut
+  });
+
+  it('does not feed the old restore notice to the suggestion model', async () => {
+    reply('把完整路径发给我');
+    const legacy = '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    await generateContextSuggestions([
+      { role: 'user', content: `${legacy}\n\n总结 Q3 数字` },
+      { role: 'assistant', content: '已处理' },
+    ]);
+    const prompt = quickTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('用户: 总结 Q3 数字');
+    expect(prompt).not.toContain('telemetry');
   });
 
   it('drops suggestions that contain a term the user banned', async () => {
@@ -45,6 +64,7 @@ describe('generateContextSuggestions', () => {
   });
 
   it('takes whole words at the window edge (no partial term like "cur")', async () => {
+    ui.language = 'en';
     reply('Check the occurrence log\nRetry curl once more');
     const out = await generateContextSuggestions([
       { role: 'user', content: "please don't use Bash or curl for this" },
@@ -87,7 +107,10 @@ describe('generateContextSuggestions', () => {
 });
 
 describe('generateContextSuggestions ban extraction is narrow', () => {
-  beforeEach(() => quickTask.mockReset());
+  beforeEach(() => {
+    quickTask.mockReset();
+    ui.language = 'zh';
+  });
   const run = async (userText: string, chips: string) => {
     quickTask.mockResolvedValue({ success: true, content: chips });
     const out = await generateContextSuggestions([
@@ -98,6 +121,7 @@ describe('generateContextSuggestions ban extraction is narrow', () => {
   };
 
   it("\"don't put it in the README\" bans nothing (no 'in' substring wipe-out)", async () => {
+    ui.language = 'en';
     expect(await run("don't put it in the README", 'Explain the plan\nFind integration tests')).toEqual([
       'Explain the plan',
       'Find integration tests',
@@ -105,6 +129,7 @@ describe('generateContextSuggestions ban extraction is narrow', () => {
   });
 
   it('"No, use Python instead" does not ban python', async () => {
+    ui.language = 'en';
     expect(await run('No, use Python instead', 'Run the Python script')).toEqual(['Run the Python script']);
   });
 
@@ -117,7 +142,9 @@ describe('generateContextSuggestions ban extraction is narrow', () => {
   });
 
   it('explicit bans still work, with whole-word matching', async () => {
+    ui.language = 'en';
     expect(await run("don't use curl or wget", 'Retry with CURL\nUse wget again\nUse curly braces')).toEqual(['Use curly braces']);
+    ui.language = 'zh';
     expect(await run('别用 Bash/curl', '再跑一次 bash 命令\n把内容发给我')).toEqual(['把内容发给我']);
   });
 
@@ -129,7 +156,10 @@ describe('generateContextSuggestions ban extraction is narrow', () => {
 });
 
 describe('generateContextSuggestions ban list stops at the end of the ban clause', () => {
-  beforeEach(() => quickTask.mockReset());
+  beforeEach(() => {
+    quickTask.mockReset();
+    ui.language = 'zh';
+  });
   const run = async (userText: string, chips: string) => {
     quickTask.mockResolvedValue({ success: true, content: chips });
     const out = await generateContextSuggestions([
@@ -140,6 +170,7 @@ describe('generateContextSuggestions ban list stops at the end of the ban clause
   };
 
   it("\"don't use curl, use wget instead\" bans only curl (preferred alternative survives)", async () => {
+    ui.language = 'en';
     expect(await run("don't use curl, use wget instead", 'Use wget instead\nRe-run the curl command\nTry wget with a proxy')).toEqual([
       'Use wget instead',
       'Try wget with a proxy',
@@ -147,10 +178,12 @@ describe('generateContextSuggestions ban list stops at the end of the ban clause
   });
 
   it("\"don't use curl and then retry\" bans only curl", async () => {
+    ui.language = 'en';
     expect(await run("don't use curl and then retry", 'Then check the logs\nRetry the curl call')).toEqual(['Then check the logs']);
   });
 
   it('"don\'t use bash or curl" still bans both names', async () => {
+    ui.language = 'en';
     expect(await run("don't use bash or curl", 'Run bash again\nRetry with curl\nShare the page text')).toEqual(['Share the page text']);
   });
 
@@ -159,6 +192,51 @@ describe('generateContextSuggestions ban list stops at the end of the ban clause
   });
 
   it('"and" inside a longer word does not extend the list', async () => {
+    ui.language = 'en';
     expect(await run("don't use curl android", 'Open the android app')).toEqual(['Open the android app']);
+  });
+});
+
+const CJK_SCRIPT = /[㐀-鿿豈-﫿぀-ヿ가-힯]/;
+
+describe('generateContextSuggestions follows ui.language', () => {
+  beforeEach(() => {
+    quickTask.mockReset();
+    ui.language = 'zh';
+  });
+
+  it("ui.language='en' sends the English rule and labels, and drops CJK lines", async () => {
+    ui.language = 'en';
+    reply('把完整总结发给我\nSend me the full summary\nList the three key points');
+    const out = await generateContextSuggestions([
+      { role: 'user', content: 'Summarize the meeting notes' },
+      { role: 'assistant', content: 'Here are three key points' },
+    ]);
+    const prompt = quickTask.mock.calls[0][0] as string;
+    expect(prompt.startsWith('Write every suggestion in English.')).toBe(true);
+    expect(prompt).toContain('User: Summarize the meeting notes');
+    expect(prompt).toContain('Assistant: Here are three key points');
+    expect(prompt).toContain('at most 8 words');
+    expect(prompt).not.toContain('用户:');
+    expect(prompt).not.toContain('助手:');
+    expect(out.map(s => s.text)).toEqual(['Send me the full summary', 'List the three key points']);
+    expect(out.some(s => CJK_SCRIPT.test(s.text))).toBe(false);
+  });
+
+  it("ui.language='zh' sends the Chinese rule and drops lines with no CJK", async () => {
+    ui.language = 'zh';
+    reply('把完整总结发给我\nSend me the full summary\n列出三个要点');
+    const out = await generateContextSuggestions([
+      { role: 'user', content: '总结会议纪要' },
+      { role: 'assistant', content: '这是三个要点' },
+    ]);
+    const prompt = quickTask.mock.calls[0][0] as string;
+    expect(prompt.startsWith('Write every suggestion in Chinese.')).toBe(true);
+    expect(prompt).toContain('用户: 总结会议纪要');
+    expect(prompt).toContain('助手: 这是三个要点');
+    expect(prompt).toContain('简短（15 字以内），以动词开头');
+    expect(prompt).toContain('尊重用户在对话中提出的任何拒绝、禁止、限制或偏好，后说的优先');
+    expect(out.map(s => s.text)).toEqual(['把完整总结发给我', '列出三个要点']);
+    expect(out.every(s => CJK_SCRIPT.test(s.text))).toBe(true);
   });
 });

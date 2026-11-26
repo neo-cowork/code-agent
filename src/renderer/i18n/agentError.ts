@@ -1,3 +1,4 @@
+import { FOREIGN_SLOT_DENIAL_ZH } from '@shared/i18n/foreignSlotDenial';
 // ============================================================================
 
 import { HostReasonCode } from '@shared/contract';
@@ -47,7 +48,7 @@ const hostReasonZh = {
   [HostReasonCode.OsSandboxUnavailable]: { summary: '操作系统沙箱不可用，已拒绝执行' },
   [HostReasonCode.UploadExpired]: { summary: '这个上传的文件已过期，读取不了', detail: '请重新上传该文件。' },
   [HostReasonCode.ToolArgsInvalid]: { summary: '{toolName}的调用缺少必要信息，没有执行' },
-  [HostReasonCode.ForeignDataDir]: { summary: '这是 Neo 另一份独立数据目录，当前不能直接读取', detail: '需要的话，直接告诉 Neo 你想找什么。' },
+  [HostReasonCode.ForeignDataDir]: { summary: FOREIGN_SLOT_DENIAL_ZH, detail: '需要的话，直接告诉 Neo 你想找什么。' },
 } satisfies Record<HostReasonCode, { summary: string; detail?: string }>;
 
 const hostReasonEn: typeof hostReasonZh = {
@@ -117,6 +118,7 @@ export const agentErrorZh = {
       insufficient_balance: '账号余额不足',
       model_not_found: '模型名称或接口不匹配',
       forbidden: '服务商拒绝了请求',
+      bad_request: '当前模型可能不支持这次请求',
       rate_limited: '模型服务限流',
       usage_limit: '套餐额度已用完',
       concurrency: '账号并发已满',
@@ -144,11 +146,15 @@ export const agentErrorZh = {
       },
       model_not_found: {
         title: '模型接口或模型名称不匹配',
-        suggestion: '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。',
+        suggestion: '当前模型供应商找不到这个接口或模型（404）。如果用的是自定义模型，请检查接口地址和模型名称是否填对；也可以先切换到其他模型后重试。',
       },
       forbidden: {
         title: '模型服务拒绝了这次请求',
         suggestion: '当前模型供应商返回 403/Forbidden。请检查 API Key 是否有效、账号是否有该模型权限、额度是否可用；也可以先切换到其他模型后重试。',
+      },
+      bad_request: {
+        title: '当前模型可能用不了',
+        suggestion: '当前模型供应商没有说明原因就拒绝了请求。这个模型可能暂时不可用，或不支持这类请求；可以先切换到其他模型后重试。',
       },
       rate_limited: {
         title: '模型服务暂时限流',
@@ -167,7 +173,7 @@ export const agentErrorZh = {
       },
       network: {
         title: '暂时连不上模型服务',
-        suggestion: '当前模型请求没有成功到达供应商。请检查网络、代理或自定义模型 Base URL，稍后再重试。',
+        suggestion: '当前模型请求没有成功到达供应商。请检查网络连接或代理设置，稍后再重试。',
       },
       context_length: {
         title: '对话长度超出模型上下文限制',
@@ -237,6 +243,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       insufficient_balance: 'insufficient balance',
       model_not_found: 'model name or endpoint mismatch',
       forbidden: 'provider rejected the request',
+      bad_request: 'this model may not support this request',
       rate_limited: 'rate limited',
       usage_limit: 'plan quota used up',
       concurrency: 'concurrency limit reached',
@@ -262,11 +269,15 @@ export const agentErrorEn: typeof agentErrorZh = {
       },
       model_not_found: {
         title: 'Model endpoint or model name mismatch',
-        suggestion: 'The model provider returned 404/Not Found. Check the custom model Base URL, whether the path includes /v1, and whether the model ID is correct — or switch to another model and retry.',
+        suggestion: 'The model provider could not find this endpoint or model (404). If you use a custom model, check that its service address and model name are correct — or switch to another model and retry.',
       },
       forbidden: {
         title: 'The model service rejected this request',
         suggestion: 'The model provider returned 403/Forbidden. Check that the API Key is valid, the account has access to this model, and quota is available — or switch to another model and retry.',
+      },
+      bad_request: {
+        title: 'This model may not work here',
+        suggestion: 'The model provider rejected the request without saying why. This model may be unavailable or not support this kind of request — switch to another model and retry.',
       },
       rate_limited: {
         title: 'Model service is rate limited',
@@ -285,7 +296,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       },
       network: {
         title: 'Cannot reach the model service',
-        suggestion: 'The request never reached the provider. Check your network, proxy, or custom model Base URL, then retry.',
+        suggestion: 'The request never reached the provider. Check your network connection or proxy settings, then retry.',
       },
       context_length: {
         title: 'Conversation exceeds the model context limit',

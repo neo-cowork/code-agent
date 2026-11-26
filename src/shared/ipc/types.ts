@@ -232,6 +232,27 @@ export type ConnectorLifecycleAction =
   | 'disconnect'
   | 'remove';
 
+/**
+ * 原生连接器（calendar/mail/reminders/photos）状态句的稳定 code。host 只下发 code，
+ * 句子由 renderer i18n 目录翻译；host 不再为这四个连接器写面向用户的 detail/error 文案。
+ */
+export type NativeConnectorDetailCode =
+  | 'platform_unsupported'
+  | 'unchecked'
+  | 'ready'
+  | 'automation_not_authorized'
+  | 'not_found'
+  | 'timeout'
+  | 'read_failed'
+  | 'probe_failed'
+  | 'calendar_undecided'
+  | 'calendar_denied'
+  | 'calendar_write_only'
+  | 'calendar_restricted'
+  | 'calendar_desktop_only'
+  | 'photos_failed'
+  | 'photos_unavailable';
+
 export interface ConnectorStatusSummary {
   id: string;
   label: string;
@@ -244,6 +265,10 @@ export interface ConnectorStatusSummary {
   noAccessibleItems?: boolean;
   /** failed 时的结构化原因：not_authorized = macOS 自动化授权被拒 */
   errorCode?: 'not_authorized';
+  /** 原生连接器状态句的稳定 code；renderer 按 code 查文案目录，无 code 则不显示状态句 */
+  detailCode?: NativeConnectorDetailCode;
+  /** EventKit pane. Calendar sets it when access is denied or write-only. */
+  settingsPane?: 'calendars';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
@@ -397,15 +422,25 @@ export interface AxialCodingEntryIpc {
 // Cross-session search types (跨会话搜索)
 // ----------------------------------------------------------------------------
 
+/** 「本项目」范围描述符：主机在 SQL 层按它过滤整库（语义同侧栏 getProjectSearchKey）。 */
+export interface CrossSessionSearchProjectScope {
+  projectId?: string | null;
+  workingDirectory?: string | null;
+}
+
 export interface CrossSessionSearchOptions {
   /** Maximum results to return */
   limit?: number;
   /** Search only in specific sessions */
   sessionIds?: string[];
+  /** Search only sessions of one project (whole history, filtered in SQL before LIMIT) */
+  projectScope?: CrossSessionSearchProjectScope;
   /** Filter by message role */
   role?: 'user' | 'assistant' | 'system';
   /** Case-sensitive search */
   caseSensitive?: boolean;
+  /** Also search archived sessions (default false: archived sessions are excluded) */
+  includeArchived?: boolean;
 }
 
 export interface CrossSessionSearchResultItem {
@@ -424,7 +459,7 @@ export interface CrossSessionSearchResultItem {
   /** Conversation turn number containing the matched message */
   turnNumber?: number;
   /** Message role */
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   /** Message timestamp */
   timestamp: number;
   /** First match character offset within message content */
@@ -441,6 +476,8 @@ export interface CrossSessionSearchTitleMatch {
   sessionId: string;
   title: string;
   updatedAt: number;
+  /** Present (true) only when the matched session is archived */
+  archived?: boolean;
 }
 
 export interface CrossSessionSearchResults {
@@ -459,3 +496,24 @@ export interface CrossSessionSearchResults {
   /** Sessions whose title contains the query (non-archived); optional for older hosts */
   titleMatches?: CrossSessionSearchTitleMatch[];
 }
+
+/** Reopen a kept result page by navigating to its URL, or by showing the saved HTML. */
+export type KeptResultReopenMode = 'url' | 'snapshot';
+
+export type KeptResultPageReason = 'keep_result_page' | 'takeover';
+
+/**
+ * getKeptResultPage view. The `none` state is unchanged (no reopenMode).
+ * `snapshotHtml` is included only when the request sets includeSnapshot;
+ * the 30-second poll must not receive the HTML.
+ */
+export type KeptResultPageSnapshot =
+  | { state: 'none'; url: null; title: null; reason: null }
+  | {
+      state: 'kept' | 'closed';
+      url: string;
+      title: string;
+      reason: KeptResultPageReason;
+      reopenMode: KeptResultReopenMode;
+      snapshotHtml?: string;
+    };

@@ -5,6 +5,7 @@
 // 写操作前展示 before/after 预览 + 确认对话框，策略可配置。
 // 复用现有 requestPermission 回调，扩展 PermissionRequest 类型。
 
+import { catalogConnectorToolPhrase } from '../../shared/utils/catalogConnectorToolLabel';
 import * as Diff from 'diff';
 import type {
   ConfirmationPreview,
@@ -12,40 +13,37 @@ import type {
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
 import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
+import { getHostConnectorCopy } from '../../shared/i18n/hostConnectorCopy';
 import { getDelegateSessionPreviewMessages } from '../../shared/i18n/delegateSessionPreview';
-import { getHostUiLocale } from '../config/hostUiLocale';
+import { getSpawnAgentPreviewMessages } from '../../shared/i18n/spawnAgentPreview';
+import { getToolParamLabel, isHiddenParamEntry, isPathLikeParamKey } from '../../shared/i18n/toolParamLabels';
+import { humanizeToolPath } from '../../shared/utils/humanizeToolPath';
+import { classifyToolPath } from '../tools/utils/toolPathKind';
+import { buildMemoryDraftPreview } from './memoryDraftPreview';
+import { getHostUiLocale, type HostUiLocale } from '../config/hostUiLocale';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
 import { isBashToolName } from '../tools/toolNames';
 import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 import { resolveAgent } from './agentRegistry';
+import { relativizeWorkspacePaths } from './workspacePathDisplay';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('ConfirmationGate');
 
 // 子代理审批：角色是否带写/执行能力，按角色真实工具表判断；未知角色按“有写权限”展示（宁多勿少）。
 const SPAWN_WRITE_TOOL_PATTERN = /^(bash|write|edit|multiedit|append|notebookedit|write_file|edit_file|append_file)$/i;
 
-function describeSpawnPermission(role: unknown): string {
+function describeSpawnPermission(role: unknown, messages: ReturnType<typeof getSpawnAgentPreviewMessages>): string {
   const roleId = typeof role === 'string' ? role.trim() : '';
   const agent = roleId ? resolveAgent(roleId) : undefined;
   const readOnly = agent?.readonly === true
     && !(agent.tools ?? []).some(tool => SPAWN_WRITE_TOOL_PATTERN.test(tool));
-  return readOnly ? '只读查看' : '可修改文件、运行命令';
+  return readOnly ? messages.readOnlyPermission : messages.writePermission;
 }
 
-// 工作区内的绝对路径显示为相对路径；工作区外的路径原样保留（不得隐藏真实目标）。
-const ABSOLUTE_PATH_PATTERN = /(?<![\w:./\\~-])(?:[A-Za-z]:\\|\/)[^\s"'`<>，。；：、）)\]]*/g;
-
-function relativizeWorkspacePaths(text: string, workspaceRoot: string | undefined): string {
-  const root = workspaceRoot?.replace(/[\\/]+$/, '');
-  if (!root) return text;
-  const normalizedRoot = root.replace(/\\/g, '/');
-  return text.replace(ABSOLUTE_PATH_PATTERN, (match) => {
-    const normalized = match.replace(/\\/g, '/');
-    if (normalized === normalizedRoot) return './';
-    if (!normalized.startsWith(`${normalizedRoot}/`)) return match;
-    const rest = normalized.slice(normalizedRoot.length + 1);
-    return rest ? `./${rest}` : './';
-  });
-}
+// 绝对路径的展示侧改写共用 workspacePathDisplay（工作区内 → ./相对路径，
+// 工作区外确认门保留原样：不得隐藏真实目标；代理树则只留最后两段）。
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([
@@ -90,11 +88,11 @@ function normalizeStringList(value: unknown): string[] {
   return [];
 }
 
-function formatTimestamp(value: unknown): string | null {
+function formatTimestamp(value: unknown, locale: HostUiLocale): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return null;
   }
-  return new Date(value).toLocaleString('zh-CN');
+  return new Date(value).toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN');
 }
 
 function pushDetail(lines: string[], label: string, value: string | null | undefined): void {
@@ -223,10 +221,11 @@ export class ConfirmationGate {
         const cc = normalizeStringList(params.cc).join(', ');
         const bcc = normalizeStringList(params.bcc).join(', ');
         const attachments = normalizeStringList(params.attachments).join(', ');
+        const copy = getHostConnectorCopy(getHostUiLocale());
         const summary = [
-          toolName === 'mail_send' ? '发送邮件' : '创建邮件草稿',
-          normalizeString(params.subject) || '(无主题)',
-        ].join('：');
+          copy.approvals[toolName],
+          normalizeString(params.subject) || copy.noSubject,
+        ].join(copy.separator);
         const details = [summary];
         pushDetail(details, 'To', to);
         pushDetail(details, 'CC', cc);
@@ -242,18 +241,17 @@ export class ConfirmationGate {
       case 'calendar_create_event':
       case 'calendar_update_event':
       case 'calendar_delete_event': {
-        const summaryMap: Record<string, string> = {
-          calendar_create_event: '创建日历事件',
-          calendar_update_event: '更新日历事件',
-          calendar_delete_event: '删除日历事件',
-        };
-        const summary = summaryMap[toolName];
+        const locale = getHostUiLocale();
+        const summary = getHostConnectorCopy(locale).approvals[toolName];
         const details = [summary];
         pushDetail(details, 'Calendar', normalizeString(params.calendar));
-        pushDetail(details, 'Title', normalizeString(params.title));
-        pushDetail(details, 'UID', normalizeString(params.event_uid));
-        pushDetail(details, 'Start', formatTimestamp(params.start_ms));
-        pushDetail(details, 'End', formatTimestamp(params.end_ms));
+        const title = normalizeString(params.title);
+        pushDetail(details, 'Title', title);
+        if (!title && toolName !== 'calendar_create_event') {
+          pushDetail(details, 'UID', normalizeString(params.event_uid));
+        }
+        pushDetail(details, 'Start', formatTimestamp(params.start_ms, locale));
+        pushDetail(details, 'End', formatTimestamp(params.end_ms, locale));
         pushDetail(details, 'Location', normalizeString(params.location));
         pushDetail(details, 'Notes', normalizeString(params.notes));
         return {
@@ -266,20 +264,15 @@ export class ConfirmationGate {
       case 'reminders_create':
       case 'reminders_update':
       case 'reminders_delete': {
-        const summaryMap: Record<string, string> = {
-          reminders_create: '创建提醒',
-          reminders_update: '更新提醒',
-          reminders_delete: '删除提醒',
-        };
-        const summary = summaryMap[toolName];
+        const locale = getHostUiLocale();
+        const summary = getHostConnectorCopy(locale).approvals[toolName];
         const details = [summary];
         pushDetail(details, 'List', normalizeString(params.list));
-        pushDetail(details, 'Title', normalizeString(params.title));
-        pushDetail(details, 'Reminder ID', normalizeString(params.reminder_id));
+        if (toolName !== 'reminders_delete') pushDetail(details, 'Title', normalizeString(params.title));
         if (typeof params.completed === 'boolean') {
           pushDetail(details, 'Completed', params.completed ? 'true' : 'false');
         }
-        pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms));
+        if (toolName !== 'reminders_delete') pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms, locale));
         return {
           type: 'generic',
           summary,
@@ -309,15 +302,42 @@ export class ConfirmationGate {
         };
       }
 
+      case 'ProposeProjectMemory': {
+        const content = redactCommandSecrets(
+          relativizeWorkspacePaths(normalizeString(params.content), options.workspaceRoot),
+        );
+        return { type: 'generic', ...buildMemoryDraftPreview(params, content, getHostUiLocale()) };
+      }
+
       case 'spawn_agent':
       case 'AgentSpawn': {
+        const messages = getSpawnAgentPreviewMessages(getHostUiLocale());
         const toUserText = (text: string) =>
           redactCommandSecrets(relativizeWorkspacePaths(text, options.workspaceRoot)).slice(0, 200);
-        const label = toUserText(resolveSubagentUserLabel(params));
+        const taskText = (task: unknown, field: string) => {
+          const text = toUserText(normalizeString(task));
+          if (text) return text;
+          logger.warn('Spawn approval task not stated', { field });
+          return messages.unspecifiedTask;
+        };
+        if (params.parallel === true && Array.isArray(params.agents) && params.agents.length > 0) {
+          const blocks = params.agents.map((agent: { name?: unknown; task?: unknown; role?: unknown }, index) => {
+            const task = taskText(agent.task, `params.agents[${index}].task`);
+            const label = toUserText(resolveSubagentUserLabel({ name: agent.name, task: agent.task })) || task;
+            return [label, messages.taskLine(task), messages.permissionLine(describeSpawnPermission(agent.role, messages))].join('\n');
+          });
+          return {
+            type: 'generic',
+            summary: messages.parallelSummary(params.agents.length),
+            diff: blocks.join('\n\n'),
+          };
+        }
+        const task = taskText(params.task, 'params.task');
+        const label = toUserText(resolveSubagentUserLabel(params)) || task;
         // 审批必须独立于名字披露真实任务与权限，且不打印内部角色 id。
         const details = [
-          `任务：${toUserText(normalizeString(params.task))}`,
-          `权限：${describeSpawnPermission(params.role)}`,
+          messages.taskLine(task),
+          messages.permissionLine(describeSpawnPermission(params.role, messages)),
         ];
         return {
           type: 'generic',
@@ -326,21 +346,53 @@ export class ConfirmationGate {
         };
       }
 
-      default: {
-        const lines: string[] = [];
-        for (const [key, rawValue] of Object.entries(params)) {
-          if (lines.length >= 3) break;
-          if (typeof rawValue !== 'string') continue;
-          const trimmed = rawValue.trim();
-          if (!trimmed) continue;
-          const safeVal = isSensitiveLogKey(key)
-            ? '***REDACTED***'
-            : redactCommandSecrets(trimmed).slice(0, 120);
-          lines.push(`${key}: ${safeVal}`);
-        }
+      case 'library_add': {
+        const rawTitle = typeof params.title === 'string' ? params.title : '';
+        const rawPath = typeof params.file_path === 'string' ? params.file_path : '';
+        const name = [rawTitle, rawPath]
+          .map((value) => value.trim().split(/[\\/]/u).filter(Boolean).pop() ?? '')
+          .find((value) => value.length > 0);
+        // Summary repeats the tool id so the card hides it; the visible line is only the file name.
         return {
           type: 'generic',
-          summary: `执行工具 ${toolName}`,
+          summary: toolName,
+          ...(name ? { diff: name } : {}),
+        };
+      }
+
+      default: {
+        const locale = getHostUiLocale();
+        // 浏览器网页操作卡与目录连接器卡的渲染端按原始键名解析逐行预览，保持原格式（web_action 行归另一单）。
+        const keepRawKeys = /^browser(?:$|[_.])/iu.test(toolName) || catalogConnectorToolPhrase(toolName) !== undefined;
+        const entries: Array<{ pathLike: boolean; jsonLike: boolean; line: string }> = [];
+        for (const [key, rawValue] of Object.entries(params)) {
+          if (typeof rawValue !== 'string') continue;
+          const trimmed = rawValue.trim();
+          if (!trimmed || isHiddenParamEntry(key, trimmed)) continue;
+          const pathLike = isPathLikeParamKey(key);
+          let value = redactCommandSecrets(trimmed);
+          if (pathLike) {
+            const display = value === trimmed ? classifyToolPath(trimmed) : undefined;
+            value = display
+              ? humanizeToolPath(trimmed, locale, display)
+              : relativizeWorkspacePaths(value, options.workspaceRoot);
+          }
+          const safeVal = isSensitiveLogKey(key) ? '***REDACTED***' : value.slice(0, 120);
+          entries.push({
+            pathLike,
+            jsonLike: /^[{[]/.test(trimmed),
+            line: `${keepRawKeys ? key : getToolParamLabel(key, locale)}: ${safeVal.replace(/\r?\n/g, '\n  ')}`,
+          });
+        }
+        const rank = (e: { pathLike: boolean; jsonLike: boolean }) => (e.pathLike ? 0 : e.jsonLike ? 2 : 1);
+        const lines = entries
+          .map((e, i) => ({ e, i }))
+          .sort((a, b) => rank(a.e) - rank(b.e) || a.i - b.i)
+          .slice(0, 3)
+          .map(x => x.e.line);
+        return {
+          type: 'generic',
+          summary: catalogConnectorToolPhrase(toolName) ?? `执行工具 ${toolName}`,
           ...(lines.length > 0 ? { diff: lines.join('\n') } : {}),
         };
       }

@@ -16,31 +16,161 @@ function resolveCompletedKey(steps: ToolStepOutcome | undefined): OutcomeKey {
 
 type ToolStepOutcome = NonNullable<RunUiState['toolStepOutcome']>;
 
+type FinishedToolStep = { id?: string; name?: string; arguments?: unknown; success?: boolean };
+
+/** Ledger task fields the delegation matching reads (a structural subset of the background `Task`). */
+export type DelegationLedgerTask = {
+  toolCallId?: string;
+  status: string;
+  progress?: { lastToolFailure?: unknown; failedToolCalls?: number };
+};
+
+function targetTokens(args: unknown): Set<string> {
+  const targets = new Set<string>();
+  const add = (raw: string) => {
+    const value = raw.trim().replace(/\\/g, '/');
+    if (!value) return;
+    const parts: string[] = [];
+    for (const part of value.split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..' && parts.length && parts.at(-1) !== '..') parts.pop();
+      else parts.push(part);
+    }
+    if (!parts.length) return;
+    targets.add(parts.join('/'));
+  };
+  const visit = (value: unknown, key = '') => {
+    if (typeof value === 'string') {
+      if (/^(file_?path|path|url|pattern)$/i.test(key)) add(value);
+      if (key === 'command') {
+        // Keep quoted paths with spaces; also inspect filenames inside quoted scripts.
+        const scan = (command: string) => {
+          for (const match of command.matchAll(/"([^"\n]*)"|'([^'\n]*)'|[^\s|&;<>()[\]`'"=]+/g)) {
+            const token = match[1] ?? match[2] ?? match[0];
+            if (/["']/.test(token)) scan(token);
+            else if (token.includes('/') || /\.[\p{L}\p{N}]+$/u.test(token)) add(token);
+          }
+        };
+        // Shared non-file tokens must not link steps: working dirs (cd/pushd), redirection sinks, /dev/*.
+        scan(value
+          .replace(/\b(?:cd|pushd)\s+(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|]+)/g, ' ')
+          .replace(/\d*[<>]{1,2}&?\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|]+)/g, ' ')
+          .replace(/\/dev\/\w+/g, ' '));
+      }
+    } else if (Array.isArray(value)) {
+      for (const item of value) visit(item, key);
+    } else if (value && typeof value === 'object') {
+      for (const [childKey, child] of Object.entries(value)) visit(child, childKey);
+    }
+  };
+  visit(args);
+  return targets;
+}
+
+/** Same file: equal paths, or one is a segment-aligned suffix of the other (a.pdf vs /ws/a.pdf; not src/a/x.ts vs src/b/x.ts). */
+function sameTarget(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+// A delegation can only vouch for a concrete file: the last segment needs an extension (not a URL route like /status).
+const FILE_LIKE_TARGET = /^(?![a-z][a-z0-9+.-]+:\/)(?:.*\/)?[^/]+\.[A-Za-z0-9]{1,8}$/i;
+const PATH_STOP = /[\s"'`<>()（）「」《》，。、：；,;]/;
+
+/** Does the delegation prompt name this failed target (file name or path, same-file rules as `sameTarget`)? */
+function promptNamesTarget(prompt: string, target: string): boolean {
+  const text = prompt.replace(/\\/g, '/');
+  const base = target.slice(target.lastIndexOf('/') + 1);
+  if (!base) return false;
+  for (let at = text.indexOf(base); at !== -1; at = text.indexOf(base, at + 1)) {
+    const before = text[at - 1] ?? '';
+    const after = text[at + base.length] ?? '';
+    const afterNext = text[at + base.length + 1] ?? '';
+    if (/[A-Za-z0-9_-]/.test(after) || (after === '.' && /[A-Za-z0-9_]/.test(afterNext))) continue;
+    let start = at;
+    if (before === '/') {
+      while (start > 0 && !PATH_STOP.test(text[start - 1])) start -= 1;
+    } else if (/[\p{L}\p{N}_.-]/u.test(before)) {
+      continue; // `备份合同.pdf` must not name `合同.pdf`
+    }
+    const candidate = text.slice(start, at + base.length).replace(/^\.\//, '');
+    if (sameTarget(candidate, target)) return true;
+  }
+  return false;
+}
+
+/** A completed, failure-free ledger task for this delegate_task call: the only thing that can stand in for a retry. */
+function completedDelegationPrompt(step: FinishedToolStep, tasks: readonly DelegationLedgerTask[]): string | null {
+  if (step.name !== 'delegate_task' || step.success === false || !step.id) return null;
+  const prompt = (step.arguments as { prompt?: unknown } | null | undefined)?.prompt;
+  if (typeof prompt !== 'string' || !prompt) return null;
+  const done = tasks.some((task) =>
+    task.toolCallId === step.id && task.status === 'completed'
+    && !task.progress?.lastToolFailure && !task.progress?.failedToolCalls);
+  return done ? prompt : null;
+}
+
 /**
- * 会话消息里收尾工具步骤的失败数/总数（success===false 才算失败），与 buildRunUiState 同口径。
- * 兼容两种形状：落库原始消息（工具结果在 tool 消息的 toolResults 里）与已合并结果的 toolCalls[].result；
- * 按调用 id 去重，两种同时出现不会重复计数。
+ * Finished steps in call order; only failures without a later matching success remain.
+ * `tasks` (ledger) lets a later completed `delegate_task` whose prompt names every failed file recover that failure.
  */
+export function classifyToolSteps(
+  steps: readonly FinishedToolStep[],
+  tasks: readonly DelegationLedgerTask[] = [],
+): ToolStepOutcome | undefined {
+  if (!steps.length) return undefined;
+  const successfulTargets = new Set<string>();
+  // Untargeted steps (npm test, List): only an identical later call (same tool + same arguments) is a retry.
+  const successfulUntargetedCalls = new Set<string>();
+  const delegatedPrompts: string[] = [];
+  const callKey = (step: FinishedToolStep) => `${step.name}\u0000${JSON.stringify(step.arguments ?? null)}`;
+  let failed = 0;
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const step = steps[index];
+    const targets = targetTokens(step.arguments);
+    if (step.success !== false) {
+      const delegated = completedDelegationPrompt(step, tasks);
+      if (delegated) delegatedPrompts.push(delegated);
+      for (const target of targets) successfulTargets.add(target);
+      if (!targets.size && step.name) successfulUntargetedCalls.add(callKey(step));
+    } else {
+      const recovered = targets.size
+        ? [...targets].some((target) => [...successfulTargets].some((done) => sameTarget(target, done)))
+        : Boolean(step.name && successfulUntargetedCalls.has(callKey(step)));
+      const files = [...targets].filter((target) => FILE_LIKE_TARGET.test(target));
+      const delegatedRecovery = !recovered && files.length > 0
+        && files.every((file) => delegatedPrompts.some((prompt) => promptNamesTarget(prompt, file)));
+      if (!recovered && !delegatedRecovery) failed += 1;
+    }
+  }
+  return { failed, total: steps.length };
+}
+
+/** Join stored results to call arguments by id, preserving call order and deduplicating results. */
 export function countToolSteps(
   messages: ReadonlyArray<{
-    toolCalls?: ReadonlyArray<{ id?: string; result?: { success?: boolean } }>;
+    toolCalls?: ReadonlyArray<{
+      id?: string; name?: string; arguments?: unknown; _streaming?: boolean;
+      result?: { success?: boolean };
+    }>;
     toolResults?: ReadonlyArray<{ toolCallId?: string; success?: boolean }>;
   }>,
 ): ToolStepOutcome | undefined {
-  const outcomes = new Map<string, boolean>();
-  let anonymous = 0;
-  const record = (id: string | undefined, success: boolean | undefined) => {
-    outcomes.set(id ?? `anonymous-${anonymous++}`, success !== false);
-  };
+  const calls = new Map<string | symbol, FinishedToolStep & { finished?: boolean; streaming?: boolean }>();
   for (const message of messages) {
     for (const call of message.toolCalls ?? []) {
-      if (call.result) record(call.id, call.result.success);
+      const id = call.id ?? Symbol();
+      const previous = calls.get(id);
+      calls.set(id, {
+        ...previous, name: call.name, arguments: call.arguments, streaming: call._streaming,
+        ...(call.result ? { finished: true, success: call.result.success } : {}),
+      });
     }
-    for (const result of message.toolResults ?? []) record(result.toolCallId, result.success);
+    for (const result of message.toolResults ?? []) {
+      const id = result.toolCallId ?? Symbol();
+      calls.set(id, { ...calls.get(id), finished: true, success: result.success });
+    }
   }
-  const total = outcomes.size;
-  const failed = [...outcomes.values()].filter((ok) => !ok).length;
-  return total > 0 ? { failed, total } : undefined;
+  return classifyToolSteps([...calls.values()].filter((call) => call.finished && !call.streaming));
 }
 
 /** 前台 run → 终态词键；活跃/等确认返回 null（没有终态可说），干净完成返回 'completed'。 */

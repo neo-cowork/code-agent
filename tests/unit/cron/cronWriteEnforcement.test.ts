@@ -1,3 +1,4 @@
+import { resolveExcelWriteTargets } from '../../../src/host/tools/modules/excel/resolveExcelWriteTargets';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -302,9 +303,14 @@ it('registry-wide: no workspace-file classifier approval can bypass scheduled co
       toolDefinition: { ...tool, pathAuthority: [{ kind: 'path', pathParameter: 'destination', mutation: 'overwrite' }] },
     });
     expect(renamed.decision, `${tool.name}: new descriptor key`).toBe('ask');
-    expect(renamed.scheduleWriteTargets, tool.name).toEqual([path.join(folder, 'renamed.md')]);
+    // ExcelAutomate is action-graded: an action-less probe is an unknown action (always asks, no
+    // grantable target); its scheduled write targets are pinned by the action-keyed registry rows below.
+    if (tool.name !== 'ExcelAutomate') expect(renamed.scheduleWriteTargets, tool.name).toEqual([path.join(folder, 'renamed.md')]);
     expect(scheduled.decision, tool.name).toBe('ask');
-    expect(scheduled.scheduleWriteTargets, tool.name).toEqual(assessment.targets);
+    // ExcelAutomate's grant targets are exactly what the tool will write (shared resolver), not the
+    // generic key sweep this loop feeds every tool.
+    const expectedTargets = tool.name === 'ExcelAutomate' ? resolveExcelWriteTargets(params, folder) : assessment.targets;
+    expect(scheduled.scheduleWriteTargets, tool.name).toEqual(expectedTargets);
     // No local handler runs: the real permission island must persist the park first.
     mintToolRunGrant(session.id, tool.name);
     getPermissionModeManager().setSessionMode(session.id, 'bypassPermissions', true);

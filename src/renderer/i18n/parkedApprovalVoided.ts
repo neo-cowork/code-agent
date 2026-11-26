@@ -1,4 +1,5 @@
 // Read-only inbox history copy; tool keys match the registered host tool names.
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
 export const parkedApprovalVoidedZh = {
   restartPrefix: '重启前发起 · ',
   startedAt: '开始于 {time}',
@@ -7,9 +8,9 @@ export const parkedApprovalVoidedZh = {
   collapse: '收起',
   action: '一项操作',
   tools: {
-    bash: '运行命令', write: '写入文件', edit: '编辑文件', read: '读取文件',
-    glob: '查找文件', grep: '搜索内容', listdirectory: '查看目录',
-    webfetch: '读取网页', websearch: '搜索网页',
+    bash: toolUserLabel('bash', 'zh'), write: toolUserLabel('write', 'zh'), edit: toolUserLabel('edit', 'zh'), read: toolUserLabel('read', 'zh'),
+    glob: toolUserLabel('glob', 'zh'), grep: toolUserLabel('grep', 'zh'), listdirectory: '查看目录',
+    webfetch: toolUserLabel('webfetch', 'zh'), websearch: toolUserLabel('websearch', 'zh'),
     mail_send: '发送邮件', mail_draft: '起草邮件', mail: '邮件操作',
   },
 };
@@ -22,9 +23,9 @@ export const parkedApprovalVoidedEn = {
   collapse: 'Collapse',
   action: 'An action',
   tools: {
-    bash: 'Run a command', write: 'Write a file', edit: 'Edit a file', read: 'Read a file',
-    glob: 'Find files', grep: 'Search content', listdirectory: 'View a folder',
-    webfetch: 'Read a webpage', websearch: 'Search the web',
+    bash: toolUserLabel('bash', 'en'), write: toolUserLabel('write', 'en'), edit: toolUserLabel('edit', 'en'), read: toolUserLabel('read', 'en'),
+    glob: toolUserLabel('glob', 'en'), grep: toolUserLabel('grep', 'en'), listdirectory: 'View a folder',
+    webfetch: toolUserLabel('webfetch', 'en'), websearch: toolUserLabel('websearch', 'en'),
     mail_send: 'Send an email', mail_draft: 'Draft an email', mail: 'Email action',
   },
 };

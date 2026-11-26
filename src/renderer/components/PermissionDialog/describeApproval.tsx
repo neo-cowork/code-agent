@@ -8,14 +8,17 @@
 // ============================================================================
 
 import React from 'react';
-import { Bot, Globe, Settings2, Shield, Terminal } from 'lucide-react';
+import { Bot, CalendarDays, Globe, Settings2, Shield, Terminal } from 'lucide-react';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
 import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
+import { formatDateTime } from '../../utils/formatDateTime';
+import { resolveReadObjectLabel } from '../../utils/toolHumanLabel';
 
 type ApprovalKind =
   | 'shell'
@@ -27,9 +30,12 @@ type ApprovalKind =
   | 'folder_access'
   | 'web_open'
   | 'web_action'
+  | 'web_upload'
   | 'web_clipboard'
   | 'role_setting'
   | 'subtask'
+  | 'calendar_read'
+  | 'read_generic'
   | 'generic';
 
 interface ApprovalDescription {
@@ -53,6 +59,8 @@ const FILE_TITLE_KEY = {
   file_delete: 'titleFileDelete',
 } as const;
 
+const CALENDAR_READ_ACTIONS = new Set(['list_events', 'list_calendars']);
+
 const WEB_OPEN_ACTIONS = new Set(['open', 'navigate', 'new_tab', 'newTab']);
 
 function isShellRequest(request: PermissionRequest): boolean {
@@ -67,14 +75,28 @@ function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
 }
 
-function classify(request: PermissionRequest): ApprovalKind {
+/** 上传审批卡只露文件名：host 给的是「.../<名>」，绝对路径与 sha256/大小都不上卡面。 */
+function uploadFileName(request: PermissionRequest): string | undefined {
+  const raw = request.details.file;
+  if (typeof raw !== 'string') return undefined;
+  const name = raw.split(/[\\/]/u).pop()?.trim();
+  return name ? redactCredentialText(name) : undefined;
+}
+
+function readObjectLabel(request: PermissionRequest, t: Translations): string | undefined {
+  return resolveReadObjectLabel({ toolName: request.tool, labels: t.receiptPresentation.humanToolLabels });
+}
+
+function classify(request: PermissionRequest, t: Translations): ApprovalKind {
   const tool = request.tool.trim();
   const lower = tool.toLowerCase();
   if (lower === 'set_role_proactivity') return 'role_setting';
   if (lower === 'spawn_agent' || lower === 'agentspawn') return 'subtask';
+  if (lower === 'calendar' && CALENDAR_READ_ACTIONS.has(String(request.details.action ?? ''))) return 'calendar_read';
   if (/^browser(?:$|[_.])/u.test(lower)) {
     const action = String(request.details.action ?? '');
     if (action === 'write_clipboard') return 'web_clipboard';
+    if (lower === 'browser_action.upload_file' && uploadFileName(request)) return 'web_upload';
     return request.details.url && (!action || WEB_OPEN_ACTIONS.has(action)) ? 'web_open' : 'web_action';
   }
   if (request.type === 'directory_access') return request.details.path ? 'folder_access' : 'generic';
@@ -85,7 +107,12 @@ function classify(request: PermissionRequest): ApprovalKind {
     case 'file_edit':
     case 'file_delete':
       // 没有文件目标的「文件类」请求只是 permissionLevel 推断出来的类型，不是真文件操作。
-      return fileTarget(request) ? request.type : 'generic';
+      if (fileTarget(request)) return request.type;
+      // 无文件目标的只读请求 = 只读协议工具（提醒/会议记录/邮件…）：有对象名就说读什么。
+      return request.type === 'file_read' && readObjectLabel(request, t) ? 'read_generic' : 'generic';
+    case 'command':
+      // 协议工具体内的审批（shadowAdapter）对无 path/url 的只读工具写下 type=command：同样按对象名命名。
+      return !request.details.url && readObjectLabel(request, t) ? 'read_generic' : 'generic';
     case 'network':
     case 'mcp':
       return 'network';
@@ -112,6 +139,35 @@ function userFacingReason(reason: string | undefined): string | undefined {
   return redactCredentialText(text);
 }
 
+function calendarReadScope(request: PermissionRequest, p: Translations['decisionCard']['permission'], language: Language): string {
+  const args = request.details;
+  if (args.action === 'list_calendars') return p.calendarReadScopeCalendars;
+  const time = (raw: unknown): string | undefined => {
+    const ms = typeof raw === 'string' && raw.trim() ? Number(raw) : raw;
+    return typeof ms === 'number' && Number.isFinite(ms) ? formatDateTime(ms, language) : undefined;
+  };
+  const from = time(args.from_ms);
+  const to = time(args.to_ms);
+  const range = from && to
+    ? p.calendarReadRange.replace('{from}', from).replace('{to}', to)
+    : from
+      ? p.calendarReadRangeFrom.replace('{from}', from)
+      : to
+        ? p.calendarReadRangeUntil.replace('{to}', to)
+        : p.calendarReadRangeDefault;
+  const name = typeof args.calendar === 'string' ? redactCredentialText(args.calendar.trim()) : '';
+  return `${range}${p.calendarReadSeparator}${name ? p.calendarReadCalendar.replace('{name}', name) : p.calendarReadAllCalendars}`;
+}
+
+/** 通用卡下方没有任何可列的内容时，「请确认下面的……」是空指向，不上卡。 */
+function hasListableDetails(request: PermissionRequest): boolean {
+  const d = request.details;
+  return Boolean(
+    request.rawArgs || request.argsPreview || d.preview || d.command || d.url || d.path || d.filePath
+    || d.changes || (d.server && d.toolName) || d.sandbox,
+  );
+}
+
 function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactElement {
   switch (kind) {
     case 'shell':
@@ -130,12 +186,16 @@ function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactEle
       return getPermissionConfig('directory_access').icon as React.ReactElement;
     case 'web_open':
     case 'web_action':
+    case 'web_upload':
     case 'web_clipboard':
       return React.createElement(Globe, { size: 20 });
     case 'role_setting':
       return React.createElement(Settings2, { size: 20 });
     case 'subtask':
       return React.createElement(Bot, { size: 20 });
+    case 'calendar_read':
+      return React.createElement(CalendarDays, { size: 20 });
+    case 'read_generic':
     case 'generic':
       return React.createElement(Shield, { size: 20 });
     default:
@@ -163,7 +223,7 @@ function describeKind(
   t: Translations,
   language: Language,
 ): Omit<ApprovalDescription, 'dedicatedBrowserCard'> {
-  const kind = classify(request);
+  const kind = classify(request, t);
   const p = t.decisionCard.permission;
   const icon = iconFor(kind, request);
   const url = request.details.url ? redactCredentialText(request.details.url) : undefined;
@@ -185,11 +245,15 @@ function describeKind(
       const title = kind === 'shell' || kind === 'network'
         ? getPermissionTitle(request.type, p)
         : p[FILE_TITLE_KEY[kind]];
+      const connector = request.details.connectorAccess;
+      const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';
       return {
         kind,
         title,
-        question: permissionSummary(request, t, language),
-        consequence: permissionConsequence(request, t),
+        question: connector
+          ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
+          : permissionSummary(request, t, language),
+        consequence: permissionConsequence(request, t, language),
         icon,
       };
     }
@@ -211,6 +275,10 @@ function describeKind(
       };
     case 'web_action':
       return { kind, title: p.titleWebAction, question: p.questionWebAction, consequence: p.consequenceWebAction, icon };
+    case 'web_upload': {
+      const file = uploadFileName(request) ?? '';
+      return { kind, title: p.titleWebUpload, question: p.questionWebUpload.replace('{file}', file), consequence: p.consequenceWebUpload, icon };
+    }
     case 'web_clipboard':
       return { kind, title: p.titleWebClipboard, question: p.questionWebClipboard, consequence: p.consequenceWebClipboard, icon };
     case 'role_setting':
@@ -224,12 +292,24 @@ function describeKind(
       };
     case 'subtask':
       return { kind, title: p.titleSubtask, question: p.questionSubtask, consequence: genericConsequence, icon };
+    case 'calendar_read':
+      return { kind, title: p.titleCalendarRead, question: p.questionCalendarRead, consequence: calendarReadScope(request, p, language), icon };
+    case 'read_generic': {
+      const label = readObjectLabel(request, t) ?? '';
+      return {
+        kind,
+        title: p.titleReadObject.replace('{label}', label),
+        question: p.questionReadObject.replace('{label}', label),
+        consequence: undefined,
+        icon,
+      };
+    }
     case 'generic':
       return {
         kind,
         title: p.genericApprovalTitle,
         question: p.genericApprovalQuestion,
-        consequence: quiet(genericConsequence),
+        consequence: hasListableDetails(request) ? quiet(genericConsequence) : undefined,
         icon,
       };
     default:

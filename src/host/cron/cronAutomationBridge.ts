@@ -26,6 +26,8 @@ import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { formatCronTimeZoneSuffix } from '../../shared/cronTimeZone';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
+import { cronJobBoundRoleId } from '../../shared/cronRoleBinding';
+import { cronProjectTrustFailureText } from './cronFailureNoticeCopy';
 import { getDatabase } from '../services/core/databaseService';
 
 /**
@@ -124,12 +126,14 @@ export function buildCronAutomationConfig(definition: CronJobDefinition): Sessio
       ? definition.metadata.handoffPrompt.trim()
       : undefined;
   const nextStage = readAutomationNextStage(definition.metadata?.nextStage);
+  const roleId = cronJobBoundRoleId(definition);
   return {
     createdVia: typeof definition.metadata?.createdVia === 'string' ? definition.metadata.createdVia : 'cron',
     runsOn: definition.runsOn,
     sourceMessageId: typeof definition.metadata?.sourceMessageId === 'string' ? definition.metadata.sourceMessageId : undefined,
     scheduleType: definition.scheduleType,
     actionType: definition.action.type,
+    ...(roleId ? { roleId } : {}),
     ...(handoffPrompt ? { handoffPrompt } : {}),
     ...(nextStage ? { nextStage } : {}),
   };
@@ -333,7 +337,8 @@ export async function recordCronAutomationExecution(
         : execution.status === 'failed'
           ? undefined
           : '定时任务已完成。',
-      error: execution.error,
+      // 回流到源会话的消息会写「错误：<这段>」：项目文件夹信任失败写人话，不写内部标记。
+      error: cronProjectTrustFailureText(execution.error) ?? execution.error,
       eventId: `execution:${execution.id}`,
       nextRunAt: withRuntimeState.nextRunAt,
       lastRunAt: execution.completedAt,

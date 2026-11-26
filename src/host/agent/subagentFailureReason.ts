@@ -12,6 +12,7 @@ const REASON_BY_CODE: Partial<Record<AgentFailureCode, string>> = {
   [AgentFailureCode.Timeout]: '运行时间太长，被自动停止了',
   [AgentFailureCode.ModelError]: '模型服务暂时出错或请求太频繁',
   [AgentFailureCode.BudgetExhausted]: '本次任务的额度用完了',
+  [AgentFailureCode.StepCapReached]: '本次任务做到了步数上限，已停下',
   [AgentFailureCode.PermissionDenied]: '需要的操作没有获得许可',
   [AgentFailureCode.ToolUnavailable]: '需要用的功能当前不可用',
   [AgentFailureCode.ParentGone]: '发起它的对话已经结束',
@@ -33,4 +34,42 @@ export function describeSubagentStopReason(rawError: string, code: AgentFailureC
   // 只有可能自行恢复的原因才建议重试；权限/额度/功能不可用/对话已结束重试必然再失败，不给这句误导。
   if (!RETRYABLE_CODES.has(code)) return `后台任务中途停止了：${reason}。`;
   return `后台任务中途停止了：${reason}。你可以回复「继续」让它重试，已经看过的内容不会丢。`;
+}
+
+export function agentFailureReasonText(code: AgentFailureCode): string {
+  switch (code) {
+    case AgentFailureCode.BlockedByParentRole:
+      return '上级角色规则不允许它继续';
+    case AgentFailureCode.PermissionDenied:
+      return '需要的权限没有通过';
+    case AgentFailureCode.ToolUnavailable:
+      return '需要的能力当前不可用';
+    case AgentFailureCode.InvalidArguments:
+      return '助手设置的等待时间超过了允许的上限，需要缩短';
+    case AgentFailureCode.BudgetExhausted:
+      return '可用预算已经用完';
+    case AgentFailureCode.StepCapReached:
+      return '执行步数已达上限';
+    case AgentFailureCode.Timeout:
+      return '处理时间超过了限制';
+    case AgentFailureCode.ParentGone:
+      return '父任务已经结束';
+    case AgentFailureCode.CancelledByUser:
+      return '用户取消了这个任务';
+    case AgentFailureCode.CancelledByParent:
+      return '父任务取消了这个任务';
+    case AgentFailureCode.DependencyFailed:
+      return '依赖的任务失败了';
+    case AgentFailureCode.DependencyMissing:
+      return '依赖的任务不存在';
+    case AgentFailureCode.WorkflowStageFailed:
+      return '工作流中的一个阶段失败了';
+    case AgentFailureCode.WorktreeCreateFailed:
+      return '无法创建隔离工作区';
+    case AgentFailureCode.ModelError:
+      return '模型调用没有成功完成';
+    case AgentFailureCode.Unknown:
+    default:
+      return '失败原因还不明确';
+  }
 }

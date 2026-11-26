@@ -4,8 +4,10 @@
 // 主进程（写 cost 字段）与 renderer（运行列表/详情/每日小计）共用，不引入 IO。
 // ============================================================================
 
-/** wakeRole 落在执行记录 result.skipReason 里的原因枚举（roleProactivity 写、这里读）。 */
-type WakeSkipKind = 'silent_level' | 'daily_budget_exceeded' | 'quiet_hours';
+import { CLI_CONNECTOR_DESCRIPTORS } from './constants/cliConnectorDescriptors';
+
+/** 执行记录 result.skipReason 的原因枚举（角色唤醒与定时任务连接器跳过共用）。 */
+type WakeSkipKind = 'silent_level' | 'daily_budget_exceeded' | 'quiet_hours' | 'connector_lost';
 
 export interface WakeSkipInfo {
   kind: WakeSkipKind;
@@ -13,14 +15,18 @@ export interface WakeSkipInfo {
   used?: number;
   /** daily_budget_exceeded 时的每日上限。 */
   max?: number;
+  /** connector_lost 时的 CLI 连接器 id，顺序与 skipReason 一致。展示时换成显示名。 */
+  connectorIds?: string[];
 }
 
-/** 解析 wakeRole 的 skipReason 字符串；不认识的形状返回 null（展示侧回落原文，不猜）。 */
+/** 解析 skipReason 字符串；不认识的形状返回 null（展示侧回落通用句，不猜、不露原文）。 */
 function parseWakeSkipReason(skipReason: string): WakeSkipInfo | null {
   if (skipReason === 'silent_level') return { kind: 'silent_level' };
   if (skipReason === 'quiet_hours') return { kind: 'quiet_hours' };
   const match = skipReason.match(/^daily_budget_exceeded \((\d+)\/(\d+)\)$/);
   if (match) return { kind: 'daily_budget_exceeded', used: Number(match[1]), max: Number(match[2]) };
+  const lost = skipReason.match(/^connector_lost:([a-z0-9_-]+(?:,[a-z0-9_-]+)*)$/);
+  if (lost?.[1]) return { kind: 'connector_lost', connectorIds: lost[1].split(',') };
   return null;
 }
 
@@ -31,8 +37,8 @@ export interface WakeSkipView {
 }
 
 /**
- * 判定执行记录的 result 是否是「跳过的角色唤醒」。
- * 只认 RoleWakeResult 的 skipped 形状（status='skipped' + skipReason 字符串）；
+ * 判定执行记录的 result 是否是「带原因的跳过」。
+ * 认 status='skipped' + skipReason 字符串：角色唤醒，以及定时任务因核心 CLI 连接器未登录而跳过。
  * 空产物的安静醒来是 completed（不算 skip）、heartbeat 的 outside_active_hours 也不算。
  */
 export function readWakeSkipFromResult(result: unknown): WakeSkipView | null {
@@ -42,14 +48,31 @@ export function readWakeSkipFromResult(result: unknown): WakeSkipView | null {
   return { info: parseWakeSkipReason(record.skipReason), raw: record.skipReason };
 }
 
-/** skip 原因的人话模板（renderer 的 i18n 词条填入；{used}/{max} 逐个替换）。 */
+/** skip 原因的人话模板（renderer 的 i18n 词条填入；{used}/{max}/{names} 逐个替换）。 */
 export interface WakeSkipTexts {
   silentLevel: string;
   dailyBudget: string;
   quietHours: string;
+  /** connector_lost：`{names}` 换成连接器显示名。 */
+  connectorLost: string;
+  nameLanguage: 'zh' | 'en';
 }
 
-export function wakeSkipReasonText(info: WakeSkipInfo, texts: WakeSkipTexts): string {
+function connectorLostDisplayNames(ids: readonly string[], language: 'zh' | 'en'): string[] {
+  const names: string[] = [];
+  for (const id of ids) {
+    const descriptor = CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === id);
+    if (!descriptor) continue;
+    const name = language === 'en'
+      ? descriptor.displayNameEn ?? descriptor.displayName
+      : descriptor.displayName;
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/** 认不出显示名时返回 null，调用方改用通用句，避免把连接器 id 露给用户。 */
+export function wakeSkipReasonText(info: WakeSkipInfo, texts: WakeSkipTexts): string | null {
   switch (info.kind) {
     case 'silent_level':
       return texts.silentLevel;
@@ -59,6 +82,12 @@ export function wakeSkipReasonText(info: WakeSkipInfo, texts: WakeSkipTexts): st
       return texts.dailyBudget
         .replace('{used}', String(info.used ?? '?'))
         .replace('{max}', String(info.max ?? '?'));
+    case 'connector_lost': {
+      const names = connectorLostDisplayNames(info.connectorIds ?? [], texts.nameLanguage);
+      if (names.length === 0) return null;
+      const joined = names.join(texts.nameLanguage === 'en' ? ', ' : '、');
+      return texts.connectorLost.replace('{names}', joined);
+    }
   }
 }
 
@@ -68,6 +97,8 @@ export interface CronRunCostEntry {
   startedAt?: number;
   /** 本次运行实测成本（USD）；null/undefined = 无模型调用（展示 dash，不加钱）。 */
   cost?: number;
+  /** 包月/免费额度模型运行（不按美元计费）；无 cost 时据此区分「没记到」与「本就不计美元」。 */
+  flatFee?: boolean;
   runsOn?: 'local' | 'cloud';
   /** 跳过的唤醒（无成本，但计数）。 */
   skipped?: boolean;
@@ -81,6 +112,8 @@ export interface CronRunCostDayTotal {
   runCount: number;
   /** 其中跳过的唤醒次数。 */
   skippedCount: number;
+  /** 其中包月运行（无美元成本）条数。 */
+  flatFeeCount: number;
 }
 
 function localDayKey(time: number): string {
@@ -104,11 +137,13 @@ export function cronDailyCostTotals(
   for (const entry of entries) {
     if (entry.runsOn === 'cloud') continue;
     const dayKey = localDayKey(entry.startedAt ?? entry.scheduledAt);
-    const bucket = buckets.get(dayKey) ?? { dayKey, totalUsd: 0, runCount: 0, skippedCount: 0 };
+    const bucket = buckets.get(dayKey) ?? { dayKey, totalUsd: 0, runCount: 0, skippedCount: 0, flatFeeCount: 0 };
     bucket.runCount += 1;
     if (entry.skipped) bucket.skippedCount += 1;
     if (typeof entry.cost === 'number' && Number.isFinite(entry.cost) && entry.cost > 0) {
       bucket.totalUsd += entry.cost;
+    } else if (entry.flatFee) {
+      bucket.flatFeeCount += 1;
     }
     buckets.set(dayKey, bucket);
   }
@@ -132,4 +167,13 @@ export function addCronRunCostUsd(
 ): number | undefined {
   if (attempt === undefined || !Number.isFinite(attempt) || attempt <= 0) return existing;
   return Math.round(((existing ?? 0) + attempt) * 1e6) / 1e6;
+}
+
+/**
+ * 一天的成本显示档：flat-fee = 当天所有有成本口径的运行都是包月（只显示「不按美元计费」）；
+ * usd = 显示美元合计（含包月与计价混合日，合计只含计价运行）。
+ * 「成本未完整记录」由调用方按未打标的已完成会话另行判定，优先于这里。
+ */
+export function cronDayCostKind(bucket: CronRunCostDayTotal): 'flat-fee' | 'usd' {
+  return bucket.flatFeeCount > 0 && bucket.totalUsd <= 0 ? 'flat-fee' : 'usd';
 }

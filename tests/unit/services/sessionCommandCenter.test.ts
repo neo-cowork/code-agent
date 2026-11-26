@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import { TaskProgressSchema } from '../../../src/shared/ipc/schemas/backgroundTask';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { CanUseToolFn, ToolContext } from '../../../src/host/protocol/tools';
 import {
@@ -9,6 +10,7 @@ import {
   resetSessionCommandCenterForTest,
   type SessionCommandTask,
 } from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import { composeSessionCommandTaskDisplayText } from '../../../src/shared/constants/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import {
   describeDelegateTaskResult,
@@ -563,6 +565,62 @@ describe('SessionCommandCenter', () => {
     } as AgentEvent;
   }
 
+  it('projects a GUI disclosure from tool start and keeps it after subsequent progress', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager);
+    try {
+      const spawned = await center.spawn(input(1));
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      const taskId = spawned.task.id;
+      const guiDisclosures = [{ app: 'Keynote', callId: 'keynote-call' }];
+      const start: AgentEvent = {
+        type: 'tool_call_start',
+        data: { id: 'keynote-call', name: 'Bash', arguments: {}, guiTakeoverDisclosure: { code: 'gui_takeover', app: 'Keynote' } },
+      };
+      const readProgress = () => TaskProgressSchema.parse(
+        getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' }).find((task) => task.id === taskId)?.progress,
+      );
+
+      manager.emitAgent('session-a', start, taskId);
+      expect(readProgress().guiDisclosures).toEqual(guiDisclosures);
+      manager.emitAgent('session-a', start, taskId);
+      manager.emitAgent('session-a', {
+        type: 'task_progress',
+        data: { turnId: 'turn-1', phase: 'tool_running', tool: 'Read', toolCallId: 'read-call' },
+      }, taskId);
+      expect(readProgress()).toMatchObject({ guiDisclosures, lastToolStep: { callId: 'read-call' } });
+    } finally {
+      center.dispose();
+    }
+  });
+
+  it('attributes file deliverables to the task whose own tool_call_end produced them, not to a sibling task in the same session', async () => {
+    const manager = new FakeTaskManager();
+    const projectTerminalResult = vi.fn();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { projectTerminalResult });
+    const a = await center.spawn(input(1, 'lane-a'));
+    const b = await center.spawn(input(2, 'lane-b'));
+    if (a.outcome === 'requires_choice' || b.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    const docEnd = (callId: string, name: string) => ({
+      type: 'tool_call_end',
+      data: {
+        toolCallId: callId,
+        success: true,
+        output: 'ok',
+        metadata: { artifacts: [{ artifactId: name, kind: 'document', role: 'deliverable', sourceTool: 'Bash', name, path: `/work/${name}` }] },
+      },
+    }) as AgentEvent;
+    manager.emitAgent('session-a', docEnd('call-a', 'a.docx'), a.task.id);
+    manager.emitAgent('session-a', docEnd('call-b', 'b.docx'), b.task.id);
+    manager.emitTask({ type: 'task_completed', sessionId: 'session-a', data: { taskId: a.task.id, conclusion: 'done a' } });
+    manager.emitTask({ type: 'task_completed', sessionId: 'session-a', data: { taskId: b.task.id, conclusion: 'done b' } });
+    await vi.waitFor(() => expect(projectTerminalResult).toHaveBeenCalledTimes(2));
+    const byId = new Map(projectTerminalResult.mock.calls.map(([task]) => [task.id, task]));
+    expect(byId.get(a.task.id).deliverableArtifacts.map((x: { path: string }) => x.path)).toEqual(['/work/a.docx']);
+    expect(byId.get(b.task.id).deliverableArtifacts.map((x: { path: string }) => x.path)).toEqual(['/work/b.docx']);
+    center.dispose();
+  });
+
   it('writes progress.lastToolFailure from an allow-listed tool_call_end failure', async () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
@@ -585,6 +643,28 @@ describe('SessionCommandCenter', () => {
       alternatives: 'zhipu:glm-5.3',
       at: expect.any(Number),
     });
+    center.dispose();
+  });
+
+  it('counts every failed tool call in progress.failedToolCalls, even without an allow-listed code', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-read-1', name: 'Read', arguments: { file_path: 'a.pdf' } },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', {
+      type: 'tool_call_end',
+      data: { toolCallId: 'call-read-1', success: false, error: 'cannot read' },
+    } as AgentEvent, spawned.task.id);
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })
+      .find((task) => task.id === spawned.task.id);
+    expect(projected?.progress?.failedToolCalls).toBe(1);
+    expect(projected?.progress?.lastToolFailure).toBeUndefined();
     center.dispose();
   });
 
@@ -1057,7 +1137,7 @@ describe('SessionCommandCenter idle expiry', () => {
 // N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：模型侧结果文本（resultText）
 // FB-577 复盘：388 字结论经 240 字 summary 硬切，SSRF 拒绝提示里
 // 「use a Bash curl command instead — it asks the user for approval.」整句
-// 到不了前台，四条用户可见回复全丢下一步指引。模型侧改读 1500 封顶的
+// 到不了前台，四条用户可见回复全丢下一步指引。模型侧改读 8000 预算的
 // resultText；UI/账本 summary 维持 240 不变。
 // ============================================================================
 describe('model-facing task result text', () => {
@@ -1067,9 +1147,6 @@ describe('model-facing task result text', () => {
   });
 
   const HINT_SENTENCE = 'use a Bash curl command instead — it asks the user for approval.';
-  // SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 的同值（该常量不导出——src 侧只有
-  // 同文件的 composeSessionCommandTaskResultText 消费它，导出会撞 knip production）
-  const MODEL_CAP = 1500;
 
   /** FB-577 镜像：总长 388 字，提示句从第 262 字开始——240 字旧截断必然丢句。 */
   function fb577Conclusion(): string {
@@ -1133,10 +1210,9 @@ describe('model-facing task result text', () => {
     }
   });
 
-  it('caps an over-long conclusion at the model limit with an explicit truncation marker', async () => {
+  it('delivers a 5000-char conclusion whole (under the 8000 model budget) with no truncation marker', async () => {
     const conclusion = overCapConclusion();
     expect(conclusion).toHaveLength(5000);
-    const marker = `…(truncated, 5000 chars total)`;
 
     const manager = new FakeTaskManager();
     const addMessageToSession = vi
@@ -1150,11 +1226,9 @@ describe('model-facing task result text', () => {
       await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
 
       const message = addMessageToSession.mock.calls[0][1];
-      const expectedBody = `${conclusion.slice(0, MODEL_CAP)}${marker}`;
-      expect(message.content).toBe(`[任务结果] 任务1｜已完成｜${expectedBody}`);
-      // 截断线之前的正文（含提示句）原样到达，且模型明确知道被裁过
+      expect(message.content).toBe(`[任务结果] 任务1｜已完成｜${conclusion}`);
       expect(message.content).toContain(HINT_SENTENCE);
-      expect(message.content.endsWith(marker)).toBe(true);
+      expect(message.content).not.toContain('truncated');
 
       // 账本/UI summary 维持 240 字上限，不随 resultText 放宽
       const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })[0];
@@ -1165,6 +1239,29 @@ describe('model-facing task result text', () => {
       addMessageToSession.mockRestore();
       center.dispose();
     }
+  });
+
+  it('keeps newlines of the conclusion in ledger metadata.resultMarkdown for the member page, and closes a fence cut by the cap', async () => {
+    const lsLines = Array.from({ length: 12 }, (_, n) => `-rw-r--r--  1 u  staff  2 Nov 17 22:58 报表${n}.xlsx`).join('\n');
+    const conclusion = `共 **9** 个表格。\n\n\`ls -la\` 原始输出：\n\n\`\`\`\n${lsLines}\n\`\`\`\n`;
+    const manager = new FakeTaskManager();
+    vi.spyOn(getSessionManager(), 'addMessageToSession').mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { wakeForegroundBrain: vi.fn() });
+    try {
+      await spawnAndSettle(center, manager, conclusion);
+      const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })[0];
+      // summary 仍是 240 字单行；resultMarkdown 保留换行与完整围栏
+      expect(ledgerTask?.summary).not.toContain('\n');
+      expect(ledgerTask?.metadata?.resultMarkdown).toBe(conclusion.trim());
+      expect(String(ledgerTask?.metadata?.resultMarkdown).split('\n')).toHaveLength(conclusion.trim().split('\n').length);
+    } finally {
+      center.dispose();
+    }
+
+    const long = `\`\`\`\n${'-rw-r--r-- 1 u staff 2 file.xlsx\n'.repeat(400)}`;
+    const display = composeSessionCommandTaskDisplayText(long) ?? '';
+    expect(display.length).toBeLessThan(long.length);
+    expect((display.match(/^\s*```/gm) ?? []).length % 2).toBe(0);
   });
 
   it('task_status lists the model-facing result text, not the 240-char summary', async () => {

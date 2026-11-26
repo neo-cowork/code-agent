@@ -51,6 +51,10 @@ export function kickoffStartupRetention(): void {
   void import('../host/services/infra/appCacheRetention')
     .then(({ kickoffAppCacheRetention }) => kickoffAppCacheRetention())
     .catch((error) => logger.warn('App cache retention failed (non-blocking):', (error as Error).message));
+  // 托管浏览器 surface 档案目录（managed-browser-profile-surface-*）：空壳按 7 天回收，带登录态的永不删
+  void import('../host/services/infra/browserSurfaceProfileRetention')
+    .then(({ kickoffSurfaceProfileRetention }) => kickoffSurfaceProfileRetention())
+    .catch((error) => logger.warn('Surface profile retention failed (non-blocking):', (error as Error).message));
   // 录音保留：清扫原本只挂在采集启动/定时器上，采集关着的机器永远不清，
   // 过期 wav 无限堆积。启动扫一次，与采集开关解耦；失败沿用既有记账
   // （logger.warn + retention ledger → 设置页 AudioRetentionFailureLine）。

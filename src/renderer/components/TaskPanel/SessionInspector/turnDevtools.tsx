@@ -12,6 +12,7 @@
 import React from 'react';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
+import { localizeToolUserMessage } from '../../../utils/toolExecutionPresentation';
 import { fill } from './format';
 import {
   formatTokenCount,
@@ -125,7 +126,7 @@ function InferenceCallCards({ segment }: { segment: TurnSegment }) {
                   <div key={`call-tool-${index}`} className="flex items-baseline gap-2 text-[11px]">
                     <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
                     <span className="font-mono text-[10px] text-zinc-300">{row.toolName}</span>
-                    {!row.success && <span className="text-badge-danger">{dt.toolFailed}{row.error ? `：${row.error}` : ''}</span>}
+                    {!row.success && <span className="text-badge-danger">{dt.toolFailed}{(row.userMessage ?? row.error) ? `：${row.userMessage === undefined ? row.error : localizeToolUserMessage(row.userMessage, t)}` : ''}</span>}
                     {row.fromCache && <span className="text-zinc-600">{dt.toolFromCache}</span>}
                     {row.durationMs !== null && (
                       <span className="ml-auto text-zinc-600">{fill(dt.durationMs, { ms: String(Math.round(row.durationMs)) })}</span>
@@ -174,7 +175,7 @@ export function TurnDevtools({ segment }: { segment: TurnSegment }) {
               <div key={`tool-${index}`} className="flex items-baseline gap-2 text-[11px]">
                 <span className={`h-1.5 w-1.5 shrink-0 translate-y-[-1px] rounded-full ${row.success ? 'bg-badge-success' : 'bg-badge-danger'}`} />
                 <span className="font-mono text-[10px] text-zinc-300">{row.toolName}</span>
-                {!row.success && <span className="text-badge-danger">{dt.toolFailed}{row.error ? `：${row.error}` : ''}</span>}
+                {!row.success && <span className="text-badge-danger">{dt.toolFailed}{(row.userMessage ?? row.error) ? `：${row.userMessage === undefined ? row.error : localizeToolUserMessage(row.userMessage, t)}` : ''}</span>}
                 {row.fromCache && <span className="text-zinc-600">{dt.toolFromCache}</span>}
                 {row.durationMs !== null && (
                   <span className="ml-auto text-zinc-600">{fill(dt.durationMs, { ms: String(Math.round(row.durationMs)) })}</span>

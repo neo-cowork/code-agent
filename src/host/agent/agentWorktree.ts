@@ -23,7 +23,13 @@ import type {
   AgentWorktreeArtifact,
   AgentWorktreeReview,
 } from '../../shared/contract/agentTree';
+import {
+  loadPersistedArtifacts,
+  persistPreservedArtifacts,
+  resetAgentWorktreeStoreForTest,
+} from './agentWorktreeStore';
 import { WORKTREE_BASE_DIR } from './agentWorktreePath';
+import { resolveAgentBranchName, readWorktreeBranch } from './agentWorktreeBranch';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
@@ -264,6 +270,16 @@ export interface WorktreeCleanupResult {
 }
 
 const worktreeArtifacts = new Map<string, AgentWorktreeArtifact>();
+let hydrated = false;
+
+/** Lazily restore preserved artifacts persisted by a previous process. */
+function ensureHydrated(): void {
+  if (hydrated) return;
+  hydrated = true;
+  for (const artifact of loadPersistedArtifacts(WORKTREE_TIMEOUT)) {
+    if (!worktreeArtifacts.has(artifact.agentId)) worktreeArtifacts.set(artifact.agentId, artifact);
+  }
+}
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -338,6 +354,7 @@ function recordWorktreeArtifact(
   agentId: string,
   next: Omit<AgentWorktreeArtifact, 'agentId' | 'updatedAt'> & { updatedAt?: number },
 ): AgentWorktreeArtifact {
+  ensureHydrated();
   const existing = worktreeArtifacts.get(agentId);
   const artifact: AgentWorktreeArtifact = {
     agentId,
@@ -352,20 +369,25 @@ function recordWorktreeArtifact(
     ...(next.error ? { error: next.error } : {}),
   };
   worktreeArtifacts.set(agentId, artifact);
+  persistPreservedArtifacts(worktreeArtifacts.values());
   return cloneArtifact(artifact);
 }
 
 export function listAgentWorktreeArtifacts(): AgentWorktreeArtifact[] {
+  ensureHydrated();
   return Array.from(worktreeArtifacts.values()).map(cloneArtifact);
 }
 
 export function getAgentWorktreeArtifact(agentId: string): AgentWorktreeArtifact | undefined {
+  ensureHydrated();
   const artifact = worktreeArtifacts.get(agentId);
   return artifact ? cloneArtifact(artifact) : undefined;
 }
 
 export function resetAgentWorktreeArtifactsForTest(): void {
   worktreeArtifacts.clear();
+  hydrated = false;
+  resetAgentWorktreeStoreForTest();
 }
 
 export function parseGitStatusPorcelain(output: string): AgentTreeChangedFile[] {
@@ -431,6 +453,7 @@ async function readDiff(worktreePath: string): Promise<{ diff: string; truncated
 }
 
 export async function getAgentWorktreeReview(agentId: string): Promise<AgentWorktreeReview | undefined> {
+  ensureHydrated();
   const artifact = worktreeArtifacts.get(agentId);
   if (!artifact) return undefined;
   const worktreePath = artifact.path;
@@ -471,17 +494,20 @@ export async function getAgentWorktreeReview(agentId: string): Promise<AgentWork
 
 /**
  * Create an isolated git worktree for an agent.
- * Branch name: agent/{agentId}
+ * Branch name: agent/<slug>-<hex> for internal ids / labelled tasks, else agent/{agentId}
  * Path: /tmp/code-agent-worktrees/{agentId}
  */
 export async function createAgentWorktree(
   agentId: string,
   repoPath: string,
-  baseBranch?: string
+  baseBranch?: string,
+  label?: string,
 ): Promise<WorktreeInfo> {
   const physicalAgentId = getAgentWorktreeKey(agentId);
-  const branchName = `agent/${physicalAgentId}`;
-  const safeName = physicalAgentId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const branchName = await resolveAgentBranchName(agentId, physicalAgentId, repoPath, label);
+  // 可读分支名同时作目录名：模型汇报常原样转述路径，目录里带内部 id 会再次外露
+  const safeName = (branchName === `agent/${physicalAgentId}` ? physicalAgentId : branchName.slice('agent/'.length))
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
   const worktreePath = path.join(WORKTREE_BASE_DIR, safeName);
 
   // Determine base: explicit param or current HEAD
@@ -599,7 +625,7 @@ export async function cleanupAgentWorktree(
   repoPath: string,
   baseCommit?: string,
 ): Promise<WorktreeCleanupResult> {
-  const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
+  const branchName = await readWorktreeBranch(worktreePath, getAgentWorktreeKey(agentId));
 
   try {
     // Check for uncommitted changes in worktree
@@ -710,7 +736,7 @@ export async function discardAgentWorktree(
   worktreePath: string,
   repoPath: string,
 ): Promise<void> {
-  const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
+  const branchName = await readWorktreeBranch(worktreePath, getAgentWorktreeKey(agentId));
   await execAsync(
     `git worktree remove --force ${shellQuote(worktreePath)}`,
     { cwd: repoPath, timeout: WORKTREE_TIMEOUT },

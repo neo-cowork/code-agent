@@ -18,8 +18,9 @@ const harness = vi.hoisted(() => {
     archiveSession: vi.fn(),
     updateMessage: vi.fn(),
   };
-  const mockOrchestrator = { sendMessage: vi.fn() };
+  const mockOrchestrator = { sendMessage: vi.fn(), setExecutionTopology: vi.fn() };
   return {
+    notifyRoleWakeOutput: vi.fn(),
     configDir: { dir: '' },
     mockSessionManager,
     mockOrchestrator,
@@ -31,6 +32,8 @@ const harness = vi.hoisted(() => {
     mockSettings: { value: {} as Record<string, unknown> },
     // 能力中心：默认无已连接源，各测试按需注入
     listCapabilities: vi.fn(async (): Promise<{ items: CapabilityCenterItem[] }> => ({ items: [] })),
+    // 角色声明的工具（undefined = 没声明）
+    declaredTools: { value: undefined as string[] | undefined },
   };
 });
 
@@ -40,6 +43,9 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 }));
 vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('../../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyRoleWakeOutput: harness.notifyRoleWakeOutput },
 }));
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => harness.mockSessionManager,
@@ -77,7 +83,7 @@ vi.mock('@host/session/sessionEventService', () => ({
   getSessionEventService: () => harness.mockSessionEvents,
 }));
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
-  resolveAgent: () => undefined,
+  resolveAgent: () => (harness.declaredTools.value ? { tools: harness.declaredTools.value } : undefined),
 }));
 vi.mock('../../../../src/host/hooks', () => ({
   createHookManager: () => ({
@@ -99,7 +105,7 @@ import {
   storeWakeProposalsFromWake,
 } from '../../../../src/host/services/roleAssets/roleWakeFindWork';
 import { appendRoleHistory, ensureRoleAssetDirs, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
-import { getRoleWakeProposalsPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
+import { getRoleWakeLedgerPath, getRoleWakeProposalsPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 import type { CapabilityCenterItem } from '../../../../src/shared/contract/capability';
 
@@ -115,6 +121,23 @@ function connectedSource(name: string): CapabilityCenterItem {
     source: { kind: 'builtin' },
     tags: [],
   } as unknown as CapabilityCenterItem;
+}
+
+/** native 连接器源（Calendar/Mail/Reminders）：按工具名前缀与角色声明工具对齐。 */
+function nativeSource(id: string, name: string): CapabilityCenterItem {
+  return {
+    name,
+    kind: 'connector',
+    state: { runtime: 'connected' },
+    source: { kind: 'builtin' },
+    tags: ['native', id],
+  } as unknown as CapabilityCenterItem;
+}
+
+function primeNativeSources(): void {
+  harness.listCapabilities.mockImplementation(async () => ({
+    items: [nativeSource('calendar', 'Calendar'), nativeSource('mail', 'Mail'), nativeSource('reminders', 'Reminders')],
+  }));
 }
 
 function primeConnectedSources(names: string[]): void {
@@ -166,10 +189,129 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     await ensureRoleAssetDirs(RESEARCHER);
     harness.mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'daily' } } };
     vi.clearAllMocks();
+    harness.declaredTools.value = undefined;
     harness.listCapabilities.mockImplementation(async () => ({ items: [] }));
   });
   afterEach(async () => {
     await fs.rm(harness.configDir.dir, { recursive: true, force: true });
+  });
+
+  function primeMail(id: number, subject: string, sessionId: string, decisionTag = '<decision>report</decision>'): void {
+    harness.mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+    harness.declaredTools.value = ['mail'];
+    primeNativeSources();
+    primeWakeOutput(`${subject}。<rationale>合同仍待签。需要跟进。</rationale><basis>mail:${id}</basis>${decisionTag}`, sessionId);
+  }
+
+  async function rawWakeRows(): Promise<string[]> {
+    return (await fs.readFile(getRoleWakeLedgerPath(RESEARCHER), 'utf8')).trim().split('\n');
+  }
+
+  it('suppresses a second cadence report about the same mail even after its subject changes', async () => {
+    primeMail(401, '合同待签', 'monday-wake');
+    expect(await wakeRole(RESEARCHER, 'cadence')).toMatchObject({ decision: 'report' });
+    primeMail(401, '签署提醒', 'tuesday-wake');
+    expect(await wakeRole(RESEARCHER, 'cadence')).toMatchObject({ decision: 'silence' });
+    const raw = await rawWakeRows();
+    const rows = raw.map((line) => JSON.parse(line));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      decision: 'report', reason: '合同仍待签。', basisIds: ['mail:401'], trigger: 'cadence',
+    });
+    expect(rows[1]).toMatchObject({
+      decision: 'suppressed_duplicate', reason: 'previously_reported',
+      basisIds: ['mail:401'], duplicateOf: rows[0].id, firstReportedAt: rows[0].at,
+    });
+    expect(harness.notifyRoleWakeOutput.mock.calls.map(([notice]) => notice.sessionId)).toEqual(['monday-wake']);
+    expect(harness.mockSessionManager.archiveSession.mock.calls).toEqual([['tuesday-wake']]);
+    if (process.env.NEO_TEST_WAKE_LEDGER_EVIDENCE === '1') process.stdout.write(raw.join('\n') + '\n');
+  });
+
+  it('reports different mail objects that share a subject, including an event wake', async () => {
+    primeMail(401, '合同待签', 'first-wake');
+    await wakeRole(RESEARCHER, 'cadence');
+    primeMail(402, '合同待签', 'event-wake');
+    await wakeRole(RESEARCHER, 'event');
+    const rows = (await rawWakeRows()).map((line) => JSON.parse(line));
+    expect(rows).toMatchObject([
+      { decision: 'report', basisIds: ['mail:401'], trigger: 'cadence' },
+      { decision: 'report', basisIds: ['mail:402'], trigger: 'event' },
+    ]);
+    expect(harness.notifyRoleWakeOutput).toHaveBeenCalledTimes(2);
+    expect(harness.mockSessionManager.archiveSession).not.toHaveBeenCalled();
+  });
+
+  it('still sends a fallback report with a previously reported basis', async () => {
+    primeMail(401, '合同待签', 'first-wake');
+    await wakeRole(RESEARCHER, 'cadence');
+    primeMail(401, '合同待签', 'fallback-wake', '');
+    expect(await wakeRole(RESEARCHER, 'cadence')).toMatchObject({ decision: 'report' });
+    const rows = (await rawWakeRows()).map((line) => JSON.parse(line));
+    expect(rows[1]).toMatchObject({ decision: 'report', basisIds: ['mail:401'], fallbackDecision: true });
+    expect(harness.notifyRoleWakeOutput).toHaveBeenCalledTimes(2);
+    expect(harness.mockSessionManager.archiveSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps mail reports independent across workspaces', async () => {
+    primeMail(401, '合同待签', 'first-wake');
+    await wakeRole(RESEARCHER, 'cadence', { workspacePath: path.join(harness.configDir.dir, 'first') });
+    primeMail(401, '合同待签', 'second-wake');
+    await wakeRole(RESEARCHER, 'cadence', { workspacePath: path.join(harness.configDir.dir, 'second') });
+    const rows = (await rawWakeRows()).map((line) => JSON.parse(line));
+    expect(rows.map(({ decision }) => decision)).toEqual(['report', 'report']);
+    expect(rows[0].workspaceKey).not.toBe(rows[1].workspaceKey);
+  });
+
+  it('records model silence with its stated reason and basis', async () => {
+    primeWakeOutput('<decision>silence</decision><rationale>没有新进展。</rationale><basis>mail:401</basis>');
+    await wakeRole(RESEARCHER, 'event');
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'silent', reason: '没有新进展。', basisIds: ['mail:401'] },
+    ]);
+  });
+
+  it('records an excluded-topic silence distinctly', async () => {
+    harness.mockSettings.value = { roleAssets: { proactivity: {
+      roles: { [RESEARCHER]: { level: 'realtime', topicsExclude: ['合同'] } },
+    } } };
+    primeWakeOutput('合同待签。<decision>report</decision><basis>mail:401</basis>');
+    await wakeRole(RESEARCHER, 'event');
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'silent', reason: 'excluded_topic', basisIds: ['mail:401'] },
+    ]);
+    expect(harness.notifyRoleWakeOutput).not.toHaveBeenCalled();
+  });
+
+  it('keeps excluded topics blocked when the match appears only in the basis tag', async () => {
+    harness.mockSettings.value = { roleAssets: { proactivity: {
+      roles: { [RESEARCHER]: { level: 'realtime', topicsExclude: ['mail:401'] } },
+    } } };
+    primeWakeOutput('有一项变化。<decision>report</decision><basis>mail:401</basis>');
+    expect(await wakeRole(RESEARCHER, 'event')).toMatchObject({ decision: 'silence' });
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'silent', reason: 'excluded_topic', basisIds: ['mail:401'] },
+    ]);
+    expect(harness.notifyRoleWakeOutput).not.toHaveBeenCalled();
+  });
+
+  it('reports unreadable sources even if the model repeats a basis from an earlier report', async () => {
+    primeMail(401, '合同待签', 'first-wake');
+    await wakeRole(RESEARCHER, 'cadence');
+    primeWakeOutput('未读取：Mail。邮箱连接失败。<decision>silence</decision><basis>mail:401</basis>', 'unreadable-wake');
+    expect(await wakeRole(RESEARCHER, 'cadence')).toMatchObject({ decision: 'report' });
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'report', basisIds: ['mail:401'] },
+      { decision: 'report', basisIds: ['mail:401'] },
+    ]);
+    expect(harness.notifyRoleWakeOutput).toHaveBeenCalledTimes(2);
+  });
+
+  it('records a no-products silence without invoking the model', async () => {
+    await wakeRole(RESEARCHER, 'cadence');
+    expect((await rawWakeRows()).map((line) => JSON.parse(line))).toMatchObject([
+      { decision: 'silent', reason: 'no_products', basisIds: [] },
+    ]);
+    expect(harness.mockOrchestrator.sendMessage).not.toHaveBeenCalled();
   });
 
   it('空履历 + 已连接源：模型被调用，prompt 带外部增量段（点名源与冷线索判据）', async () => {
@@ -187,6 +329,43 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     expect(wakePrompt).toContain('wake_proposals');
     // 提议落盘
     expect(await readStoredProposals(RESEARCHER)).toHaveLength(1);
+  });
+
+  it('每日醒来：角色只声明 calendar+mail → prompt 只列 Calendar、Mail，不含 Reminders，并带措辞规则', async () => {
+    harness.declaredTools.value = ['calendar', 'mail'];
+    primeNativeSources();
+    primeWakeOutput('<decision>silence</decision>');
+    await wakeRole(RESEARCHER, 'cadence');
+    const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+    expect(wakePrompt).toContain('已连接源：Calendar、Mail');
+    expect(wakePrompt).not.toContain('Reminders');
+    expect(wakePrompt).toContain('不写工具名、参数名');
+    expect(wakePrompt).toContain('未读取：<源名>」，后面跟一句通俗的原因');
+  });
+
+  it('每日醒来：角色另外声明 reminders → 仍列 Reminders', async () => {
+    harness.declaredTools.value = ['calendar', 'mail', 'reminders'];
+    primeNativeSources();
+    primeWakeOutput('<decision>silence</decision>');
+    await wakeRole(RESEARCHER, 'cadence');
+    const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+    expect(wakePrompt).toContain('已连接源：Calendar、Mail、Reminders');
+  });
+
+  it('每日醒来：角色没声明工具 → 维持旧行为，列全部已连接源', async () => {
+    primeNativeSources();
+    primeWakeOutput('<decision>silence</decision>');
+    await wakeRole(RESEARCHER, 'cadence');
+    const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
+    expect(wakePrompt).toContain('已连接源：Calendar、Mail、Reminders');
+  });
+
+  it('强制失败：声明 calendar+mail 的角色两源都「未读取」+ 模型选沉默 → 仍纠正为 report', async () => {
+    harness.declaredTools.value = ['calendar', 'mail'];
+    primeNativeSources();
+    primeWakeOutput('未读取：Calendar（日历暂时打不开）\n未读取：Mail（邮箱暂时连不上）\n<decision>silence</decision>');
+    const result = await wakeRole(RESEARCHER, 'cadence');
+    expect(result.decision).toBe('report');
   });
 
   it('空履历 + 无已连接源：维持既有静默，不烧模型 token', async () => {

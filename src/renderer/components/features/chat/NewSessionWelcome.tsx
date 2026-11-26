@@ -4,6 +4,7 @@ import { ArrowRight, CalendarCheck, ClipboardList, FileSpreadsheet, Radar } from
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
@@ -165,7 +166,7 @@ export const NewSessionWelcome: React.FC<{
         if (cancelled) return;
         const entry = entries.find((candidate) => candidate.roleId === expertRoleId);
         setExpert({
-          name: entry?.displayName?.trim() || expertRoleId,
+          name: (entry?.displayName?.trim() ? localizeBuiltinRole(expertRoleId, { name: entry.displayName.trim() }, language).name : '') || expertRoleId,
           cards: buildExpertRoleCards(entry?.icon, entry?.quickPrompts ?? [], proposals),
         });
       })
@@ -174,7 +175,7 @@ export const NewSessionWelcome: React.FC<{
         if (!cancelled) setExpert({ name: expertRoleId, cards: [] });
       });
     return () => { cancelled = true; };
-  }, [expertRoleId]);
+  }, [expertRoleId, language]);
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());

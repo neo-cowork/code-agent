@@ -6,7 +6,7 @@
 // ============================================================================
 
 import type { ModelConfig } from '../../shared/contract';
-import { UNATTENDED_SERVICE_TIER } from '../../shared/constants';
+import { isServiceTierEligibleProvider, UNATTENDED_SERVICE_TIER } from '../../shared/constants';
 
 /**
  * 纯解析，无 IO：
@@ -40,6 +40,6 @@ export function withServiceTier(config: ModelConfig, tier: string | undefined): 
  * 其余 provider——含 deepseek 走 Responses 的——一律无档，请求体保持逐字节不变。
  */
 export function applyRunServiceTier(config: ModelConfig, unattended: boolean): ModelConfig {
-  if (config.provider !== 'openai') return withServiceTier(config, undefined);
+  if (!isServiceTierEligibleProvider(config.provider)) return withServiceTier(config, undefined);
   return withServiceTier(config, resolveServiceTier(unattended ? 'unattended' : 'default', config.serviceTier));
 }

@@ -52,7 +52,11 @@ import {
   getWorkbenchCapabilityStatusPresentation,
   getWorkbenchCapabilityTitle,
 } from '../../../../utils/workbenchPresentation';
-import { getConnectorCardPresentation } from '../../../../utils/connectorCardPresentation';
+import {
+  countConnectedMcpServers,
+  isConnectorCardConnected,
+  getConnectorCardPresentation,
+} from '../../../../utils/connectorCardPresentation';
 import type { WorkbenchMcpRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import {
   findWorkbenchCapabilityHistoryItem,
@@ -161,9 +165,10 @@ export const MCPSettings: React.FC = () => {
     () => activeSheetTarget ? findWorkbenchCapabilityHistoryItem(history, activeSheetTarget) : null,
     [activeSheetTarget, history],
   );
+  const installingServerIds = useMemo(() => new Set(
+    Object.keys(serverInstallStates).filter((serverId) => serverInstallStates[serverId] === 'installing'),
+  ), [serverInstallStates]);
   const serverSummary = useMemo(() => {
-    const connectedCount = mcpStatus?.connectedServers.length
-      ?? mcpServers.filter((server) => server.lifecycle.connectionState === 'connected').length;
     const toolCount = mcpStatus?.toolCount
       ?? mcpServers.reduce((sum, server) => sum + server.toolCount, 0);
     const resourceCount = mcpStatus?.resourceCount
@@ -175,13 +180,13 @@ export const MCPSettings: React.FC = () => {
 
     return {
       total: mcpServers.length,
-      connected: connectedCount,
+      connected: countConnectedMcpServers(mcpServers, installingServerIds),
       enabled: mcpServers.filter((server) => server.enabled).length,
       attention: attentionCount,
       tools: toolCount,
       resources: resourceCount,
     };
-  }, [mcpServers, mcpStatus]);
+  }, [installingServerIds, mcpServers, mcpStatus]);
   const visibleMcpServers = useMemo(() => {
     // cua-driver 是当前桌面操作底座；argus 仅在 cua-driver 未注册时作为旧底座回退。
     // 两者在主网格表达同一个用户能力，管理员诊断表仍保留全部真实服务。
@@ -192,6 +197,10 @@ export const MCPSettings: React.FC = () => {
       && (!COMPUTER_USE_SERVER_IDS.has(server.id) || server.id === computerUseServer?.id)
     ));
   }, [mcpServers]);
+  const visibleServerSummary = useMemo(() => ({
+    total: visibleMcpServers.length,
+    connected: countConnectedMcpServers(visibleMcpServers, installingServerIds),
+  }), [installingServerIds, visibleMcpServers]);
   const localMcpServers = useMemo(
     () => visibleMcpServers.filter((server) => LOCAL_MCP_SERVER_IDS.has(server.id)),
     [visibleMcpServers],
@@ -368,8 +377,9 @@ export const MCPSettings: React.FC = () => {
     const catalogEntry = mcpCatalog.servers.find((entry) => entry.id === server.id);
     const installing = serverInstallStates[server.id] === 'installing';
     const connectionState = installing ? 'connecting' : server.lifecycle.connectionState;
-    const statusClass = getStatusBadgeClass(connectionState);
-    const dotClass = connectionState === 'connected'
+    const connected = isConnectorCardConnected(server, connectionState);
+    const statusClass = getStatusBadgeClass(connected || connectionState !== 'connected' ? connectionState : 'disconnected');
+    const dotClass = connected
       ? 'bg-mark-success'
       : connectionState === 'connecting'
         ? 'animate-pulse bg-amber-400'
@@ -440,7 +450,7 @@ export const MCPSettings: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2" data-card-actions>
-            {connectionState === 'connected' ? (
+            {connected ? (
               <button /* ds-allow:button: 卡片右上角紧凑断开动作位 */
                 type="button"
                 aria-label={`${mcpText.management.disconnect} ${displayName}`}
@@ -468,7 +478,7 @@ export const MCPSettings: React.FC = () => {
         {cardPresentation.description && (
           <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">{cardPresentation.description}</p>
         )}
-        {connectionState === 'connected' && (
+        {connected && (
           <Button
             size="sm"
             variant="primary"
@@ -560,8 +570,8 @@ export const MCPSettings: React.FC = () => {
         ) : undefined}
       >
         <div className="text-xs text-zinc-500">
-          {mcpText.grid.connectedSummaryPrefix}{serverSummary.connected}
-          {mcpText.grid.connectedSummaryMiddle}{serverSummary.total}{mcpText.grid.connectedSummarySuffix}
+          {mcpText.grid.connectedSummaryPrefix}{visibleServerSummary.connected}
+          {mcpText.grid.connectedSummaryMiddle}{visibleServerSummary.total}{mcpText.grid.connectedSummarySuffix}
         </div>
 
         {message && (

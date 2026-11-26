@@ -605,5 +605,17 @@ describe('首轮 <repeated_workarounds> 脚手架与分析类消费者的边界'
     expect(judgeMocks.judge).toHaveBeenCalledWith(USER_REQUEST);
     expect(ctx.goalTracker.initialize).toHaveBeenCalledWith(USER_REQUEST);
   });
+  it('图片批注 / 截图带的隐藏 <appshot> 块不进目标与分析入口：goalTracker/judge 只拿可见文字（任务面板与成员条不再露原始块）', async () => {
+    const visible = '我在图片上框出了 1 处，请按框和说明修改：\n区域 1（左侧，约 横向 2–14%，纵向 10–80%）：单位不对';
+    const appshotMessage = `<appshot app="" name="图片批注" captured="2026-11-23T21:57:55.893Z">\n${visible}\n</appshot>\n\n${visible}`;
+    const { ctx, runtime } = createRuntime();
+    await runtime.initializeRun(appshotMessage);
+
+    const goalArg = vi.mocked(ctx.goalTracker.initialize).mock.calls[0][0];
+    expect(goalArg).not.toContain('<appshot');
+    expect(goalArg).not.toContain('Appshot');
+    expect(goalArg).toBe(visible);
+    expect(judgeMocks.judge).toHaveBeenCalledWith(visible);
+  });
 });
 

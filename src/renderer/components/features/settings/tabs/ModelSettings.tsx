@@ -11,6 +11,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { resolveProviderText } from '../../../../i18n/providerDisplay';
 import { Button } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -50,16 +51,17 @@ import {
   buildLegacyLongCatProviderMigration,
   buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSavePromotion,
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeProviderIconValidationError,
+  getModelLabel,
   hasCustomEndpointOverride,
   isProviderIdentityManaged,
   mergeDiscoveredModelEntry,
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
-  shouldPromoteProviderToDefault,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
@@ -97,6 +99,7 @@ interface DefaultModelSelection {
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, onDirtyChange }) => {
   const { t, language } = useI18n();
   const modelText = t.settings.model;
+  const webNote = isWebMode() ? t.settings.webModeBanner.modelManageDesktopOnly : undefined;
   const temperatureControl = useMemo(() => getModelTemperatureControl(config.model), [config.model]);
   const [isSaving, setIsSaving] = useState(false);
   // staged-dirty：Provider 表单有未保存修改（定义见文件头「保存语义契约」）
@@ -217,10 +220,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     if (!query) return currentModels;
     return currentModels.filter((model) =>
       model.id.toLowerCase().includes(query) ||
-      model.label.toLowerCase().includes(query) ||
+      localizeModelLabel(model.id, model.label, language).toLowerCase().includes(query) ||
       model.capabilities.some((capability) => capability.toLowerCase().includes(query))
     );
-  }, [currentModels, modelSearch]);
+  }, [currentModels, language, modelSearch]);
   const providerRows = useMemo(
     () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers, language }),
     [providers, config, providerConfigs, modelText.helpers, language],
@@ -462,15 +465,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     setIsSaving(true);
     try {
       const providerConfigForSave = buildCurrentProviderConfigForSave(currentProviderConfig?.model || config.model);
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        ...buildProviderSettingsUpdate(config.provider, providerConfigForSave),
-      });
-      setProviderConfigs((prev) => ({
-        ...prev,
-        [config.provider]: providerConfigForSave,
-      }));
-      // 主任务模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管主任务模型，
-      // 否则发送被门禁拦下（"当前主任务模型未配置 API Key"）。
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', buildProviderSettingsUpdate(config.provider, providerConfigForSave));
+      setProviderConfigs((prev) => ({ ...prev, [config.provider]: providerConfigForSave }));
       setAppSettings((prev) => prev ? {
         ...prev,
         models: {
@@ -485,15 +481,20 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         setProviderConfigs(latestSettings.models.providers);
         setAppSettings(latestSettings);
-        if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
-          await ipcService.invokeDomain(
-            IPC_DOMAINS.SETTINGS,
-            'set',
-            buildDefaultModelSettingsUpdate(config.provider, providerConfigForSave)
-          );
-          const promotedModel = providerConfigForSave.model || config.model;
+        const promotion = await buildProviderSavePromotion(config.provider, providerConfigForSave, latestSettings, appSettings);
+        if (promotion) {
+          await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', promotion.update);
+          const promotedModel = promotion.config.model || config.model;
+          patchCurrentProviderConfig({ model: promotedModel, models: promotion.config.models });
+          if (promotion.config !== providerConfigForSave && promotedModel !== config.model) {
+            const model = getProviderRuntimeModels(currentProviderInfo, promotion.config).find(({ id }) => id === promotedModel);
+            onChange({ ...config, model: promotedModel, capabilities: model?.capabilities, maxTokens: model?.maxTokens ?? config.maxTokens });
+          }
+          const promotedTaskStrategy = promotion.update.models?.taskStrategy;
+          if (promotedTaskStrategy) setTaskStrategy(promotedTaskStrategy);
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedModel}`);
+          const promotedLabel = promotion.config === providerConfigForSave ? promotedModel : promotion.config.models?.[promotedModel]?.label || getModelLabel(currentModels, promotedModel);
+          if (promotedTaskStrategy) toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedLabel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {
@@ -872,18 +873,17 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         onMemoryRouteChange={persistMemoryRouting}
       />
 
-      <ServiceTierCostNote />
+      <ServiceTierCostNote provider={defaultSelection.provider} />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
       <SettingsSection
-        title={modelText.providerSection.title}
-        description={modelText.providerSection.description}
+        title={modelText.providerSection.title} description={[modelText.providerSection.description, webNote].filter(Boolean).join(' ')}
         actions={
           <Button
             size="sm"
             variant={isAddingProvider ? 'secondary' : 'primary'}
             onClick={() => setIsAddingProvider(true)}
-            disabled={isWebMode()}
+            disabled={isWebMode()} title={webNote}
             leftIcon={<Plus className="h-3.5 w-3.5" />}
           >
             {modelText.list.addProvider}
@@ -1006,7 +1006,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   </span>
                 )}
                 <Button
-                  disabled={isWebMode()}
+                  disabled={isWebMode()} title={webNote}
                   onClick={handleSave}
                   loading={isSaving}
                   size="lg"

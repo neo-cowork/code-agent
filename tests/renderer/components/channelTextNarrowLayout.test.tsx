@@ -8,6 +8,7 @@ import type { Browser, Page } from 'playwright';
 import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadPlaywrightChromium } from '../../../src/host/agent/runtime/browser/playwrightRuntime';
+import { waitForGlobalCss } from '../fixtures/waitForGlobalCss';
 import { ChannelsSettings, ChannelModal } from '../../../src/renderer/components/features/settings/tabs/ChannelsSettings';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -69,6 +70,9 @@ describe('channel text at narrow widths', () => {
       + `<body style="margin:0">${markup}</body></html>`,
       { waitUntil: 'networkidle' },
     );
+    // networkidle can return before the Tailwind stylesheet is compiled/applied under load;
+    // never measure an unstyled DOM.
+    await waitForGlobalCss(page);
   }
 
   // 视口下界取桌面壳主窗口 minWidth=960（src-tauri/tauri.conf.json `main` 窗口与

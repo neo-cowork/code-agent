@@ -100,7 +100,7 @@ describe('slash picker model', () => {
       promptName: 'summarize',
     });
 
-    expect(createAgentCandidates(agents, pickerZh)).toEqual(expect.arrayContaining([
+    expect(createAgentCandidates(agents, pickerZh, 'zh')).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'agent:reviewer',
         kind: 'agent',
@@ -226,7 +226,7 @@ describe('slash picker model', () => {
     expect(prompt.effectLabel).toBe(pickerEn.prefillPromptWithArgs);
     expect(prompt.description).toContain(pickerEn.paramsPrefix.trim());
 
-    const agentCandidates = createAgentCandidates(agents, pickerEn);
+    const agentCandidates = createAgentCandidates(agents, pickerEn, 'en');
     expect(agentCandidates.find((c) => c.agentId === 'reviewer')?.effectLabel).toBe(pickerEn.setAgentForTurn);
     // 2026-07-29 起 AGENTS 组不再有 Default 项（恢复默认路由 = 删掉底栏专家 chip）
     expect(agentCandidates.find((c) => c.agentId === null)).toBeUndefined();

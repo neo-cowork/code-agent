@@ -1,5 +1,6 @@
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { CronEventActionMode, CronEventDecision, CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
+import type { ScheduleDraftAck, ScheduleDraftRef, ScheduleDraftRequest } from '@shared/ipc/schemas/cron';
+import type { CronEventActionMode, CronEventDecision, CronEventStats, CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -70,8 +71,8 @@ export const cronClient = {
     return invokeCron<CronJobDefinition[]>('listJobs', { filter });
   },
 
-  createJob(input: CreateCronJobInput) {
-    return invokeCron<CronJobDefinition>('createJob', input);
+  createJob(input: CreateCronJobInput, scheduleDraftRequest?: ScheduleDraftRef) {
+    return invokeCron<CronJobDefinition>('createJob', scheduleDraftRequest ? { ...input, scheduleDraftRequest } : input);
   },
 
   updateJob(jobId: string, updates: UpdateCronJobInput) {
@@ -107,6 +108,11 @@ export const cronClient = {
     return invokeCron<CronJobExecution[]>('getExecutions', { jobId, limit });
   },
 
+  /** 事件自动化累计计数（预筛调用 / 跳过 / 被每小时上限推迟）。 */
+  getEventStats(jobId: string) {
+    return invokeCron<CronEventStats>('getEventStats', { jobId });
+  },
+
   /** 事件自动化最近的逐事件决策（新的在前；N-TRIGGER-OBSERVE-MODE）。 */
   getEventDecisions(jobId: string, limit = 50) {
     return invokeCron<CronEventDecision[]>('getEventDecisions', { jobId, limit });
@@ -138,8 +144,16 @@ export const cronClient = {
     return invokeCron<CronMailSourcesResult>('listMailSources');
   },
 
-  generateFromPrompt(prompt: string) {
-    return invokeCron<Record<string, unknown>>('generateFromPrompt', { prompt });
+  getScheduleDraftRequest(sessionId: string) {
+    return invokeCron<ScheduleDraftRequest | null>('getScheduleDraftRequest', { sessionId });
+  },
+
+  ackScheduleDraft(ack: ScheduleDraftAck) {
+    return invokeCron<boolean>('ackScheduleDraft', ack);
+  },
+
+  generateFromPrompt(prompt: string, language?: 'zh' | 'en') {
+    return invokeCron<Record<string, unknown>>('generateFromPrompt', { prompt, ...(language ? { language } : {}) });
   },
 };
 

@@ -11,7 +11,7 @@
 // 已有的字段（派到的任务 / 最近动作 / 最终输出 / 用量），不另起 live 子 transcript。
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bot, Clock, Square, Wrench, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
@@ -20,6 +20,9 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from '../../../utils/agentRoleLabel';
+import { agentOutputAfterFailure } from '../../../utils/agentFailureCopy';
+import { isStandaloneSpawnTrace } from '../../../utils/agentNodeLifecycle';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
   describeLastToolFailure,
@@ -30,6 +33,8 @@ import {
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../utils/agentActivity';
+import { GuiTakeoverDisclosureRows } from '../GuiTakeoverDisclosureRows';
+import { MemberOutputMarkdown } from './MemberOutputMarkdown';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
@@ -37,10 +42,54 @@ import { stopSessionAgent } from '../../../utils/stopSessionAgent';
 
 /** 轨迹只回看最近这几条：成员视图是「他现在在干嘛」，不是全量审计日志。 */
 const RUN_TRAIL_LIMIT = 12;
+const LIVE_NODE_STATUSES = new Set(['running', 'running-recovered']);
+const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
-function durationLabel(ms?: number | null): string {
-  if (!ms) return '—';
-  return `${Math.max(1, Math.round(ms / 1000))}s`;
+type MemberDurationCopy = {
+  durationUnderOneSecond: string;
+  durationSeconds: string;
+  durationMinutes: string;
+  durationMinutesSeconds: string;
+};
+
+function formatMemberDuration(ms: number | null | undefined, copy: MemberDurationCopy): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  if (ms < 1000) return copy.durationUnderOneSecond;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) {
+    return copy.durationSeconds.replace('{n}', String(totalSeconds));
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (seconds === 0) {
+    return copy.durationMinutes.replace('{m}', String(minutes));
+  }
+  return copy.durationMinutesSeconds
+    .replace('{m}', String(minutes))
+    .replace('{s}', String(seconds));
+}
+
+function resolvePlainElapsed(
+  plainTask: { durationMs?: number; createdAt?: number; completedAt?: number; updatedAt?: number; status: string } | undefined,
+  plainNode: { createdAt?: number; completedAt?: number } | undefined,
+  now: number,
+): number | null {
+  if (plainTask) {
+    if (typeof plainTask.durationMs === 'number' && Number.isFinite(plainTask.durationMs) && plainTask.durationMs > 0) {
+      return plainTask.durationMs;
+    }
+    if (typeof plainTask.createdAt === 'number' && Number.isFinite(plainTask.createdAt) && plainTask.createdAt > 0) {
+      const terminal = !LIVE_TASK_STATUSES.has(plainTask.status);
+      const endAt = terminal ? (plainTask.completedAt ?? plainTask.updatedAt) : now;
+      if (typeof endAt === 'number' && Number.isFinite(endAt)) {
+        return endAt - plainTask.createdAt;
+      }
+    }
+  }
+  if (plainNode?.createdAt) {
+    return (plainNode.completedAt ?? now) - plainNode.createdAt;
+  }
+  return null;
 }
 
 function timeLabel(timestamp: number): string {
@@ -90,9 +139,6 @@ const StopMemberButton: React.FC<{
   );
 };
 
-const LIVE_NODE_STATUSES = new Set(['running', 'running-recovered']);
-const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
-
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
   const text = t.expert.workRecord;
@@ -113,7 +159,10 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests }
   ), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
 
-  const member = members.find((item) => item.key === viewingMemberId);
+  const viewingNode = snapshot?.nodes?.find((node) => node.id === viewingMemberId);
+  const tracedMember = members.find((item) => item.key === viewingMemberId);
+  const standalone = tracedMember && isStandaloneSpawnTrace(tracedMember.key, tracedMember.record?.runId);
+  const member = viewingNode?.background && standalone ? undefined : tracedMember;
   const agent = member?.agent;
   // useSessionMembers 以持久化账本为状态真相源，而 contextSnapshot 只活在 stream 里
   // （账本不落它）。最近动作要的是「他此刻在干嘛」，所以这一项单独从 store 取实时的。
@@ -134,11 +183,18 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   // 经 task:progress → agentUpdated 一路活着送到 store。工具名对非程序员没意义，
   // 过一遍聊天流那套 humanizeToolStep；没有 args 时它落到各类目的人话兜底句。
   const recentActions = useMemo(() => {
-    const tools = (liveContextSnapshot ?? agent?.contextSnapshot)?.tools ?? [];
-    return [...tools].reverse().map((tool, index) => ({
-      key: `${tool}-${index}`,
-      label: humanizeToolStep(tool, undefined, t),
+    const snapshot = liveContextSnapshot ?? agent?.contextSnapshot;
+    // 去重后的 tools 会把多条 Bash 折成一个名字；每次 Bash 的 description 随快照带来，
+    // 逐条过 humanizeToolStep 的描述过滤（命令样/错语种退通用文案），连续命令才分得清。
+    const bashRows = [...(snapshot?.bashSteps ?? [])].reverse().map((step, index) => ({
+      key: `Bash-step-${index}`,
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
+    return [...(snapshot?.tools ?? [])].reverse().flatMap((tool, index) => (
+      (tool === 'Bash' || tool === 'bash') && bashRows.length > 0
+        ? bashRows
+        : [{ key: `${tool}-${index}`, label: humanizeToolStep(tool, undefined, t) }]
+    ));
   }, [liveContextSnapshot, agent?.contextSnapshot, t]);
 
   // D2 运行轨迹：粗粒度生命周期事件早就落库（SwarmRunEventRecord），此前全仓零消费。
@@ -152,10 +208,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   }, [durableDetail?.events, agent?.id]);
 
   // ── 普通代理（S3）：agentTree 节点或 delegate_task 后台任务 ──
-  const plainNode = useMemo(
-    () => (member ? undefined : snapshot?.nodes.find((node) => node.id === viewingMemberId)),
-    [member, snapshot, viewingMemberId],
-  );
+  const plainNode = member ? undefined : viewingNode;
   const plainTask = useMemo(
     () => (member || plainNode
       ? undefined
@@ -163,11 +216,33 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     [member, plainNode, backgroundTasks, viewingMemberId],
   );
 
-  if (!member && !plainNode && !plainTask) return null;
+  const isVisible = !((!snapshot && standalone) || (!member && !plainNode && !plainTask));
+  const isLive = isVisible && (
+    member && agent
+      ? member.status === 'running'
+      : plainNode
+        ? LIVE_NODE_STATUSES.has(plainNode.status)
+        : plainTask
+          ? LIVE_TASK_STATUSES.has(plainTask.status)
+          : false
+  );
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isLive) return undefined;
+    const timer = window.setInterval(() => {
+      setTick((count) => count + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isLive]);
+
+  if (!isVisible) return null;
+
+  const now = Date.now();
 
     // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
     if (!member || !agent) {
-      const name = plainNode?.role ?? plainTask?.title ?? viewingMemberId ?? '';
+      const name = plainNode ? agentNodeLabel(plainNode, t.agentRoleLabels)
+        : plainTask ? backgroundTaskLabel(plainTask, t) : '';
       // N-APPROVAL-PENDING-STATUS-COPY：审批未决亮「请求…」词形；连接器写工具在目标
       // 还在干活时亮「正在…」词形；终态/读类维持原词形。
       const activityStatus = plainNode
@@ -188,8 +263,19 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       const currentAction = plainNode
         ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus)
         : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus);
+    // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
+    const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
+      key: `step-${index}`,
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, 'completed', undefined, step.notRun ? { skipped: true } : undefined),
+    }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
-    const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
+    // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
+    const taskResultMarkdown = plainTask?.metadata?.resultMarkdown;
+    const nodeOutput = plainNode && (plainNode.status === 'failed' || plainNode.status === 'cancelled')
+      ? agentOutputAfterFailure(plainNode, t, tracedMember?.agent?.finalOutput) : plainNode?.progress;
+    const finalOutput = nodeOutput
+      ?? (typeof taskResultMarkdown === 'string' && taskResultMarkdown ? taskResultMarkdown : plainTask?.summary)
+      ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
     // 终态工具失败出路（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：只在任务收尾后亮，运行中不亮
     const toolFailure = isLastToolFailureVisible(plainTask?.status)
@@ -198,12 +284,12 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     const tokens = plainNode?.budgetSummary.tokensUsed;
     const toolCalls = plainNode?.budgetSummary.toolCalls;
     const cost = plainNode?.budgetSummary.costUsd;
-    const elapsed = plainTask?.durationMs
-      ?? (plainNode?.createdAt ? (plainNode.completedAt ?? Date.now()) - plainNode.createdAt : null);
+    const elapsed = resolvePlainElapsed(plainTask, plainNode, now);
+    const durationText = formatMemberDuration(elapsed, text);
 
     const plainTarget: MemberInputTarget = plainNode
-      ? { key: plainNode.id, kind: 'agent', name, live: LIVE_NODE_STATUSES.has(plainNode.status) }
-      : { key: plainTask?.id ?? viewingMemberId ?? '', kind: 'task', name, live: LIVE_TASK_STATUSES.has(plainTask?.status ?? '') };
+      ? { key: plainNode.id, kind: 'agent', name: plainNode.role, displayName: name, live: LIVE_NODE_STATUSES.has(plainNode.status) }
+      : { key: plainTask?.id ?? viewingMemberId ?? '', kind: 'task', name: plainTask?.title ?? '', displayName: name, live: LIVE_TASK_STATUSES.has(plainTask?.status ?? '') };
 
     return (
       <div data-testid="member-conversation-view" className="flex min-h-0 flex-1 flex-col">
@@ -222,12 +308,24 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </header>
 
         <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+          <GuiTakeoverDisclosureRows disclosures={plainNode?.guiDisclosures ?? plainTask?.progress?.guiDisclosures} />
           {/* 当前动作置顶高亮（S3）；没有真实工具步时不编造活动。 */}
           {currentAction && (
             <section data-testid="member-current-action">
               <div className="rounded-lg border border-badge-accent/40 bg-violet-500/10 px-3 py-2 text-xs text-zinc-200">
                 {currentAction}
               </div>
+            </section>
+          )}
+
+          {stepRows.length > 0 && (
+            <section data-testid="member-bash-steps">
+              <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.recentActions}</h3>
+              <ol className="space-y-1">
+                {stepRows.map((row) => (
+                  <li key={row.key} data-testid="member-bash-step" className="rounded-lg bg-zinc-950/60 py-1.5 pl-3 pr-3 text-xs text-zinc-300">{row.label}</li>
+                ))}
+              </ol>
             </section>
           )}
 
@@ -250,7 +348,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <section data-testid="member-final-output">
             <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-              <pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{finalOutput || text.noOutput}</pre>
+              <MemberOutputMarkdown output={finalOutput} fallback={text.noOutput} />
               {outputRefs.length > 0 && (
                 <ul className="mt-2 space-y-0.5">
                   {outputRefs.map((ref) => (
@@ -269,7 +367,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
                 <Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(toolCalls))}
               </span>
             )}
-            <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{durationLabel(elapsed)}</span>
+            {durationText && (
+              <span data-testid="member-usage-duration" className="inline-flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" aria-hidden />{durationText}
+              </span>
+            )}
             {typeof tokens === 'number' && (
               <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5" />{tokens}</span>
             )}
@@ -283,14 +385,24 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   }
 
   const tokens = (agent.tokenUsage?.input ?? 0) + (agent.tokenUsage?.output ?? 0);
-  const elapsed = agent.startTime ? (agent.endTime ?? Date.now()) - agent.startTime : null;
+  const elapsed = agent.startTime ? (agent.endTime ?? now) - agent.startTime : null;
+  const durationText = formatMemberDuration(elapsed, text);
 
   // 专家团成员：投递要带 swarm run id（宿主 swarm:send-user-message 按 run 作用域解析）
   const memberRunId = durableDetail?.run.id ?? activeRunId;
+  const roleId = member.roleId.trim();
+  const roleLabel = agentRoleLabel(roleId, t.agentRoleLabels);
+  const displayName = member.displayName.trim() === roleId ? roleLabel : member.displayName;
+  const title = member.displayProfession || displayName;
+  const subtitle = member.profession ? displayName : roleLabel;
+  const showSubtitle = subtitle && subtitle !== title
+    && (member.profession || (subtitle !== roleId && subtitle !== t.agentRoleLabels.assistant));
   const memberTarget: MemberInputTarget = {
     key: member.key,
     kind: 'expert',
+    // Raw value sent over IPC and persisted as memberName (unchanged from main).
     name: member.profession || member.name,
+    displayName: title,
     live: member.status === 'running',
   };
 
@@ -301,15 +413,18 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <BackToMainButton label={text.backToChat} />
       </div>
       <header className="mx-auto flex max-w-3xl items-center gap-3 border-b border-zinc-800 pb-3">
-        <RoleInitialAvatar roleId={member.roleId} name={member.name} className="h-8 w-8 text-xs" />
+        <RoleInitialAvatar roleId={member.roleId} name={displayName} className="h-8 w-8 text-xs" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-zinc-100">{member.profession || member.name}</h2>
-          <p className="truncate text-xs text-zinc-400">{member.profession ? member.name : member.roleId}</p>
+          <h2 className="truncate text-sm font-semibold text-zinc-100">{title}</h2>
+          {showSubtitle && <p className="truncate text-xs text-zinc-400">{subtitle}</p>}
         </div>
         <StopMemberButton target={memberTarget} sessionId={sessionId} runId={memberRunId} />
       </header>
 
       <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+        <GuiTakeoverDisclosureRows disclosures={liveContextSnapshot?.guiDisclosures
+          ?? agent.contextSnapshot?.guiDisclosures
+          ?? snapshot?.nodes?.find((node) => node.id === viewingMemberId)?.guiDisclosures} />
         {/* 当前动作置顶高亮（S3）：最近一条动作 = 他此刻在干嘛 */}
         {recentActions.length > 0 && (
           <section data-testid="member-current-action">
@@ -384,13 +499,17 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <section data-testid="member-final-output">
           <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>
           <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-            <pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{agent.finalOutput || text.noOutput}</pre>
+            <MemberOutputMarkdown output={agent.finalOutput} fallback={text.noOutput} />
           </div>
         </section>
 
         <section data-testid="member-usage" className="flex items-center gap-3 text-[11px] text-zinc-500">
           <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(agent.toolCalls ?? 0))}</span>
-          <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{durationLabel(elapsed)}</span>
+          {durationText && (
+            <span data-testid="member-usage-duration" className="inline-flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" aria-hidden />{durationText}
+            </span>
+          )}
           <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5" />{tokens}</span>
           <span>${(agent.cost ?? 0).toFixed(4)}</span>
         </section>

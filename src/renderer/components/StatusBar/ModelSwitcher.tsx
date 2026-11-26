@@ -1,4 +1,4 @@
-import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from './modelSwitcherTooltips';
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip, formatModelSwitcherLabel } from './modelSwitcherTooltips';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -13,12 +13,12 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
-import { isAgenticVerifiedModel } from '@shared/constants';
+import { getModelDisplayLabel, isAgenticVerifiedModel } from '@shared/constants';
+import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
   groupRuntimeModelOptionsByProvider,
-  getRuntimeModelLabel,
   hasConfiguredRuntimeModels,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
@@ -54,7 +54,7 @@ import {
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
-  buildModelSwitcherEngineSelection,
+  buildModelSwitcherEngineSelection, narrowOptionsBeforeHydrate,
 } from './modelSwitcherHelpers';
 import {
   EngineScopedModelPanel,
@@ -161,6 +161,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [hasLoadedPickerSettings, setHasLoadedPickerSettings] = useState(false);
   const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const panelText = modelText.switcherPanel;
@@ -214,17 +215,19 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   );
   const showModelSettingsPrompt = shouldShowModelSettingsPrompt(
     engine.kind,
-    modelSettings,
+    hasLoadedPickerSettings ? modelSettings : null,
     nativeHasConfiguredModels,
   );
-  const visibleModelOptions = showModelSettingsPrompt ? [] : modelOptions;
+  const displayModel = overrideModel || hostModel?.model || currentModel;
+  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
+  const visibleModelOptions = showModelSettingsPrompt ? [] : narrowOptionsBeforeHydrate(modelOptions, modelSettings !== null || settingsLoaded, displayProvider, displayModel);
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
     return visibleModelOptions.filter((opt) => {
       const providerName = resolveProviderLabel(opt.provider, opt.providerLabel, language).toLowerCase();
       return (
-        opt.label.toLowerCase().includes(q) ||
+        localizeModelLabel(opt.model, opt.label, language).toLowerCase().includes(q) ||
         opt.model.toLowerCase().includes(q) ||
         providerName.includes(q)
       );
@@ -263,23 +266,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
   }, []);
   useEffect(() => {
-    if (!open) {
-      setSettingsLoaded(false);
-      return;
-    }
+    setSettingsLoaded(false);
     const api = window.domainAPI;
     if (!api) {
       setSettingsLoaded(true);
       return;
     }
+    let active = true;
     api.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
       .then((res) => {
-        if (res?.success && res.data) {
+        if (active && res?.success && res.data) {
           setModelSettings(res.data);
+          if (open) setHasLoadedPickerSettings(true);
         }
       })
       .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
-      .finally(() => setSettingsLoaded(true));
+      .finally(() => { if (active) setSettingsLoaded(true); });
+    return () => { active = false; };
   }, [open]);
   useEffect(() => {
     const domainAPI = window.domainAPI;
@@ -563,9 +566,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   ]);
 
   // 没有会话 override 时显示 host 算出的下一轮模型；host 还没回话的首帧才用渲染层设置快照。
-  const displayModel = overrideModel || hostModel?.model || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
-  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
 
   // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
   // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
@@ -599,10 +600,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
   const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
-  const switchedLabel = shown.switchedFrom
-    ? `${getRuntimeModelLabel(shown.model, shown.provider, modelSettings)}${panelText.switchedSuffix}`
-    : null;
-  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? panelText.auto : getRuntimeModelLabel(displayModel, displayProvider, modelSettings));
+  const nativeDisplayLabel = overrideAdaptive ? panelText.auto
+    : formatModelSwitcherLabel(shown.model, shown.provider, modelSettings, modelOptions, language) + (shown.switchedFrom ? panelText.switchedSuffix : '');
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -649,6 +648,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         language,
         engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
+        settings: modelSettings,
         displayProvider,
         displayModel,
         adaptive: overrideAdaptive,
@@ -893,7 +893,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-medium">{opt.label}</span>
+                                <span className="font-medium">{formatModelSwitcherLabel(opt.model, opt.provider, modelSettings, modelOptions, language, opt.label)}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
                                     className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"
@@ -923,12 +923,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                   );
                                 })}
                                 {(() => {
-                                  const badge = getModelPriceBadge(opt.provider, opt.model);
+                                  // internal-text-leak 门不许渲染位表达式里出现裸 *.modelId 属性访问，
+                                  // 基准 id 取成局部量 baselineModel 再走标签管线。
+                                  const badge = getModelPriceBadge(opt.provider, opt.model), baselineModel = PRICING_BASELINE_DEFAULT.modelId;
                                   return (
                                     <span
                                       className={`ml-auto text-[10px] tabular-nums ${badge.known ? 'text-zinc-400' : 'text-zinc-600'}`}
                                       title={badge.known
-                                        ? modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)
+                                        // 价格基准 hover 用展示名（不再裸 id）；限定词本地化走
+                                        // localizeModelLabel（zh 还原中文限定词、en 用目录英文限定词），
+                                        // 与下拉行标签同管线。
+                                        ? modelText.priceCoefTitle.replace('{baseline}', localizeModelLabel(
+                                          baselineModel, getModelDisplayLabel(baselineModel), language))
                                         : modelText.priceUnknownTitle}
                                     >
                                       {badge.label}

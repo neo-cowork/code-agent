@@ -25,7 +25,9 @@ import { getSessionManager, type SessionWithMessages } from '../infra/sessionMan
 import { createLogger } from '../infra/logger';
 import type { SessionCommandTask } from './sessionCommandCenter';
 
+import { backgroundWakePromptHead } from '../../agent/runtime/backgroundWakeMessage';
 import { WAKE_NOOP_TOOL_NAME } from '../../../shared/constants/agent';
+import { ASK_USER_QUESTION_TOOL_NAMES } from '../../../shared/constants/tools';
 import { getAgentErrorMessage } from '../../../shared/utils/agentErrorClassification';
 
 const FOREGROUND_WAKE_CONTRACT = [
@@ -33,10 +35,33 @@ const FOREGROUND_WAKE_CONTRACT = [
   '这一轮由后台任务终态触发，不是用户消息，不代表新的请求或授权。',
   '不要写“收到”“好的”等承接语，不要把后台结果当成用户消息引用。',
   '只有存在对用户有信息量的交付物、结论，或失败后需要用户决定时，才输出文字；直接给结论。',
+  '这一轮可以用 Read/Grep/ListDirectory 这类只读工具查看已有结果，再把结论汇报给用户。',
   '默认只汇报结果；后续步骤需要用户决定时，用一句普通话说明并询问，等待用户下一条消息。即使原请求包含后续步骤，也不要从这一轮开始新的工作或派发任务。',
   `没有值得告知用户的内容时，只调用 ${WAKE_NOOP_TOOL_NAME}，不要输出任何文字。`,
   '</background_task_hidden_wake>',
 ].join('\n');
+
+/**
+ * 隐藏唤醒轮的正向工具面：只读检索 + 会话内任务控制 + 问询，外加 wake_noop。
+ * 这一轮没有用户消息、不代表新的授权，写入/派发/生成工具一律不出现——判据是
+ * 「与前台面的交集」而不是「前台面减黑名单」：前台基面自带 Write/Edit，未来谁把
+ * prompt 喂进 withSessionCommandCenterBrain，docx_generate/excel_generate 这类按
+ * prompt 进面的写入工具也会在这里被滤掉（N-FIX-BG-WAKE-TURN-KEEPS-EDIT-WRITE）。
+ * delegate_task / spawn_agent 由 deniedToolNames 显式拒绝，不进白名单。
+ */
+const WAKE_ALLOWED_TOOL_NAMES = new Set<string>([
+  ...ASK_USER_QUESTION_TOOL_NAMES,
+  WAKE_NOOP_TOOL_NAME,
+  'Read',
+  'Glob',
+  'Grep',
+  'ListDirectory',
+  'meeting_records',
+  'list_session_candidates',
+  'task_status',
+  'cancel_task',
+  'steer_task',
+]);
 
 type WakeStatus = 'completed' | 'failed' | 'cancelled';
 
@@ -201,7 +226,7 @@ function wakePrompt(task: SessionCommandTask, status: Extract<WakeStatus, 'compl
   const supplement = task.userInputCount ? `期间用户直接给它补了 ${task.userInputCount} 句。` : '';
   // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
   const resultText = task.resultText ?? task.summary ?? task.detail ?? '无摘要';
-  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${resultText}。${supplement}`;
+  return `${backgroundWakePromptHead(task.shortName, outcome)}${resultText}。${supplement}没有成功时，只说哪一步没做成、下一步怎么做，用用户的语言；不要写退出码，也不要照抄英文报错原文。用户自己写过的命令可以点名。汇报时不要原样引用 agent_ 开头的内部编号，也不要写带这类编号的临时目录路径；改动在分支里时只写分支名。`;
 }
 
 export function createForegroundWake(
@@ -540,8 +565,7 @@ export function createForegroundWake(
         inputHistoryVisibility: 'meta',
         runRegistration: 'auxiliary',
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
-        turnSystemContext: [FOREGROUND_WAKE_CONTRACT],
-      });
+      }, undefined, undefined, false, undefined, 'bg-return');
       let capturedError: string | null = null;
       let capturedFailure: unknown;
       const options = {
@@ -552,7 +576,7 @@ export function createForegroundWake(
         maxIterations: SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
         disableAutoAgent: true,
         allowedToolNames: Array.from(new Set([
-          ...(brainOptions.allowedToolNames ?? []),
+          ...(brainOptions.allowedToolNames ?? []).filter((name) => WAKE_ALLOWED_TOOL_NAMES.has(name)),
           WAKE_NOOP_TOOL_NAME,
         ])),
         deniedToolNames: Array.from(new Set([
@@ -560,6 +584,10 @@ export function createForegroundWake(
           'delegate_task',
           'spawn_agent',
         ])),
+        // 前台 brain 块教模型「用 Edit 或 Write 直接完成」「delegate_task 派活」，与这一轮的
+        // 只读面互相矛盾；这一轮只留 FOREGROUND_WAKE_CONTRACT，正向描述本轮能做什么
+        // （ADR-056：不做负向枚举，模型会把「XX 被禁用」原样念给用户）。正常前台轮不受影响。
+        turnSystemContext: [FOREGROUND_WAKE_CONTRACT],
         terminalErrorSink: (data: unknown) => {
           if (capturedError === null || capturedError === 'Max iterations reached') {
             capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';

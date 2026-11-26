@@ -2,6 +2,7 @@
 // RoleDetailPage - 角色详情（设置页与专家面板共用）
 // ============================================================================
 
+import { stripKeywordsTail } from './memoryDescriptionDisplay';
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
@@ -13,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { IPC_DOMAINS } from "@shared/ipc";
+import { ROLE_PROACTIVITY } from "@shared/constants";
 import { sanitizeTopicList } from "@shared/roleTopicList";
 import type {
   RolePanelDetail,
@@ -30,7 +32,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
-import { translateCatalogText } from '../../../utils/catalogText';
+import { useLocalizeRole } from "../../../hooks/useLocalizeRole";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
@@ -396,10 +398,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             ) : null}
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {memory.description}
-          </div>
-          <div className="mt-0.5 text-[10px] text-zinc-600">
-            {memory.filename}
+            {stripKeywordsTail(memory.description)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -492,6 +491,13 @@ const PROACTIVITY_LEVELS: RoleProactivityLevel[] = [
   "realtime",
 ];
 
+/** 每日简报 cadence（秒 分 时 * * *）里的钟点；解析不了就落回默认每日简报的钟点。 */
+function dailyBriefClock(cadence: string | undefined): string {
+  const parse = (cron: string | undefined) => /^0 (\d{1,2}) (\d{1,2}) \* \* \*$/.exec(cron ?? "");
+  const match = parse(cadence) ?? parse(ROLE_PROACTIVITY.DAILY_BRIEF_CRON);
+  return match ? `${match[2].padStart(2, "0")}:${match[1].padStart(2, "0")}` : "";
+}
+
 const ProactivitySelector: React.FC<{
   roleId: string;
   current: RoleProactivityConfig;
@@ -547,7 +553,9 @@ const ProactivitySelector: React.FC<{
               >
                 {option.label}
               </div>
-              <div className="mt-0.5 text-xs text-zinc-500">{option.hint}</div>
+              <div className="mt-0.5 text-xs text-zinc-500">
+                {option.hint.replace("{time}", dailyBriefClock(current.cadence))}
+              </div>
             </div>
           </button>
         );
@@ -835,7 +843,8 @@ function initialRoleDetailTab(): RoleDetailTab {
 }
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const roleText = t.settings.roles;
   const expertText = t.expert;
   const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
@@ -871,14 +880,15 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   }, [loadDetail]);
   // 头像资产按 roleId 查表，命中就替掉页头的 lucide 图标（未命中的自建角色仍走图标）
   const detailAvatar = getRoleAvatarAsset(roleId);
+  const shownRole = localizeRole(roleId, { name: detail?.visual.displayName ?? '', profession: detail?.visual.profession });
   return (
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
         icon={detailAvatar
-          ? <img src={detailAvatar} alt={translateCatalogText(detail?.visual.displayName, language) || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          ? <img src={detailAvatar} alt={shownRole.name || roleId} className="h-7 w-7 rounded-lg object-cover" />
           : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
-        title={translateCatalogText(detail?.visual.displayName, language) || roleId}
-        description={translateCatalogText(detail?.visual.profession, language) || roleText.detail.subtitle}
+        title={shownRole.name || roleId}
+        description={shownRole.profession || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.capabilityHub.title}
         actions={<div className="flex items-center gap-2">

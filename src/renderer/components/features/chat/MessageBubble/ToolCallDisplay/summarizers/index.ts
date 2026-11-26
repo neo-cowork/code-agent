@@ -2,8 +2,9 @@
 // Tool Summarizers - Smart result summaries for different tool types
 // ============================================================================
 
+import { localizeToolUserMessage } from '../../../../../../utils/toolExecutionPresentation';
 import type { ToolCall } from '@shared/contract';
-import type { Translations } from '../../../../../../i18n';
+import type { Language, Translations } from '../../../../../../i18n';
 import { summarizeBash } from './bashSummarizer';
 import { summarizeGrep } from './grepSummarizer';
 import { summarizeGlob } from './globSummarizer';
@@ -17,7 +18,7 @@ import { summarizeBrowserComputerActionResult } from '../../../../../../utils/br
  * Generate a smart summary for a tool call result
  * Returns null if no summary is available
  */
-export function summarizeTool(toolCall: ToolCall, t: Translations): string | null {
+export function summarizeTool(toolCall: ToolCall, t: Translations, locale?: Language): string | null {
   if (!toolCall.result) return null;
 
   const { name, result } = toolCall;
@@ -25,9 +26,7 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
     const sessionTaskOutput = formatSessionTaskOutput(result.metadata, result.output, t);
     if (sessionTaskOutput !== result.output) return sessionTaskOutput;
   }
-  const browserComputerSummary = name === 'browser_action' || name === 'computer_use'
-    ? summarizeBrowserComputerActionResult(toolCall)
-    : null;
+  const browserComputerSummary = summarizeBrowserComputerActionResult(toolCall, locale);
 
   if (browserComputerSummary) {
     return browserComputerSummary;
@@ -36,8 +35,9 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
   // Error case: show first line of error message.
   // 校验类错误以模型面向的 <tool-args-validation-error> 标签行开头（toolArgsValidator
   // 的重试协议），裸标签不能怼给用户——取第一行真正的人话（2026-07-27 dogfood）。
-  if (!result.success && result.error) {
-    const firstLine = result.error
+  const displayError = result.userMessage === undefined ? result.error : localizeToolUserMessage(result.userMessage, t);
+  if (!result.success && (result.userMessage !== undefined || displayError)) {
+    const firstLine = (displayError ?? '')
       .split('\n')
       .find((line) => line.trim() && !/^<\/?[a-z][a-z-]*>$/i.test(line.trim())) ?? '';
     return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
@@ -65,6 +65,7 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
       return summarizeWrite(toolCall, t);
 
     case 'list_directory':
+    case 'ListDirectory':
       return summarizeListDirectory(toolCall);
 
     case 'task':
@@ -111,7 +112,13 @@ function summarizeListDirectory(toolCall: ToolCall): string | null {
     return `${output.length} items`;
   }
 
-  const lines = String(output).trim().split('\n').filter(Boolean);
+  const entryCount = toolCall.result?.metadata?.entryCount;
+  if (typeof entryCount === 'number') return `${entryCount} items`;
+
+  const lines = String(output)
+    .trim()
+    .split('\n')
+    .filter((line) => line && !/^nextOffset:/.test(line) && !/^\(empty\b/.test(line));
   return `${lines.length} items`;
 }
 

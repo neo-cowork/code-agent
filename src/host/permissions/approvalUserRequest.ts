@@ -4,6 +4,7 @@ import {
   APPROVAL_USER_REQUEST_LOOKBACK_MESSAGES,
   APPROVAL_USER_REQUEST_MAX_CHARS,
 } from '../../shared/constants';
+import { stripAppshotBlocks } from '../../shared/contract/appshot';
 import { isTelemetryRecoveredMessage } from '../../shared/telemetryRecovery';
 import { stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { getDatabase } from '../services/core/databaseService';
@@ -31,7 +32,7 @@ function scheduledTaskName(origin: { id?: string; name?: string }): string | und
 
 /**
  * Host-owned quote of what the user actually typed. Any incoming
- * `userRequest` / `startedByAutomation` (model or renderer supplied) is discarded first.
+ * quote or origin fields (model or renderer supplied) are discarded first.
  * Scheduled/background sessions have no human typing, so they get a flag instead of a quote.
  */
 export function withUserRequestQuote(
@@ -41,6 +42,7 @@ export function withUserRequestQuote(
   const details = { ...incoming };
   delete details.userRequest;
   delete details.startedByAutomation;
+  delete details.startedByFirstWake;
   delete details.scheduledTaskName;
   if (!sessionId) return details;
   try {
@@ -48,6 +50,10 @@ export function withUserRequestQuote(
     // Only non-human origins skip the quote. manual/channel/import/retry sessions are the
     // user's own conversations (fork, IM group chat, import) and keep the quote.
     const origin = db.getSession(sessionId)?.origin;
+    if (origin?.metadata?.trigger === 'first_wake') {
+      details.startedByFirstWake = true;
+      return details;
+    }
     const originKind = origin?.kind;
     if (origin && originKind && AUTOMATION_ORIGIN_KINDS.has(originKind)) {
       details.startedByAutomation = true;
@@ -64,7 +70,10 @@ export function withUserRequestQuote(
       // isMeta user rows are host/model-injected (e.g. a delegated-task brief the model wrote), not the human's words.
       if (message.role !== 'user' || message.isMeta || isTelemetryRecoveredMessage(message)) continue;
       if (typeof message.content !== 'string') continue;
-      const text = stripInlineAttachmentBlocks(message.content).replace(/\s+/g, ' ').trim();
+      const visible = stripInlineAttachmentBlocks(message.content);
+      const text = stripAppshotBlocks(visible).replace(/\s+/g, ' ').trim();
+      // 最新一条只有截图块、没有用户文字：不引用更早的话（用户会按错的原话批准/拒绝），卡片不带引用。
+      if (!text && visible.includes('<appshot')) return details;
       if (!text) continue;
       const chars = Array.from(text);
       const truncated = chars.length > APPROVAL_USER_REQUEST_MAX_CHARS;

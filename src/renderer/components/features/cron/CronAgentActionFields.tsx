@@ -8,11 +8,13 @@ import { Textarea } from '../../primitives/Textarea';
 import { useI18n } from '../../../hooks/useI18n';
 import type { CronJobDraft } from './types';
 import { CronPersonalSkillFields } from './CronPersonalSkillFields';
+import { CronWorkingFolderRow } from './CronWorkingFolderRow';
 
 interface CronAgentActionFieldsProps {
   draft: CronJobDraft;
   setField: <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => void;
   errors: Partial<Record<keyof CronJobDraft, string>>;
+  isEditing?: boolean;
 }
 
 function hasExtraParameters(value: string): boolean {
@@ -27,7 +29,7 @@ function hasExtraParameters(value: string): boolean {
   }
 }
 
-export const CronAgentActionFields: React.FC<CronAgentActionFieldsProps> = ({ draft, setField, errors }) => {
+export const CronAgentActionFields: React.FC<CronAgentActionFieldsProps> = ({ draft, setField, errors, isEditing }) => {
   const { t } = useI18n();
   const copy = t.cronCenter.manualEditor;
   const [contextExpanded, setContextExpanded] = useState(() => hasExtraParameters(draft.agentContextText));
@@ -74,6 +76,12 @@ export const CronAgentActionFields: React.FC<CronAgentActionFieldsProps> = ({ dr
         />
       </FormField>
       <CronPersonalSkillFields draft={draft} setField={setField} />
+      <CronWorkingFolderRow
+        runsOn={draft.runsOn}
+        locationLocked={isEditing}
+        metadata={draft.metadata}
+        onMetadataChange={(metadata) => setField('metadata', metadata)}
+      />
       <details
         className="group rounded-lg border border-zinc-800 bg-zinc-950/30 px-3 py-2"
         data-testid="cron-agent-context-disclosure"

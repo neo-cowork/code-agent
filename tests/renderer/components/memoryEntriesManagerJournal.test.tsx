@@ -109,6 +109,39 @@ afterEach(() => {
   cleanup();
 });
 
+it('shows the replacement hint only on a candidate row that supersedes a memory', async () => {
+  const target = entry({ title: '周会在周二' });
+  const candidate = entry({ id: 'proposal', title: '周会改到周三', status: 'candidate', supersedes: 'user.md', source: { ...target.source, filePath: 'proposal.md' } });
+  const active = entry({ id: 'active', title: '已采纳的周会安排', supersedes: 'user.md', source: { ...target.source, filePath: 'active.md' } });
+  const orphan = entry({ id: 'orphan', title: '新安排', status: 'candidate', supersedes: 'missing.md', source: { ...target.source, filePath: 'orphan.md' } });
+  mockBackend({ entries: [target, candidate, active, orphan] });
+  render(<MemoryEntriesManager />);
+
+  const rows = await screen.findAllByTestId('memory-entry-row');
+  const hint = '采纳后将替换你手写的记忆「周会在周二」。';
+  expect(screen.getAllByText(hint)).toHaveLength(1);
+  const rowFor = (item: MemoryEntry) => within(rows.find((row) => within(row).queryByText(item.title, { exact: true }))!);
+  expect(rowFor(candidate).queryByText(hint)).not.toBeNull();
+  expect(rowFor(active).queryByText(hint)).toBeNull();
+  expect(rowFor(orphan).queryByText('采纳后将替换你手写的记忆「missing.md」。')).not.toBeNull();
+});
+
+it('shows the directive one-by-one hint as a line under the title of a directive candidate only, checkbox stays disabled with the same label', async () => {
+  const directive = entry({ id: 'dir', title: '先给结论再讲原因', status: 'candidate', kind: 'directive', source: { kind: 'light_file', sourceOfTruth: 'light_file', filePath: 'dir.md' } });
+  const plain = entry({ id: 'plain', title: '周报用蓝色封面', status: 'candidate', kind: 'project', scope: 'project', source: { kind: 'light_file', sourceOfTruth: 'light_file', filePath: 'plain.md' } });
+  mockBackend({ entries: [directive, plain] });
+  render(<MemoryEntriesManager />);
+
+  const rows = await screen.findAllByTestId('memory-entry-row');
+  const rowFor = (item: MemoryEntry) => within(rows.find((row) => within(row).queryByText(item.title, { exact: true }))!);
+  const hint = '指令类条目要逐条确认，不能一起确认';
+  const directiveRow = rowFor(directive);
+  expect(directiveRow.getAllByText(hint)).toHaveLength(1);
+  const checkbox = directiveRow.getByLabelText(hint) as HTMLInputElement;
+  expect(checkbox.disabled).toBe(true);
+  expect(rowFor(plain).queryByText(hint)).toBeNull();
+});
+
 describe('MemoryEntriesManager — source session jump (②)', () => {
   it('opens the existing source session and lands on the message when a message id exists', async () => {
     mockBackend({

@@ -8,7 +8,8 @@
  * 判定一律看结构（APICallError + 状态码 + cause 类型），不匹配 SDK 的英文 message。
  */
 import { APICallError, JSONParseError } from 'ai';
-import { INCOMPLETE_RESPONSE_DIAGNOSTIC } from '../../../shared/modelErrorDiagnostics';
+import { incompleteResponseDiagnostic, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
+import { getHostUiLocale, getHostUiSurface } from '../../config/hostUiLocale';
 import { redactSecrets } from '../../security/secretRedaction';
 
 type BadSuccessBodyKind = 'truncated_json' | 'empty_body' | 'html_page' | 'other';
@@ -68,6 +69,9 @@ export function describeBadSuccessBody(err: unknown): string | null {
  */
 export function toBadSuccessBodyUserError(err: unknown): unknown {
   if (!isRetryableBadSuccessBody(err)) return err;
-  const { message, suggestion } = INCOMPLETE_RESPONSE_DIAGNOSTIC;
-  return new Error(`${message}\n建议：${suggestion}`, { cause: err });
+  const locale = getHostUiLocale();
+  const text = summarizeModelErrorForUser(
+    incompleteResponseDiagnostic(locale).message, undefined, locale, getHostUiSurface(),
+  );
+  return new Error(text, { cause: err });
 }

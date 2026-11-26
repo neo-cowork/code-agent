@@ -26,7 +26,7 @@ import { fill } from './format';
 import type { TurnSegment } from './model';
 import { TurnDevtools } from './turnDevtools';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
-import { humanizeToolError, humanizeToolFailureReason } from '../../../utils/toolExecutionPresentation';
+import { humanizeToolError, humanizeToolFailureReason, localizeToolUserMessage } from '../../../utils/toolExecutionPresentation';
 import type { Translations } from '../../../i18n';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
 import { stampSurfaceVerdict } from '@shared/contract/planning';
@@ -65,6 +65,8 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
         ? t.outcomeWords['failed-tool'].badge
         : failedCode === AgentFailureCode.BudgetExhausted
           ? t.outcomeWords['failed-budget'].badge
+          : failedCode === AgentFailureCode.StepCapReached
+            ? t.outcomeWords['failed-step-cap'].badge
           : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
             ? t.outcomeWords['failed-dependency'].badge
             : failedCode === AgentFailureCode.ModelError
@@ -239,13 +241,13 @@ function TurnActivitySummary({ segment }: { segment: TurnSegment }) {
                 <span className="shrink-0 text-[10px] text-zinc-400">{humanizeDispatchTool(row.toolName, row.toolAction, row.success, t)}</span>
                 {!row.success && (
                   <span className="shrink-0 text-badge-danger">
-                    {approvalOutcome
+                    {row.userMessage !== undefined ? localizeToolUserMessage(row.userMessage, t) : (approvalOutcome
                       ? `${approvalOutcome.label} · ${approvalOutcome.reason}`
                       : humanizeToolError(row.error ?? undefined, row.toolName, t)?.summary
                         ?? humanizeToolFailureReason({
                           name: row.toolName,
                           result: { toolCallId: `inspector-${index}`, success: false, error: row.error ?? undefined },
-                        }, t)}
+                        }, t))}
                   </span>
                 )}
                 {row.success && row.durationMs !== null && (

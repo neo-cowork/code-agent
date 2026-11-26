@@ -8,6 +8,7 @@ import type { ToolExecutionEventDeps } from '../../../src/renderer/hooks/agent/e
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { mergeSnapshotWithLiveTail } from '../../../src/renderer/stores/sessionSnapshotMerge';
 import { mergeStreamSnapshotIntoMessages } from '../../../src/renderer/utils/streamRecoveryMessage';
+import { hydrateToolCallResults } from '../../../src/renderer/utils/messageHydration';
 import { applyStreamingMessageDeltasToProjection } from '../../../src/renderer/utils/streamingProjectionOverlay';
 
 const SESSION_ID = 'session-meeting-dir';
@@ -535,6 +536,22 @@ describe('findLiveCounterpart: correlation.turnId pairing', () => {
     ]);
   });
 
+  it('a whitespace-only live draft does not replace the persisted tool reply', () => {
+    const toolReply = '工具回复 A：先调用工具。';
+    const whitespace = '\n'.repeat(40);
+    const snapshot = [user('u-whitespace'), assistant('host-tool-reply', { turnId: 'turn-whitespace', content: toolReply })];
+    const live = [user('u-whitespace'), assistant('turn-whitespace', { turnId: 'turn-whitespace', content: whitespace })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((message) => [message.id, message.content])).toEqual([
+      ['host-tool-reply', toolReply],
+      ['turn-whitespace', whitespace],
+    ]);
+  });
+
   it('cross-id keyed pair with divergent bodies is not merged (same turn can persist tool reply A then final B)', () => {
     // ai-review #1706 第三轮：同一 turn 落库工具回复 A 再落最终回复 B；刷新若只拿到 A，
     // 而 live 已是 B，合并会用 A 覆盖用户已看到的 B。分叉 = 不是同一条消息，各留各的。
@@ -554,6 +571,16 @@ describe('findLiveCounterpart: correlation.turnId pairing', () => {
   it('falls back to body similarity only when the snapshot has no correlation key', () => {
     const snapshot = [user('u-old'), assistant('host-old')];
     const live = [user('u-old'), assistant('turn-old')];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+
+    expect(merged.filter((message) => message.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('keyless fallback ignores leading whitespace when matching a stopped partial', () => {
+    const partial = '1. Pack the wicker basket and the patched blanket.\n\n[cancelled]';
+    const snapshot = [user('u-keyless-stop'), assistant('host-stop', { content: partial })];
+    const live = [user('u-keyless-stop'), assistant('turn-stop', { content: `\n\n${partial}` })];
 
     const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
 
@@ -713,5 +740,101 @@ describe('快照重灌的 recovery 标记随 live 合并撤掉（FU3-FU1-FU1）'
     expect(target?.metadata?.streamRecovery).toBeUndefined();
     expect(target?.metadata?.streamInterruptionReason).toBeUndefined();
     expect(target?.metadata?.correlation).toEqual({ turnId: LIVE_TURN_ID });
+  });
+});
+
+// 前台拒绝后同轮交给后台任务（settleForegroundToolDenial）：主机在同一轮里连发几条落库消息——
+// 带被拒工具调用的封口消息、合成的工具结果、收尾句——中间没有新的 turn_start。渲染端一张草稿
+// 接下全部提交：工具结果被当成正文写进草稿，收尾句并进去画在工具步骤上方，轮终态快照再把它写回
+// 草稿一遍；落库同步时草稿又被「空正文的工具消息」按工具调用整张认走，库里那条收尾消息落单，
+// 同一句话画两遍（2026-11-25 无文件夹会话 web 构建实测，重开会话后才剩一句）。
+describe('主机同轮收尾（前台拒绝后交给后台）：收尾句只画一遍', () => {
+  const HANDOFF = '我把这件事交给后台任务去做，完成后告诉你结果。';
+  const PREAMBLE = '按你的要求，我直接在本机用 osascript 建这条提醒。';
+  const CALL_ID = 'call-bash-handoff-1';
+  const sealedCall = {
+    id: CALL_ID,
+    name: 'Bash',
+    arguments: { command: "osascript <<'EOF'\ntell application \"Reminders\"\nend tell\nEOF" },
+  };
+  const sealedResult = {
+    toolCallId: CALL_ID,
+    success: false,
+    error: 'HANDED_OFF_TO_BACKGROUND',
+    duration: 0,
+    metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND' },
+  };
+
+  function hostEvents() {
+    return [
+      { type: 'turn_start', sessionId: SESSION_ID, data: { turnId: LIVE_TURN_ID } },
+      { type: 'message', sessionId: SESSION_ID, data: { id: 'host-sealed-call', role: 'assistant', content: PREAMBLE, timestamp: 1_700, toolCalls: [sealedCall] } },
+      { type: 'message', sessionId: SESSION_ID, data: { id: 'host-sealed-result', role: 'tool', content: JSON.stringify([sealedResult]), timestamp: 1_701, toolResults: [sealedResult] } },
+      { type: 'message', sessionId: SESSION_ID, data: { id: 'host-close', role: 'assistant', content: HANDOFF, timestamp: 1_702 } },
+      // 轮终态快照：累加器把收尾句并进了这一轮的条目，turnId 仍指草稿，messageId 是收尾消息。
+      { type: 'message_snapshot', sessionId: SESSION_ID, data: { role: 'assistant', turnId: LIVE_TURN_ID, messageId: 'host-close', content: HANDOFF, isFinal: true } },
+      { type: 'turn_end', sessionId: SESSION_ID, data: { turnId: LIVE_TURN_ID } },
+    ] as unknown as Parameters<typeof applyConversationStreamEvent>[0][];
+  }
+
+  function persisted(): Message[] {
+    return [
+      { id: USER_ID, role: 'user', content: '明天上午 9 点提醒我交报告。', timestamp: 1_000 },
+      {
+        id: 'host-sealed-call', role: 'assistant', content: PREAMBLE, timestamp: 1_700,
+        toolCalls: [sealedCall] as never, metadata: { correlation: { turnId: LIVE_TURN_ID } },
+      },
+      { id: 'host-sealed-result', role: 'tool', content: JSON.stringify([sealedResult]), timestamp: 1_701, toolResults: [sealedResult] as never },
+      { id: 'host-close', role: 'assistant', content: HANDOFF, timestamp: 1_702, metadata: { correlation: { turnId: LIVE_TURN_ID } } },
+    ];
+  }
+
+  it('直播视图与落库同步之后都是「前言 → 已交给后台的步骤 → 收尾句」，各一份', () => {
+    let messages: Message[] = [persisted()[0]];
+    const state = streamState();
+    const base = streamActions(() => messages, (next) => { messages = next; });
+    // 真实 store 的 addMessage 会把工具结果回填到工具调用上，这里同口径。
+    const actions: ConversationStreamEventActions = {
+      ...base,
+      addMessage: (message) => base.setMessages(hydrateToolCallResults([...base.getMessages(), message])),
+    };
+    for (const event of hostEvents()) applyConversationStreamEvent(event, state, actions);
+
+    expect(visibleSequence(projectTurns(messages, SESSION_ID, true).turns.at(-1)!))
+      .toEqual([PREAMBLE, 'tool:Bash', HANDOFF]);
+
+    const merged = mergeSnapshotWithLiveTail(persisted(), messages).messages;
+    expect(visibleSequence(projectTurns(merged, SESSION_ID, true).turns.at(-1)!))
+      .toEqual([PREAMBLE, 'tool:Bash', HANDOFF]);
+  });
+
+  // 累加器缺省 messageId = turnId：这不是点名另一条消息。断流续接分段后没有提交就收尾的轮次，
+  // 终态快照仍要按轮次重定向，落到续答段，而不是写回断点段。
+  it('快照的 messageId 只是轮次 id 的缺省值时仍按轮次重定向（终态快照落到续答段）', () => {
+    let messages: Message[] = [
+      { id: USER_ID, role: 'user', content: '断流续接的问题', timestamp: 1_000 },
+      { id: LIVE_TURN_ID, role: 'assistant', content: '断点前的半截', timestamp: 1_700 },
+      { id: 'segment-2', role: 'assistant', content: '', timestamp: 1_800 },
+    ];
+    const state = streamState();
+    state.currentTurnMessageId = 'segment-2';
+    state.segmentRedirectByTurn.set(LIVE_TURN_ID, { segmentId: 'segment-2', splitAtAttempt: 1 });
+    const actions = streamActions(() => messages, (next) => { messages = next; });
+
+    applyConversationStreamEvent(
+      {
+        type: 'message_snapshot',
+        sessionId: SESSION_ID,
+        data: { role: 'assistant', turnId: LIVE_TURN_ID, messageId: LIVE_TURN_ID, content: '断点前的半截接上的后半截', isFinal: true },
+      },
+      state,
+      actions,
+    );
+
+    expect(messages.map((message) => [message.id, message.content])).toEqual([
+      [USER_ID, '断流续接的问题'],
+      [LIVE_TURN_ID, '断点前的半截'],
+      ['segment-2', '断点前的半截接上的后半截'],
+    ]);
   });
 });

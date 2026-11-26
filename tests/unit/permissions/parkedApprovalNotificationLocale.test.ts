@@ -16,8 +16,15 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: state.language } }) }),
 }));
 
+const getSession = vi.hoisted(() => vi.fn((sessionId: string, options: { userId: string }) => {
+  if (sessionId !== 'parked-session' || options.userId !== 'test-user') return null;
+  return { title: state.language === 'en' ? 'Budget review' : '预算复核' };
+}));
+vi.mock('../../../src/host/services/auth/authService', () => ({
+  getAuthService: () => ({ getCurrentUser: () => ({ id: 'test-user' }) }),
+}));
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: () => ({ getSession: () => null, getRecentMessages: () => [] }),
+  getDatabase: () => ({ getSession, getRecentMessages: () => [] }),
 }));
 import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
@@ -35,9 +42,9 @@ afterEach(() => {
 
 describe('parked banner through OrchestratorPermissionIsland.requestPermission', () => {
   it.each([
-    ['en', 'Approval needed', 'Export spreadsheet'],
-    ['zh', '需要授权', '导出表格'],
-  ])('ui.language=%s names the action and localizes the paused-task instruction', async (language, title, action) => {
+    ['en', 'Approval needed: Budget review', 'Needs your approval: Export spreadsheet'],
+    ['zh', '需要授权：预算复核', '等你确认：导出表格'],
+  ])('ui.language=%s names the action and localizes the paused-task instruction', async (language, title, body) => {
     state.language = language;
     const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
     const repo = { insert: vi.fn(), resolve: vi.fn(() => 1) };
@@ -58,7 +65,7 @@ describe('parked banner through OrchestratorPermissionIsland.requestPermission',
       expect(repo.insert).toHaveBeenCalledOnce();
       const payload = notify.mock.calls[0][0];
       expect(payload).toMatchObject({ sessionId: 'parked-session', title, dedupeKey: expect.any(String) });
-      expect(payload.body).toContain(action);
+      expect(payload.body).toContain(body);
       expect(payload.body).not.toContain('excel_generate');
       if (language === 'en') {
         expect(payload.title + payload.body).not.toMatch(/[\u3400-\u9fff]/);
@@ -69,4 +76,31 @@ describe('parked banner through OrchestratorPermissionIsland.requestPermission',
       await pending;
     }
   });
+  it('用户自己的聊天断线停车：只写需要授权的事，不指去运行记录（11-17 mini）', async () => {
+    state.language = 'zh';
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
+    const repo = { insert: vi.fn(), resolve: vi.fn(() => 1) };
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions,
+        autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [],
+      } }),
+      isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main',
+      hasApprovalUi: () => false, onEvent: vi.fn(), isDetachedRun: () => true,
+      injectedPendingApprovalRepo: repo as unknown as PendingApprovalRepository,
+    });
+    const pending = island.requestPermission({
+      type: 'file_write', tool: 'excel_generate', details: {}, sessionId: 'own-chat',
+    });
+    try {
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledOnce());
+      expect(repo.insert).toHaveBeenCalledOnce();
+      const payload = notify.mock.calls[0][0];
+      expect(payload).toMatchObject({ sessionId: 'own-chat', title: '需要授权', body: '等你确认：导出表格' });
+      expect(payload.body).not.toContain(PARKED_APPROVAL_ENTRY_PATH);
+    } finally {
+      island.drainPendingPermissions();
+      await pending;
+    }
+  });
 });
+

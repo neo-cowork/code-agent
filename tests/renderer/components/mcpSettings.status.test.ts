@@ -42,9 +42,25 @@ const connectedGithubServer: WorkbenchMcpRegistryItem = {
   },
 };
 
+const makeConnectedServer = (
+  id: string,
+  transport: WorkbenchMcpRegistryItem['transport'] = 'stdio',
+): WorkbenchMcpRegistryItem => ({
+  ...connectedGithubServer,
+  key: `mcp:${id}`,
+  id,
+  label: id,
+  transport,
+});
+
 let mcpServers: WorkbenchMcpRegistryItem[] = [
   connectedGithubServer,
 ];
+let mcpStatus: { connectedServers: string[]; toolCount: number; resourceCount: number } | null = {
+  connectedServers: ['github'],
+  toolCount: 12,
+  resourceCount: 3,
+};
 let authIsAdmin = true;
 
 const authErrorTavilyServer: WorkbenchMcpRegistryItem = {
@@ -190,11 +206,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 
 vi.mock('../../../src/renderer/hooks/useMcpStatus', () => ({
   useMcpStatus: () => ({
-    status: {
-      connectedServers: ['github'],
-      toolCount: 12,
-      resourceCount: 3,
-    },
+    status: mcpStatus,
     serverStates,
     isLoading: false,
     reload: vi.fn(),
@@ -345,9 +357,20 @@ import { MCPSettings, getMcpTrustSummary } from '../../../src/renderer/component
 
 describe('MCPSettings status', () => {
   const mcpText = zh.settings.mcp;
+  const getConnectedCards = () => screen.getAllByTestId(/^mcp-connector-card-/).filter((card) => (
+    within(card).queryByText(mcpText.grid.cardStatus.connected, { exact: true }) !== null
+  ));
+  const expectManagementCount = (expected: string) => {
+    const label = screen.getAllByText(mcpText.management.stats.overview.label)
+      .find((element) => element.tagName === 'DIV');
+    const cell = label?.parentElement;
+    expect(cell).not.toBeNull();
+    expect(within(cell!).getByText(expected)).toBeTruthy();
+  };
 
   beforeEach(() => {
     mcpServers = [connectedGithubServer];
+    mcpStatus = { connectedServers: ['github'], toolCount: 12, resourceCount: 3 };
     authIsAdmin = true;
     mockDomainInvoke.mockResolvedValue({ success: true, data: { success: true } });
     mockRunQuickAction.mockReset();
@@ -399,6 +422,115 @@ describe('MCPSettings status', () => {
     }
     expect(screen.getByTestId('mcp-connector-card-slack').textContent).toContain('搜索 Slack 消息和频道');
     expect(screen.getByText('已连接 1 / 共 3 个')).toBeTruthy();
+  });
+
+  it('counts connected cards instead of host connectedServers and reuses the count in management', () => {
+    mcpStatus = { connectedServers: ['deepwiki'], toolCount: 12, resourceCount: 3 };
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      makeConnectedServer('memory-kv', 'in-process'),
+      makeConnectedServer('code-index'),
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    const connectedCards = getConnectedCards();
+    expect(connectedCards).toHaveLength(3);
+    expect(screen.getByText(`已连接 ${connectedCards.length} / 共 3 个`)).toBeTruthy();
+    expectManagementCount('3/3');
+  });
+
+  it('uses card lifecycle states when host status reports more connected servers', () => {
+    const memoryKv = makeConnectedServer('memory-kv', 'in-process');
+    const codeIndex = makeConnectedServer('code-index');
+    mcpStatus = { connectedServers: ['deepwiki', 'memory-kv', 'code-index'], toolCount: 12, resourceCount: 3 };
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      {
+        ...memoryKv,
+        status: 'error',
+        lifecycle: { ...memoryKv.lifecycle, connectionState: 'error' },
+      },
+      {
+        ...codeIndex,
+        status: 'lazy',
+        lifecycle: { ...codeIndex.lifecycle, connectionState: 'lazy' },
+      },
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    expect(getConnectedCards()).toHaveLength(1);
+    expect(screen.getByText('已连接 1 / 共 3 个')).toBeTruthy();
+    expectManagementCount('1/3');
+  });
+
+  it('treats a disabled server with connected lifecycle as not connected: no count, no disconnect button, badge disabled', () => {
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      { ...makeConnectedServer('memory-kv', 'in-process'), enabled: false },
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    const disabledCard = screen.getByTestId('mcp-connector-card-memory-kv');
+    expect(within(disabledCard).getByText(mcpText.grid.cardStatus.disabled, { exact: true })).toBeTruthy();
+    expect(screen.queryByTestId('mcp-card-action-memory-kv')).toBeNull();
+    expect(screen.queryByTestId('mcp-use-in-chat-memory-kv')).toBeNull();
+    expect(screen.getByTestId('mcp-card-action-deepwiki')).toBeTruthy();
+    expect(getConnectedCards()).toHaveLength(1);
+    expect(screen.getByText('已连接 1 / 共 2 个')).toBeTruthy();
+  });
+
+  it('a card switched to installing (connecting) is neither counted nor shown connected', async () => {
+    mockDomainInvoke.mockImplementation(() => new Promise(() => {}));
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      { ...makeConnectedServer('memory-kv', 'in-process'), enabled: false },
+    ];
+
+    render(React.createElement(MCPSettings));
+    const card = screen.getByTestId('mcp-connector-card-memory-kv');
+    fireEvent.click(within(card).getByRole('switch'));
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId('mcp-connector-card-memory-kv')).getByText(mcpText.grid.cardStatus.connecting, { exact: true })).toBeTruthy();
+    });
+    expect(screen.queryByTestId('mcp-card-action-memory-kv')).toBeNull();
+    expect(getConnectedCards()).toHaveLength(1);
+    expect(screen.getByText('已连接 1 / 共 2 个')).toBeTruthy();
+  });
+
+  it('counts connected cards when host status is null', () => {
+    mcpStatus = null;
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      makeConnectedServer('memory-kv', 'in-process'),
+      makeConnectedServer('code-index'),
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    expect(getConnectedCards()).toHaveLength(3);
+    expect(screen.getByText('已连接 3 / 共 3 个')).toBeTruthy();
+    expectManagementCount('3/3');
+  });
+
+  it('uses visible cards for the grid total and all servers for management', () => {
+    mcpStatus = { connectedServers: ['deepwiki'], toolCount: 12, resourceCount: 3 };
+    mcpServers = [
+      makeConnectedServer('deepwiki', 'http-streamable'),
+      makeConnectedServer('memory-kv', 'in-process'),
+      makeConnectedServer('code-index'),
+      makeConnectedServer('lark'),
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    expect(screen.queryByTestId('mcp-connector-card-lark')).toBeNull();
+    expect(getConnectedCards()).toHaveLength(3);
+    expect(screen.getByText('已连接 3 / 共 3 个')).toBeTruthy();
+    expectManagementCount('4/4');
   });
 
   it('summarizes MCP trust boundaries without exposing token values', () => {

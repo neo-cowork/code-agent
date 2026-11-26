@@ -160,7 +160,7 @@ describe('BrowserAgentWindow 终态留影', () => {
     const addressInput = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
     expect(addressInput.value).toBe('example.com');
     const dot = screen.getByTestId('browser-agent-window-status-dot');
-    expect(dot.getAttribute('title')).toBe('未启动');
+    expect(dot.getAttribute('title')).toBe('已结束');
     expect(dot.className).toContain('bg-zinc-600');
   });
 

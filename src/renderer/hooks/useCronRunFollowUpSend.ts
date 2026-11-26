@@ -107,7 +107,8 @@ export function useCronRunFollowUpSend(
       return false;
     }
     try {
-      const anchor = findCompletedAssistantReplyAnchor(getMessages());
+      const sourceMessages = getMessages();
+      const anchor = findCompletedAssistantReplyAnchor(sourceMessages);
       if (anchor?.id) {
         // 有结果（或中断前的最后输出）：fork 带走完整历史，用户这句话照原样发出。
         const result = await forkCronRunRecord(sessionId, anchor.id);
@@ -117,17 +118,25 @@ export function useCronRunFollowUpSend(
       }
       // 中断得太早、没有任何助手输出：没有锚点 fork 不了，开普通新会话，
       // 把任务原文随这句话一起带过去（那条记录里没有结果可带）。
+      // Read the source run before creating the new session clears its chat and status row.
       const taskText = stripCronPromptDecoration(
-        getMessages().find((message) => message.role === 'user' && message.content?.trim())?.content ?? '',
+        sourceMessages.find((message) => message.role === 'user' && message.content?.trim())?.content ?? '',
       ).trim();
+      const statusKind = resolveSessionRunStatusKind(session, sessionId);
+      const title = session?.title ?? '';
       const created = await useSessionStore.getState().createSession(
-        copy.cronFollowUpNewSessionTitle.replace('{title}', sessionStore.sessions.find((item) => item.id === sessionId)?.title ?? ''),
+        copy.cronFollowUpNewSessionTitle.replace('{title}', () => title),
+        // 继承运行会话的工作文件夹：不传的话新会话会自动建一个空的「任务_…」文件夹。
+        session?.workingDirectory ? { workingDirectory: session.workingDirectory } : undefined,
       );
       if (!created) {
         toast.error(copy.cronFollowUpCreateFailed);
         return false;
       }
-      const statusKind = resolveSessionRunStatusKind(session, sessionId);
+      if (session?.origin?.metadata?.trigger === 'first_wake') {
+        const seed = copy.firstWakeFollowUpSeed.replace('{title}', () => title);
+        return await send({ ...envelope, sessionId: created.id, content: `${seed}\n\n${envelope.content}` });
+      }
       // 仅在进程中断（interrupted，或未记录为 failed/cancelled）时称「中断了，没有留下结果」；
       // 失败或取消的运行不说「中断了，没有留下结果」。
       const isFailedOrCancelled =

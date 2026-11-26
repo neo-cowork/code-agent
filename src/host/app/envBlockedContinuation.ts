@@ -1,6 +1,7 @@
 import type { Message } from '../../shared/contract';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { NativeRecoveryHost, isNativeRecoveryDescriptor, type NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
+import { settleModelOpsForManualContinue } from '../runtime/recoveredWaitingRun';
 import { createApplicationNativeRecoveryPorts } from './nativeRecoveryHost';
 import type { TaskManager } from '../task';
 import { ToolExecutor } from '../tools/toolExecutor';
@@ -14,9 +15,29 @@ export async function continueEnvBlockedRun(input: {
   ports?: NativeRecoveryHostPorts;
 }): Promise<void> {
   const { registry, runId } = input;
-  const plan = await registry.getDurableRehydrationPlan(runId);
-  const descriptor = plan.checkpoint?.state;
-  if (!isNativeRecoveryDescriptor(descriptor)) throw new Error('Environment continuation descriptor is unavailable');
+  const parked = registry.getDurableEnvelope(runId);
+  const envBlocked = parked?.envBlocked;
+  const checkpointState = registry.getDurableCheckpointState(runId);
+  if (!parked || !envBlocked || !isNativeRecoveryDescriptor(checkpointState)) {
+    throw new Error('Environment continuation descriptor is unavailable');
+  }
+  const now = Date.now();
+  await registry.checkpointDurable(runId, {
+    now,
+    status: 'running',
+    // Recovery of the old tool keeps this descriptor. The first live model/tool
+    // checkpoint replaces it, so a later crash follows ordinary crash recovery.
+    state: { ...checkpointState, envResumePending: envBlocked },
+    engineCursor: parked.cursor.engineCursor,
+    pendingOperations: settleModelOpsForManualContinue(parked.pendingOperations ?? [], now, parked),
+    childRuns: parked.childRuns,
+    clearInterruptCause: true,
+    autoResumeCount: 0,
+    events: [{ type: 'manual_resume_requested', payload: { sessionId: parked.sessionId }, recordedAt: now }],
+  });
+  const loaded = await registry.getDurableRehydrationPlan(runId);
+  const plan = { ...loaded, envelope: { ...loaded.envelope, envBlocked } };
+  const descriptor = checkpointState;
   const ports = input.ports ?? createApplicationNativeRecoveryPorts(registry, {
     tasks: input.tasks,
     executeTool: async (tool) => {
@@ -48,14 +69,6 @@ export async function continueEnvBlockedRun(input: {
         { mode: 'normal', disableAutoAgent: true }, source.metadata, source.id);
     },
   };
-  if (plan.pendingOperations.every((operation) => ['succeeded', 'failed', 'abandoned'].includes(operation.status))) {
-    const operation = plan.pendingOperations.find((candidate) => candidate.operationId === descriptor.operationId);
-    if (!operation) throw new Error('Environment continuation operation is unavailable');
-    const continueLoop = recoveryPorts.continueLoop;
-    if (!continueLoop) throw new Error('Environment continuation loop is unavailable');
-    await continueLoop({ plan, descriptor, operation });
-    return;
-  }
   const result = await new NativeRecoveryHost(registry, recoveryPorts).createHandler().recover(plan, Date.now());
   if (result.status !== 'recovered') throw new Error(`Environment continuation stopped: ${result.reason}`);
 }

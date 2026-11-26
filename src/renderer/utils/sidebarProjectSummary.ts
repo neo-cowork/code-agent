@@ -33,11 +33,12 @@ export interface SidebarProjectArtifactMeta {
 
 export interface SidebarProjectMeta {
   name?: string;
+  primaryPath?: string;
   status?: ProjectStatus;
   description?: string;
   /** 项目升级为协作空间的时间（ADR-053 三分区判据）；null/缺省 = 独立空间。 */
   spacePromotedAt?: number | null;
-  /** 云项目映射（非空 = 已绑云身份的协同空间，侧栏云标判据）。 */
+  /** 云项目映射（非空 = 已绑云身份的协作空间，侧栏云标判据）。 */
   cloudProjectId?: string | null;
   goalCount?: number;
   activeGoalTitles?: string[];
@@ -49,6 +50,8 @@ export interface SidebarProjectMeta {
   recentArtifacts?: SidebarProjectArtifactMeta[];
   sessionCount?: number;
   updatedAt?: number;
+  /** Primary source's folder is gone. Additional sources do not set this. */
+  folderMissing?: boolean;
 }
 
 export interface SidebarProjectSummary {
@@ -64,6 +67,15 @@ export interface SidebarProjectSummary {
   goalCount?: number;
   activeGoalTitle?: string;
   latestActivityAt: number;
+  /** True when the primary project folder is gone. */
+  folderMissing?: boolean;
+}
+
+/** Only the primary source drives the sidebar "folder missing" mark. */
+export function primarySourceFolderMissing(
+  sources: readonly { role?: string; trustFailureKind?: string | null }[] | undefined,
+): boolean {
+  return sources?.some((source) => source.role === 'primary' && source.trustFailureKind === 'source_missing') === true;
 }
 
 export interface BuildSidebarProjectSummaryArgs {
@@ -141,6 +153,7 @@ export function buildSidebarProjectSummary({
     goalCount: projectMeta?.goalCount,
     activeGoalTitle: projectMeta?.activeGoalTitles?.find((title) => title.trim())?.trim(),
     latestActivityAt,
+    folderMissing: projectMeta?.folderMissing === true,
   };
 }
 

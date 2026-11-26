@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
+import { CRON_CONNECTOR_LOST } from '@shared/constants/cronErrors';
+import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { isSecondaryPageActive } from '../utils/secondaryPageActive';
@@ -17,6 +19,7 @@ import {
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
 import { postOsNotification, registerNotificationClick, reportNotificationHandled } from '../utils/osNotification';
+import { notificationToastText } from '../utils/notificationToastText';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
@@ -48,6 +51,10 @@ export function useCronOsNotification(
   useEffect(() => {
     // 原生点击读「最近一条」事件；toast 动作必须绑定自己那条，否则连续两条失败时点 A 会开 B。
     const openForEvent = (event: NotificationShowEvent | null) => {
+      if (event?.code === CRON_CONNECTOR_LOST) {
+        useAppStore.getState().openCapabilityHub('connectors');
+        return;
+      }
       // The native notification is a consent boundary only for login-wall stops;
       // other cron notifications must never grant browser pass-through.
       const siteOrigin = event && cronLoginWallSiteOriginFromNotification(event);
@@ -74,15 +81,23 @@ export function useCronOsNotification(
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
       if (needsInput && event.sessionId) {
-        // 待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
-        let parked = false;
+        // 用户发起的会话和专家首次见面的审批都可在原对话处理，点击直接回该对话。
+        const session = useSessionStore.getState().sessions?.find((s) => s.id === event.sessionId);
+        const kind = session?.origin?.kind;
+        if (session && (session.origin?.metadata?.trigger === 'first_wake' || (kind !== 'cron' && kind !== 'heartbeat'))) {
+          onOpenSessionRef.current(event.sessionId);
+          return;
+        }
+        // 定时/后台运行的待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
+        let parked: ParkedApprovalInboxItem | undefined;
         try {
           const items = await sessionAutomationClient.listParkedApprovals();
-          parked = (items ?? []).some((i) => i.sessionId === event.sessionId && i.status === 'pending');
+          parked = items?.find((i) => i.sessionId === event.sessionId && i.status === 'pending');
         } catch (err) {
           console.warn('[useCronOsNotification] listParkedApprovals failed, falling back to session', err);
         }
-        if (parked) useAppStore.getState().openCronCenterRuns();
+        // A cold notification click can arrive before the session list has loaded.
+        if (parked && !parked.startedByFirstWake) useAppStore.getState().openCronCenterRuns();
         else onOpenSessionRef.current(event.sessionId);
         return;
       }
@@ -163,7 +178,7 @@ export function useCronOsNotification(
       const notice = translateCronOsNotification(spec.latest, c, useAppStore.getState().language);
       const message = spec.count > 1
         ? c.missedAlertsMerged.replace('{count}', String(spec.count))
-        : `${notice.title}: ${notice.body}`;
+        : notificationToastText(notice.title, notice.body);
       const action = { label: c.failureToastView, onClick: () => { void routeClick(spec.latest); } };
       if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);
       else toast.warning(message, action, MISSED_ALERT_TOAST_MS);

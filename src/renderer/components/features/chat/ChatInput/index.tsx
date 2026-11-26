@@ -27,6 +27,7 @@ import { InputAddMenu } from './InputAddMenu';
 import { SuggestionBar } from './SuggestionBar';
 import { ComposerCoreActions, type ComposerCoreAction } from './ComposerCoreActions';
 import { BackgroundHandoffButton } from './BackgroundHandoffButton';
+import { DraftingStopButton } from './DraftingStopButton';
 import { useBackgroundHandoffSubmit } from './useBackgroundHandoffSubmit';
 import { DictationRecordingBar } from './DictationRecordingBar';
 import {
@@ -53,12 +54,14 @@ import {
   useAtMentionPanel,
   type AtMentionArtifactRow,
   type AtMentionFileRow,
+  type AtMentionLibraryRow,
   type AtMentionSessionRow,
 } from './useAtMentionPanel';
 import { AtMentionPopover } from './AtMentionPopover';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { isAgentEventForCurrentSession } from '../../../../hooks/agent/agentEventSession';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useSwarmStore } from '../../../../stores/swarmStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
@@ -97,7 +100,8 @@ import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
-import { useComposerDraftPersistence } from './useComposerDraftPersistence';
+import { useQuestionCardPlaceholder } from './questionCardAnswer';
+import { readComposerRoundtripText, useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraftRequest } from './useScheduleDraftRequest';
@@ -105,17 +109,20 @@ import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
 import { mergeAttachments } from './attachmentDedupe';
-import { notifyAttachmentMerge } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
+import { pdfPageSentence } from './pdfPageSentence';
 import { usePinnedLibraryItems } from './PinnedLibraryChips';
 import { buildMentionAttachment } from './mentionAttachment';
+import { getAttachmentDisplayName, getCollisionHoverTitles } from './attachmentDisplayName';
 import { AgentChip } from './AgentChip';
 import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { ComposerRejectedUploadsNotice } from './ComposerRejectedUploadsNotice';
+import { ComposerAttachmentLimitNotice } from './ComposerAttachmentLimitNotice';
 import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
@@ -320,7 +327,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   scopeProjectId = null,
 }, ref) => {
   const { t, language } = useI18n();
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(() => readComposerRoundtripText(
+    sessionless ? null : useSessionStore.getState().currentSessionId,
+    sessionless,
+    scopeProjectId,
+  ));
   const inputMemoryTainted = useRef(false);
   useEffect(() => { if (!value) inputMemoryTainted.current = false; }, [value]);
   // @ 文件附件是异步读盘构建的，chip 替换触发词时需要此刻的最新文本（闭包里的 value 可能已旧）
@@ -436,7 +447,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     stepCount: number;
     toolNames: string[];
   } | null>(null);
-  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft } = useScheduleDraft(currentSessionId);
+  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, clearRequestDraft } = useScheduleDraft(currentSessionId);
   // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
   const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
@@ -576,11 +587,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // @ 文件 → attachments（文件类型图标）。视觉顺序由编辑器 DOM 里的挂载点位置决定。
   // 本会话 pin 的资料并入文字流（产品负责人 2026-08-05：不再独立一行）
   const { pinnedItems: pinnedLibraryItems, removePin: removeLibraryPin } = usePinnedLibraryItems(currentSessionId ?? null);
-  const pinnedLibraryItemsRef = useRef(pinnedLibraryItems);
-  pinnedLibraryItemsRef.current = pinnedLibraryItems;
-  const removeLibraryPinRef = useRef(removeLibraryPin);
-  removeLibraryPinRef.current = removeLibraryPin;
+  // store→DOM 对账 epoch：框选/⌘A+粘贴等原生编辑把 chip 挂载点从 DOM 吞掉后推一档，
+  // 让 inlineChips 重算出新数组身份，InputArea 的 syncChipMounts 对账 effect 才会重跑
+  // （补回缺席挂载点）。引用条目不按 DOM 在场与否裁剪，见 handleInlineChipsChanged。
+  const [chipReconcileEpoch, setChipReconcileEpoch] = useState(0);
   const inlineChips = useMemo<InlineChipView[]>(() => {
+    void chipReconcileEpoch; // 只触发重算，不参与内容
     const chips: InlineChipView[] = [];
     if (pendingCommand) {
       chips.push({ key: `command:${pendingCommand.id}`, kind: 'command', id: pendingCommand.id, label: pendingCommand.name });
@@ -589,14 +601,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       const item = capabilityRegistry.items.find((entry) => entry.kind === 'skill' && entry.id === skillId);
       chips.push({ key: `skill:${skillId}`, kind: 'skill', id: skillId, label: item?.label ?? skillId });
     }
+    const hoverTitles = getCollisionHoverTitles(attachments, useAppStore.getState().workingDirectory ?? null);
     for (const attachment of attachments) {
       chips.push({
         key: `file:${attachment.id}`,
         kind: 'file',
         id: attachment.id,
-        label: attachment.name,
+        label: getAttachmentDisplayName(attachment.name),
+        title: hoverTitles.get(attachment.id),
         category: attachment.category,
         thumbnail: attachment.category === 'image' ? attachment.thumbnail : undefined,
+        description: attachment.category === 'pdf'
+          ? pdfPageSentence(t.chatInput, attachment.pageCount)
+          : undefined,
       });
     }
     for (const item of pinnedLibraryItems) {
@@ -609,7 +626,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
     }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language, t, chipReconcileEpoch]);
+  const inlineChipsRef = useRef(inlineChips);
+  inlineChipsRef.current = inlineChips;
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -651,27 +670,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== chip.id));
   }, [removeLibraryPin]);
 
-  // 浏览器侧删了 chip（框选删除 / 剪切）：DOM 现存的 chip key 回传，缺席的 store 条目同步移除。
+  // 浏览器侧删了 chip（框选删除 / 剪切 / ⌘A+粘贴）：DOM 现存 chip key 回传。
+  // 只有 command 还按 DOM 在场与否移除；skill / library / session / artifact / 附件
+  // 五类不裁剪——⌘A+粘贴/剪切会连带吞掉 chip 挂载点（attachment 前例
+  // N-FIX-COMPOSER-SELECT-ALL-PASTE-DROPS-ATTACHMENT），按 DOM 裁剪会静默丢掉用户
+  // 摆进来的引用。缺席挂载点推对账 epoch 由 syncChipMounts 补回；显式删除走
+  // handleRemoveInlineChip（chip × 按钮 / Backspace·Delete 紧贴 chip），那才是移除意图。
   const handleInlineChipsChanged = useCallback((presentKeys: string[]) => {
     const present = new Set(presentKeys);
     const store = useComposerStore.getState();
     if (store.pendingCommand && !present.has(`command:${store.pendingCommand.id}`)) {
       store.setPendingCommand(null);
     }
-    const keptSkills = store.selectedSkillIds.filter((id) => present.has(`skill:${id}`));
-    if (keptSkills.length !== store.selectedSkillIds.length) {
-      store.setTurnCapabilityScopeMode('manual');
-      store.setSelectedSkillIds(keptSkills);
+    if (inlineChipsRef.current.some((chip) => !present.has(chip.key))) {
+      setChipReconcileEpoch((epoch) => epoch + 1);
     }
-    setAttachments((prev) => {
-      const next = prev.filter((attachment) => present.has(`file:${attachment.id}`));
-      return next.length === prev.length ? prev : next;
-    });
-    for (const item of pinnedLibraryItemsRef.current) {
-      if (!present.has(`library:${item.id}`)) removeLibraryPinRef.current(item.id);
-    }
-    setSessionReferences((prev) => prev.filter((reference) => present.has(`session:${reference.id}`)));
-    setArtifactReferences((prev) => prev.filter((reference) => present.has(`artifact:${reference.id}`)));
   }, []);
 
   const buildEnvelope = useChatInputEnvelope({
@@ -702,7 +715,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       invokeNativeCommandAction('reportAppshotComposerSlot', {
           slot: { x: r.left, y: r.top, width: r.width, height: r.height },
         })
-        .catch(() => {});
+        .catch((error) => {
+          console.warn('[appshot] Failed to report composer slot to native shell', error);
+        });
     };
     const timer = window.setTimeout(report, 300);
     window.addEventListener('resize', report);
@@ -781,8 +796,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // Listen for context-aware suggestions from agent (pushed after each turn)
   useEffect(() => {
-    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
-      if (event.type === 'suggestions_update' && Array.isArray(event.data)) {
+    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown; sessionId?: string }) => {
+      // 芯片属于事件里的那个会话。agent:event 是全局广播（收线后补播、镜像轮、别的窗口的轮都
+      // 走它），停在别的会话上的输入框不能收：点了就把与当前会话无关的指令发了出去。
+      if (
+        event.type === 'suggestions_update'
+        && Array.isArray(event.data)
+        && isAgentEventForCurrentSession(event, sessionless ? null : useSessionStore.getState().currentSessionId)
+      ) {
         setSuggestions(event.data as Array<{ id: string; text: string; source: string }>);
       }
       // Combo Skill suggestion from backend
@@ -791,7 +812,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     });
     return () => { unsubscribe?.(); };
-  }, []);
+  }, [sessionless]);
+
+  // 切换会话：上一个会话的芯片不留在新会话的输入框里
+  useEffect(() => {
+    setSuggestions([]);
+  }, [currentSessionId]);
 
   // IACT protocol: listen for inline interaction events from message bubbles
   // （!run 的执行不走这里：RunCommandCard 自己就地执行 + 渲染结果。但它的「发给 Neo」
@@ -842,7 +868,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   // @ 触发面板（任务 14：资料库 pin + 工作区文件分组；任务 15：query echo + 键盘导航）
   // 文件行选中 = 触发词原位变文件 chip + 构建附件（文本类内联内容，二进制只带路径）；
-  // 目录行保留旧行为（@path 文本）；资料库行选中在 hook 内切换 pin。
+  // 目录行保留旧行为（@path 文本）；资料库行只清掉尾部 @query，chip 由 pin 对账补到末尾。
   const handleAtFileSelect = useCallback((row: AtMentionFileRow) => {
     const editor = inputAreaRef.current;
     const caret = editor?.getCaretOffset() ?? latestValueRef.current.length;
@@ -908,12 +934,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         }]);
     replaceAtTriggerWithChip({ key: `artifact:${row.id}`, kind: 'artifact', id: row.id });
   }, [replaceAtTriggerWithChip]);
+  const handleAtLibrarySelect = useCallback((row: AtMentionLibraryRow) => {
+    const editor = inputAreaRef.current;
+    if (!editor || row.kind !== 'library') return;
+    // 光标可能不在触发词末尾（← 后再 Enter）：向后吞掉词尾残字，向前找 @ 起点
+    const caret = editor.getCaretOffset();
+    const text = latestValueRef.current;
+    const tail = text.slice(caret).match(/^@?[^\s@]*/)?.[0] ?? '';
+    const end = caret + tail.length;
+    const triggerMatch = text.slice(0, end).match(/@([^\s@]*)$/);
+    if (!triggerMatch) { editor.focus(); return; }
+    editor.replaceRangeWithText(end - triggerMatch[0].length, end, '');
+    editor.focus();
+  }, []);
   const atMention = useAtMentionPanel({
     sessionId: currentSessionId ?? null,
     projectId: pinScopeProjectId,
     onFileSelect: handleAtFileSelect,
     onSessionSelect: handleAtSessionSelect,
     onArtifactSelect: handleAtArtifactSelect,
+    onLibrarySelect: handleAtLibrarySelect,
   });
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
@@ -938,13 +978,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       return;
     }
     setShowSlashPopover(false);
-    if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
+    if (isLeadingAgentMentionInput(newValue, swarmAgents, agentEntries)) {
       atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
     atMention.search(newValue, caret);
-  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents, agentEntries]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -979,8 +1019,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setValue,
     setShowSlashPopover,
     setSlashFilter,
-    setPendingAgentSelection,
-    setActiveAgentId,
+    setPendingAgentSelection, setActiveAgentId,
+    dismissAtMention: atMention.dismiss,
     onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
 
@@ -1011,18 +1051,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   // 历史命令功能
-  const {
-    addToInputHistory,
-    getPreviousInput,
-    getNextInput,
-    resetInputHistoryIndex,
-  } = useSessionUIStore();
+  const { addToInputHistory, getPreviousInput, getNextInput, resetInputHistoryIndex } = useSessionUIStore();
 
-  // 键盘导航分发：@ 面板与 agent 自动补全互斥打开，先问 @ 面板再交 agent 链路
+  // 键盘分发：agent 行（swarm/专家）已显示时先于 @ 引用搜索消费按键，否则搜索计时器/加载态吞 Enter
   const handleComposerAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => (
-    atMention.handleKeyDown(e) || handleAutocompleteKeyDown(e)
+    handleAutocompleteKeyDown(e) || atMention.handleKeyDown(e)
   ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
+  const questionCardPlaceholder = useQuestionCardPlaceholder(currentSessionId);
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
     if (cronRunFollowUpMode) {
@@ -1031,10 +1067,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         ? t.chatInput.cronFollowUpPlaceholder
         : t.chatInput.cronFollowUpPlaceholderNoResult;
     }
-    if (inputPlaceholder) return inputPlaceholder;
-    if (!isProcessing) return undefined;
-    return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, t]);
+    // 卡片打开时占位随行为改口：单问题=Enter 作答；多问题=引导回卡片（不再说「排队」）
+    if (inputPlaceholder || !isProcessing) return inputPlaceholder;
+    return questionCardPlaceholder ?? t.chatInputSubmit.runtimeInputPlaceholder;
+  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, questionCardPlaceholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
@@ -1071,14 +1107,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSessionReferences,
     setArtifactReferences,
     setScheduleComposerOpen,
-    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule },
+    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule, clearRequestDraft },
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
-  useScheduleDraftRequest(currentSessionId, creatingSchedule, runScheduleCreation);
+  useScheduleDraftRequest(currentSessionId, creatingSchedule, { pendingScheduleDraft, storePendingScheduleDraft, clearRequestDraft }, formRef);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 
@@ -1385,6 +1421,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </SlotEntry>
 
           <SlotEntry id="rejected-uploads"><ComposerRejectedUploadsNotice /></SlotEntry>
+          <SlotEntry id="attachment-limit"><ComposerAttachmentLimitNotice /></SlotEntry>
 
           {/* Combo Skill suggestion card（L4 建议层） */}
           <SlotEntry id="combo-skill" active={Boolean(comboSuggestion)}>
@@ -1625,7 +1662,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，右侧
               时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现两个发送键
               （产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）；输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 px-4 pb-2">
+          <div className="flex items-center gap-1 px-4 pb-2 max-sm:has-[.composer-drafting-stop]:flex-wrap">
             {/* pb-2(8) 不是 16 的笔误：16px 字形居中在 32px 可见盒里，44px 伪元素命中区不改布局，
                 盒底自带 8px 隐形 chrome，8+8=16 才是「图标到下边框」距离，与左轨的 16 一致。 */}
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
@@ -1675,34 +1712,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSlot currentModel={modelConfig.model} />
             </div>
 
-            {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}
-            <BackgroundHandoffButton
-              isProcessing={Boolean(isProcessing)}
-              draftText={value}
-              attachmentCount={attachments.length}
-              sessionId={currentSessionId}
-              editingQueuedInput={Boolean(editingQueuedInputId)}
-              onTrigger={() => { void submitBackgroundHandoff(); }}
-            />
-            {/* 核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项；逐项消费
-              resolveComposerCoreActions。附件 +、身份/连接器/权限/模型、审批与提示 chip 不在核心操作区。 */}
-            <ComposerCoreActions
-              actions={composerCoreActions}
-              voice={voice}
-              disabled={disabled}
-              sessionId={currentSessionId ?? null}
-              hasMessages={hasMessages}
-              configured={liveVoiceAvailability.configured}
-              isProcessing={Boolean(isProcessing)}
-              isInterrupting={isInterrupting}
-              isStopping={isStopping}
-              hasContent={hasContent}
-              hasContinuation={Boolean(hasContinuation)}
-              onStop={onStop}
-              onContinue={onContinue}
-              onAbandon={onAbandonContinuation}
-              canAbandon={canAbandonParked}
-            />
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <DraftingStopButton
+                isProcessing={isProcessing}
+                hasStoppableBackgroundWork={hasStoppableBackgroundWork}
+                hasContent={hasContent}
+                isStopping={isStopping} onStop={onStop}
+              />
+              <BackgroundHandoffButton
+                isProcessing={Boolean(isProcessing)}
+                draftText={value}
+                attachmentCount={attachments.length}
+                sessionId={currentSessionId}
+                editingQueuedInput={Boolean(editingQueuedInputId)}
+                onTrigger={() => { void submitBackgroundHandoff(); }}
+              />
+              {/* 核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项；逐项消费
+                resolveComposerCoreActions。附件 +、身份/连接器/权限/模型、审批与提示 chip 不在核心操作区。 */}
+              <ComposerCoreActions
+                actions={composerCoreActions}
+                voice={voice}
+                disabled={disabled}
+                sessionId={currentSessionId ?? null}
+                hasMessages={hasMessages}
+                configured={liveVoiceAvailability.configured}
+                isProcessing={Boolean(isProcessing)}
+                isInterrupting={isInterrupting}
+                isStopping={isStopping}
+                hasContent={hasContent}
+                hasContinuation={Boolean(hasContinuation)}
+                onStop={onStop}
+                onContinue={onContinue}
+                onAbandon={onAbandonContinuation}
+                canAbandon={canAbandonParked}
+              />
+            </div>
             </>
             )}
           </div>

@@ -17,6 +17,13 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   }),
 }));
 
+vi.mock('../../../src/host/config/backgroundTaskLocale', async (importOriginal) => {
+  const locale = await importOriginal<typeof import('../../../src/host/config/backgroundTaskLocale')>();
+  const { getConfigService } = await import('../../../src/host/services/core/configService');
+  locale.bindBackgroundTaskUiLanguage(() => getConfigService().getSettings().ui.language);
+  return locale;
+});
+
 import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
 import type { BackgroundTaskRecoveryPlan } from '../../../src/host/task/backgroundTaskRecoveryPlan';
 import { syncShellTaskSnapshotToLedger } from '../../../src/host/task/backgroundTaskSnapshotAdapters';
@@ -26,6 +33,7 @@ import type { TaskInfo } from '../../../src/host/tools/modules/shell/backgroundT
 interface ProjectedFailure {
   summary: string;
   notification: string;
+  notificationPayload: unknown;
 }
 
 function projectFailure(task: TaskInfo): ProjectedFailure {
@@ -37,7 +45,7 @@ function projectFailure(task: TaskInfo): ProjectedFailure {
     ? ledger.drainNotifications(task.sessionId)[0]
     : undefined;
   if (!plan || !notification) throw new Error('failed shell fixture was not projected');
-  return { summary: plan.summary, notification: notification.message };
+  return { summary: plan.summary, notification: notification.message, notificationPayload: notification.payload };
 }
 
 function failedFixture(overrides: Partial<TaskInfo>): TaskInfo {
@@ -114,9 +122,10 @@ describe.each([
 
     expect(result.summary.startsWith(start)).toBe(true);
     expect(result.notification).toContain(action);
+    expect(result.notificationPayload).toMatchObject({ automationPromptLikely: true });
   });
 
-  it('keeps syntax and unrelated exit-1 failures byte-identical', async () => {
+  it('keeps recovery summaries and omits exit codes from ordinary failure notification copy', async () => {
     const syntaxLog = path.join(tempDir, 'syntax-error.log');
     const unrelatedLog = path.join(tempDir, 'unrelated-error.log');
     await writeFile(syntaxLog, 'execution error: Expected expression. (-2741)\n', 'utf8');
@@ -147,11 +156,15 @@ describe.each([
     expect(unrelated.summary).toBe(originalLogSummary);
     expect(unrelatedWithoutLog.summary).toBe(originalNoLogSummary);
     expect(syntax.notification).toBe(
-      `osascript -e 'foo' 失败，退出码 1，耗时 2 分钟`,
+      `osascript -e 'foo' 失败，耗时 2 分钟`,
     );
-    expect(unrelated.notification).toBe(
-      `npm test 失败，退出码 1，耗时 2 分钟`,
-    );
+    for (const result of [unrelated, unrelatedWithoutLog]) {
+      expect(result.notification).toBe(locale === 'zh' ? 'npm 失败，耗时 2 分钟' : 'npm test 失败，耗时 2 分钟');
+    }
+    for (const result of [syntax, unrelated, unrelatedWithoutLog]) {
+      expect(result.notificationPayload).toMatchObject({ source: 'shell', status: 'failed', exitCode: 1 });
+      expect(result.notificationPayload).not.toHaveProperty('automationPromptLikely');
+    }
   });
 });
 
@@ -194,6 +207,10 @@ describe('background shell Automation prompt hint fallbacks', () => {
     const result = projectFailure(failedFixture({ taskId: 'locale-fallback', outputFile }));
 
     expect(result.summary).toContain('这条命令在等一个没人点的 macOS「自动化」授权框');
+    expect(stderr).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to read UI language for background task naming'),
+      expect.objectContaining({ reason: 'settings unavailable' }),
+    );
     expect(stderr).toHaveBeenCalledWith(
       expect.stringContaining('Failed to read UI locale for macOS Automation failure hint'),
       expect.objectContaining({ reason: 'automation_prompt_locale_read_failed' }),

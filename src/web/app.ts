@@ -23,7 +23,7 @@ import type { BuildInfo, PermissionRequest, RendererServeDecision } from '../sha
 import type { ConversationEnvelope } from '../shared/contract/conversationEnvelope';
 
 import { formatError } from './helpers/utils';
-import { handleTempUpload, handleTempBatchUpload, handleScreenshot } from './helpers/upload';
+import { handleTempUpload, handleTempBatchUpload, handleDiscardUpload, handleScreenshot } from './helpers/upload';
 import { dbAvailable, getPersistenceHealth } from './helpers/sessionCache';
 import { broadcastSSE } from './helpers/sse';
 
@@ -280,6 +280,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getSnapshot: readQuitGuardSnapshot,
     getLanguage: readQuitGuardLanguage,
   }));
+
+  app.post('/api/upload/discard', (req, res) => handleDiscardUpload(req, res, getDatabase().getDb()));
 
   // ── File upload ─────────────────────────────────────────────────────
   app.post('/api/upload/temp', async (req: Request, res: Response) => {

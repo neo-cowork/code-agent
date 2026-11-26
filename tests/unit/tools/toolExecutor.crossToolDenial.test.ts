@@ -175,16 +175,18 @@ describe('cross-tool / analysis-failed goal denial at the ToolExecutor ask bound
     expect(getHumanPrompts()).toBe(2);
   });
 
-  it('analysis-failed command after a denial is refused before any card, with a distinct reason', async () => {
-    const { tool, getHumanPrompts } = executor();
+  it.each([true, false])('analysis-failed command after a denial is refused before any card, with a distinct reason (unattended=%s)', async (unattended) => {
+    const { tool, requestPermission, getHumanPrompts } = executor('user', undefined, false, { unattended });
     await tool.execute('Bash', { command: 'rm -rf old-installers' }, options);
     const pending = db.prepare('SELECT * FROM pending_approvals').all();
     const retry = await tool.execute('Bash', { command: 'echo "PWD=$(pwd)"; ls -d ~/Downloads' }, options);
     expect(retry.success).toBe(false);
     expect(getHumanPrompts()).toBe(1);
     expect(db.prepare('SELECT * FROM pending_approvals').all()).toEqual(pending);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
     expect(stickyLogs()[0]?.[1]).toMatchObject({ reason: 'analysis-failed' });
-    expect(rows().at(-1)?.reason).toContain('goal-sticky-host');
+    expect(rows().at(-1)).toMatchObject({ reason: 'command_analysis_failed/goal-sticky-host', wait_ms: null });
+    expect(retry.error).toContain('Wait for a new user message');
   });
 
   it('analysis-failed command after a Write denial is refused too (effect class, not tool name)', async () => {
@@ -196,15 +198,35 @@ describe('cross-tool / analysis-failed goal denial at the ToolExecutor ask bound
     expect(stickyLogs()[0]?.[1]).toMatchObject({ reason: 'analysis-failed' });
   });
 
-  it('analysis-failed command without a prior denial still shows its card and is never recorded as a user denial', async () => {
-    const { tool, getHumanPrompts } = executor();
+  it('analysis-failed command without a prior denial is fail-closed without a card and never recorded as a user denial', async () => {
+    const { tool, requestPermission, getHumanPrompts } = executor();
     const first = await tool.execute('Bash', { command: 'echo "PWD=$(pwd)"; ls -d ~/Downloads' }, options);
     expect(first.success).toBe(false);
-    expect(getHumanPrompts()).toBe(1);
+    expect(getHumanPrompts()).toBe(0);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(0);
+    expect(rows().at(-1)).toMatchObject({ reason: 'command_analysis_failed/fail-closed', wait_ms: null });
+    expect(first.error).toContain('rewrite it as plain simple commands');
     expect(stickyLogs()).toHaveLength(0);
     await tool.execute('Bash', { command: 'mkdir -p sorted' }, options);
-    expect(getHumanPrompts()).toBe(2);
+    expect(getHumanPrompts()).toBe(1);
     expect(stickyLogs()).toHaveLength(0);
+  });
+
+  it('analysis-failed goal denial uses run scope and does not leak into another run', async () => {
+    const { tool, requestPermission } = executor();
+    const scope = { sessionId: 'goal-session', runId: 'nightly-1' };
+    await tool.execute('Write', { file_path: join(outside, 'plan.md'), content: 'plan' }, scope);
+    const retry = await tool.execute('Bash', { command: 'echo "$(pwd)"' }, scope);
+    expect(retry.success).toBe(false);
+    expect(stickyLogs()[0]?.[1]).toMatchObject({ reason: 'analysis-failed', scope: 'run:nightly-1' });
+    expect(rows().at(-1)?.reason).toBe('command_analysis_failed/goal-sticky-host');
+    const nextRun = await tool.execute('Bash', { command: 'echo "$(date)"' }, { ...scope, runId: 'nightly-2' });
+    expect(nextRun.success).toBe(false);
+    expect(nextRun.error).toContain('rewrite it as plain simple commands');
+    expect(rows().at(-1)?.reason).toBe('command_analysis_failed/fail-closed');
+    expect(stickyLogs()).toHaveLength(1);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
   });
 
   it('parked/background path (OrchestratorPermissionIsland) refuses cross-tool without parking', async () => {

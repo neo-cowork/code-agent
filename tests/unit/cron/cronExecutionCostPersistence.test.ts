@@ -94,7 +94,8 @@ describe('cron execution cost persistence (N-CRON-RUN-LEDGER-VISIBLE)', () => {
         exit_code INTEGER,
         trigger_json TEXT,
         cost_usd REAL,
-        push_note TEXT
+        push_note TEXT,
+        flat_fee INTEGER
       );
     `);
     databaseState.db = db;
@@ -138,6 +139,18 @@ describe('cron execution cost persistence (N-CRON-RUN-LEDGER-VISIBLE)', () => {
     expect(loaded).toHaveLength(1);
     expect(loaded[0].cost).toBeCloseTo(0.02);
     expect(loaded[0].status).toBe('failed');
+  });
+
+  it('flat_fee 往返：打标行读回 flatFee=true 且无 cost；未打标的旧行无 flatFee', async () => {
+    await saveCronJob(localJob());
+    await saveCronExecution(baseExecution({ id: 'exec-ff-1', result: { sessionId: 's1' }, flatFee: true }));
+    await saveCronExecution(baseExecution({ id: 'exec-ff-2', result: { sessionId: 's2' } }));
+    const rows = loadCronExecutionsByJob('job-cost-1', 10);
+    const marked = rows.find((row) => row.id === 'exec-ff-1');
+    const legacy = rows.find((row) => row.id === 'exec-ff-2');
+    expect(marked?.flatFee).toBe(true);
+    expect(marked?.cost).toBeUndefined();
+    expect(legacy?.flatFee).toBeUndefined();
   });
 
   it('push_note 往返：落库后读回同一个码，坏值按 undefined（N-FIX-CRON-RESULT-PUSH-SILENT-SKIP）', async () => {

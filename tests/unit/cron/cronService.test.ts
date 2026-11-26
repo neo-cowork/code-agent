@@ -105,6 +105,7 @@ const agentRunState = vi.hoisted(() => ({
 
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: () => undefined,
       sendMessage: agentRunState.sendMessage,
@@ -393,6 +394,8 @@ describe('CronService execution location invariants', () => {
       localJob.action,
       undefined,
       expect.any(String),
+      undefined,
+      // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：schedule 触发不带事件 trigger。
       undefined,
     );
   });

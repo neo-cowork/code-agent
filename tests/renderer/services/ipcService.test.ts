@@ -268,6 +268,52 @@ describe('ipcService.on', () => {
     expect(callback).toHaveBeenCalledWith(expect.objectContaining({ type: 'stream_end' }));
   });
 
+  describe('task_start without epoch/seq', () => {
+    function subscribe() {
+      const listeners = new Map<string, (...args: any[]) => void>();
+      mockOn.mockImplementation((channel: string, callback: (...args: any[]) => void) => {
+        listeners.set(channel, callback);
+        return () => {};
+      });
+      const callback = vi.fn();
+      const snapshotRequired = vi.fn();
+      ipcService.on(IPC_CHANNELS.AGENT_STREAM_SNAPSHOT_REQUIRED, snapshotRequired);
+      ipcService.on(IPC_CHANNELS.AGENT_EVENT, callback);
+      return { fire: listeners.get(IPC_CHANNELS.AGENT_EVENT)!, callback, snapshotRequired };
+    }
+
+    it('delivers task_start that carries clientMessageId even without epoch/seq', () => {
+      const { fire, callback } = subscribe();
+      const event = { type: 'task_start', sessionId: 'session-ts-1', data: { sessionId: 'session-ts-1', clientMessageId: 'cm-1' } };
+      fire(event);
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith(event);
+    });
+
+    it('drops task_start without clientMessageId and without epoch/seq', () => {
+      const { fire, callback } = subscribe();
+      fire({ type: 'task_start', sessionId: 'session-ts-2', data: { sessionId: 'session-ts-2' } });
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('still drops other event types without epoch/seq', () => {
+      const { fire, callback } = subscribe();
+      fire({ type: 'turn_start', sessionId: 'session-ts-3', data: { sessionId: 'session-ts-3', clientMessageId: 'cm-3' } });
+      fire({ type: 'message_delta', sessionId: 'session-ts-3', data: { text: 'x', clientMessageId: 'cm-3' } });
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('leaves the sequence ledger untouched: seq=1 afterwards is delivered without snapshot-required', () => {
+      const { fire, callback, snapshotRequired } = subscribe();
+      fire({ type: 'task_start', sessionId: 'session-ts-4', data: { sessionId: 'session-ts-4', clientMessageId: 'cm-4' } });
+      const first = { type: 'turn_start', streamEpoch: 'http:epoch-ts', sessionId: 'session-ts-4', seq: 1, data: { turnId: 't1' } };
+      fire(first);
+      expect(callback).toHaveBeenCalledTimes(2);
+      expect(callback).toHaveBeenLastCalledWith(first);
+      expect(snapshotRequired).not.toHaveBeenCalled();
+    });
+  });
+
   it('should return unsubscribe function', () => {
     const unsubscribe = vi.fn();
     mockOn.mockReturnValue(unsubscribe);

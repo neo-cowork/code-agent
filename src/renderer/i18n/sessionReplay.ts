@@ -1,10 +1,13 @@
 // ============================================================================
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { backgroundPanelEn, backgroundPanelZh } from './backgroundPanel';
 // Session Replay 弹层词典（zh/en）— 从 zh.ts/en.ts 分域抽出，过 god-file 债务门
 // ============================================================================
 
 export const sessionReplayZh = {
+  shellCommandFailed: backgroundPanelZh.backgroundPanel.shellCommandFailed,
+  shellTaskStarted: backgroundPanelZh.backgroundPanel.shellTaskStarted,
   trajectory: '轨迹',
   dataset: '数据集',
   evidenceControl: '证据控制',
@@ -57,6 +60,13 @@ export const sessionReplayZh = {
     taskPaused: '已暂停',
     taskExpired: '已过期',
     taskOrphaned: '运行进程已丢失',
+    ledgerSessionFallback: '会话 {id}',
+    ledgerQueuePosition: '队列 #{position}',
+    outputRefRunLog: '运行日志',
+    outputRefFinalOutput: '最终输出',
+    outputRefNamed: '{label}：{name}',
+    subagentWaitingTask: '等待任务',
+    subagentCurrentSelected: '当前选中',
     agentDone: '完成',
     agentQueued: '排队',
     agentSkipped: '跳过',
@@ -85,6 +95,7 @@ export const sessionReplayZh = {
     moreOutputs: '另有 {count} 个 output',
     moreTaskEvents: '另有 {count} 个 task event',
     moreWorkflowRuns: '另有 {count} 个 workflow run',
+    workflowBackgroundCounts: '{workflows} 个工作流 · {tasks} 个任务 · {evidence} 份证据',
     moreBackgroundTasks: '另有 {count} 个 background task',
     moreEvidence: '另有 {count} 个 evidence',
     moreTurnsHidden: '另有 {count} 轮未展示',
@@ -125,6 +136,8 @@ export const sessionReplayZh = {
 };
 
 export const sessionReplayEn: typeof sessionReplayZh = {
+  shellCommandFailed: backgroundPanelEn.backgroundPanel.shellCommandFailed,
+  shellTaskStarted: backgroundPanelEn.backgroundPanel.shellTaskStarted,
   trajectory: 'Trajectory',
   dataset: 'Dataset',
   evidenceControl: 'Evidence Control',
@@ -177,6 +190,13 @@ export const sessionReplayEn: typeof sessionReplayZh = {
     taskPaused: 'Paused',
     taskExpired: 'Expired',
     taskOrphaned: 'Runtime process lost',
+    ledgerSessionFallback: 'Session {id}',
+    ledgerQueuePosition: 'Queue #{position}',
+    outputRefRunLog: 'Run log',
+    outputRefFinalOutput: 'Final output',
+    outputRefNamed: '{label}: {name}',
+    subagentWaitingTask: 'Waiting for task',
+    subagentCurrentSelected: 'Selected',
     agentDone: 'Done',
     agentQueued: 'Queued',
     agentSkipped: 'Skipped',
@@ -205,6 +225,7 @@ export const sessionReplayEn: typeof sessionReplayZh = {
     moreOutputs: '{count} more outputs',
     moreTaskEvents: '{count} more task events',
     moreWorkflowRuns: '{count} more workflow runs',
+    workflowBackgroundCounts: '{workflows} workflows · {tasks} tasks · {evidence} evidence',
     moreBackgroundTasks: '{count} more background tasks',
     moreEvidence: '{count} more evidence',
     moreTurnsHidden: '{count} more turns not shown',

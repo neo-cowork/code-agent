@@ -83,8 +83,8 @@ describe('edit expert label lookup', () => {
     useAppStore.setState({ language: 'en' });
     await load();
     render(<TraceNodeRenderer node={userNode()} />);
-    expect(screen.getByText('Edit expert: 知微 (数据分析师)')).toBeTruthy();
-    console.log(`ASSERT English: ${screen.getByText('Edit expert: 知微 (数据分析师)').textContent}`);
+    expect(screen.getByText('Edit expert: Zhiwei (Data Analyst)')).toBeTruthy();
+    console.log(`ASSERT English: ${screen.getByText('Edit expert: Zhiwei (Data Analyst)').textContent}`);
   });
   it('SidebarMessageHitList subscribes to later lookup loads', async () => {
     const hit = { sessionId: 'session', role: 'user' as const, snippet: raw, timestamp: 1, matchCount: 1, relevance: 1, messagePositionLabel: '消息 1' };

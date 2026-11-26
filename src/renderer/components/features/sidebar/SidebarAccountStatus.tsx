@@ -5,9 +5,14 @@ import { useI18n } from '../../../hooks/useI18n';
 import { Button } from '../../primitives/Button';
 import { SidebarSignedOutFooter } from './SidebarSignedOutFooter';
 
+/** initial failure + 2 failed retries */
+const RESIGNIN_FAILURE_THRESHOLD = 3;
+
 export function SidebarAccountStatus() {
   const { t } = useI18n();
   const statusLoadFailed = useAuthStore((state) => state.statusLoadFailed);
+  const failureCount = useAuthStore((state) => state.statusLoadFailureCount);
+  const setShowAuthModal = useAuthStore((state) => state.setShowAuthModal);
   const setShowSettings = useAppStore((state) => state.setShowSettings);
   const [retrying, setRetrying] = useState(false);
   if (!statusLoadFailed) return <SidebarSignedOutFooter />;
@@ -21,6 +26,9 @@ export function SidebarAccountStatus() {
         }}>{t.sidebar.connectionRetry}</Button>
         <Button variant="secondary" onClick={() => setShowSettings(true)}>{t.sidebar.signedOutSettings}</Button>
       </div>
+      {failureCount >= RESIGNIN_FAILURE_THRESHOLD && (
+        <Button variant="secondary" onClick={() => setShowAuthModal(true)}>{t.sidebar.reSignIn}</Button>
+      )}
     </div>
   );
 }

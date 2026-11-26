@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
 import { CRON_TEMPLATES } from '../../../src/renderer/components/features/cron/cronTemplates';
-import { buildCronJobInput } from '../../../src/renderer/components/features/cron/types';
+import { buildCronJobInput, buildDraftFromJob } from '../../../src/renderer/components/features/cron/types';
 import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 import { cronCenterEn } from '../../../src/renderer/i18n/cronCenter';
 
@@ -57,6 +57,25 @@ describe('group-listen template', () => {
     expect(input.schedule).toEqual({
       type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu',
     });
+  });
+
+  it('maps injected prefilter / maxRunsPerHour into the event schedule; blank stays out of the payload', () => {
+    const withLimits = buildCronJobInput(groupListen!.generate({
+      task: '总结', accountId: 'account-feishu', prefilter: '只处理催款的消息', maxRunsPerHour: '10',
+    }));
+    expect(withLimits.schedule).toEqual({
+      type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu',
+      prefilter: '只处理催款的消息', maxRunsPerHour: 10,
+    });
+    // 读回：编辑器 buildDraftFromJob 看到同样两个值。
+    const readBack = buildDraftFromJob({ ...withLimits, id: 'job-1', createdAt: 1, updatedAt: 1 } as never);
+    expect(readBack.eventPrefilter).toBe('只处理催款的消息');
+    expect(readBack.eventMaxRunsPerHour).toBe('10');
+    const blank = buildCronJobInput(groupListen!.generate({
+      task: '总结', accountId: 'account-feishu', prefilter: '  ', maxRunsPerHour: '',
+    }));
+    expect(blank.schedule).not.toHaveProperty('prefilter');
+    expect(blank.schedule).not.toHaveProperty('maxRunsPerHour');
   });
 
   it('still trips the shared validator without an account (belt and braces behind the editor gate)', () => {

@@ -18,7 +18,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger } from '../infra/logger';
 import { getSessionAutomationService } from '../sessionAutomation';
-import { ROLE_ASSETS, ROLE_PROACTIVITY, WAKE_NOOP_TOOL_NAME } from '../../../shared/constants';
+import { NATIVE_CONNECTOR_IDS, ROLE_ASSETS, ROLE_PROACTIVITY, WAKE_NOOP_TOOL_NAME } from '../../../shared/constants';
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 import type {
   RoleFirstWakeSnapshot,
@@ -34,6 +34,7 @@ import { getBuiltinRoleVisual } from './builtinRoles';
 import { readRolePersonalization, toRoleBoundaryRunAllowlist } from './rolePersonalization';
 import { resolveWakeRunToolScope } from './roleProactivity';
 import { probeUncheckedNativeConnectors } from './nativeSourceProbe';
+import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('RoleFirstWake');
 
@@ -220,6 +221,10 @@ export async function getFirstWakeSnapshot(roleId: string): Promise<RoleFirstWak
   if (!state) return null;
   const intro = boundedText(state.intro, INTRO_MAX_CHARS);
   const failureReason = boundedText(state.failureReason, FAILURE_REASON_MAX_CHARS);
+  // 计时锚点只抄 enqueuedAt。缺字段、null、NaN、Infinity 都不带出。
+  const startedAt = typeof state.enqueuedAt === 'number' && Number.isFinite(state.enqueuedAt)
+    ? state.enqueuedAt
+    : undefined;
   return {
     state: state.state,
     ...(state.sessionId ? { sessionId: state.sessionId } : {}),
@@ -230,6 +235,7 @@ export async function getFirstWakeSnapshot(roleId: string): Promise<RoleFirstWak
     suggestions: Array.isArray(state.suggestions) ? state.suggestions : [],
     ...(intro ? { intro } : {}),
     ...(failureReason ? { failureReason } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
   };
 }
 
@@ -348,7 +354,7 @@ function parseFirstWakeSuggestions(
  * 两条路都再 ∩ permissionLevel=read——写/执行/网络与非只读 MCP 一律出局；
  * 空结果用拒绝全部哨兵表达，不是「不限制」。
  */
-async function resolveFirstWakeAllowedToolNames(roleId: string): Promise<string[]> {
+async function resolveFirstWakeAllowedToolNames(roleId: string): Promise<{ names: string[]; roleDeclaresTools: boolean }> {
   const { getAllToolDefinitions } = await import('../../tools/dispatch/toolDefinitions');
   const definitions = getAllToolDefinitions();
   const levelByName = new Map(definitions.map((definition) => [definition.name, definition.permissionLevel]));
@@ -357,7 +363,7 @@ async function resolveFirstWakeAllowedToolNames(roleId: string): Promise<string[
   const readOnly = candidates.filter(
     (name) => levelByName.get(name) === 'read' && name !== WAKE_NOOP_TOOL_NAME,
   );
-  return toRoleBoundaryRunAllowlist(readOnly);
+  return { names: toRoleBoundaryRunAllowlist(readOnly), roleDeclaresTools: wakeScope.allowedToolNames !== undefined };
 }
 
 // ----------------------------------------------------------------------------
@@ -381,13 +387,24 @@ function isUserConnectedSource(item: CapabilityCenterItem): boolean {
 }
 
 /** 已连接源 = 能力中心里用户自连的 connector / mcp_template（判据见 isUserConnectedSource）。首次醒来与每日醒来的外部增量巡检共用。 */
-export async function listConnectedSourceNames(): Promise<string[]> {
-  await probeUncheckedNativeConnectors();
+export async function listConnectedSourceNames(roleToolNames?: readonly string[]): Promise<string[]> {
+  // 角色声明了工具：native 连接器只在角色真有对应工具（calendar / calendar_* …）时才探测、才列名。
+  // 连接器 id 与工具名前缀 1:1（calendar/mail/reminders/photos），非 native 的源不受影响。
+  const callableNative = roleToolNames
+    ? new Set(NATIVE_CONNECTOR_IDS.filter((id) => roleToolNames.some((name) => {
+      const lower = name.toLowerCase();
+      return lower === id || lower.startsWith(`${id}_`);
+    })))
+    : undefined;
+  // Inherited tools do not authorize a readiness probe. Keep already-connected sources visible.
+  await probeUncheckedNativeConnectors(callableNative ?? new Set());
   try {
     const { getCapabilityCenterService } = await import('../capabilities/capabilityCenterService');
     const inventory = await getCapabilityCenterService().listCapabilities();
     return inventory.items
       .filter(isUserConnectedSource)
+      .filter((item) => !callableNative || item.kind !== 'connector' || !item.tags.includes('native')
+        || NATIVE_CONNECTOR_IDS.some((id) => item.tags.includes(id) && callableNative.has(id)))
       .map((item) => item.name);
   } catch (error) {
     // 能力中心不可用 → 按「无已连接源」处理（none 变体，绝不编造）
@@ -692,7 +709,7 @@ async function recordFirstWakeResult(
 ): Promise<void> {
   try {
     await getSessionAutomationService().recordEvent({
-      automationId: `role_wake:${sessionId}`,
+      automationId: roleWakeAutomationId(sessionId),
       event,
       status: event,
       recordStatus: event,
@@ -741,8 +758,8 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     const current = await readFirstWakeState(roleId);
     if (current?.state !== 'pending') return;
 
-    const allowedToolNames = await resolveFirstWakeAllowedToolNames(roleId);
-    const sourceNames = await listConnectedSourceNames();
+    const { names: allowedToolNames, roleDeclaresTools } = await resolveFirstWakeAllowedToolNames(roleId);
+    const sourceNames = await listConnectedSourceNames(roleDeclaresTools ? allowedToolNames : undefined);
     const sourcesMode = sourceNames.length > 0 ? 'connected' : 'none';
     const userExpectation = readRolePersonalization(roleId).userExpectation;
     const prompt = sourcesMode === 'connected'
@@ -803,7 +820,7 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     // 可见的自动化记录（run list 里能看到这次首次醒来）
     try {
       await getSessionAutomationService().recordCreated({
-        id: `role_wake:${session.id}`,
+        id: roleWakeAutomationId(session.id),
         sourceSessionId: null,
         type: 'role_wake',
         status: 'running',

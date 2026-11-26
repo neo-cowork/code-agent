@@ -8,6 +8,8 @@ export const roleFirstWakeZh = {
     // 无已连接源时模型不做任何探查，只写一句开场：进行中不能说「熟悉已连接的数据」
     runningNone: '正在准备开场…',
     skip: '先不用',
+    approvalAllow: '允许',
+    approvalDeny: '拒绝',
     connect: '去连接',
     connectHint: '连上数据源后我能帮你更多',
     goToThread: '进入会话',
@@ -34,6 +36,8 @@ export const roleFirstWakeEn: typeof roleFirstWakeZh = {
     running: 'Getting familiar with your connected data…',
     runningNone: 'Getting ready…',
     skip: 'Not now',
+    approvalAllow: 'Allow',
+    approvalDeny: 'Deny',
     connect: 'Connect a source',
     connectHint: 'Connect a data source and there is more I can help with.',
     goToThread: 'Open the session',

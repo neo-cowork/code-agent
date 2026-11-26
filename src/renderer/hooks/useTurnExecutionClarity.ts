@@ -1,10 +1,13 @@
 import { useMemo } from 'react';
+import { useAgentTreeSnapshot } from './useAgentTreeSnapshot';
+import { useI18n } from './useI18n';
+import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
+import { projectBackgroundReceipts } from '../utils/backgroundReceiptProjection';
 import type { TraceProjection } from '@shared/contract/trace';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useTurnExecutionStore, type HookActivityEvent, type RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import { useWorkbenchCapabilities } from './useWorkbenchCapabilities';
-import { useI18n } from './useI18n';
 import { buildTurnExecutionClarityProjection } from '../utils/turnTimelineProjection';
 
 const EMPTY_ROUTING_EVENTS: RoutingEvidenceEvent[] = [];
@@ -14,6 +17,10 @@ export function useTurnExecutionClarity(
   projection: TraceProjection,
 ): TraceProjection {
   const capabilities = useWorkbenchCapabilities();
+  const { t } = useI18n();
+  const tasks = useBackgroundTaskStore((state) => state.tasks);
+  const hasStopNote = projection.turns.some((turn) => turn.nodes.some((node) => node.metadata?.backgroundTaskStopped));
+  const { snapshot } = useAgentTreeSnapshot(projection.sessionId || null, hasStopNote);
   const launchRequests = useSwarmStore((state) => state.launchRequests);
   const swarmEvents = useSwarmStore((state) => state.eventLog);
   const routingEvents = useTurnExecutionStore((state) =>
@@ -41,7 +48,7 @@ export function useTurnExecutionClarity(
 
   return useMemo(
     () => buildTurnExecutionClarityProjection({
-      projection,
+      projection: projectBackgroundReceipts(projection, tasks, snapshot?.nodes ?? [], t),
       capabilities,
       launchRequests,
       swarmEvents,
@@ -51,6 +58,6 @@ export function useTurnExecutionClarity(
       workingDirectory,
       hookCopy,
     }),
-    [capabilities, hookCopy, hookEvents, hookRunning, launchRequests, projection, routingEvents, swarmEvents, workingDirectory],
+    [capabilities, hookCopy, hookEvents, hookRunning, launchRequests, projection, routingEvents, snapshot, swarmEvents, t, tasks, workingDirectory],
   );
 }

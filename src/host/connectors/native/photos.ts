@@ -14,7 +14,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
+import { createLogger } from '../../services/infra/logger';
+import { appleScriptFailureLogDetail } from './appleScriptFailure';
 import { escapeAppleScriptString, runAppleScript } from './osascript';
+
+const logger = createLogger('NativePhotos', { lane: 'mcp' });
 
 type NativeReadiness = 'unchecked' | 'ready' | 'failed' | 'unavailable';
 
@@ -29,20 +33,20 @@ function buildPhotosStatus(capabilities: string[]): ConnectorStatus {
     return {
       connected: false,
       readiness: 'unavailable',
-      detail: 'Photos 连接器仅支持 macOS',
+      detailCode: 'platform_unsupported',
       capabilities,
     };
   }
   return {
     connected: photosReadiness === 'ready',
     readiness: photosReadiness,
-    detail: photosReadiness === 'ready'
-      ? 'Photos.app 自动化权限已就绪'
+    detailCode: photosReadiness === 'ready'
+      ? 'ready'
       : photosReadiness === 'failed'
-      ? 'Photos.app 自动化权限被拒绝（首次访问需用户在系统偏好→隐私与安全性→自动化中授权）'
+      ? 'photos_failed'
       : photosReadiness === 'unavailable'
-      ? 'Photos.app 不可访问'
-      : '尚未检查',
+      ? 'photos_unavailable'
+      : 'unchecked',
     capabilities,
   };
 }
@@ -87,6 +91,7 @@ async function probePhotosAccess(): Promise<void> {
   } catch (err) {
     const msg = errorMessage(err);
     photosReadiness = msg.includes('not authorized') || msg.includes('-1743') ? 'failed' : 'unavailable';
+    logger.warn('Photos access probe failed', { readiness: photosReadiness, detail: appleScriptFailureLogDetail(err) });
     throw err;
   }
 }

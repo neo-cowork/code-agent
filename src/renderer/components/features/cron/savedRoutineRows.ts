@@ -8,7 +8,7 @@
 // 值取 action.notifyWhen > action.urgencyCriteria > 兜底文案。
 // ============================================================================
 
-import type { CronJobDefinition } from '@shared/contract';
+import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import type { ChannelAccount } from '@shared/contract/channel';
 import type { CronHumanLang } from '@shared/cronHumanize';
 import { buildScheduleConfirmRows } from '../chat/ChatInput/scheduleConfirm';
@@ -62,6 +62,9 @@ interface SavedRoutineRestateLabels {
   /** cronCenter 新增：停用状态行的标签与值（仅 job.enabled === false 时出第四行）。 */
   savedStatusLabel: string;
   savedStatusPaused: string;
+  /** 归档行（N-FIX-CRON-CONFIRM-CARD-OMITS-ARCHIVE-PROJECT）：标签与名称读不到时的兜底。 */
+  archiveLabel: string;
+  archiveUnknown: string;
 }
 
 export interface SavedRoutineRestateInput {
@@ -79,16 +82,23 @@ export interface SavedRoutineRestateInput {
    * 通知判据只挂在 agent 执行链上，非 agent 出行等于给一个配不了的假口子。
    */
   notifyWhenRow?: boolean;
+  estimateHistory?: readonly CronJobExecution[];
+  /**
+   * 归档项目的显示名（listProjects 解析）。仅当 agent 动作带 libraryProjectId 时出
+   * archive 行；名称读不到（加载中/已删除/global）落 labels.archiveUnknown，绝不透出 id。
+   */
+  archiveProjectName?: string;
 }
 
 export interface SavedRoutineRow {
-  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'status';
+  key: 'what' | 'when' | 'estimate' | 'notifyWhen' | 'result' | 'archive' | 'status';
   label: string;
   value: string;
+  hint?: string;
 }
 
 export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): readonly SavedRoutineRow[] {
-  const { job, roleDisplayName = '', channelLabel, labels, lang, notifyWhenRow = false } = input;
+  const { job, roleDisplayName = '', channelLabel, labels, lang, notifyWhenRow = false, archiveProjectName } = input;
   // what/when 复用聊天侧确认卡口径：保存后的定义是 create 输入的超集，结构字段一致。
   // notifyWhen 行由本函数按 notifyWhenRow 自算（聊天侧口径只认 restatement，编辑器
   // 输入没有）；result 行的值是原始 resultChannel，交给 channelLabel，不透出。
@@ -104,7 +114,10 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
       reviewInbox: labels.reviewInbox,
     },
     lang,
+    undefined,
+    input.estimateHistory,
   );
+  const estimate = confirmRows.find((row) => row.key === 'estimate');
   // what 的底文优先用保存记录里的完整目标（agent prompt）：简易创建在用户没起名时拿
   // goal 前 48 字当任务名（buildSimpleDraft 的 name 兜底），what 若跟 name 走，长目标
   // 会被截在词中间（rework r1 实录：en 目标复述止于 "turn th"）。goal 才是复述语义源；
@@ -135,11 +148,19 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
   const rows: SavedRoutineRow[] = [
     { key: 'what', label: labels.what, value: what },
     { key: 'when', label: labels.when, value: when },
+    ...(estimate ? [{ ...estimate, key: 'estimate' as const }] : []),
     ...(notifyWhen != null
       ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }]
       : []),
     { key: 'result', label: labels.result, value: result },
   ];
+  if (agentAction?.libraryProjectId?.trim()) {
+    rows.push({
+      key: 'archive',
+      label: labels.archiveLabel,
+      value: archiveProjectName?.trim() || labels.archiveUnknown,
+    });
+  }
   if (job.enabled === false) {
     rows.push({ key: 'status', label: labels.savedStatusLabel, value: labels.savedStatusPaused });
   }

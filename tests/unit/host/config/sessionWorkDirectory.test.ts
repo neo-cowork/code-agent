@@ -190,7 +190,7 @@ describe('planSessionWorkDirectory (lazy planning)', () => {
       language: 'zh',
       env,
     });
-    expect(path.basename(dir)).toBe('任务_1011_帮我整理这份超长的用户需求文档');
+    expect(path.basename(dir)).toBe('任务_1011_整理这份超长的用户需求文档');
   });
 
   it('cuts the fallback at the first of the full delimiter set (。！？.!?；;，, newline)', async () => {
@@ -208,7 +208,7 @@ describe('planSessionWorkDirectory (lazy planning)', () => {
         language: 'zh',
         env,
       });
-      expect(path.basename(dir)).toBe(`任务_1011_${expected}`);
+      expect(path.basename(dir)).toBe(`任务_1011_${expected.replace(/^帮我/, '')}`);
     }
   });
 
