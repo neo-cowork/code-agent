@@ -242,6 +242,22 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       await expectFreed(`cd "${fx}" && for p in 'b c.txt' 'a.txt' 'no-such.txt'; do if [ -e "$p" ]; then stat -f '%N | %z' "$p"; else echo "MISSING | $p"; fi; done`);
     });
 
+    it('then 分支里有 cd：条件只判一次，分支里的 cd 不会让后面的语句被跳过', async () => {
+      for (const dir of ['a', 'b']) {
+        await fs.mkdir(path.join(fx, dir));
+        await fs.writeFile(path.join(fx, dir, 'note.txt'), dir);
+      }
+      await expectFreed('for d in a b; do if [ -d "$d" ]; then cd "$d"; ls; cd ..; fi; done');
+    });
+
+    it('then 分支里的 cd 之后，下一段 if 按回到的目录判条件', async () => {
+      for (const dir of ['a', 'b']) {
+        await fs.mkdir(path.join(fx, dir));
+        await fs.writeFile(path.join(fx, dir, 'note.txt'), dir);
+      }
+      await expectFreed(`for d in a b no-such-dir; do if [ -d "$d" ]; then cd "$d"; ls; cd "${fx}"; else echo "GONE: $d"; fi; done`);
+    });
+
     it('用户点名的带空格路径（引号词表）免卡', async () => {
       const named = path.join(elsewhere, 'old report 2.docx');
       await fs.writeFile(named, 'x');
@@ -275,6 +291,9 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
     ['for 前面用 && 接了一条非 cd 的命令', () => `echo x && for p in ${a()}; do ls -l "$p"; done`],
     ['cd 之后还有一条命令再 && 接 for', () => `cd "${fx}" && echo x && for p in ${a()}; do ls -l "$p"; done`],
     ['for 前面用 || 接了一条命令', () => `echo x || for p in ${a()}; do ls -l "$p"; done`],
+    ['条件成立才做的 cd 之后接 for（条件不成立时 shell 不跑循环）', () => `[ -d "${fx}/no-such-dir" ] && cd "${fx}" && for p in a.txt; do ls -l "$p"; done`],
+    ['条件成立才做的 cd 之后接 for（条件成立也不认）', () => `[ -d "${fx}" ] && cd "${fx}" && for p in a.txt; do ls -l "$p"; done`],
+    ['fi 后面紧跟别的命令，没有分隔符', () => `for p in ${a()}; do if [ -e "$p" ]; then echo a; fi echo b; done`],
     ['for 前面是后台 &', () => `echo x & for p in ${a()}; do ls -l "$p"; done`],
     // ---- 循环体 ----
     ['then 分支里有 rm', () => `for p in ${a()}; do if [ -e "$p" ]; then rm "$p"; fi; done`],
@@ -479,6 +498,16 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       const plan = compileReadOnlyProbePlan(evidenceShape([a()]), ctx);
       expect(plan?.steps.map((step) => step.cmd.kind === 'when' ? [step.cmd.negate, step.cmd.cmd.kind] : ['unguarded', step.cmd.kind]))
         .toEqual([[false, 'echo'], [false, 'ls'], [true, 'echo']]);
+    });
+
+    it('每段 if 只在第一条分支语句上标 start（执行器在那里判一次条件）', () => {
+      const plan = compileReadOnlyProbePlan(`for p in ${a()} ${missing()}; do echo "== $p =="; if [ -e "$p" ]; then echo "STILL: $p"; ls -l "$p"; else echo "GONE: $p"; fi; done`, ctx);
+      expect(plan?.steps.map((step) => step.cmd.kind === 'when' ? step.cmd.start : 'unguarded')).toEqual(['unguarded', true, false, false, 'unguarded', true, false, false]);
+    });
+
+    it('嵌在双引号里的引用直接换成值本身，换完还是 shell 展开出的那个词', () => {
+      const plan = compileReadOnlyProbePlan(`for p in ${sq(path.join(fx, 'b c.txt'))}; do echo "== $p =="; ls -l "$p"; done`, ctx);
+      expect(plan?.steps.map((step) => step.extraSources)).toEqual([[`echo "== ${path.join(fx, 'b c.txt')} =="`], [`ls -l ${sq(path.join(fx, 'b c.txt'))}`]]);
     });
 
     it('没有 else 的 if 末尾补一条「条件不成立才执行」的空步', () => {

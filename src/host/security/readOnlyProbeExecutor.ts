@@ -290,13 +290,8 @@ class Runner {
     return 0;
   }
 
-  /** 返回该命令的退出码；when 步骤的条件不成立时什么都没执行，返回 null（不动上一条的退出码）。 */
-  async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number | null> {
+  async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
-      case 'when': {
-        const ok = (await this.run(cmd.test, redirect)) === 0;
-        return ok === cmd.negate ? null : this.run(cmd.cmd, redirect);
-      }
       case 'cd': {
         const directory = this.need(cmd.path);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
@@ -496,15 +491,21 @@ class Runner {
 export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: ProbeAuthority): Promise<ProbeRunResult | { aborted: string }> {
   const runner = new Runner({ ...auth, homeDir: auth.homeDir || os.homedir() });
   let status = 0;
+  // 当前这段 if 的条件是否成立；条件不成立的分支语句不执行，也不动退出码
+  let branch: boolean | undefined;
   try {
     for (const step of plan.steps) {
       if (step.op === '&&' && status !== 0) continue;
       if (step.op === '||' && status === 0) continue;
-      const cmd = step.cmd.kind === 'echo'
-        ? { ...step.cmd, text: step.cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) }
-        : step.cmd;
-      const next = await runner.run(cmd, step.redirect);
-      if (next !== null) status = next;
+      let cmd = step.cmd;
+      if (cmd.kind === 'when') {
+        // 一段 if 的条件只在它带 start 的第一条语句处判一次，后面的分支语句沿用
+        if (cmd.start) branch = (await runner.run(cmd.test, step.redirect)) === 0;
+        if (branch === cmd.negate) continue;
+        cmd = cmd.cmd;
+      }
+      if (cmd.kind === 'echo') cmd = { ...cmd, text: cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) };
+      status = await runner.run(cmd, step.redirect);
     }
   } catch (err) {
     // PyException 逃出 try 块 = 脚本会以 traceback 退出；ProbeAbort = 无法证明。其余意外同样交回审批链。

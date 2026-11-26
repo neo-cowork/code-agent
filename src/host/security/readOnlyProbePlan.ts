@@ -36,8 +36,8 @@ export type ProbeCommand =
   | ProbeToolCommand
   | { kind: 'noop' }
   | { kind: 'test'; flag: '-e' | '-f' | '-d'; path: string }
-  /** `if <test>; then / else` 的一个分支语句：条件成立与否（negate 取反）决定 cmd 执不执行。 */
-  | { kind: 'when'; test: Extract<ProbeCommand, { kind: 'test' }>; negate: boolean; cmd: ProbeCommand }
+  /** `if <test>; then / else` 的一个分支语句：条件成立与否（negate 取反）决定 cmd 执不执行；start = 这段 if 的第一条语句。 */
+  | { kind: 'when'; test: Extract<ProbeCommand, { kind: 'test' }>; negate: boolean; start: boolean; cmd: ProbeCommand }
   | { kind: 'echo'; text: string; newline: boolean }
   | { kind: 'printf'; text: string }
   | { kind: 'command-v'; name: string }
@@ -571,10 +571,16 @@ function compileLoopBody(text: string, ctx: ProbeCompileContext, binding: LoopBo
   const vars = binding.expanded ? new Map<string, string>() : new Map([[binding.name, binding.value]]);
   const steps = compileCommand(text, ctx, { loopBody: true, vars });
   if (!steps || binding.expanded) return steps;
-  // 整个双引号词就是引用（"$p"）时连同引号一起换掉，剩下的裸引用单独换
-  const ref = new RegExp(`"\\$\\{${binding.name}\\}"|"\\$${binding.name}"|\\$\\{${binding.name}\\}|\\$${binding.name}(?![A-Za-z0-9_])`, 'g');
+  // 整个双引号词就是引用（"$p"）→ '<value>'；嵌在双引号里的引用（"== $p =="）直接换成值本身，换完还是 shell 展开出的那个词。
+  // 值里不会有 $、反引号、反斜杠、换行；带双引号的值（只能来自单引号词）没法原样放进双引号，那种值的嵌在里面的引用就不展开
+  const whole = new RegExp(`"\\$\\{${binding.name}\\}"|"\\$${binding.name}"`, 'g');
+  const embedded = new RegExp(`\\$\\{${binding.name}\\}|\\$${binding.name}(?![A-Za-z0-9_])`, 'g');
   const quoted = `'${binding.value.replaceAll("'", `'\\''`)}'`;
-  const expand = (source: string): string => source.replace(ref, () => quoted);
+  const rawInsideQuotes = !binding.value.includes('"');
+  const expand = (source: string): string => {
+    const expanded = source.replace(whole, () => quoted);
+    return rawInsideQuotes ? expanded.replace(embedded, () => binding.value) : expanded;
+  };
   return steps.map((step) => ({ ...step, extraSources: [...(step.extraSources ?? []).map(expand), expand(step.source)] }));
 }
 
@@ -639,7 +645,8 @@ function compileStatements(command: string, tokens: Token[], from: number, scope
         if (stopWords?.includes(word)) return { steps, stop: i };
         if (word === 'if' && scope.loopBody) {
           const end = compileIf(command, tokens, i, scope, steps);
-          if (end < 0) return null;
+          // fi 之后必须是分隔符或结尾：`fi echo x` 在 shell 里是语法错误
+          if (end < 0 || (tokens[end + 1] !== undefined && tokens[end + 1].type !== 'op')) return null;
           i = end;
           continue;
         }
@@ -660,7 +667,8 @@ function compileStatements(command: string, tokens: Token[], from: number, scope
 
 /**
  * `if <test>; then <只读语句>; [else <只读语句>;] fi`（只认一层，条件恰好一条 test）。
- * 压平成「条件成立才执行」的步骤：then 的语句条件成立才跑，else 的语句条件不成立才跑；
+ * 压平成「条件成立才执行」的步骤：then 的语句条件成立才跑，else 的语句条件不成立才跑；执行器在带 start 的第一条处
+ * 判一次条件，后面的分支语句沿用（与 shell 一致：分支里的 cd 不改变同一段的判断）。
  * 没有 else 时补一条条件不成立才跑的空步，让整段像 shell 一样以 0 结束。返回 fi 的下标；认不出返回 -1。
  */
 function compileIf(command: string, tokens: Token[], at: number, scope: ProbeScope, steps: ProbeStep[]): number {
@@ -688,11 +696,12 @@ function compileIf(command: string, tokens: Token[], at: number, scope: ProbeSco
   // 分支里的 `$?` 取的是条件的退出码，而计划只知道「上一条命令的退出码」：不认
   const usesExitStatus = (step: ProbeStep): boolean => step.cmd.kind === 'echo' && step.cmd.text.includes(PROBE_EXIT_STATUS);
   if (keywordAt(end) !== 'fi' || [...then.steps, ...otherwise].some(usesExitStatus)) return -1;
-  const guard = (step: ProbeStep, negate: boolean): ProbeStep => ({
-    op: ';', cmd: { kind: 'when', test: testCommand, negate, cmd: step.cmd }, redirect: step.redirect, program: step.program, source: step.source,
+  const guard = (step: ProbeStep, negate: boolean, start = false): ProbeStep => ({
+    op: ';', cmd: { kind: 'when', test: testCommand, negate, start, cmd: step.cmd }, redirect: step.redirect, program: step.program, source: step.source,
     extraSources: [test.source, ...step.extraSources ?? []],
   });
-  steps.push(...then.steps.map((step) => guard(step, false)));
+  // start 只落在一段 if 的第一条语句上：执行器在那里判一次条件，后面的分支语句沿用
+  steps.push(...then.steps.map((step, index) => guard(step, false, index === 0)));
   steps.push(...(otherwise.length > 0 ? otherwise.map((step) => guard(step, true))
     : [guard({ op: ';', cmd: { kind: 'noop' }, redirect: { out: 'out', err: 'err' }, program: 'test', source: test.source }, true)]));
   return end;
