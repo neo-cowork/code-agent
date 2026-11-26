@@ -96,6 +96,7 @@ describe('buildGlobalTaskRecords', () => {
 describe('buildDurableSubagentViews', () => {
   it('uses only persisted ledger records for capsule status and output', () => {
     expect(buildDurableSubagentViews({
+      language: 'zh',
       runId: 'run-1',
       selectedAgentId: null,
       agents: [{

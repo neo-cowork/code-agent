@@ -48,22 +48,23 @@ const writeRequest: PermissionRequest = {
 afterEach(cleanup);
 
 describe('审批卡按权限类型给的标题跟随界面语言（FB-1151）', () => {
-  it('写文件：中文「创建文件」，英文 Create file 且整卡无中文', () => {
+  // 措辞以 main 的语言包为准（#3605 把标题改成按工具名统一取词：写入文件 / Write file、运行命令 / Run command）。
+  it('写文件：中文「写入文件」，英文 Write file 且整卡无中文', () => {
     // 标题在展开态的卡头里：先点「详情」
     lang.current = 'zh';
     const zh = render(<PermissionCard requestOverride={writeRequest} sessionIdOverride="session-current" />);
     fireEvent.click(screen.getByRole('button', { name: languages.zh.decisionCard.details }));
-    expect(zh.container.textContent).toContain('创建文件');
+    expect(zh.container.textContent).toContain('写入文件');
     cleanup();
 
     lang.current = 'en';
     const en = render(<PermissionCard requestOverride={writeRequest} sessionIdOverride="session-current" />);
     fireEvent.click(screen.getByRole('button', { name: languages.en.decisionCard.details }));
-    expect(en.container.textContent).toContain('Create file');
+    expect(en.container.textContent).toContain('Write file');
     expect(en.container.textContent).not.toMatch(HAN);
   });
 
-  it('八种权限类型的标题：中文与改动前逐字相同，英文都不含中文', () => {
+  it('八种权限类型的标题：中文是语言包里的词条，英文都不含中文', () => {
     const pick = (p: (typeof languages)['zh']['decisionCard']['permission']) => ({
       file_read: p.titleFileRead,
       file_write: p.titleFileWrite,
@@ -76,10 +77,10 @@ describe('审批卡按权限类型给的标题跟随界面语言（FB-1151）', 
     });
     expect(pick(languages.zh.decisionCard.permission)).toEqual({
       file_read: '读取文件',
-      file_write: '创建文件',
+      file_write: '写入文件',
       file_edit: '编辑文件',
       file_delete: '删除文件',
-      command: '执行命令',
+      command: '运行命令',
       dangerous_command: '危险命令',
       network: '网络请求',
       mcp: 'MCP 工具',

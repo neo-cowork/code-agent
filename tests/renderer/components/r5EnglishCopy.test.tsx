@@ -110,23 +110,24 @@ describe('FB-1489 模型切换器', () => {
     expect(en.filter((label) => CJK.test(label))).toEqual([]);
   });
 
-  it('悬停提示：中文与迁入前逐字相同，英文不含中文', () => {
+  // 模型/服务商名按 main 的显示名规则取（#3605：LongCat/LongCat 2.0、Main）；句式与迁入前逐字相同。
+  it('悬停提示：中文句式与迁入前逐字相同，英文不含中文', () => {
     const native = (language: 'zh' | 'en', extra: Record<string, unknown> = {}) => formatNativeModelSwitcherTooltip({
       language, engineLabel: 'Neo', currentModel: 'main', displayProvider: 'longcat', displayModel: 'LongCat-2.0',
       adaptive: false, overridden: false, billingSummary: buildProviderBillingSummary('payg', languages[language].settings.model.models.switcherPanel),
       effort: { label: 'High', shortLabel: '高' }, thinkingLabel: language === 'zh' ? '思考' : 'Thinking', ...extra,
     } as never);
-    expect(native('zh')).toBe('主任务模型: longcat/LongCat-2.0 · 计费: 按量 · 推理强度: 高 · 思考: 思考');
-    expect(native('zh', { adaptive: true })).toContain('自动路由（按任务、成本和能力切换，当前主任务 main）');
-    expect(native('zh', { overridden: true })).toContain('已覆盖: longcat/LongCat-2.0 (原主任务: main)');
+    expect(native('zh')).toBe('主任务模型: LongCat/LongCat 2.0 · 计费: 按量 · 推理强度: 高 · 思考: 思考');
+    expect(native('zh', { adaptive: true })).toContain('自动路由（按任务、成本和能力切换，当前主任务 Main）');
+    expect(native('zh', { overridden: true })).toContain('已覆盖: LongCat/LongCat 2.0 (原主任务: Main)');
     expect(native('zh', { switchedFrom: { provider: 'a', model: 'b' }, shownProvider: 'c', shownModel: 'd' }))
-      .toContain('这一轮实际在用: c/d（你选的是 a/b，已自动换过）');
+      .toContain('这一轮实际在用: Custom Provider/D（你选的是 Custom Provider/B，已自动换过）');
     expect(formatExternalModelSwitcherTooltip({ language: 'zh', engineLabel: 'Claude', model: 'sonnet' }))
-      .toBe('运行引擎: Claude · 主任务模型: sonnet');
+      .toBe('运行引擎: Claude · 主任务模型: Sonnet');
     for (const extra of [{}, { adaptive: true }, { overridden: true }, { switchedFrom: { provider: 'a', model: 'b' }, shownProvider: 'c', shownModel: 'd' }]) {
       expect(native('en', extra)).not.toMatch(CJK);
     }
-    expect(native('en')).toBe('Task model: longcat/LongCat-2.0 · Billing: Pay as you go · Effort: High · Thinking: Thinking');
+    expect(native('en')).toBe('Task model: LongCat/LongCat 2.0 · Billing: Pay as you go · Effort: High · Thinking: Thinking');
   });
 
   it('组件里的文案：中文与迁入前逐字相同', () => {

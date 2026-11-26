@@ -87,7 +87,7 @@ export function buildGlobalTaskRecords(args: {
   /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */
   sessions?: ReadonlyArray<Pick<SessionWithMeta, 'id' | 'title' | 'status'>>;
 }): TaskRecord[] {
-  const t = languages[args.language ?? 'zh'];
+  const t = languages[args.language];
   return Object.entries(args.sessionStates)
     .filter(([sessionId, state]) => (
       sessionId !== args.currentSessionId
@@ -440,9 +440,9 @@ export function buildDurableSubagentViews(args: {
   runId: string | null;
   agents: SwarmRunAgentRecord[];
   selectedAgentId: string | null;
-  language?: Language;
+  language: Language;
 }): SubagentRunView[] {
-  const t = languages[args.language ?? 'zh'];
+  const t = languages[args.language];
   return args.agents.map((agent) => {
     const status = normalizeLongTaskStatus(agent.status);
     return {

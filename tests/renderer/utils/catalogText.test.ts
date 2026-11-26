@@ -112,22 +112,29 @@ describe('能力中心目录数据跟随界面语言（FB-1301）', () => {
     expect(localizeCatalogObject(TEAM_RECIPES, 'zh')).toBe(TEAM_RECIPES);
   });
 
-  it('模型目录里带中文后缀的模型名：英文界面不含中文和中文标点，中文界面一字不动', () => {
+  it('模型目录里的模型名：目录 label 不含中文；带中文后缀的名字英文化，中文界面一字不动', () => {
     const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/u;
     const labels = new Set<string>();
+    const cjkLabels = new Set<string>();
     const collect = (value: unknown, key: string) => {
       if (typeof value === 'string') {
-        if (key === 'label' && CJK.test(value)) labels.add(value);
+        if (key !== 'label') return;
+        labels.add(value);
+        if (CJK.test(value)) cjkLabels.add(value);
       } else if (value && typeof value === 'object') {
         for (const [childKey, child] of Object.entries(value)) collect(child, childKey);
       }
     };
     collect(modelCatalog, '');
-    expect(labels.has('DeepSeek V4 Pro (推理)')).toBe(true);
-    for (const label of labels) {
+    // main #3605 之后目录里的 label 已经不带中文（原先的「DeepSeek V4 Pro (推理)」已不在数据里）：
+    // 再有人往目录 label 里写中文，这一条先红；真出现了，下面的循环仍要求英文化、中文原样。
+    expect(labels.size).toBeGreaterThan(0);
+    expect([...cjkLabels]).toEqual([]);
+    for (const label of cjkLabels) {
       expect(CJK.test(translateCatalogText(label, 'en')), label).toBe(false);
       expect(translateCatalogText(label, 'zh')).toBe(label);
     }
     expect(translateCatalogText('DeepSeek V4 Pro (推理)', 'en')).toBe('DeepSeek V4 Pro (Reasoning)');
+    expect(translateCatalogText('DeepSeek V4 Pro (推理)', 'zh')).toBe('DeepSeek V4 Pro (推理)');
   });
 });
