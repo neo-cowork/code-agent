@@ -428,14 +428,36 @@ describe('readModule (native)', () => {
       for (const name of ['screenshot.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp']) {
         const target = path.join(tmpDir, name);
         if (name !== 'screenshot.png') await fs.copyFile(file, target);
+        const ext = path.extname(name).toLowerCase();
         const result = await handler.execute({ file_path: target }, makeCtx({ requestToolNames }), allowAll);
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
           expect(result.error.length).toBeLessThan(1024);
-          expect(result.error).toContain('image_analyze');
-          expect(result.error).toContain('get_content');
-          expect(result.error).toContain(target);
+          expect(result.error).toBe(
+            `Cannot read ${ext} file as text. This is an image, not text. To understand a picture use image_analyze.\nPath: ${target}`,
+          );
+        }
+      }
+    });
+
+    it('includes the browser_action clause without ToolSearch when both image_analyze and browser_action are listed', async () => {
+      const target = path.join(tmpDir, 'webpage-shot.png');
+      await fs.writeFile(target, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]));
+      const handler = await readModule.createHandler();
+      for (const requestToolNames of [
+        ['Read', 'image_analyze', 'browser_action'],
+        ['Read', 'image_analyze', 'browser_action', 'ToolSearch'],
+      ]) {
+        const result = await handler.execute({ file_path: target }, makeCtx({ requestToolNames }), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+          expect(result.error).toBe(
+            `Cannot read .png file as text. This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; to understand a picture use image_analyze.\nPath: ${target}`,
+          );
+          expect(result.error).not.toContain('ToolSearch');
+          expect(result.error).not.toContain('select:image_analyze');
         }
       }
     });

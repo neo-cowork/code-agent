@@ -123,6 +123,27 @@ describe('blobModule', () => {
         expect(result.error).toContain(file);
         expect(result.error).toContain(tool);
         expect(result.error).not.toContain('\uFFFD');
+        if (tool === 'image_analyze') {
+          const ext = data === JPEG ? '.jpg' : '.png';
+          expect(result.error).toBe(
+            `Cannot read ${ext} file as text. This is an image, not text. To understand a picture use image_analyze. Blob stat still returns size/mime for images.\nPath: ${file}`,
+          );
+        }
+      }
+    });
+
+    it('includes browser_action clause without ToolSearch on Blob read_text when both image_analyze and browser_action are listed', async () => {
+      const { file, result } = await readText('page-shot.png', PNG, {
+        requestToolNames: ['Blob', 'image_analyze', 'browser_action'],
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; to understand a picture use image_analyze. Blob stat still returns size/mime for images.\nPath: ${file}`,
+        );
+        expect(result.error).not.toContain('ToolSearch');
+        expect(result.error).not.toContain('select:image_analyze');
       }
     });
 

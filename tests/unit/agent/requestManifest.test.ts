@@ -304,7 +304,7 @@ describe('recordRequestManifest -> TurnState.requestToolNames -> Read / Blob ima
       const blobHandler = await blobModule.createHandler();
       const allowAll = async () => ({ allow: true as const });
 
-      // 1. With image_analyze in the request tool list: Read and Blob keep today's sentence byte-for-byte.
+      // 1. With image_analyze in the request tool list (and browser_action/ToolSearch absent): Read names only image_analyze.
       recordRequestManifest(ctx, {
         requestId: 'req-with-image-analyze',
         messages: assembled,
@@ -328,7 +328,7 @@ describe('recordRequestManifest -> TurnState.requestToolNames -> Read / Blob ima
       expect(readWithTool.ok).toBe(false);
       if (!readWithTool.ok) {
         expect(readWithTool.error).toBe(
-          `Cannot read .png file as text. This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; to understand a picture use image_analyze (a deferred tool: load it first with ToolSearch select:image_analyze).\nPath: ${pngPath}`,
+          `Cannot read .png file as text. This is an image, not text. To understand a picture use image_analyze.\nPath: ${pngPath}`,
         );
       }
 
