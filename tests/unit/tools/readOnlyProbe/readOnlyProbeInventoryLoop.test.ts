@@ -37,6 +37,7 @@ import { resetPermissionModeManager } from '../../../../src/host/permissions/mod
 import { getPolicyEngine, resetPolicyEngine } from '../../../../src/host/permissions/policyEngine';
 import { getDecisionHistory, resetDecisionHistory } from '../../../../src/host/security/decisionHistory';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
+import { resolveToolPermissionClassification } from '../../../../src/host/tools/toolPermissionClassification';
 import { compileReadOnlyProbePlan } from '../../../../src/host/security/readOnlyProbePlan';
 
 const SESSION = 'ro-probe-inventory-loop-session';
@@ -428,6 +429,33 @@ describe('删前盘点循环（只读、字面量路径）不出卡', () => {
       expect(result.success).toBe(false);
       expect(permissionAsks).toEqual([]);
       expect(probeRows()).toEqual([]);
+    });
+  });
+
+  describe('分类器的「读根变化」防线看得见计划里的每一种读法', () => {
+    /** 只走分类器（探测没放行时的兜底裁决）：cd 到工作区外再读，语法上再安全也要问一次。 */
+    const classify = (command: string) => resolveToolPermissionClassification({
+      executionToolName: 'Bash', policyToolName: 'Bash', params: { command }, policyForcesConfirmation: false, boundaryViolation: undefined,
+      workingDirectory: fx, workspaceRoot: fx, permissionLevel: 'execute', permStartTime: 0, readOnlyForcesConfirmation: false,
+      sessionPermissionMode: 'default',
+    });
+
+    it('cd 到工作区外 && stat → ask（probe_read_root_change），与 cd 后 ls / cat 一致', async () => {
+      const result = await classify(`cd "${elsewhere}" && stat -f '%z' doc.pdf`);
+      expect(result.decision).toBe('ask');
+      expect(result.traceStep?.rule).toBe('probe_read_root_change');
+    });
+
+    it('cd 到工作区外 && 循环里读（分支里的 stat / cat / ls，条件里的 test）→ ask', async () => {
+      for (const body of ['stat -f \'%z\' "$f"', 'cat "$f"', 'ls -l "$f"', 'test -e "$f"']) {
+        const result = await classify(`cd "${elsewhere}" && for f in doc.pdf; do if [ -e "$f" ]; then ${body}; fi; done`);
+        expect(result.decision, body).toBe('ask');
+      }
+    });
+
+    it('cd 到工作区里的目录 && stat → 仍是 approve', async () => {
+      const result = await classify(`cd "${fx}" && stat -f '%z' a.txt`);
+      expect(result.decision).toBe('approve');
     });
   });
 
