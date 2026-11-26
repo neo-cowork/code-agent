@@ -157,6 +157,22 @@ fn notification_id(user_info: &serde_json::Value) -> Option<&str> {
         .filter(|id| !id.is_empty())
 }
 
+/// Select UNC request identifiers whose `userInfo[neoNotificationId]` matches `target_id`.
+fn matching_delivered_identifiers<'a>(
+    delivered: &'a [(String, Option<String>)],
+    target_id: &str,
+) -> Vec<&'a str> {
+    if target_id.is_empty() {
+        return Vec::new();
+    }
+    delivered
+        .iter()
+        .filter_map(|(identifier, user_info_id)| {
+            (user_info_id.as_deref() == Some(target_id)).then_some(identifier.as_str())
+        })
+        .collect()
+}
+
 fn clicked_payload(id: &str, session_id: Option<&str>) -> serde_json::Value {
     let mut payload = serde_json::json!({ "id": id });
     if let Some(session_id) = session_id.filter(|id| !id.is_empty()) {
@@ -574,6 +590,77 @@ pub fn post_unc(_title: &str, _body: &str, _id: Option<&str>) -> Result<(), Stri
     Err("UNUserNotificationCenter is only available on macOS".to_string())
 }
 
+#[cfg(target_os = "macos")]
+fn retract_unc(id: &str) -> Result<(), String> {
+    let in_app_bundle = std::env::current_exe()
+        .map(|exe| exe_is_in_app_bundle(&exe))
+        .unwrap_or(false);
+    if decide_backend(in_app_bundle, true) != NotificationBackend::Unc {
+        return Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string());
+    }
+    if id.is_empty() {
+        return Ok(());
+    }
+    objc2::exception::catch(std::panic::AssertUnwindSafe(|| retract_unc_inner(id)))
+        .unwrap_or_else(|_| Err("notification-objective-c-exception".to_string()))
+}
+
+#[cfg(target_os = "macos")]
+fn retract_unc_inner(id: &str) -> Result<(), String> {
+    use block2::RcBlock;
+    use objc2::rc::autoreleasepool;
+    use objc2_foundation::{NSArray, NSString};
+    use objc2_user_notifications::{UNNotification, UNUserNotificationCenter};
+    use std::ptr::NonNull;
+    use std::sync::mpsc;
+
+    autoreleasepool(|_| {
+        let center = UNUserNotificationCenter::currentNotificationCenter();
+        let (sender, receiver) = mpsc::channel();
+        let completion: RcBlock<dyn Fn(NonNull<NSArray<UNNotification>>)> =
+            RcBlock::new(move |notifications: NonNull<NSArray<UNNotification>>| {
+                autoreleasepool(|_| {
+                    // SAFETY: UNUserNotificationCenter supplies a valid NSArray<UNNotification>
+                    // for the duration of this completion callback.
+                    let list = unsafe { notifications.as_ref() };
+                    let id_key = NSString::from_str(NOTIFICATION_ID_KEY);
+                    let delivered: Vec<(String, Option<String>)> = list
+                        .iter()
+                        .map(|notification| {
+                            let request = notification.request();
+                            let identifier = request.identifier().to_string();
+                            let user_info = request.content().userInfo();
+                            // userInfo is untyped: never send NSString messages to a wrong-type value.
+                            let user_info_id = user_info.objectForKey(&id_key).and_then(|value| {
+                                value.downcast_ref::<NSString>().map(|s| s.to_string())
+                            });
+                            (identifier, user_info_id)
+                        })
+                        .collect();
+                    let _ = sender.send(delivered);
+                });
+            });
+        center.getDeliveredNotificationsWithCompletionHandler(&completion);
+        let delivered = receiver
+            .recv_timeout(UNC_CALLBACK_TIMEOUT)
+            .map_err(|_| {
+                "UNUserNotificationCenter getDeliveredNotifications timed out".to_string()
+            })?;
+        let to_remove = matching_delivered_identifiers(&delivered, id);
+        if !to_remove.is_empty() {
+            let identifiers: Vec<_> = to_remove.into_iter().map(NSString::from_str).collect();
+            let ns_identifiers = NSArray::from_retained_slice(&identifiers);
+            center.removeDeliveredNotificationsWithIdentifiers(&ns_identifiers);
+        }
+        Ok(())
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn retract_unc(_id: &str) -> Result<(), String> {
+    Err("UNUserNotificationCenter is only available on macOS".to_string())
+}
+
 #[tauri::command]
 pub async fn post_system_notification(
     title: String,
@@ -592,6 +679,30 @@ pub async fn post_system_notification(
         NotificationBackend::Unc => {
             let outcome =
                 tokio::task::spawn_blocking(move || post_unc(&title, &body, id.as_deref())).await;
+            match outcome {
+                Ok(Ok(())) => unc_result(true, None),
+                Ok(Err(reason)) => unc_result(false, Some(reason)),
+                Err(error) => {
+                    unc_result(false, Some(format!("notification worker failed: {error}")))
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn retract_system_notification(id: String) -> PostSystemNotificationResult {
+    let in_app_bundle = std::env::current_exe()
+        .map(|exe| exe_is_in_app_bundle(&exe))
+        .unwrap_or(false);
+    match decide_backend(in_app_bundle, cfg!(target_os = "macos")) {
+        NotificationBackend::Legacy => legacy_result(if cfg!(target_os = "macos") {
+            "UNUserNotificationCenter is reserved for macOS app bundles"
+        } else {
+            "UNUserNotificationCenter is only available on macOS"
+        }),
+        NotificationBackend::Unc => {
+            let outcome = tokio::task::spawn_blocking(move || retract_unc(&id)).await;
             match outcome {
                 Ok(Ok(())) => unc_result(true, None),
                 Ok(Err(reason)) => unc_result(false, Some(reason)),
@@ -937,6 +1048,46 @@ mod tests {
         assert_eq!(
             super::post_unc("Agent Neo", "body", None),
             Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string())
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unbundled_retract_unc_rejects_with_bundle_reason() {
+        assert_eq!(
+            super::retract_unc("notif-1"),
+            Err("UNUserNotificationCenter is reserved for macOS app bundles".to_string())
+        );
+    }
+
+    #[test]
+    fn matching_delivered_identifiers_cases() {
+        let delivered = vec![
+            ("unc-1".to_string(), Some("notif-a".to_string())),
+            ("unc-2".to_string(), Some("notif-b".to_string())),
+            ("unc-3".to_string(), None),
+            ("unc-4".to_string(), Some("notif-dup".to_string())),
+            ("unc-5".to_string(), Some("notif-dup".to_string())),
+        ];
+        // Match one among several
+        assert_eq!(
+            super::matching_delivered_identifiers(&delivered, "notif-b"),
+            vec!["unc-2"]
+        );
+        // No match
+        assert!(super::matching_delivered_identifiers(&delivered, "notif-missing").is_empty());
+        // Empty target
+        assert!(super::matching_delivered_identifiers(&delivered, "").is_empty());
+        // Item without userInfo id is ignored (and does not match empty or any target)
+        assert!(super::matching_delivered_identifiers(
+            &[("unc-none".to_string(), None)],
+            "notif-a"
+        )
+        .is_empty());
+        // Two items with the same id -> both returned
+        assert_eq!(
+            super::matching_delivered_identifiers(&delivered, "notif-dup"),
+            vec!["unc-4", "unc-5"]
         );
     }
 

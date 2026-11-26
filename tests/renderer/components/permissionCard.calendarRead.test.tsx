@@ -1,8 +1,10 @@
+// @vitest-environment jsdom
 // ============================================================================
 // 日历只读审批卡：写明读什么、哪段时间；通用卡无可列内容时不出「请确认下面的…」空指向。
 // ============================================================================
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract/permission';
 
@@ -58,13 +60,23 @@ function render(language: 'zh' | 'en', request: ContractPermissionRequest): stri
   return renderToStaticMarkup(React.createElement(PermissionCard));
 }
 
+// 读取范围不是删除/覆盖/外发，卡面不放；点开「更多选项与详情」后必须在。
+function renderExpanded(language: 'zh' | 'en', request: ContractPermissionRequest): string {
+  cleanup();
+  storeState.language = language;
+  storeState.request = request;
+  const { container } = mount(React.createElement(PermissionCard));
+  fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
+  return container.innerHTML;
+}
+
 const text = (html: string) => html.replace(/<[^>]+>/g, '|').replace(/\|+/g, '|');
 const FROM = new Date(2026, 10, 16, 0, 0).getTime();
 const TO = new Date(2026, 10, 23, 0, 0).getTime();
 
 describe('日历只读审批卡', () => {
   it('list_events 带明确区间（zh）：标题/问句/时间范围/日历名', () => {
-    const out = text(render('zh', req({ details: { action: 'list_events', from_ms: FROM, to_ms: TO, calendar: '工作' } as never })));
+    const out = text(renderExpanded('zh', req({ details: { action: 'list_events', from_ms: FROM, to_ms: TO, calendar: '工作' } as never })));
     expect(out).toContain('查看日程');
     expect(out).toContain('允许 Neo 查看你的日程吗？');
     expect(out).toContain('时间范围：2026/11/16 00:00 至 2026/11/23 00:00；日历：工作');
@@ -72,7 +84,7 @@ describe('日历只读审批卡', () => {
   });
 
   it('list_events 带明确区间（en）', () => {
-    const out = text(render('en', req({ details: { action: 'list_events', from_ms: FROM, to_ms: TO } as never })));
+    const out = text(renderExpanded('en', req({ details: { action: 'list_events', from_ms: FROM, to_ms: TO } as never })));
     expect(out).toContain('View your calendar');
     expect(out).toContain('Let Neo look at your calendar?');
     expect(out).toContain('Time range: 2026/11/16 00:00 to 2026/11/23 00:00; Calendar: all calendars');
@@ -80,15 +92,15 @@ describe('日历只读审批卡', () => {
   });
 
   it('list_events 无区间：默认今天起 14 天、所有日历（zh + en）', () => {
-    const zh = text(render('zh', req({ details: { action: 'list_events' } as never })));
+    const zh = text(renderExpanded('zh', req({ details: { action: 'list_events' } as never })));
     expect(zh).toContain('时间范围：今天起未来 14 天；日历：所有日历');
-    const en = text(render('en', req({ details: { action: 'list_events' } as never })));
+    const en = text(renderExpanded('en', req({ details: { action: 'list_events' } as never })));
     expect(en).toContain('Time range: today and the next 14 days; Calendar: all calendars');
   });
 
   it('list_calendars：范围是日历列表（zh + en）', () => {
-    expect(text(render('zh', req({ details: { action: 'list_calendars' } as never })))).toContain('范围：你的日历列表');
-    expect(text(render('en', req({ details: { action: 'list_calendars' } as never })))).toContain('Scope: your list of calendars');
+    expect(text(renderExpanded('zh', req({ details: { action: 'list_calendars' } as never })))).toContain('范围：你的日历列表');
+    expect(text(renderExpanded('en', req({ details: { action: 'list_calendars' } as never })))).toContain('Scope: your list of calendars');
   });
 
   it('calendar 的写动作仍走通用路径', () => {

@@ -56,7 +56,7 @@ describe('hook 早退分支的送达回报', () => {
     await flush();
     expect(reports()).toHaveLength(1);
     expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', {
-      mode: 'renderer-early-return', reason: 'retract', dispatched: false, dedupeKey: 'k1',
+      mode: 'renderer-early-return', reason: 'retract', dispatched: false, dedupeKey: 'k1', retractIdNotFound: true,
     });
     expect(plugin.sendNotification).not.toHaveBeenCalled();
   });

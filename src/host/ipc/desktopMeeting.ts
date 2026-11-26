@@ -27,27 +27,26 @@ export interface MeetingAudioControl {
 
 /** 会前提醒：只在有原生桥（桌面壳）时巡检；授权与日程都走 EventKit，不弹框、不打开「日历」app */
 function createReminder(isMeetingActive: () => boolean): MeetingCalendarReminder | null {
-  const client = process.platform === 'darwin' ? resolveShellBridgeClientFromEnv() : null;
-  if (!client) return null;
+  if (process.platform !== 'darwin') return null;
+  const client = resolveShellBridgeClientFromEnv();
+  if (!client) {
+    logger.warn('[meeting-reminder] no_bridge', { reason: 'no_bridge', platform: process.platform });
+    return null;
+  }
   const passive = createShellPassiveBridge(client);
   return new MeetingCalendarReminder({
     enabled: async () => {
-      try {
-        const { getConfigService } = await import('../services/core/configService');
-        return getConfigService().getSettings().meeting?.calendarReminder === true;
-      } catch {
-        return false;
-      }
+      const { getConfigService } = await import('../services/core/configService');
+      return getConfigService().getSettings().meeting?.calendarReminder === true;
     },
-    granted: async () => (await calendarAccess(passive)) === 'granted',
+    granted: () => calendarAccess(passive),
     upcoming: createCalendarEventsReader(client),
     isMeetingActive,
     // 只提醒，绝不自动开录（会被标成屏幕共享）
-    notify: (event) => {
-      void import('../services/infra/notificationService')
-        .then(({ notificationService }) => notificationService.notifyMeetingStarting({ meetingTitle: event.title }))
-        .catch(() => undefined);
-    },
+    notify: (event) =>
+      import('../services/infra/notificationService').then(({ notificationService }) =>
+        notificationService.notifyMeetingStarting({ meetingTitle: event.title }),
+      ),
   });
 }
 

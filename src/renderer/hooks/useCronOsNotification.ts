@@ -18,7 +18,12 @@ import {
   cronLoginWallSiteOriginFromNotification,
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
-import { postOsNotification, registerNotificationClick, reportNotificationHandled } from '../utils/osNotification';
+import {
+  postOsNotification,
+  registerNotificationClick,
+  reportNotificationHandled,
+  retractOsNotification,
+} from '../utils/osNotification';
 import { notificationToastText } from '../utils/notificationToastText';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
@@ -129,11 +134,28 @@ export function useCronOsNotification(
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
-        // 审批已裁决的撤回：只把「离开期间的提醒」队列里那条 needs-input 移掉，
+        // 审批已裁决的撤回：从「离开期间的提醒」队列移掉对应条目，并通知桌面壳撤下已送达横幅；
         // 不弹 OS 通知、不作点击目标（retract 本身没有任何用户可见动作）。
         if (event.retract) {
           missedRef.current.remove(event.dedupeKey);
-          reportNotificationHandled({ mode: 'renderer-early-return', reason: 'retract', dispatched: false, dedupeKey: event.dedupeKey });
+          const matchedIds: string[] = [];
+          if (event.dedupeKey) {
+            for (const recentEvent of recentEventsRef.current.values()) {
+              if (recentEvent.dedupeKey === event.dedupeKey) {
+                matchedIds.push(recentEvent.id);
+              }
+            }
+          }
+          for (const id of matchedIds) {
+            void retractOsNotification(id);
+          }
+          reportNotificationHandled({
+            mode: 'renderer-early-return',
+            reason: 'retract',
+            dispatched: false,
+            dedupeKey: event.dedupeKey,
+            ...(matchedIds.length > 0 ? { retractedIds: matchedIds } : { retractIdNotFound: true }),
+          });
           return;
         }
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
