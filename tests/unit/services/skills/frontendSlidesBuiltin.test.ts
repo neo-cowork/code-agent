@@ -18,6 +18,7 @@ vi.mock('../../../../src/host/services/toolSearch', async (importOriginal) => {
 });
 
 import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
+import type { ToolContext } from '../../../../src/host/protocol/tools';
 import { resolveSkillInvocationFromSkills } from '../../../../src/host/services/skills/skillInvocationResolver';
 import {
   FRONTEND_SLIDES_BUILTIN_SKILLS,
@@ -160,9 +161,49 @@ describe('packaged frontend-slides builtin', () => {
     );
     const skill = invocation?.skill;
     expect(skill?.promptContent).toContain(path.join(skill!.basePath, 'scripts', 'theme-samples.mjs'));
-    expect(skill?.promptContent).toContain('只委派样张渲染');
-    expect(skill?.promptContent).toContain('在原对话展示三张图再提问');
-    expect(skill?.promptContent).toContain('不贴在用户可见的回复或后台任务摘要里');
+    expect(skill?.promptContent).toContain('只转交样张渲染这一件事');
+    expect(skill?.promptContent).toContain('不要向用户提问');
+    // A background task's words stay out of the chat while its question card still reaches the user,
+    // so the samples and the style question have to be produced by the foreground conversation.
+    expect(skill?.promptContent).toContain('风格选择只问这一次，并且只在前台对话里问');
+    expect(skill?.promptContent).toContain('不要调用 `ask_user_question`');
+    expect(skill?.promptContent).toContain('由前台在原对话展示并提问');
+    // The turn a finished background task wakes cannot run commands or dispatch work.
+    expect(skill?.promptContent).toContain('用户选完后不要接着合成，也不要再调用命令');
+    expect(skill?.promptContent).toContain('也不再问风格——风格问题整个流程只问这一次');
+    expect(skill?.promptContent).toContain('不要改成 A/B/C 之类的代号');
+    expect(skill?.promptContent).toContain('[用 <所选主题> 合成整套 PPT](!send)');
+    expect(skill?.promptContent).toContain('路径只作图片链接，不要把路径或原始 JSON 另外列成文字');
+    // A line that waits for the user to pick a style survives in the task result and makes the next turn ask again.
+    expect(skill?.promptContent).toContain('也不要写「在等用户选风格」之类的话');
+    expect(skill?.promptContent).toContain('图片链接原样用后台回报里的绝对路径（不改写成相对路径）');
+    expect(skill?.promptContent).toContain('描述只讲观感和适用场合，不写色值编码');
+  });
+
+  // A background task loads the same guide through the Skill tool; the instruction message the tool
+  // injects is the text that has to keep the style question out of the background task.
+  it('gives the Skill tool the rule that keeps the style question in the foreground conversation', async () => {
+    const { executeSkill } = await import('../../../../src/host/tools/modules/skill/skill');
+    const ctx = {
+      sessionId: 'session-frontend-slides-sample-handoff',
+      workingDir: projectDir,
+      abortSignal: new AbortController().signal,
+      skillDiscoveryService: service,
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      emit: () => {},
+    } as unknown as ToolContext;
+    const result = await executeSkill({ command: 'frontend-slides' }, ctx, async () => ({ allow: true }));
+    expect(result.ok).toBe(true);
+    expect(result.meta?.isSkillActivation).toBe(true);
+    const injected = result.meta?.skillResult?.newMessages?.filter((message) => message.isMeta) ?? [];
+    expect(injected).toHaveLength(1);
+    expect(injected[0].content).toContain('不要调用 `ask_user_question`');
+    expect(injected[0].content).toContain('不要向用户提问');
+    expect(injected[0].content).toContain('由前台在原对话展示并提问');
+    expect(injected[0].content).toContain('用户选完后不要接着合成，也不要再调用命令');
+    expect(injected[0].content).toContain('路径只作图片链接，不要把路径或原始 JSON 另外列成文字');
+    expect(injected[0].content).toContain('也不要写「在等用户选风格」之类的话');
+    expect(injected[0].content).toContain('图片链接原样用后台回报里的绝对路径（不改写成相对路径）');
   });
 
   it('finds the skill by walking up from dist/cli and dist/web', () => {

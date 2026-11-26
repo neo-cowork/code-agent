@@ -282,9 +282,17 @@ describe('Prompt Builder', () => {
   describe('buildDynamicPromptV2', () => {
     it('keeps an explicit PPT preview request ahead of deck synthesis', () => {
       const result = buildDynamicPromptV2('根据这份季度笔记做一份 8 页的季度汇报 PPT，先给我看三种风格的样张');
-      expect(result.userMessage).toContain('按第 3.5 步运行随包的 `theme-samples.mjs`');
-      expect(result.userMessage).toContain('展示三张 PNG，再用 AskUserQuestion 问用户选哪种风格，选完再合成');
-      expect(result.userMessage).toContain('把同一条渲染命令交给后台');
+      expect(result.userMessage).toContain('用随包的 `theme-samples.mjs` 渲染样张');
+      // The foreground cannot run commands here and hands only the render to a background task;
+      // a background task's words stay out of the chat while its question card still reaches the user,
+      // so its brief has to say: render only, report the samples, do not ask.
+      expect(result.userMessage).toContain('用 delegate_task 只转交这条渲染，任务说明写明');
+      expect(result.userMessage).toContain('后台只渲染，三张 PNG 以 markdown 图片回报，不提问');
+      // Sample links have to stay absolute: the chat cannot load a workspace-relative image path.
+      expect(result.userMessage).toContain('用 markdown 图片（绝对路径原样）展示');
+      // The turn a finished background task wakes cannot run commands or dispatch work: after the choice it waits for the user.
+      expect(result.userMessage).toContain('后台任务触发的汇报轮，选完只确认、等用户说「继续」');
+      expect(result.userMessage).toContain('选过后不再问，直接合成');
     });
 
     it('should return a DynamicPromptResultV2', () => {
