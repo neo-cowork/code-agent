@@ -19,7 +19,6 @@ import { PARKED_CALL_APPROVAL_TTL_MS } from '../../shared/constants/envResume';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { emitExternalAgentEvent } from '../services/agentEngine/agentEngineEventSink';
 import { createLogger } from '../services/infra/logger';
-import { getSessionManager } from '../services/infra/sessionManager';
 
 const logger = createLogger('ParkedCallApproval');
 const PARKED_APPROVAL_TOOL = 'mail_draft';
@@ -86,6 +85,8 @@ export async function publishParkedReuseNotice(input: { sessionId?: string; runI
       sentenceKey: 'env.reused.mail', resume: { mode: 'auto' }, updatedAt: Date.now(),
     };
     const message: Message = { id: `env-assist:${notice.id}`, role: 'assistant', content: '', timestamp: notice.updatedAt, metadata: { envAssist: notice } };
+    // Lazy: a static import drags sessionManager→toolCache→serviceRegistry into every toolExecutor consumer (tests mocking logger break at import).
+    const { getSessionManager } = await import('../services/infra/sessionManager');
     await getSessionManager().addMessageToSession(input.sessionId, message);
     const events: AgentEvent[] = [{ type: 'env_assist_notice', data: notice }, { type: 'message', data: message }];
     for (const event of events) emitExternalAgentEvent(input.sessionId, event);

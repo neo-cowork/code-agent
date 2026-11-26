@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { clearParkedCallApprovals } from '../../../../src/host/permissions/parkedCallApproval';
 import { applySchema } from '../../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../../src/host/services/core/database/migrations';
 import { applyIndexes } from '../../../../src/host/services/core/database/indexes';
@@ -106,6 +107,12 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       sessions.updateSession(sessionId, { status: 'idle' });
     },
   } as unknown as TaskManager;
+  // A resumed run keeps going after the test saw `resumes > 0`; tests await it so its tail cannot leak into the next test's fixture.
+  let resumeInflight: Promise<unknown> = Promise.resolve();
+  const rawResume = tasks.resumeExistingDurableRun.bind(tasks);
+  (tasks as { resumeExistingDurableRun: typeof rawResume }).resumeExistingDurableRun = (...args) => {
+    const running = rawResume(...args); resumeInflight = running.catch(() => undefined); return running;
+  };
   databasePorts.current = {
     getSession: (id: string) => sessions.getSession(id),
     getMessages: () => messages(),
@@ -136,6 +143,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     mailSaved: () => ({ attempts: mailAttempts.length, saved }),
     mailSubjects: () => [...mailAttempts],
     approvalCards: () => [...approvalCards],
+    resumeIdle: async () => { await resumeInflight; },
     green: () => { blocked = false; },
     wire: (probe: ReturnType<EnvResumeProbeFactory>) => {
       // Exercise the production route registration; wrap only TaskManager's model sink.
@@ -162,6 +170,6 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       out('TOOL_EVENTS', db.prepare('SELECT * FROM tool_execution_events').all());
       out('COUNTS', { executions, resumes, seenCalls, seenRuns });
     },
-    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (registeredMailSend) protocol.unregister('mail_send'); if (!mail || registeredMailDraft) protocol.unregister(name); },
+    close: () => { clearParkedCallApprovals(runId); registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (registeredMailSend) protocol.unregister('mail_send'); if (!mail || registeredMailDraft) protocol.unregister(name); },
   };
 }

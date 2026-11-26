@@ -71,6 +71,7 @@ async function settled(f: NonNullable<typeof fixture>) {
   const stopped = () => warn.mock.calls.some(([message, data]) => message === 'Environment auto-continue stopped'
     && (data as { reason?: string } | undefined)?.reason !== 'timeout');
   await vi.waitFor(() => expect(f.counts().resumes > 0 || stopped()).toBe(true), { timeout: 5000 });
+  await f.resumeIdle();
 }
 const toolTexts = (f: NonNullable<typeof fixture>) => f.messages().filter((m) => m.role === 'tool').flatMap((m) => m.toolResults ?? []);
 
@@ -181,13 +182,16 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
 
   it('a classifier failure cannot consume the parked approval (2 cards)', async () => {
     const f = await parkedMail();
-    f.wire(async () => 'green');
+    // The probe stays red until the classifier fault is armed, so no resume can race ahead of it.
+    let granted = false;
+    f.wire(async () => granted ? 'green' : 'red');
     await f.park();
     store.classifierFails = true;
-    f.green();
+    f.green(); granted = true;
     await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
     await settled(f);
-    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+    // settled() returns when the resume starts; the second card is emitted a tick later.
+    await vi.waitFor(() => expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']), { timeout: 5000 });
   });
 
   it('a forced approval gate still asks again (2 cards)', async () => {
