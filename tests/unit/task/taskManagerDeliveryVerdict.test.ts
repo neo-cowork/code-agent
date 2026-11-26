@@ -594,6 +594,22 @@ describe('TaskManager background delivery verdict', () => {
       expect(await run('The source file is missing', 'zh')).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
     });
 
+    it('never puts a done outcome reason into a not-done sentence, and keeps the specific approval-timeout sentence', async () => {
+      const failedCommand = { id: 'bash-1', name: 'Bash', success: false, command: './check.sh', failedOutput: 'missing: brief.pdf' };
+      const done = await runBackgroundTask(messages({
+        calls: [failedCommand],
+        conclusion: `${MARKER}{"status":"done","reason":"三个文件都已复制好"}\nok`,
+      }));
+      expect(done.type).toBe('task_error');
+      expect((done.data as EventData).error).toBe('这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。');
+      const timeout = await runBackgroundTask(messages({
+        calls: [{ id: 'bash-2', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedTimeout }],
+        conclusion: `${MARKER}{"status":"failed","reason":"没批准"}\nstopped`,
+      }));
+      expect(timeout.type).toBe('task_error');
+      expect((timeout.data as EventData).error).toContain('一直没有等到批准');
+    });
+
     it('turns partial into task_error with the partial sentence, in English too', async () => {
       configState.language = 'en';
       try {

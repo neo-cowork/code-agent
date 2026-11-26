@@ -85,7 +85,9 @@ export function resolveBackgroundRunTerminal(input: {
     return {
       type: 'task_error',
       data: {
-        error: formatSessionTaskOutcomeNotDone(locale, reportedNotDone ?? 'failed', outcome?.reason),
+        // 已有更具体的白话判决（等不到批准 / 工具连续出错）时沿用它；助手自报 done 的 reason 绝不放进「没做完」句。
+        error: formatSessionTaskDeliveryFailure(deliveryFailure, locale)
+          ?? formatSessionTaskOutcomeNotDone(locale, reportedNotDone ?? 'failed', reportedNotDone ? outcome?.reason : undefined),
         ...(rawDetail ? { rawDetail } : {}),
         ...(outcome ? { outcome } : {}),
       },
