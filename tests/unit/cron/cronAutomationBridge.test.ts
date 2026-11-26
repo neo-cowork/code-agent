@@ -61,6 +61,8 @@ import {
   recordCronAutomationExecution,
 } from '../../../src/host/cron/cronAutomationBridge';
 import { cronLoginWallMetadata } from '../../../src/host/cron/cronLoginWall';
+import { cronFailureSourceText } from '../../../src/shared/utils/cronFailureClassification';
+import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 import { resolveCronArtifactsForReview } from '../../../src/shared/cronArtifactPath';
 import { splitCronRunMessage } from '../../../src/shared/cronRunMessage';
@@ -477,6 +479,44 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.error).toBe('boom');
     // The seed upsert reflects the one-time schedule, not a recurring one.
     expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
+  });
+
+  // N-FIX-CRON-RUN-ERROR-TRUST-RAW-ENGLISH-PATH 返修 r2：项目文件夹信任失败的 execution.error 是内部标记
+  // PROJECT_SOURCE_TRUST:<kind>:<文件夹名>（存量行是英文原句 + 本机绝对路径）。回流到源会话的 automation
+  // 消息（「错误：…」那一行）必须写人话，不能把这个标记原样给用户看。
+  it.each([
+    {
+      label: '新标记',
+      stored: cronFailureSourceText(new ProjectSourceTrustError('identity_changed', '/Users/someone/work/notes-proj')),
+      expected: '错误：项目文件夹“notes-proj”需要重新确认',
+    },
+    {
+      label: '存量英文句',
+      stored: 'Project Source is missing: /Users/x/proj',
+      expected: '错误：项目文件夹“proj”需要重新确认',
+    },
+  ])('项目文件夹信任失败（$label）：回流到源会话的消息写人话，不写内部标记、英文原句和路径', async ({ stored, expected }) => {
+    // 真实 SessionAutomationService + 真库：消息正文（buildEventMessage）与落库路径都是真的。
+    const automationService = new SessionAutomationService();
+    service.upsert.mockImplementation(automationService.upsert.bind(automationService));
+    service.getBySourceRef.mockImplementation(automationService.getBySourceRef.bind(automationService));
+    service.recordEvent.mockImplementation(automationService.recordEvent.bind(automationService));
+    dbState.db?.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('sess', 'Source', 'test', 'test', 1, 1);
+
+    await recordCronAutomationExecution(
+      def({ metadata: { sourceSessionId: 'sess' }, action: { type: 'agent', agentType: 'default', prompt: '把笔记整理成晨报' } }),
+      exec({ status: 'failed', error: stored }),
+      identityRuntime,
+    );
+
+    const written = sessionMessages.addMessageToSession.mock.calls.map(([, message]) => message.content as string);
+    process.stdout.write(`[AUTOMATION MESSAGE ${stored}] ${JSON.stringify(written)}\n`);
+    expect(written).toEqual([expect.stringContaining(expected)]);
+    expect(written.join('\n')).not.toMatch(/PROJECT_SOURCE_TRUST|Project Source|\/Users\//);
+    expect(service.recordEvent.mock.calls[0][0]).toMatchObject({ event: 'failed', error: expected.slice('错误：'.length) });
   });
 
   it('maps an unattended login wall to the review inbox with the site origin', async () => {

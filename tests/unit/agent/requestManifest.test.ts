@@ -1,12 +1,21 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../src/shared/contract';
+import type { Message, ToolDefinition } from '../../../src/shared/contract';
 import type { ModelMessage } from '../../../src/host/agent/loopTypes';
 import {
   buildRequestManifest,
   canonicalizeModelMessage,
   type RequestManifestBuildInput,
 } from '../../../src/host/agent/runtime/contextAssembly/requestManifestBuilder';
-import { recordInferenceRetryTrace } from '../../../src/host/agent/runtime/contextAssembly/requestManifest';
+import { recordInferenceRetryTrace, recordRequestManifest } from '../../../src/host/agent/runtime/contextAssembly/requestManifest';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
+import { readModule } from '../../../src/host/tools/modules/file/read';
+import { blobModule } from '../../../src/host/tools/modules/file/blob';
+import { getAllToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
+import { imageAnalyzeSchema } from '../../../src/host/tools/modules/network/imageAnalyze.schema';
 
 function transcriptMessage(id: string, role: 'user' | 'assistant', content: string): Message {
   return { id, role, content, timestamp: 1 } as Message;
@@ -249,5 +258,125 @@ describe('recordInferenceRetryTrace', () => {
     const ctx = { runtime: {} } as unknown as Parameters<typeof recordInferenceRetryTrace>[0];
     const onRetry = recordInferenceRetryTrace(ctx, 'llm-req-8');
     expect(() => onRetry({ provider: 'p', attempt: 1, maxRetries: 2, delayMs: 1, kind: 'transient', error: 'x' })).not.toThrow();
+  });
+});
+
+describe('recordRequestManifest -> TurnState.requestToolNames -> Read / Blob image refusal', () => {
+  it('propagates the real ToolDefinition[] list before and after preflight filter to Read and Blob', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'manifest-img-hint-'));
+    try {
+      const pngPath = path.join(tmpDir, 'error-dialog.png');
+      await fs.writeFile(
+        pngPath,
+        Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 0xfe)]),
+      );
+
+      const fullTools: ToolDefinition[] = getAllToolDefinitions().filter((tool) =>
+        [readModule.schema.name, blobModule.schema.name, imageAnalyzeSchema.name].includes(tool.name),
+      );
+      const filteredTools = fullTools.filter((tool) => tool.name !== 'image_analyze');
+
+      const turn = new TurnState();
+      turn.beginTurn('turn-img-1', 'span-1');
+      const ctx = {
+        runtime: {
+          sessionId: 'session-img-hint',
+          agentId: 'primary',
+          modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
+          messages: [],
+          onEvent: vi.fn(),
+          turn,
+          contextHealth: {
+            compressionState: {
+              getSnapshot: () => ({ collapsedSpans: [], compactionReplacements: [] }),
+            },
+          },
+          turnTrace: { record: vi.fn() },
+        },
+      } as unknown as Parameters<typeof recordRequestManifest>[0];
+
+      const assembled = Object.assign(
+        [{ role: 'user' as const, content: 'read image' }],
+        { modelMessageSourceIds: ['msg-1'] },
+      );
+
+      const readHandler = await readModule.createHandler();
+      const blobHandler = await blobModule.createHandler();
+      const allowAll = async () => ({ allow: true as const });
+
+      // 1. With image_analyze in the request tool list (and browser_action/ToolSearch absent): Read names only image_analyze.
+      recordRequestManifest(ctx, {
+        requestId: 'req-with-image-analyze',
+        messages: assembled,
+        assembledMessages: assembled,
+        tools: fullTools,
+        requestConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
+      });
+      expect(turn.requestToolNames).toEqual(['Blob', 'Read', 'image_analyze']);
+
+      const withToolProtocolCtx = buildProtocolContext({
+        legacyCtx: {
+          workingDirectory: tmpDir,
+          requestPermission: async () => true,
+          allowedToolNames: ['Read', 'Blob', 'image_analyze'],
+          requestToolNames: turn.requestToolNames,
+        },
+        workingDirectory: tmpDir,
+        sessionId: 'session-img-hint',
+      });
+      const readWithTool = await readHandler.execute({ file_path: pngPath }, withToolProtocolCtx, allowAll);
+      expect(readWithTool.ok).toBe(false);
+      if (!readWithTool.ok) {
+        expect(readWithTool.error).toBe(
+          `Cannot read .png file as text. This is an image, not text. To understand a picture use image_analyze.\nPath: ${pngPath}`,
+        );
+      }
+
+      // 2. After preflight filter removes image_analyze: Read and Blob omit all tool names even if allowedToolNames still lists image_analyze.
+      recordRequestManifest(ctx, {
+        requestId: 'req-post-preflight',
+        messages: assembled,
+        assembledMessages: assembled,
+        tools: filteredTools,
+        requestConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
+      });
+      expect(turn.requestToolNames).toEqual(['Blob', 'Read']);
+
+      const postPreflightProtocolCtx = buildProtocolContext({
+        legacyCtx: {
+          workingDirectory: tmpDir,
+          requestPermission: async () => true,
+          allowedToolNames: ['Read', 'Blob', 'image_analyze'],
+          requestToolNames: turn.requestToolNames,
+        },
+        workingDirectory: tmpDir,
+        sessionId: 'session-img-hint',
+      });
+      const readPostPreflight = await readHandler.execute({ file_path: pngPath }, postPreflightProtocolCtx, allowAll);
+      expect(readPostPreflight.ok).toBe(false);
+      if (!readPostPreflight.ok) {
+        expect(readPostPreflight.error).toContain('This is an image, not text.');
+        expect(readPostPreflight.error).toContain('already in the conversation');
+        for (const forbidden of ['image_analyze', 'ToolSearch', 'select:image_analyze', 'browser_action', 'get_content', 'get_dom_snapshot']) {
+          expect(readPostPreflight.error).not.toContain(forbidden);
+        }
+      }
+
+      const blobPostPreflight = await blobHandler.execute(
+        { action: 'read_text', file_path: pngPath },
+        postPreflightProtocolCtx,
+        allowAll,
+      );
+      expect(blobPostPreflight.ok).toBe(false);
+      if (!blobPostPreflight.ok) {
+        expect(blobPostPreflight.error).toContain('This is an image, not text.');
+        expect(blobPostPreflight.error).toContain('Blob stat still returns size/mime for images.');
+        for (const forbidden of ['image_analyze', 'ToolSearch', 'select:image_analyze', 'browser_action', 'get_content', 'get_dom_snapshot']) {
+          expect(blobPostPreflight.error).not.toContain(forbidden);
+        }
+      }
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

@@ -4,6 +4,8 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract';
 import { readableCronRunText } from '../../shared/cronRunMessage';
+import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
+import { cronProjectTrustFailureText } from './cronFailureNoticeCopy';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager } from '../services/infra/sessionManager';
@@ -32,6 +34,9 @@ function truncateText(value: string, maxChars: number): string {
 }
 
 function errorText(error: unknown): string {
+  // 项目文件夹信任失败：只写文件夹名的人话，不写英文原句和本机绝对路径。
+  const trust = error == null ? undefined : cronProjectTrustFailureText(cronFailureSourceText(error));
+  if (trust) return trust;
   if (error instanceof Error) return error.message;
   return error == null ? '' : String(error);
 }
