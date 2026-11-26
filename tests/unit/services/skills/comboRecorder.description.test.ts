@@ -9,7 +9,7 @@
 // 不复制被测辅助函数。
 // ============================================================================
 
-import type { ToolResult } from '../../../src/shared/contract';
+import type { ToolResult } from '../../../../src/shared/contract';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getComboRecorder, shutdownComboRecorder } from '../../../../src/host/services/skills/comboRecorder';
 
