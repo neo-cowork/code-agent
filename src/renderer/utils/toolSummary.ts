@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
-import { toolSummaryCopyZh } from '../i18n/toolSummaryCopy';
+import { toolSummaryCopyZh } from '../i18n/toolResultSummary';
 import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 
 /**
