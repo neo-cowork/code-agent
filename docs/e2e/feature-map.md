@@ -117,7 +117,7 @@
 
 ### F10 — 附件分析（xlsx / PDF / 图片）
 - **Preconditions**: surface web；工作目录里有 `q1-sales.xlsx`（或拖入附件）。
-- **Steps**: 1. 说「帮我看一下 q1-sales.xlsx，哪个区域哪个月卖得最好」。2. 遇到读文件审批点允许。3. 读回复。
+- **Steps**: 1. 说「帮我看一下 q1-sales.xlsx，哪个区域哪个月卖得最好，再告诉我各区域一季度的合计」。2. 遇到读文件审批点允许。3. 读回复。
 - **Selectors**: `testid:composer-upload-status` @ `src/renderer/components/features/chat/ChatInput/ComposerUploadStatus.tsx`；`testid:chat-composer-textarea` @ `src/renderer/components/features/chat/ChatInput/InputArea.tsx`；附件入口是 `src/renderer/components/features/chat/ChatInput/InputAddMenu.tsx` 里的隐藏文件框（无 testid，用 `input[type=file]`）。
 - **Expected UI**: 回复给出「华东区 3 月、150,000 元」这类具体结论，并带季度小结；数字与表一致。
 - **Observable**: `tool_execution_events` 里 `Glob` → `delegate_task` →（后台）`ExcelAutomate` / `Bash`；`permission_decisions` 为 `ask-approved`。
