@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global CustomEvent, Element, NodeFilter, document, fetch, getComputedStyle, window */
+/* global CustomEvent, Element, MutationObserver, NodeFilter, clearTimeout, document, fetch, getComputedStyle, setTimeout, window */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +31,24 @@ function slug(value) {
 
 async function visible(locator) {
   return await locator.count() > 0 && await locator.first().isVisible();
+}
+
+// Pages keep loading sections after navigation. A surface scanned too early is under-covered, so wait until the DOM
+// has been quiet for a moment (bounded, because some pages update a clock or a status line forever).
+async function settle(page) {
+  await page.evaluate(() => new Promise((resolve) => {
+    const quietMs = 600;
+    const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(finish, quietMs); });
+    let timer = setTimeout(finish, quietMs);
+    const hardCap = setTimeout(finish, 4000);
+    function finish() {
+      observer.disconnect();
+      clearTimeout(timer);
+      clearTimeout(hardCap);
+      resolve();
+    }
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+  }));
 }
 
 async function clickRequired(locator, description) {
@@ -133,7 +151,7 @@ function createVisitor(page, out, report) {
       await assertion.first().waitFor({ state: 'visible', timeout: 15000 });
       if (!await assertion.first().isVisible()) throw new Error(`Screenshot assertion failed: ${surface}`);
     }
-    await page.waitForTimeout(250);
+    await settle(page);
     const hovered = await hoverTitles(page);
     const findings = await collectCjk(page, surface);
     const hits = findings.filter((finding) => !finding.allowlisted);
@@ -167,6 +185,8 @@ async function closeOnboarding(page, lang) {
 async function sweepOnboarding(page, visit, lang) {
   const subscription = page.getByTestId('onboarding-route-subscription');
   if (!await visible(subscription)) return;
+  // Local engine detection is asynchronous: on a loaded machine the cards can render several seconds after the modal.
+  await page.locator('[data-onboarding-engine], [data-onboarding-engine-status]').first().waitFor({ state: 'visible', timeout: 25000 }).catch(() => {});
   await visit('onboarding-subscription', page.getByTestId('onboarding-subscription-sources'));
   await clickRequired(page.getByTestId('onboarding-route-api'), 'onboarding API Key route');
   await visit('onboarding-api-key', page.getByTestId('onboarding-api-source'));
