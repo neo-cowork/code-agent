@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 const invokeDomain = vi.fn();
 vi.mock('../../../src/renderer/services/ipcService', () => ({ default: { on: () => () => {}, invokeDomain: (...args: unknown[]) => invokeDomain(...args) } }));
 import { TeamRecipeDraftCard } from '../../../src/renderer/components/features/chat/ChatInput/TeamRecipeDraftCard';
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+// 角色的 data-testid 里带着中文 roleId（身份，不是文案），所以只断言看得见的文字
+afterEach(() => {
+  useAppStore.setState({ language: 'zh' });
+});
 
 describe('TeamRecipeDraftCard', () => {
   it('渲染专家团档位、成员任务与未知角色警告', () => {
@@ -43,6 +49,16 @@ describe('TeamRecipeDraftCard', () => {
     // 无职业的角色不许多出一个空的次要文本节点
     expect(html).toContain('小助手');
     expect(html).not.toContain('小助手</span><span class="truncate text-zinc-500">');
+  });
+
+  it('英文界面：出厂专家团的模板走共享目录文案，成员与任务之间用英文冒号，不含中文', () => {
+    useAppStore.setState({ language: 'en' });
+    const { container } = render(<TeamRecipeDraftCard onResolved={() => {}} onDismiss={() => {}} drafts={[{ id: 'd4', name: 'Launch review', description: '', lead: { roleId: '牧之', briefTemplate: '围绕「{topic}」，统筹溯真的竞品与市场调研、青禾的对外表达稿，定稿一份产品规格：目标用户、核心场景、功能范围、优先级、风险与待决问题。' }, members: [{ roleId: '溯真', taskTemplate: '为「{topic}」做竞品与市场调研，给出差异化机会与风险。' }] }]} />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Around "{topic}", coordinate Suzhen');
+    expect(text).toContain('Research the competitors and market for "{topic}"');
+    expect(text).not.toContain('：');
+    expect(text).not.toMatch(/\p{Script=Han}/u);
   });
 
   it('确认与放弃分别走 team 草稿 action', async () => {

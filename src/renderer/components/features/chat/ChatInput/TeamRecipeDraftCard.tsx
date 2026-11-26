@@ -8,6 +8,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
+import { translateCatalogText } from '../../../../utils/catalogText';
 
 export interface TeamRecipeDraftSummary {
   id: string;
@@ -52,7 +53,7 @@ const RoleLabel: React.FC<{ roleId: string; profession?: string }> = ({ roleId, 
 };
 
 export const TeamRecipeDraftCard: React.FC<{ drafts: TeamRecipeDraftSummary[]; onResolved: (id: string) => void; onDismiss: () => void }> = ({ drafts, onResolved, onDismiss }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.team;
   const [busyId, setBusyId] = useState<string | null>(null);
   // selector 取原引用，Map 在 useMemo 里建——返回新对象会无限渲染（本仓 #599 踩过）
@@ -86,9 +87,9 @@ export const TeamRecipeDraftCard: React.FC<{ drafts: TeamRecipeDraftSummary[]; o
             })()
           : text.draftExpertGroup}
       </div>
-      {draft.lead ? <div className="text-[11px] text-zinc-400">{draft.lead.briefTemplate}</div> : null}
+      {draft.lead ? <div className="text-[11px] text-zinc-400">{translateCatalogText(draft.lead.briefTemplate, language)}</div> : null}
       <div className="mt-1 text-[11px] text-zinc-300">{text.draftMembers}</div>
-      <ul className="space-y-0.5 text-[11px] text-zinc-400">{draft.members.map((member, index) => <li key={`${member.id ?? member.roleId}-${index}`} className="min-w-0"><RoleLabel roleId={member.roleId} profession={professionOf(member.roleId)} />：{member.taskTemplate}</li>)}</ul>
+      <ul className="space-y-0.5 text-[11px] text-zinc-400">{draft.members.map((member, index) => <li key={`${member.id ?? member.roleId}-${index}`} className="min-w-0"><RoleLabel roleId={member.roleId} profession={professionOf(member.roleId)} />{t.punctuation.colon}{translateCatalogText(member.taskTemplate, language)}</li>)}</ul>
       {draft.unknownRoleNames?.length ? <div className="mt-1 text-[11px] text-badge-warning" role="alert">{text.draftUnknownRoles.replace('{roles}', draft.unknownRoleNames.join(t.punctuation.listSeparator))} {text.draftUnknownActions}</div> : null}
       <div className="mt-2 flex gap-2"><button /* ds-allow:button: 草稿确认需在卡内与放弃并列呈现 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'confirmDraft')} className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-500/20 text-badge-accent rounded disabled:opacity-50">{busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}{text.draftConfirm}</button><button /* ds-allow:button: 草稿放弃与确认构成同一行紧凑决策 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'rejectDraft')} className="px-2 py-1 text-xs text-zinc-400 rounded disabled:opacity-50">{text.draftReject}</button></div>
     </div>)}
