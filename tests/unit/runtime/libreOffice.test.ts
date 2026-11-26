@@ -26,8 +26,8 @@ afterEach(() => {
 
 describe('managed LibreOffice runtime', () => {
   it('pins both official macOS builds and selects x86_64 for x64 hosts', () => {
-    expect(buildForArch('arm64').bytes).toBe(297798926);
-    expect(buildForArch('x86_64').bytes).toBe(308308875);
+    expect(buildForArch('arm64').bytes).toBe(297813809);
+    expect(buildForArch('x86_64').bytes).toBe(308070986);
     expect(buildForArch('arm64').arch).toBe('arm64');
     expect(buildForArch('x64').arch).toBe('x86_64');
   });
@@ -51,7 +51,7 @@ describe('managed LibreOffice runtime', () => {
     expect(result.ok).toBe(false);
     expect(calls).toEqual(['download']);
     const log = fs.readFileSync(path.join(dataDir, 'runtimes/libreoffice/install.log'), 'utf8');
-    expect(log).toContain('chosen source=https://mirrors.ustc.edu.cn/tdf/libreoffice/stable/26.2.6/mac/aarch64/LibreOffice_26.2.6_MacOS_aarch64.dmg');
+    expect(log).toContain('chosen source=https://mirrors.ustc.edu.cn/tdf/libreoffice/stable/26.2.7/mac/aarch64/LibreOffice_26.2.7_MacOS_aarch64.dmg');
   });
 
   it('returns a structured offline error without downloading when both probes fail', async () => {
@@ -85,7 +85,7 @@ describe('managed LibreOffice runtime', () => {
     });
     expect(result).toMatchObject({ ok: false, error: { code: 'LIBREOFFICE_RUNTIME_INSTALL_FAILED' } });
     expect(commands.some(([file]) => file === 'hdiutil')).toBe(false);
-    const download = path.join(dataDir, 'runtimes/libreoffice/.LibreOffice_26.2.6_MacOS_aarch64.dmg.download');
+    const download = path.join(dataDir, 'runtimes/libreoffice/.LibreOffice_26.2.7_MacOS_aarch64.dmg.download');
     expect(fs.existsSync(download)).toBe(false);
 
     const validBytes = 'valid fake dmg';
