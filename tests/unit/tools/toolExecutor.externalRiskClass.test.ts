@@ -374,6 +374,32 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
     }
   });
 
+  it('resolves a home-relative rm target and counts the file in the approval request', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-home-delete-'));
+    const home = path.join(workspace, 'home');
+    const target = path.join(home, 'x', 'a.tmp');
+    const requestPermission = vi.fn(async (_req: unknown) => false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: workspace, forcePermissionHandler: true });
+    executor.setAuditEnabled(false);
+
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, 'draft');
+      vi.stubEnv('HOME', home);
+      vi.stubEnv('USERPROFILE', home);
+
+      await executor.execute('Bash', { command: 'rm -v ~/x/a.tmp' }, { sessionId: 's-home-delete' });
+
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      expect(requestPermission.mock.calls[0][0]).toMatchObject({
+        details: { affectedPath: target, affectedFileCount: 1 },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   // N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED：多目标 rm 的 affectedFileCount 是
   // 全部目标的盘点和，不是第一个目标的数。
   it('危险删除审批对多目标 rm 求和盘点文件数（rm -rf ./d1 ./d2）', async () => {

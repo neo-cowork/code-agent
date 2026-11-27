@@ -8,6 +8,7 @@
 // ============================================================================
 
 import * as nodeFs from 'node:fs/promises';
+import * as nodeOs from 'node:os';
 import * as nodePath from 'node:path';
 import { parseRmTargets } from '../../shared/rmCommandTargets';
 
@@ -40,6 +41,9 @@ async function countAffectedFiles(targetPath: string): Promise<number | undefine
 }
 
 function resolveTarget(workingDirectory: string, target: string): string {
+  if (target === '~' || target.startsWith('~/')) {
+    return nodePath.resolve(nodePath.join(nodeOs.homedir(), target.slice(2)));
+  }
   return nodePath.isAbsolute(target)
     ? nodePath.resolve(target)
     : nodePath.resolve(workingDirectory, target);
