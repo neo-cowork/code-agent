@@ -734,7 +734,8 @@ export class OrchestratorPermissionIsland {
         request: fullRequest,
       });
       const { id: requestId, sessionId, parentToolUseId, tool } = fullRequest;
-      if (sessionId && parentToolUseId) {
+      // The explicit legacy unattended terminal mode still times out without a ledger row.
+      if (sessionId && parentToolUseId && !approvalTerminal) {
         try {
           const repo = this.getPendingApprovalRepo();
           if (repo) {
