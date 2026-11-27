@@ -36,6 +36,8 @@ export async function sealBouncedToolCalls(
   deniedCallIds?: Set<string>,
   /** denied 类：已在同一轮交给后台任务的调用 id（交接成功才传）；封口码用 HANDED_OFF_TO_BACKGROUND，不再读作「没执行」。 */
   handedOffCallIds?: Set<string>,
+  /** The background task row's toolCallId, so the UI can read the handed-off step's outcome from that task. */
+  handoffTaskToolCallId?: string,
 ): Promise<'continue'> {
   const { ctx, contextAssembly } = deps;
   const userPrompt = inabilityGatePrompt(ctx);
@@ -65,7 +67,7 @@ export async function sealBouncedToolCalls(
         success: false,
         error: 'HANDED_OFF_TO_BACKGROUND',
         duration: 0,
-        metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND' },
+        metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND', ...(handoffTaskToolCallId ? { handoffTaskToolCallId } : {}) },
       };
     }
     const skipped = deniedCallIds !== undefined && !deniedCallIds.has(toolCall.id);

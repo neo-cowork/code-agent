@@ -73,6 +73,10 @@ export interface MemoryEntryDatabase {
   searchMemories?(query: string, options?: { limit?: number; applyDecay?: boolean }): MemoryRecord[];
   /** 变更日志聚合（N-MEM-JOURNAL-SOURCEJUMP）；缺省实现时列表不带「后台写入」标记 */
   latestMemoryChanges?(): Array<Pick<MemoryChangeJournalRow, 'memoryId' | 'entryId' | 'actor' | 'operation' | 'timestamp'>>;
+  /** 按 entryId 直查行，不依赖 updated_at 最新 N 行窗口（N-MEM-SOURCE-WRONG-FEEDBACK r2/r3）；必选，缺实现即编译错 */
+  findMemoryByEntryId(entryId: string): MemoryRecord | null;
+  /** 全量取带注入负反馈 metadata 的行（N-MEM-SOURCE-WRONG-FEEDBACK r2/r3）；必选 */
+  listMemoriesWithInjectionFeedback(): MemoryRecord[];
 }
 
 export interface BuildActiveMemoryEntryInput {

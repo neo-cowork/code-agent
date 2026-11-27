@@ -30,6 +30,11 @@ const eviction = vi.hoisted(() => ({
   memoryInjectionPauses: vi.fn(() => new Map<string, unknown>()),
   resumeMemoryInjection: vi.fn(() => true),
 }));
+const feedback = vi.hoisted(() => ({
+  flagMemoryInjection: vi.fn(() => true),
+  clearMemoryInjectionFlag: vi.fn(() => true),
+  memoryUserFlagCounts: vi.fn(() => new Map<string, number>()),
+}));
 const review = vi.hoisted(() => ({
   batchReviewMemoryEntries: vi.fn(async () => ({ updated: [{ id: 'e1' }], skipped: [] })),
 }));
@@ -62,6 +67,7 @@ vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
 vi.mock('../../../src/host/memory/importers', () => importer);
 vi.mock('../../../src/host/memory/memoryEntryReview', () => review);
 vi.mock('../../../src/host/memory/memoryUsageEviction', () => eviction);
+vi.mock('../../../src/host/memory/memoryInjectionFeedback', () => feedback);
 vi.mock('../../../src/host/memory/memoryInjectionTrace', () => ({ listMemoryInjectionTraces: vi.fn(async () => []) }));
 vi.mock('../../../src/host/memory/knowledgeInboxDecision', () => ({
   KNOWLEDGE_INBOX_DECISION_CATEGORY: 'inbox',
@@ -270,6 +276,33 @@ describe('v2 entry 委派', () => {
     expect((await call('memoryEntryResumeInjection', { entryId: 'e3' })).data).toEqual({ resumed: true });
     expect(eviction.resumeMemoryInjection).toHaveBeenCalledWith(db, 'e3');
     expect(await call('memoryEntryResumeInjection', {})).toMatchObject({ success: false, error: { message: expect.stringContaining('entryId') } });
+  });
+
+  // N-MEM-SOURCE-WRONG-FEEDBACK：回复下方「不对/过时了」负反馈的 IPC 面
+  it('memoryEntryFlagInjection 带 (db, entryId, flag) 委派；缺参报错', async () => {
+    expect((await call('memoryEntryFlagInjection', { entryId: 'e4', flag: 'wrong' })).data).toEqual({ flagged: true });
+    expect(feedback.flagMemoryInjection).toHaveBeenCalledWith(db, 'e4', 'wrong');
+    expect(await call('memoryEntryFlagInjection', { entryId: 'e4' })).toMatchObject({ success: false, error: { message: expect.stringContaining('wrong or outdated') } });
+    expect(await call('memoryEntryFlagInjection', { flag: 'wrong' })).toMatchObject({ success: false, error: { message: expect.stringContaining('entryId') } });
+  });
+
+  it('memoryEntryClearInjectionFlag 带 (db, entryId) 委派；缺 entryId 报错', async () => {
+    expect((await call('memoryEntryClearInjectionFlag', { entryId: 'e5' })).data).toEqual({ cleared: true });
+    expect(feedback.clearMemoryInjectionFlag).toHaveBeenCalledWith(db, 'e5');
+    expect(await call('memoryEntryClearInjectionFlag', {})).toMatchObject({ success: false, error: { message: expect.stringContaining('entryId') } });
+  });
+
+  it('memoryEntries 顺带标注 userFlagCount；标注出错不连累列表', async () => {
+    rt.listUnifiedMemoryEntries.mockResolvedValueOnce({ entries: [
+      { id: 'a', status: 'active' }, { id: 'b', status: 'active' },
+    ], sourceCounts: {} } as never);
+    feedback.memoryUserFlagCounts.mockReturnValueOnce(new Map([['a', 2]]));
+    const listed = (await call('memoryEntries')).data as { entries: Array<{ id: string; userFlagCount?: number }> };
+    expect(listed.entries.map((entry) => [entry.id, entry.userFlagCount])).toEqual([['a', 2], ['b', undefined]]);
+
+    rt.listUnifiedMemoryEntries.mockResolvedValueOnce({ entries: [{ id: 'a', status: 'active' }], sourceCounts: {} } as never);
+    feedback.memoryUserFlagCounts.mockImplementationOnce(() => { throw new Error('boom'); });
+    expect(((await call('memoryEntries')).data as { entries: unknown[] }).entries).toEqual([{ id: 'a', status: 'active' }]);
   });
 
   it('memoryEntries / memoryExportV2 / memoryRebuildMirror 透传 runtime', async () => {
