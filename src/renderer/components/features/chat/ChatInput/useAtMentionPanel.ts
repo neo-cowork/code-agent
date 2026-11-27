@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { LibraryItem } from '@shared/contract/library';
+import type { Message } from '@shared/contract/message';
 import type { ProjectArtifact } from '@shared/contract/project';
 import type { Session } from '@shared/contract/session';
 import { getSessionPin, listLibraryItems, setSessionPin } from '../../../../services/libraryClient';
@@ -27,11 +28,11 @@ import { getProjectDisplayName } from '../../../../utils/projectDisplayName';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 import {
   buildArtifactRows,
-  buildFileRows,
   buildLibraryRows,
   buildSessionRows,
   flattenAtMentionRows,
   groupLimitForTab,
+  mergeSessionAttachmentRows,
   shiftAtMentionTab,
   wrapIndex,
   type AtMentionArtifactRow,
@@ -44,6 +45,7 @@ import {
 } from './atMentionPanelModel';
 
 const AT_TRIGGER_RE = /@([^\s@]*)$/;
+const NO_MESSAGES: readonly Message[] = [];
 
 // FB-1531：@ 面板的「工作区文件」必须来自会话/项目的工作目录，而不是 host 进程 cwd。
 // host 的 handleListFiles 直接 fs.readdir(payload.dirPath)，传裸 '.' 会列到 host 进程自己的
@@ -104,6 +106,12 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   const { t } = useI18n();
   const isComposingRef = useImeCompositionRef();
   const pendingPinItemIds = useComposerStore((s) => s.pendingPinItemIds);
+  // FB-3095：会话附件候选只对「面板所在会话 = 当前会话」生效——sessionStore.messages
+  // 是 currentSessionId 的消息列表，别的会话不能拿它凑候选。响应式订阅 messages：
+  // 切走再切回、或新消息附件落库后行即时更新。
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const sessionMessages = useSessionStore((s) => s.messages);
+  const sessionAttachmentMessages = sessionId && sessionId === currentSessionId ? sessionMessages : NO_MESSAGES;
 
   const [files, setFiles] = useState<AtMentionFileMatch[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
@@ -284,12 +292,13 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       : [],
     [activeTab, groupLimit, libraryItems, projectId, pinnedIds, query],
   );
-  // 文件名过滤只取最后一个 '/' 之后的部分：@src/fo 应列 <base>/src 再按 'fo' 过滤；
-  // 整个 query 当子串会把 'src/' 也算进文件名，@src/ 会一行都不剩（浏览子目录就废了）。
-  const fileNameFilter = query.slice(query.lastIndexOf('/') + 1);
+  // FB-3095：文件组 = 本会话附件（query 无 '/' 时、与工作区文件同一文件名过滤口径、新上传在前）
+  // + 工作区文件。附件候选在工作目录之外也成立（无 baseDir 时 files 恒空、附件仍进列表）。
   const fileRows = useMemo(
-    () => activeTab === 'all' || activeTab === 'files' ? buildFileRows(files, fileNameFilter, groupLimit, resolveAtMentionBaseDir(sessionId)) : [],
-    [activeTab, fileNameFilter, files, groupLimit, sessionId],
+    () => activeTab === 'all' || activeTab === 'files'
+      ? mergeSessionAttachmentRows(sessionAttachmentMessages, files, query, groupLimit, resolveAtMentionBaseDir(sessionId))
+      : [],
+    [activeTab, files, groupLimit, query, sessionAttachmentMessages, sessionId],
   );
   const sessionRows = useMemo(
     () => activeTab === 'all' || activeTab === 'sessions'
