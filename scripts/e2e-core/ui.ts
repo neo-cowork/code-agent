@@ -134,10 +134,20 @@ function cardButton(card: CardLocator, label: string): ReturnType<CardLocator['g
 /**
  * 审批卡默认只露一句话和两个按钮，命令、路径和限时授权都收在「更多选项与详情」里。
  * 读卡上的命令/路径、点限时授权之前先展开；已展开或这张卡没有折叠区时什么都不做。
+ * 返回卡片是否仍在页面上：若展开瞬间卡片已随 run 收线或前后台交替被卸掉，返回 false 而不是傻等超时。
  */
-export async function expandCard(page: Page): Promise<void> {
+export async function expandCard(page: Page): Promise<boolean> {
   const more = page.getByTestId('permission-card').first().getByRole('button', { name: EXPAND_LABEL, exact: true });
-  if (await more.count()) await more.click({ timeout: 10_000 });
+  if (!(await more.count())) return (await page.getByTestId('permission-card').count()) > 0;
+  try {
+    await more.click({ timeout: 3_000 });
+    return true;
+  } catch (err) {
+    if ((await more.count().catch(() => 0)) === 0) {
+      return (await page.getByTestId('permission-card').count().catch(() => 0)) > 0;
+    }
+    throw err;
+  }
 }
 
 /** 审批卡上的「不同意」按钮。 */
@@ -159,7 +169,7 @@ export const realDataDir = (): string => path.join(os.homedir(), '.code-agent');
 export async function clickCardButton(page: Page, label: string): Promise<void> {
   const card = page.getByTestId('permission-card').first();
   // 护栏要读到路径和命令，它们在折叠区里：不展开就读，等于没检查。
-  await expandCard(page);
+  if (!(await expandCard(page))) return;
   const before = await card.innerText();
   if (!DENY_LABELS.includes(label) && before.includes(realDataDir())) {
     for (const deny of DENY_LABELS) {
