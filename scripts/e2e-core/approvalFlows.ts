@@ -53,7 +53,8 @@ export const f05: FlowDef = {
     {
       text: '点「允许」。',
       run: async (env) => {
-        let approvedPreview: string | undefined;
+        const attemptedPreviews = new Set<string>();
+        let clickedApproval = false;
         const onPermissionCard = async (page: typeof env.page) => {
           const card = await currentPermissionCard(page);
           if (!card) return;
@@ -64,21 +65,23 @@ export const f05: FlowDef = {
             if (await card.count() === 0) return;
             throw error;
           }
-          if (preview === approvedPreview) throw new Error('同一条命令点了允许后又问了第二次');
+          if (attemptedPreviews.has(preview)) throw new Error('同一条命令点了允许后又问了第二次');
           if (!preview) throw new Error('审批卡里没有命令正文');
+          // 卡片离开时点击可能已经送达，后续同命令仍走重复询问断言。
+          attemptedPreviews.add(preview);
           try {
             await approveCard(page, card);
+            clickedApproval = true;
           } catch (error) {
             if (!(error instanceof RealHomeWriteError) && await card.count() === 0) return;
             throw error;
           }
-          approvedPreview ??= preview;
         };
         await onPermissionCard(env.page);
         await driveTurn(env.page, { mayBeIdle: true, onPermissionCard }, TURN_TIMEOUT_MS);
         await settleBackground(env.page, onPermissionCard, TURN_TIMEOUT_MS);
         if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「允许」后审批卡还在');
-        if (approvedPreview === undefined) throw new Error('没有在审批卡上点到「允许」');
+        if (!clickedApproval) throw new Error('没有在审批卡上点到「允许」');
       },
     },
     {

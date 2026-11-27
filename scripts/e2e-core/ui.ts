@@ -179,10 +179,11 @@ export async function clickCardButton(page: Page, label: string, card?: CardLoca
   }
   const clickedAt = Date.now();
   await cardButton(card, label).click({ timeout: 10_000 });
-  // 点完这张请求应当收起，即使下一张卡的文字完全一样。
+  // 点完这张请求应当收起或切换阶段，即使下一张卡的文字完全一样。
   const deadline = Date.now() + CARD_COLLAPSE_TIMEOUT_MS;
   for (;;) {
     if (!(await card.isVisible().catch(() => false))) return;
+    if ((await card.innerText({ timeout: 10_000 }).catch(() => before)) !== before) return;
     if (Date.now() > deadline) {
       if (deliveryProbe && await deliveryProbe(clickedAt).catch(() => false)) return;
       throw new Error(`点「${label}」后审批卡 ${CARD_COLLAPSE_TIMEOUT_MS / 1000} 秒内没有收起（原样还在，数据库里也没有新的审批决定）`);
