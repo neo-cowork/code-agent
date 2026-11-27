@@ -13,7 +13,6 @@
 import type { Message, ToolResult } from '../../shared/contract';
 import { serializeToolResultsForModel } from '../tools/toolResultMessageContent';
 import type { ToolExecutionResult } from '../tools/types';
-import { withRecoveredRunUserRuleContext } from '../permissions/runPolicySnapshot';
 
 export async function executeRecoveredLedgerTool(
   input: Parameters<LedgerToolExecutionPorts['executeTool']>[0],
@@ -35,9 +34,10 @@ export async function executeRecoveredLedgerTool(
   if (!input.runId) return execute();
   const { recoverDelegatedUserRuleContext } = await import('../services/commandCenter/sessionCommandTaskRestartRecovery');
   const context = recoverDelegatedUserRuleContext(input.sessionId, input.runId);
-  return context ? withRecoveredRunUserRuleContext(input.sessionId, input.runId, context, execute) : execute();
+  if (!context) return execute();
+  const { withRecoveredRunUserRuleContext } = await import('../permissions/runPolicySnapshot');
+  return withRecoveredRunUserRuleContext(input.sessionId, input.runId, context, execute);
 }
-
 
 export interface LedgerToolExecutionPorts {
   executeTool(input: {
