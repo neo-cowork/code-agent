@@ -607,7 +607,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     [displayModel, displayProvider, modelOptions],
   );
   const displayLabel = humanizeInternalText(engine.kind === 'native'
-    ? showModelSettingsPrompt ? panelText.configureModel : modelSettings === null && !settingsLoaded ? '…' : nativeDisplayLabel
+    ? showModelSettingsPrompt ? panelText.configureModel : nativeDisplayLabel
     : engine.model ?? modelText.switcherTooltip.defaultModel, language).text;
   const effortOptions = useMemo(
     () => engine.kind === 'native'
