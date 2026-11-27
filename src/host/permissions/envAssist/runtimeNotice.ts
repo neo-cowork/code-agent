@@ -83,6 +83,14 @@ export function runtimeModelGuidance(notice: EnvAssistNotice): string {
     return common + 'The card has no button. In one short sentence in the user\'s language, say that a one-time component is being prepared '
       + 'and that the task continues by itself once it is ready. Do not describe what is being downloaded or how.';
   }
+  if (isOfflineCard(notice)) {
+    // Neo retries the install by itself once the sources answer again; a run that could not wait does not continue.
+    return common + 'The card says the download servers could not be reached; Neo retries the setup by itself once the connection is back, '
+      + 'and the card also has a retry button. In one short sentence in the user\'s language, say that the component could not be downloaded '
+      + 'because the network is unreachable, that it will be set up by itself once the connection is back (the card shows when it is ready), '
+      + 'and that the user can then ask for the conversion again. You may keep going with a route that does not need document conversion. '
+      + 'Do not claim you will do the conversion on your own.';
+  }
   if (notice.phase === 'needs_user') {
     return common + 'The card has a retry button. In one short sentence in the user\'s language, say that the component could not be set up and that '
       + 'the user can press the retry button on the card. You may keep going with a route that does not need document conversion. '
@@ -115,7 +123,11 @@ export async function holdForRuntimeInstall(notice: EnvAssistNotice, signal?: Ab
     const nothingComing = state.phase === 'missing' && process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1';
     const waitedTooLong = nothingComing || Date.now() - changedAt >= ENV_RESUME_RUNTIME_STALL_MS;
     if (state.phase !== 'installing' && state.phase !== 'missing' || waitedTooLong) {
-      return runtimeModelGuidance({ ...notice, phase: state.phase === 'unsupported' ? 'unsupported' : 'needs_user' });
+      // A failed / unsupported install says why (offline or not) through the card it settles to; a stall keeps the button-only copy.
+      const settled = state.phase === 'failed' || state.phase === 'unsupported'
+        ? runtimeNoticeFor({ sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET, state })
+        : { ...notice, phase: 'needs_user' as const };
+      return runtimeModelGuidance(settled);
     }
     const percent = state.phase === 'installing' ? Math.round(state.percent ?? 0) : undefined;
     if (percent !== lastPercent) { lastPercent = percent; changedAt = Date.now(); }

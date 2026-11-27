@@ -383,6 +383,20 @@ describe('③ the card follows the install in place and the run finishes by itse
     await settleUntil(() => getLibreOfficeState().phase === 'installed');
   });
 
+  it('a run that cannot park, offline: the model is told Neo retries by itself once back online (never "press retry" alone)', async () => {
+    const f = await setup();
+    world.online = false; world.hold = false;
+    const { ctx, engine } = makeEngine(f.execute as never);
+    Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages(), onEvent: () => undefined });
+    const [toolResult] = await engine.executeToolsWithHooks([{ id: 'lo-offline', name: 'Bash', arguments: { command: COMMAND } }]);
+    out('NON_PARKABLE_OFFLINE', { error: toolResult.error });
+    expect(String(toolResult.error)).toContain('retries the setup by itself once the connection is back');
+    expect(String(toolResult.error)).not.toContain('ready now');
+    await settleUntil(() => cards()[0]?.phase === 'needs_user');
+    expect(cards()[0]).toMatchObject({ sentenceKey: 'env.sentence.libreofficeOffline' });
+    expect(sofficeRuns()).toHaveLength(0);
+  });
+
   it('no hard 120 s cutoff: the wait outlives the fixed permission window while progress keeps moving', async () => {
     const f = await setup();
     await warpLongTimeouts(async () => {
