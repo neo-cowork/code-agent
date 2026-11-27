@@ -381,14 +381,13 @@ export function ToolCallDisplay({
               用户亲手点的拒绝会被渲染成「未能自动批准」，而同一屏上方的组头（走
               humanizeToolFailureReason）显示「审批被拒绝」——同一件事两处自相矛盾。 */}
           {humanizeToolFailureReason(toolCall, t)}
-          {toolCall.result?.metadata?.recovered === true && !terminal.handedOff && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
+          {toolCall.result?.metadata?.recovered === true && toolCall.result.metadata.bounced !== true && !terminal.handedOff && /^(edit|edit_file)$/i.test(toolCall.name) && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
         </div>
       )}
 
-      {/* 已恢复的失败行（recovered ⇒ 非 error）的安静脚注：替代上面那条失败原因行，
-          告诉用户这次失败已被后续成功收尾，不再顶红。skipped（从未执行，只是被系统
-          关卡拦下后降级）的行不是「失败后恢复」，不挂这条脚注。 */}
-      {status !== 'error' && toolCall.result?.metadata?.recovered === true && !terminal.skipped && !terminal.handedOff && !delegationPresentation && (
+      {/* 已恢复的 Edit 失败行（recovered ⇒ 非 error）的安静脚注：只有后续同一处编辑真成功时才展示；
+          检索重试与系统关卡封口（bounced / skipped）虽降级为 recovered，但不是「后续修改已成功」。 */}
+      {status !== 'error' && toolCall.result?.metadata?.recovered === true && toolCall.result.metadata.bounced !== true && !terminal.skipped && !terminal.handedOff && !delegationPresentation && /^(edit|edit_file)$/i.test(toolCall.name) && (
         <div className="ml-6 mt-1 text-xs leading-5 text-badge-success" data-testid="tool-call-recovered-note">
           {t.deliveryExperience.recovered}
         </div>
