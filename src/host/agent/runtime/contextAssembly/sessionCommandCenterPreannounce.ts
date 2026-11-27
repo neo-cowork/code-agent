@@ -1,4 +1,5 @@
 import { BACKGROUND_TASK_PREANNOUNCE } from '@shared/constants/backgroundTaskPreannounce';
+import { truncateAtWordBoundary } from '../../../utils/truncate';
 import { extractUserRequest } from '../../turnScaffold';
 import type { ModelResponse } from '../../loopTypes';
 
@@ -16,10 +17,29 @@ export interface CommandCenterToolStartInput {
 // If extraction leaves any scaffold tag, use generic copy rather than quoting system context.
 const TURN_SCAFFOLD_TAG_PATTERN = /<\/?[a-z][\w-]*>/i;
 
+const PREANNOUNCE_TITLE_CODE_POINTS = 28;
+
+// Tool/shell words, snake_case identifiers, backtick spans and `$ ` prompt lines in the
+// user's words would leak internal names into the quoted title (FB-3029) — generic copy instead.
+const TOOL_OR_SHELL_WORD_PATTERN = /\b(?:bash|zsh|shell|terminal|osascript|applescript|powershell|curl|sudo)\b/i;
+const SNAKE_CASE_IDENTIFIER_PATTERN = /\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/;
+const BACKTICK_SPAN_PATTERN = /`[^`]*`/;
+const SHELL_PROMPT_LINE_PATTERN = /^[ \t]*\$ /m;
+
+function looksLikeToolOrCommandText(request: string): boolean {
+  return TOOL_OR_SHELL_WORD_PATTERN.test(request)
+    || SNAKE_CASE_IDENTIFIER_PATTERN.test(request)
+    || BACKTICK_SPAN_PATTERN.test(request)
+    || SHELL_PROMPT_LINE_PATTERN.test(request);
+}
+
 function preannounceTitle(userMessage: string): string | undefined {
-  const request = extractUserRequest(userMessage).replace(/\s+/g, ' ').trim();
-  if (!request || TURN_SCAFFOLD_TAG_PATTERN.test(request)) return undefined;
-  return Array.from(request).slice(0, 28).join('') + (Array.from(request).length > 28 ? '…' : '');
+  const request = extractUserRequest(userMessage);
+  const normalized = request.replace(/\s+/g, ' ').trim();
+  if (!normalized || TURN_SCAFFOLD_TAG_PATTERN.test(normalized) || looksLikeToolOrCommandText(request)) {
+    return undefined;
+  }
+  return truncateAtWordBoundary(normalized, PREANNOUNCE_TITLE_CODE_POINTS);
 }
 
 function buildCommandCenterPreannounce(userMessage: string, locale: 'en' | 'zh'): string {

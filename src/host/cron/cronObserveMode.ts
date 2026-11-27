@@ -37,7 +37,7 @@ export function enterObserveModeForCronRun(
   sessionId: string,
   executionId: string | undefined,
   store: CronEventDecisionStore = sqliteCronEventDecisionStore,
-  /** 本批事件带的群名/账号显示名（命中规则的可读会话/账号位；缺省回落配置里的原始 id）。 */
+  /** 本批事件的群名和账号显示名。缺群名时显示 chatId，缺账号名时省略账号位。 */
   options?: { chatName?: string; accountName?: string },
 ): () => void {
   if (!isCronObserveMode(definition)) return () => {};
