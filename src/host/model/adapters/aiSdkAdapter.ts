@@ -666,6 +666,7 @@ async function runInferenceViaAiSdk(
       options?.cacheRetention === 'none'
         ? aiMessages
         : applyAnthropicCacheBreakpoints(aiMessages, requestConfig.provider),
+      resolveModelCapabilities(requestConfig.provider, requestConfig.model).requestCompat?.describeThinkTags,
     );
   } catch (err) {
     const stage = !aiTools && tools.length > 0 && req.supportsTool ? 'buildTools' : 'toAiMessages';

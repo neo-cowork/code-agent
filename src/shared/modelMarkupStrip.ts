@@ -9,6 +9,11 @@
 const OPEN_THINK = '<think>';
 const CLOSE_THINK = '</think>';
 const THINK_TAGS = /<\/?think>/g;
+
+export function containsThinkTag(text: string): boolean {
+  return text.includes(OPEN_THINK) || text.includes(CLOSE_THINK);
+}
+
 const LONGCAT_PATTERNS = [
   /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
   /<longcat_tool_call>[\s\S]*$/gi,
