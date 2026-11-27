@@ -37,12 +37,10 @@ function nativeCalls(source: string, filename = 'input.tsx'): string[] {
       if (ts.isIdentifier(callee) && callee.text === 'confirm') bare.push(node);
       if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) {
         const receiver = callee.expression;
-        const key = ts.isPropertyAccessExpression(callee) ? callee.name : callee.argumentExpression;
-        if (ts.isIdentifier(receiver) && NATIVE_RECEIVERS.has(receiver.text)
-          && (ts.isPropertyAccessExpression(callee) ? ts.isIdentifier(key) : ts.isStringLiteralLike(key))
-          && key.text === 'confirm') {
-          qualified.push(node);
-        }
+        const isConfirm = ts.isPropertyAccessExpression(callee)
+          ? callee.name.text === 'confirm'
+          : ts.isStringLiteralLike(callee.argumentExpression) && callee.argumentExpression.text === 'confirm';
+        if (isConfirm && ts.isIdentifier(receiver) && NATIVE_RECEIVERS.has(receiver.text)) qualified.push(node);
       }
     }
     ts.forEachChild(node, visit);
