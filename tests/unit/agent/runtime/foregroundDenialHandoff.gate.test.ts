@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResponse } from '../../../../src/host/agent/loopTypes';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
+import { ContextEventLedger } from '../../../../src/host/context/contextEventLedger';
 import type { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import type { Message, ToolCall, ToolResult } from '../../../../src/shared/contract';
 import type { AgentEvent } from '../../../../src/shared/contract';
@@ -703,7 +704,7 @@ describe('background question visibility', () => {
     const runtime = ctx as unknown as RuntimeContext;
     const { contextAssembly, runFinalizer } = buildDeps(ctx);
     const assembly = new ContextAssembly(runtime);
-    vi.spyOn(assembly, 'recordContextEventsForMessage').mockImplementation(() => {});
+    using _ledgerWrite = vi.spyOn(ContextEventLedger.prototype, 'upsertEvents').mockImplementation(() => {});
     contextAssembly.addAndPersistMessage = vi.fn(assembly.addAndPersistMessage.bind(assembly));
 
     const call = { id: 'call-1', name, arguments: { question: 'Which cover?' } };
