@@ -105,6 +105,8 @@ export function describeFailedCommand(
   messages: readonly Message[],
   workspaceRoot: string | undefined,
   locale: 'zh' | 'en',
+  /** 助手自报没做完时：后面哪怕有成功的执行，也要把最后一条失败的命令带进展开详情。 */
+  keepAfterLaterSuccess = false,
 ): string | undefined {
   const callsById = new Map<string, { name: string; arguments: Record<string, unknown> }>();
   const resolver = getToolResolver();
@@ -117,7 +119,7 @@ export function describeFailedCommand(
       const call = callsById.get(result.toolCallId);
       if (!call) continue;
       if (result.success) {
-        if (resolver.getDefinition(call.name)?.permissionLevel === 'execute'
+        if (!keepAfterLaterSuccess && resolver.getDefinition(call.name)?.permissionLevel === 'execute'
           && executeSuccessClearsFailure(call.name, call.arguments.command)) failed = undefined;
       } else if (isBashToolName(call.name) && result.metadata?.code === 'COMMAND_FAILED' && typeof call.arguments.command === 'string') {
         failed = { command: call.arguments.command, result };

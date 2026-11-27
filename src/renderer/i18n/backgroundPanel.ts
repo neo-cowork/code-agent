@@ -14,6 +14,15 @@ export const backgroundPanelZh = {
       failed: '后台任务没有完成，结果不会再送达。',
     },
     shellCommandFailed: '命令未能成功完成',
+    helperNotDone: {
+      failed: '这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。',
+      partial: '这个后台任务只做完了一部分，还有几步没做成。补上缺少的内容后，可以让我接着做。',
+    },
+    helperNotDoneWithReason: {
+      failed: '这个后台任务没有做完：{reason}。补上缺少的内容后，可以让我再试一次。',
+      partial: '这个后台任务只做完了一部分：{reason}。补上缺少的内容后，可以让我接着做。',
+    },
+    shellOfNotDoneTask: '它所属的后台任务没有做完',
     shellTaskStarted: '已在后台开始执行',
     shellTaskFinished: '「{name}」已完成{duration}。',
     shellTaskFailed: '「{name}」失败：{reason}{duration}。',
@@ -49,6 +58,15 @@ export const backgroundPanelEn: typeof backgroundPanelZh = {
       failed: 'The background task failed, so no result will follow.',
     },
     shellCommandFailed: 'The command did not finish successfully',
+    helperNotDone: {
+      failed: 'This background task is not done: one of its steps did not work. Add what is missing and I can try again.',
+      partial: 'This background task is only partly done: some steps did not work. Add what is missing and I can pick it up again.',
+    },
+    helperNotDoneWithReason: {
+      failed: 'This background task is not done: {reason}. Add what is missing and I can try again.',
+      partial: 'This background task is only partly done: {reason}. Add what is missing and I can pick it up again.',
+    },
+    shellOfNotDoneTask: 'The background task it belongs to was not finished',
     shellTaskStarted: 'Started in the background',
     shellTaskFinished: '“{name}” finished{duration}.',
     shellTaskFailed: '“{name}” failed{duration}. {reason}.',

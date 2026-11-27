@@ -34,7 +34,9 @@ import {
 } from './sessionCommandCenter.schema';
 
 import { getSessionManager } from '../../../services/infra/sessionManager';
-import { sessionTaskStatusLabel } from '../../../../shared/i18n/sessionTaskStatus';
+import { formatDelegateTaskReceipt, sessionTaskStatusLabel } from '../../../../shared/i18n/sessionTaskStatus';
+import type { SessionTaskResultStatusWordLocale } from '../../../../shared/constants/sessionCommandCenter';
+import { resolveSessionTaskResultLocale } from '../../../services/commandCenter/sessionTaskResultLocale';
 
 const WORKSPACE_REQUIRED_MESSAGE = '没有可写的项目根，请先选择项目或添加目录。';
 const OVERFLOW_QUESTION_HEADER = '任务已满';
@@ -100,18 +102,19 @@ async function permit(
     : { ok: false, error: `permission denied: ${decision.reason}`, code: 'PERMISSION_DENIED' };
 }
 
-export function describeDelegateTaskResult(result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>): string {
+export function describeDelegateTaskResult(
+  result: Exclude<SpawnSessionTaskResult, { outcome: 'requires_choice' }>,
+  locale: SessionTaskResultStatusWordLocale = resolveSessionTaskResultLocale(),
+): string {
   const { task } = result;
-  const retryContext = task.retryOf
-    ? `这是第 ${task.attempt} 次尝试；上一次${sessionTaskStatusLabel(task.retryOf.status)}${task.retryOf.detail ? `：${task.retryOf.detail}` : '。'}`
-    : '';
-  if (result.outcome === 'reused') {
-    return `继续跟踪「${task.shortName}」，当前${sessionTaskStatusLabel(task.status)}${task.detail ? `：${task.detail}` : '。'}${task.attempt > 1 ? `这是第 ${task.attempt} 次尝试。` : ''}`;
-  }
-  if (result.outcome === 'queued') {
-    return `已把「${task.shortName}」加入排队，空闲后自动开始。${retryContext}`;
-  }
-  return `后台任务「${task.shortName}」已开始，尚未完成；完成后会在这里告诉你结果。${retryContext}`;
+  return formatDelegateTaskReceipt(locale, {
+    outcome: result.outcome,
+    shortName: task.shortName,
+    status: task.status,
+    detail: task.detail,
+    attempt: task.attempt,
+    retryOf: task.retryOf,
+  });
 }
 
 function sessionTaskMeta(

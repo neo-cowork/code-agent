@@ -76,6 +76,8 @@ export function resolveStoppedTaskOutcome(input: {
   lastUrl?: string;
   /** 主循环撞步数上限（结构化信号：error 事件 code=MAX_ITERATIONS_REACHED）；max 为该任务实际生效的上限。 */
   stepCap?: { max: number };
+  /** detail 已是宿主按结构化结局写好的折叠句（见 backgroundRunOutcome）：原样当失败说明，不再按措辞改写。 */
+  hostWritten?: boolean;
 }): StoppedTaskOutcome {
   const raw = input.detail?.trim() ?? '';
   if (input.status === 'completed') {
@@ -105,7 +107,7 @@ export function resolveStoppedTaskOutcome(input: {
   const isTerminalDeliveryFailure = (['approval_timeout', 'repair_exhausted'] as const).some((reason) => (
     (['zh', 'en'] as const).some((locale) => formatSessionTaskDeliveryFailure(reason, locale) === detail)
   ));
-  if (isTerminalDeliveryFailure || isSessionTaskCommandFailedDetail(detail)) return { status: 'failed', detail, notice: detail, kind: 'error' };
+  if (input.hostWritten || isTerminalDeliveryFailure || isSessionTaskCommandFailedDetail(detail)) return { status: 'failed', detail, notice: detail, kind: 'error' };
   const code = inferAgentFailureCode({ error: detail, defaultCode: AgentFailureCode.Unknown });
   const reason = describeSubagentStopReason(detail || '执行失败', code);
   const failedDetail = input.lastUrl ? `${reason} 最后停留在页面${input.lastUrl}。` : reason;

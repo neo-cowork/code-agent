@@ -522,6 +522,8 @@ export interface MessageMetadata {
     shortName: string;
     status: 'completed' | 'failed' | 'cancelled' | 'unverified';
     summary: string;
+    /** 助手自报的结构化结局；缺省 = 它没写标记（判决照旧，不猜）。 */
+    outcome?: { status: 'done' | 'partial' | 'failed'; reason?: string };
     /** 该后台 run 的工具结果账本中已确认产生的文件产物。 */
     artifacts?: NormalizedToolArtifactMeta[];
   };

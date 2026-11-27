@@ -2,7 +2,7 @@ import { isStandaloneSpawnTrace, reconcileAgentNodeLifecycle } from './agentNode
 import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
-import { agentFailureCopy, backgroundTaskFailureCopy, deleteIncompleteFileNames } from './agentFailureCopy';
+import { agentFailureCopy, backgroundTaskFailureCopy, deleteIncompleteFileNames, isShellBackgroundTask, notDoneOutcome } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
@@ -248,8 +248,14 @@ export function buildAgentRows(input: {
     });
   }
 
+  // 助手自报没做完时，它名下的 Bash 行（shell Task.toolCallId = 助手 progress.bashSteps[].callId）不能显示成「完成」；
+  // 行自己的退出码照实保留，只是状态词不报完成。
+  const notDoneBashCalls = new Set(tasks.filter(notDoneOutcome).flatMap((task) => (
+    task.progress?.bashSteps?.flatMap((step) => (step.callId ? [step.callId] : [])) ?? [])));
   for (const task of tasks) {
-    const status = agentRowStatus(task.status);
+    const masked = isShellBackgroundTask(task) && task.status === 'completed'
+      && !!task.toolCallId && notDoneBashCalls.has(task.toolCallId);
+    const status = masked ? 'failed' : agentRowStatus(task.status);
     const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
     const linkedNodeId = taskLinkedNodeId(task, nodeIds);
     if (linkedNodeId) {
@@ -263,6 +269,10 @@ export function buildAgentRows(input: {
           row.outcomeKey = 'delete-incomplete';
           row.failureReason = backgroundTaskFailureCopy(task, t) ?? undefined;
           row.stoppable = false;
+        } else if (notDoneOutcome(task)) {
+          row.status = 'failed';
+          row.failureReason = backgroundTaskFailureCopy(task, t) ?? undefined;
+          row.stoppable = false;
         }
       }
       continue;
@@ -274,7 +284,7 @@ export function buildAgentRows(input: {
         ?? taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
       isLead: false,
       status,
-      failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
+      failureReason: masked ? t.backgroundPanel.shellOfNotDoneTask : backgroundTaskFailureCopy(task, t) ?? undefined,
       outcomeKey: incomplete ? 'delete-incomplete' : undefined,
       stoppable: status === 'working',
       task,

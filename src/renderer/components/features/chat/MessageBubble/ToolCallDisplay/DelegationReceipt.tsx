@@ -94,7 +94,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
     <div className="ml-6 mt-0.5 space-y-0.5 text-xs text-zinc-500" data-testid="delegation-receipt">
       {guiDisclosures}
       {presentation.stepCount !== undefined && (
-        <div>{interpolatePlural(t.chat.delegationReceipt.steps, presentation.stepCount)}</div>
+        <div>{interpolatePlural(presentation.state === 'completed' ? t.chat.delegationReceipt.steps : t.chat.delegationReceipt.stepsNotDone, presentation.stepCount)}</div>
       )}
       {presentation.outputs.length > 0 && (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">

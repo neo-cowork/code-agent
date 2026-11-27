@@ -68,11 +68,20 @@ export interface TaskOutputRef {
   metadata?: TaskMetadata;
 }
 
+/** 委派任务的助手在最终回复开头自报的结局（done 全做成 / partial 只做了一部分 / failed 没做成）。 */
+export interface TaskOutcome {
+  status: 'done' | 'partial' | 'failed';
+  /** 助手自写的一句原因：只进展开详情，折叠面不显示。 */
+  reason?: string;
+}
+
 export interface TaskFailure {
   message: string;
   reason?: string;
   exitCode?: number;
   category?: string;
+  /** 助手自报 failed / partial 时的结构化结局；各界面据它判「没做完」，不看文字。 */
+  outcome?: TaskOutcome;
 }
 
 export interface LastToolStep {

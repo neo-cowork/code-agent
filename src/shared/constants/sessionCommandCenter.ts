@@ -186,6 +186,57 @@ const SESSION_TASK_DELIVERY_FAILURE_MESSAGES = {
   },
 } as const;
 
+const SESSION_TASK_OUTCOME_NOT_DONE_MESSAGES = {
+  zh: {
+    failed: '这个后台任务没有做完：中间有一步没做成。补上缺少的内容后，可以让我再试一次。',
+    partial: '这个后台任务只做完了一部分，还有几步没做成。补上缺少的内容后，可以让我接着做。',
+  },
+  en: {
+    failed: 'This background task is not done: one of its steps did not work. Add what is missing and I can try again.',
+    partial: 'This background task is only partly done: some steps did not work. Add what is missing and I can pick it up again.',
+  },
+} as const;
+
+const SESSION_TASK_OUTCOME_NOT_DONE_WITH_REASON = {
+  zh: {
+    failed: '这个后台任务没有做完：{reason}。补上缺少的内容后，可以让我再试一次。',
+    partial: '这个后台任务只做完了一部分：{reason}。补上缺少的内容后，可以让我接着做。',
+  },
+  en: {
+    failed: 'This background task is not done: {reason}. Add what is missing and I can try again.',
+    partial: 'This background task is only partly done: {reason}. Add what is missing and I can pick it up again.',
+  },
+} as const;
+
+const UNSAFE_OUTCOME_REASON = /[`$\n]|&&|\|\||;|\bexit(?:ed)?\b|exit code|退出码|stderr|stdout|No such file|Permission denied|COMMAND_FAILED|\b(?:cp|mv|rm|mkdir|cd|ls|cat|sudo|chmod|curl|git|npm|sh|bash)\s|(?:^|[\s("'“「])(?:\/[\w.-]+\/|~\/|[A-Za-z]:\\)/i;
+const OUTCOME_REASON_MAX_CHARS = 100;
+const CJK_CHAR = /[\u4e00-\u9fff]/;
+
+/**
+ * 助手自报的 reason 能不能原样放进折叠那一句：一行、不长、不含命令 / 报错 / 退出码 / 绝对路径，
+ * 且语言与界面一致（en 界面不出中文、zh 界面不出整句英文）。不满足就返回 undefined，调用方退回通用句。
+ */
+export function pickSafeOutcomeReason(
+  reason: string | undefined,
+  locale: SessionTaskResultStatusWordLocale,
+): string | undefined {
+  const text = reason?.replace(/\s+/g, ' ').trim().replace(/[。.!！]+$/, '');
+  if (!text || text.length > OUTCOME_REASON_MAX_CHARS || UNSAFE_OUTCOME_REASON.test(text)) return undefined;
+  return CJK_CHAR.test(text) === (locale === 'zh') ? text : undefined;
+}
+
+/** 助手自报没做成（failed / partial）时折叠面上唯一的一句话：哪一步没成 + 怎么办；不含命令、英文报错、退出码或路径。 */
+export function formatSessionTaskOutcomeNotDone(
+  locale: SessionTaskResultStatusWordLocale,
+  status: 'failed' | 'partial',
+  reason?: string,
+): string {
+  const safe = pickSafeOutcomeReason(reason, locale);
+  return safe
+    ? SESSION_TASK_OUTCOME_NOT_DONE_WITH_REASON[locale][status].replace('{reason}', safe)
+    : SESSION_TASK_OUTCOME_NOT_DONE_MESSAGES[locale][status];
+}
+
 const SESSION_TASK_USER_DENIED_MESSAGES = {
   zh: '你拒绝了这一步，任务已停止。',
   en: 'You declined this step, so the task was stopped.',
