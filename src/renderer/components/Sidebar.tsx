@@ -837,20 +837,19 @@ export const Sidebar: React.FC = () => {
       {showOptionalUpdateButton && (
         <div className="px-1 pb-1 flex-shrink-0">
           <button
-            type="button" aria-describedby={needsUpgradeForInterface ? 'sidebar-update-needs-upgrade' : undefined}
+            type="button"
+            aria-describedby={needsUpgradeForInterface ? 'sidebar-update-needs-upgrade' : undefined}
             onClick={() => setShowOptionalUpdateModal(true)}
             aria-label={sb.viewUpdateContent.replace('{version}', optionalUpdateLabel)}
             title={sb.viewUpdateContent.replace('{version}', optionalUpdateLabel)}
-            className="group flex w-full items-center gap-2 rounded-lg border border-badge-accent/20 bg-indigo-500/10 px-3 py-2 text-sm text-badge-accent transition-colors hover:border-badge-accent/30 hover:bg-indigo-500/15 hover:text-badge-accent focus:outline-hidden"
+            className="group flex w-full flex-wrap items-center gap-x-2 rounded-lg border border-badge-accent/20 bg-indigo-500/10 px-3 py-2 text-sm text-badge-accent transition-colors hover:border-badge-accent/30 hover:bg-indigo-500/15 hover:text-badge-accent focus:outline-hidden"
           >
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-badge-accent group-hover:text-badge-accent">
               <Download className="h-3.5 w-3.5" />
             </span>
-            <span className="min-w-0 flex-1 text-left">
-              <span className="block truncate font-medium">{sb.updateAvailable}</span>
-              {needsUpgradeForInterface && <span id="sidebar-update-needs-upgrade" className="block text-[11px] leading-4 text-zinc-400">{sb.upgradeForInterfaceUpdates}</span>}
-            </span>
+            <span className="min-w-0 flex-1 truncate text-left font-medium">{sb.updateAvailable}</span>
             <span className="shrink-0 font-mono text-[11px] text-badge-accent/80">{optionalUpdateLabel}</span>
+            {needsUpgradeForInterface && <span id="sidebar-update-needs-upgrade" className="basis-full text-balance pl-8 text-left text-[11px] leading-4 text-zinc-400">{sb.upgradeForInterfaceUpdates}</span>}
           </button>
         </div>
       )}
