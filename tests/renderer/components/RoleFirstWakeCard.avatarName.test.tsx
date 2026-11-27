@@ -3,10 +3,9 @@ import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleFirstWakeSnapshot, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
-import type { Session } from '../../../src/shared/contract';
 import { RoleFirstWakeCard, RoleFirstWakeThreadBanner } from '../../../src/renderer/components/features/chat/RoleFirstWakeCard';
 import { RoleDraftNotifications } from '../../../src/renderer/components/features/chat/ChatInput/RoleDraftCard';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const getFirstWake = vi.fn<(roleId: string) => Promise<RoleFirstWakeSnapshot | null>>();
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
@@ -42,8 +41,17 @@ function entry(roleId: string): RolePanelEntry {
   return { roleId, description: '', source: 'user', memoryCount: 0, lastWork: null };
 }
 
-function wakeSession(id: string, roleId: string): Pick<Session, 'id' | 'title' | 'origin'> {
-  return { id, title: `${roleId} · 初次见面`, origin: { kind: 'cron', metadata: { trigger: 'first_wake', roleId } } };
+function wakeSession(id: string, roleId: string): SessionWithMeta {
+  return {
+    id,
+    title: `${roleId} · 初次见面`,
+    origin: { kind: 'cron', metadata: { trigger: 'first_wake', roleId } },
+    modelConfig: { provider: 'openai', model: 'gpt-5' },
+    createdAt: 1,
+    updatedAt: 1,
+    messageCount: 0,
+    turnCount: 0,
+  };
 }
 
 function emitCreatedDirect(roleId: string) {
@@ -80,7 +88,7 @@ describe('RoleFirstWakeCard avatar name', () => {
   it('drops the previous initial when the banner switches first-wake sessions', async () => {
     const first = wakeSession('first', schedule);
     const second = wakeSession('second', weekly);
-    useSessionStore.setState({ currentSessionId: first.id, sessions: [first, second] as Session[] });
+    useSessionStore.setState({ currentSessionId: first.id, sessions: [first, second] });
     render(<RoleFirstWakeThreadBanner />);
 
     expect((await screen.findByRole('img', { name: schedule })).textContent).toBe('日');
