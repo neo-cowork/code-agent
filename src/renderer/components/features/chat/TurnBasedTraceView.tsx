@@ -1133,7 +1133,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         role="log"
         aria-live="polite"
         aria-label={t.traceView.conversationLog}
-        className={`h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade${railItems.length >= TURN_RAIL_MIN_TURNS ? ' @min-[640px]:[scrollbar-width:none] @min-[640px]:[&::-webkit-scrollbar]:hidden' : ''}${entryHidden ? ' invisible' : ''}`}
+        className={`h-full min-h-0 pt-3 pb-0 overflow-x-hidden chat-scroll-fade${railItems.length >= TURN_RAIL_MIN_TURNS ? ' @min-[640px]:[scrollbar-width:none] @min-[640px]:[&::-webkit-scrollbar]:hidden' : ''}${entryHidden ? ' invisible' : ' [&_[data-testid="virtuoso-item-list"]]:!visible'}`}
         scrollerRef={handleScrollerRef}
         data={projection.turns}
         firstItemIndex={firstItemIndex}
