@@ -181,7 +181,7 @@ describe('SessionMemberBar（折叠 chip）', () => {
     ['en', 'budget-exhausted' as const, '1 agent · Budget exhausted · Read the chain pages'],
     ['zh', 'unknown' as const, '1 个代理 · 失败 · 提炼合同关键条款'],
     ['en', 'unknown' as const, '1 agent · Failed · Read the chain pages'],
-  ])('failed chip says the plain reason for task failure code %s (%s)', async (language, reason, expected) => {
+  ] as const)('failed chip says the plain reason for task failure code %s (%s)', async (language, reason, expected) => {
     appState.language = language;
     useBackgroundTaskStore.setState({ tasks: [
       {
