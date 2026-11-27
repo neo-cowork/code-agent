@@ -8,6 +8,9 @@ const PROMPT = '用 curl 依次抓取 https://example.com、https://example.org�
 const SECOND_MESSAGE = '刚才抓到的第一个页面标题是什么？一句话回答';
 const TURN_TIMEOUT_MS = 300_000;
 const STOP_SETTLE_TIMEOUT_MS = 120_000;
+/** 助手消息正文（TraceNodeRenderer 里 node.content 的容器）；不含「正在组织回答…」占位、路由条等非正文。 */
+const ASSISTANT_BODY = '[data-trace-turn-id] [data-trace-node-type="assistant_text"] .select-text';
+const OUTPUT_PREFIX_CHARS = 40;
 
 /** /api/events 抓的原始 SSE 里属于某个会话的事件（data 行 JSON）。 */
 function sessionEvents(sseFile: string, sessionId: string): Array<Record<string, unknown>> {
@@ -37,12 +40,23 @@ export const f09: FlowDef = {
       run: async (env) => {
         env.sessionIds.push(await openFolderSession(env, '抓四个页面做汇总'));
         await sendMessage(env.page, PROMPT);
-        // 看到停止键 = 回合已在跑；等页面真有产出（正文或工具卡）再点，别在模型刚起步时打断
+        // 看到停止键 = 回合已在跑；等页面真有助手正文再点，别在模型刚起步时打断
         const stop = env.page.getByTestId('composer-stop-button');
         await stop.waitFor({ state: 'visible', timeout: 45_000 });
-        await waitFor('回合有可见产出', async () => {
-          const text = await env.page.locator('body').innerText().catch(() => '');
-          return /https?:\/\/|curl|正在|页面/.test(text.slice(-4000));
+        await waitFor('助手有可见正文', async () => {
+          const card = env.page.getByTestId('permission-card').first();
+          if (await card.isVisible().catch(() => false)) await approveCard(env.page);
+          for (const body of await env.page.locator(ASSISTANT_BODY).all()) {
+            if (!await body.isVisible()) continue;
+            // 只取正文：去掉生成中才有的 sr-only「正在生成」；按 hasText 的口径压空白，取前缀（流式还会往后长）
+            const text = await body.evaluate((el) => {
+              const clone = el.cloneNode(true) as Element;
+              clone.querySelectorAll('.sr-only').forEach((n) => n.remove());
+              return (clone.textContent ?? '').replace(/\s+/g, ' ').trim();
+            });
+            if (text) { env.scratch.visibleOutput = text.slice(0, OUTPUT_PREFIX_CHARS); return true; }
+          }
+          return false;
         }, 60_000);
       },
     },
@@ -120,9 +134,11 @@ export const f09: FlowDef = {
         const events = sessionEvents(env.sseFile, env.sessionIds[0]);
         const errors = events.filter((e) => e.type === 'error');
         if (errors.length) throw new Error(`停止收尾时事件流里有 error 事件（应为非 error 的回合终止）：${JSON.stringify(errors[0]).slice(0, 200)}`);
-        // 已有输出保留：停止前页面已有产出，回合收尾后这些文字还在
-        const body = await env.page.locator('body').innerText();
-        if (!/https?:\/\/example|https?:\/\/www\.iana|https?:\/\/httpbin|curl/.test(body)) throw new Error('停止后页面上的已有输出不见了');
+        // 等消息列表重新渲染，并核对停止前实际看到的助手正文仍在。
+        const output = env.scratch.visibleOutput;
+        if (typeof output !== 'string' || !output) throw new Error('未记录停止前的助手正文');
+        await env.page.locator(ASSISTANT_BODY)
+          .filter({ hasText: output }).first().waitFor({ state: 'visible', timeout: 20_000 });
         // 输入框恢复可发送 + 第二条消息正常回复
         const box = env.page.getByTestId('chat-composer-textarea');
         await box.waitFor({ state: 'visible', timeout: 20_000 });
