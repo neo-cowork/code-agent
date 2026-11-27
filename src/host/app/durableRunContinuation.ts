@@ -44,6 +44,7 @@ export async function continueParkedDurableRun(input: {
   getMessages?: (sessionId: string) => Promise<Message[]>;
   expectedRunId?: string;
   envRecoveryPorts?: NativeRecoveryHostPorts;
+  onResumeStarted?: () => void;
 }): Promise<{ runId: string; alreadyContinuing?: boolean }> {
   const { sessionId, runRegistry, taskManager } = input;
   if (continuingSessions.has(sessionId)) {
@@ -83,6 +84,7 @@ export async function continueParkedDurableRun(input: {
           runId: recovered.runId, registry: runRegistry as RunRegistry, tasks: taskManager,
           getMessages: input.getMessages ?? ((id) => getSessionManager().getMessages(id)),
           ports: input.envRecoveryPorts,
+          onResumeStarted: input.onResumeStarted,
         });
       } else await taskManager.resumeExistingDurableRun(
         sessionId,

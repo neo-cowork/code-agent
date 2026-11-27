@@ -59,6 +59,12 @@ function journalEntryId(metadata: Record<string, unknown>): string | null {
   return null;
 }
 
+/** 注入负反馈（不对/过时）只动 metadata 不动正文（N-MEM-SOURCE-WRONG-FEEDBACK）：快照判重
+ *  看不见它，单独比对让标记/撤销也落一行日志（面板历史与审计口径一致）。 */
+function injectionFeedbackSnapshot(record: Pick<MemoryRecord, 'metadata'>): string {
+  return JSON.stringify(record.metadata?.injectionFeedback ?? null);
+}
+
 function memoryStatusCondition(
   options: { includeArchived?: boolean; includeCandidates?: boolean },
   column = 'status',
@@ -184,6 +190,33 @@ export class MemoryRepository {
     return rows.map(row => this.rowToMemoryRecord(row));
   }
 
+  /**
+   * N-MEM-SOURCE-WRONG-FEEDBACK r2：按 entryId 直查行，不依赖「updated_at 最新 N 行」扫描窗口。
+   * `db:<rowId>` 走主键；其余（light:/mem_entry_*）按 metadata.memoryEntry.id 匹配。
+   */
+  findMemoryByEntryId(entryId: string): MemoryRecord | null {
+    if (entryId.startsWith('db:')) {
+      return this.getMemory(entryId.slice(3));
+    }
+    const row = this.db.prepare(
+      `SELECT * FROM memories WHERE json_extract(metadata, '$.memoryEntry.id') = ? LIMIT 1`,
+    ).get(entryId) as SQLiteRow | undefined;
+    return row ? this.rowToMemoryRecord(row) : null;
+  }
+
+  /**
+   * N-MEM-SOURCE-WRONG-FEEDBACK r2：全量取带注入负反馈 metadata 的行（kind 或 count 任一在场），
+   * 窗口外也可见——暂停扫描 / 标记计数 / 整理点名不得被最新 N 行窗口挤出。
+   */
+  listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+    const rows = this.db.prepare(
+      `SELECT * FROM memories`
+      + ` WHERE json_extract(metadata, '$.injectionFeedback.kind') IS NOT NULL`
+      + ` OR json_extract(metadata, '$.injectionFeedback.count') > 0`,
+    ).all() as SQLiteRow[];
+    return rows.map((row) => this.rowToMemoryRecord(row));
+  }
+
   updateMemory(id: string, updates: Partial<MemoryRecord>, journal?: MemoryChangeJournalContext): MemoryRecord | null {
     const before = this.getMemory(id);
 
@@ -234,8 +267,11 @@ export class MemoryRepository {
     if (before && after) {
       // 只记真实变更（rework r2 ①③）：快照（summary/status/content）无差异的写入
       // 不追加日志行——否则镜像重建等批量回写会给每条 no-op 记一行，淹没历史并
-      // 抹掉列表上真实的「后台写入」标记。显式 evict 恒记（清退要留痕）。
-      const changed = journal?.operation === 'evict' || journalSnapshot(before) !== journalSnapshot(after);
+      // 抹掉列表上真实的「后台写入」标记。显式 evict 恒记（清退要留痕）；注入负反馈
+      // 的 metadata 变化单独比对（标记/撤销必须留痕，见 injectionFeedbackSnapshot）。
+      const changed = journal?.operation === 'evict'
+        || journalSnapshot(before) !== journalSnapshot(after)
+        || injectionFeedbackSnapshot(before) !== injectionFeedbackSnapshot(after);
       if (changed) {
         this.appendJournal(journal?.operation ?? 'update', after, before, after, journal);
       }

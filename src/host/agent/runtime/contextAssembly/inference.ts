@@ -51,6 +51,7 @@ import {
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { runMaxModeInference } from './inferenceMaxMode';
 import { isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
+import { settleOfflineInference } from '../envBlockedTurn';
 import { settleQuotaWaitInference } from './quotaWaitTurn';
 import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
@@ -914,8 +915,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   } catch (error) {
     ctx.runtime.control.setInferenceAbortController(null);
 
+    const stopped = () => ctx.runtime.turn.needsReinference || ctx.runtime.control.isInterrupted || ctx.runtime.control.isCancelled;
     // steer/interrupt 导致的 abort 不是错误，返回空文本让主循环处理
-    if (ctx.runtime.turn.needsReinference || ctx.runtime.control.isInterrupted || ctx.runtime.control.isCancelled) {
+    if (stopped()) {
       logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
       // 中断时本轮请求已派发，input tokens 是真实沉没成本——记一次避免异常路径漏记
       // （与 Max Mode 中止记沉没成本对称；output 在中断前无法准确估算，保守只记 input）
@@ -930,6 +932,15 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     }
 
     if (settleQuotaWaitInference(error, { runId: ctx.runtime.runId, markCancelled: () => ctx.runtime.control.markCancelled() })) return { type: 'text', content: '' };
+
+    const parkedOffline = requestConfigForRetry && await settleOfflineInference(error, {
+      config: requestConfigForRetry, runId: ctx.runtime.runId, sessionId: ctx.runtime.sessionId,
+      shouldStop: stopped, markCancelled: () => ctx.runtime.control.markCancelled(), onEvent: ctx.runtime.onEvent,
+    });
+    if (parkedOffline || stopped()) {
+      langfuse.endGeneration(llmCallId, { status: parkedOffline ? 'offline' : 'cancelled' });
+      return { type: 'text', content: '' };
+    }
 
     emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error)); if (handleImagePayloadExceededError({ ctx, error, llmCallId, langfuse })) return { type: 'text', content: '' };
     logger.error('[AgentLoop] Model inference error:', error);

@@ -126,6 +126,15 @@ const DENY_LABELS = ['暂不', '拒绝'];
 const EXPAND_LABEL = '更多选项与详情';
 type CardLocator = ReturnType<Page['getByTestId']>;
 
+/** Resolve the visible request once. Subsequent actions must not follow the next card in the slot. */
+export async function currentPermissionCard(page: Page): Promise<CardLocator | null> {
+  const slots = page.locator('[data-permission-request-id]').filter({ has: page.getByTestId('permission-card') });
+  const [requestId] = await slots.evaluateAll((elements) => elements.map((slot) => slot.getAttribute('data-permission-request-id')));
+  return requestId
+    ? page.locator(`[data-permission-request-id=${JSON.stringify(requestId)}]`).getByTestId('permission-card')
+    : null;
+}
+
 /** 卡面的「允许」「暂不」要整词匹配：展开后还有「本次任务内允许」「24 小时内允许」，按子串找会一次命中多个。 */
 function cardButton(card: CardLocator, label: string): ReturnType<CardLocator['getByRole']> {
   return card.getByRole('button', { name: label, exact: label === '允许' || label === '暂不' });
@@ -135,16 +144,16 @@ function cardButton(card: CardLocator, label: string): ReturnType<CardLocator['g
  * 审批卡默认只露一句话和两个按钮，命令、路径和限时授权都收在「更多选项与详情」里。
  * 读卡上的命令/路径、点限时授权之前先展开；已展开或这张卡没有折叠区时什么都不做。
  */
-export async function expandCard(page: Page): Promise<void> {
-  const more = page.getByTestId('permission-card').first().getByRole('button', { name: EXPAND_LABEL, exact: true });
+export async function expandCard(card: CardLocator): Promise<void> {
+  const more = card.getByRole('button', { name: EXPAND_LABEL, exact: true });
   if (await more.count()) await more.click({ timeout: 10_000 });
 }
 
 /** 审批卡上的「不同意」按钮。 */
 export async function denyCard(page: Page): Promise<string> {
-  const card = page.getByTestId('permission-card').first();
+  const card = await currentPermissionCard(page);
   for (const label of DENY_LABELS) {
-    if (await cardButton(card, label).count()) { await clickCardButton(page, label); return label; }
+    if (card && await cardButton(card, label).count()) { await clickCardButton(page, label, card); return label; }
   }
   throw new Error('审批卡上没有「暂不」/「拒绝」按钮');
 }
@@ -156,27 +165,25 @@ export const realDataDir = (): string => path.join(os.homedir(), '.code-agent');
  * 所有「同意」点击的唯一出口都过这道护栏：卡片正文指向真实主目录的写入，一律改点「拒绝」并抛错，
  * 不管是哪条流程、哪个会话（F14 第二个会话读写记忆文件的卡也走这里）。
  */
-export async function clickCardButton(page: Page, label: string): Promise<void> {
-  const card = page.getByTestId('permission-card').first();
+export async function clickCardButton(page: Page, label: string, card?: CardLocator): Promise<void> {
+  card ??= (await currentPermissionCard(page)) ?? undefined;
+  if (!card) throw new Error('审批卡已离开页面');
   // 护栏要读到路径和命令，它们在折叠区里：不展开就读，等于没检查。
-  await expandCard(page);
-  const before = await card.innerText();
+  await expandCard(card);
+  const before = await card.innerText({ timeout: 10_000 });
   if (!DENY_LABELS.includes(label) && before.includes(realDataDir())) {
     for (const deny of DENY_LABELS) {
       if (await cardButton(card, deny).count()) { await cardButton(card, deny).click({ timeout: 10_000 }); break; }
     }
     throw new RealHomeWriteError(realDataDir());
   }
-  const countBefore = await page.getByTestId('permission-card').count();
   const clickedAt = Date.now();
   await cardButton(card, label).click({ timeout: 10_000 });
-  // 点完这张卡应当收起（或换成下一张不同的卡）；原样还在就是「点了没反应」。快速轮询，别漏掉短暂的收起
+  // 点完这张请求应当收起或切换阶段，即使下一张卡的文字完全一样。
   const deadline = Date.now() + CARD_COLLAPSE_TIMEOUT_MS;
   for (;;) {
     if (!(await card.isVisible().catch(() => false))) return;
-    // 排队的两张卡文字可能一样（路径被截断），所以数量减少也算收起
-    if ((await page.getByTestId('permission-card').count()) < countBefore) return;
-    if ((await card.innerText().catch(() => before)) !== before) return;
+    if ((await card.innerText({ timeout: 10_000 }).catch(() => before)) !== before) return;
     if (Date.now() > deadline) {
       if (deliveryProbe && await deliveryProbe(clickedAt).catch(() => false)) return;
       throw new Error(`点「${label}」后审批卡 ${CARD_COLLAPSE_TIMEOUT_MS / 1000} 秒内没有收起（原样还在，数据库里也没有新的审批决定）`);
@@ -216,10 +223,10 @@ export async function openFolderSession(env: { page: Page; server: { port: numbe
 }
 
 /** 审批卡上的「同意」按钮：普通卡和高危卡是「允许」，沙盒拦截卡是「允许仅这一次」，浏览器会话授权卡仍是「允许一次」。 */
-export async function approveCard(page: Page): Promise<string> {
-  const card = page.getByTestId('permission-card').first();
+export async function approveCard(page: Page, card?: CardLocator): Promise<string> {
+  card ??= (await currentPermissionCard(page)) ?? undefined;
   for (const label of ['允许', '允许仅这一次', '允许一次']) {
-    if (await cardButton(card, label).count()) { await clickCardButton(page, label); return label; }
+    if (card && await cardButton(card, label).count()) { await clickCardButton(page, label, card); return label; }
   }
   throw new Error('审批卡上没有「允许」/「允许仅这一次」/「允许一次」按钮');
 }
