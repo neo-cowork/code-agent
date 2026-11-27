@@ -16,7 +16,9 @@ import { PendingApprovalRepository } from '../../../src/host/services/core/repos
 import { createLogger } from '../../../src/host/services/infra/logger';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 import { notificationService } from '../../../src/host/services/infra/notificationService';
+import { recordApprovedRmSettlementTargets } from '../../../src/host/session/approvedRmSettlementTargets';
 import { getBackgroundTaskManager } from '../../../src/host/session/backgroundTaskManager';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../src/shared/constants';
 import { TaskManager } from '../../../src/host/task/TaskManager';
 import {
   closeBackgroundRunAtTerminal,
@@ -373,5 +375,84 @@ describe('background settlement through the parent and delegated run entries', (
     await closeParent();
     await expectCompletedOnce();
     expect(h.info).not.toHaveBeenCalled();
+  });
+
+  it('marks the moved-to-background parent DELETE_INCOMPLETE when its child leaves an approved rm target', async () => {
+    const leftoverFile = join(workspace, 'scratch.txt');
+    await spawn(parentRunId);
+    const childTask = center.active(sessionId)[0];
+    expect(childTask).toBeDefined();
+    recordApprovedRmSettlementTargets(sessionId, childTask!.id, [leftoverFile]);
+    await background.moveToBackground(sessionId);
+    await closeParent();
+    expectRunning();
+    resumeModel(done);
+    await vi.waitFor(() => expect(center.list(sessionId).map((child) => child.status)).toEqual(['failed']));
+    await vi.waitFor(() => expect(background.getAllTasks().find((row) => row.sessionId === sessionId)?.status).toBe('failed'));
+    const row = background.getAllTasks().find((item) => item.sessionId === sessionId);
+    expect(row?.completionMessage).toBe(BACKGROUND_TASK_DELETE_INCOMPLETE);
+    expect(row?.leftoverPaths).toEqual([leftoverFile]);
+    await vi.waitFor(() => expect(backgroundNotices).toHaveBeenCalledTimes(1));
+    expect(backgroundNotices).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId, succeeded: false, code: BACKGROUND_TASK_DELETE_INCOMPLETE }),
+      { force: true },
+    );
+  });
+
+  it('settles a web session moved to background after parent turn ends when its bounced child leaves an approved rm target', async () => {
+    registry.unregister(parentRunId);
+    const leftoverFile = join(workspace, 'scratch.txt');
+    const parent = Promise.withResolvers<void>();
+    const run = vi.fn(() => parent.promise);
+    vi.mocked(createAgentLoop).mockReturnValue({ run, cancel: vi.fn(), steer: vi.fn() } as unknown as ReturnType<typeof createAgentLoop>);
+    const sessions = getSessionManager();
+    vi.spyOn(sessions, 'getMessages').mockResolvedValue([]);
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createAgentRouter({
+      runRegistry: registry,
+      pendingLocalToolCalls: new Map(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      tryGetSessionManager: async () => sessions,
+      getSupabaseForSession: async () => null,
+      getDurableRunRollout: () => ({
+        policy: { mode: 'legacy', configuredValue: null, valid: true, durableActivation: false, durableReadPreference: false },
+        ready: false,
+      }),
+    }));
+    const server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Fixture did not open a TCP port');
+    const response = fetch(`http://127.0.0.1:${address.port}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId, prompt: 'Clean up the scratch file', project: workspace }),
+    }).then(async (res) => ({ status: res.status, body: await res.text() }));
+    try {
+      await vi.waitFor(() => expect(run).toHaveBeenCalled());
+      const webRunId = registry.getBySessionId(sessionId)?.context.runId;
+      expect(webRunId).toBeDefined();
+      await spawn(webRunId);
+      const childTask = center.active(sessionId)[0];
+      expect(childTask).toBeDefined();
+      recordApprovedRmSettlementTargets(sessionId, childTask!.id, [leftoverFile]);
+      // Parent turn finishes before the user clicks "Move to background" while the bounced child is still running.
+      parent.resolve();
+      expect(await response).toMatchObject({ status: 200, body: expect.stringContaining('event: agent_complete') });
+      await background.moveToBackground(sessionId);
+      expectRunning();
+      resumeModel(done);
+      await vi.waitFor(() => expect(center.list(sessionId).map((child) => child.status)).toEqual(['failed']));
+      await vi.waitFor(() => expect(background.getAllTasks().find((row) => row.sessionId === sessionId)?.status).toBe('failed'));
+      const row = background.getAllTasks().find((item) => item.sessionId === sessionId);
+      expect(row?.completionMessage).toBe(BACKGROUND_TASK_DELETE_INCOMPLETE);
+      expect(row?.leftoverPaths).toEqual([leftoverFile]);
+    } finally {
+      parent.resolve();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await response.catch(() => undefined);
+    }
   });
 });

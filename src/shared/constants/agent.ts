@@ -117,7 +117,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v143：整合合并——本单 library_add 提示词（分支侧 sys-v139/v140，与 main 的 bg-negation 撞号）叠上 main 的 sys-v142，合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
 // sys-v148: integrate the event reply tool with main's sys-v147 prompt surface.
 // sys-v153: integrate main with the people memory prompt surface.
-export const PROMPT_VERSION = 'sys-v153' as const;
+// sys-v154: an explicit PPT style preview request is routed to the bundled theme-samples.mjs.
+// sys-v155: same ticket, next round: the style samples and the style question come from the foreground conversation; a background task only renders and reports.
+export const PROMPT_VERSION = 'sys-v155' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
