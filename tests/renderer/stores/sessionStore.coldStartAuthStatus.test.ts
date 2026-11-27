@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
 import { initializeSessionStore, reloadSessionsForAuthChange, useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 it('keeps currentSessionId and messages on principalChanged:false reload, and reuses single blank 新对话 on no-memory cold start', async () => {
@@ -27,7 +28,7 @@ it('keeps currentSessionId and messages on principalChanged:false reload, and re
   };
   useSessionStore.setState({
     currentSessionId: 'chat-1',
-    sessions: [{ id: 'chat-1', title: 'Notes summary', messageCount: 1, turnCount: 1, createdAt: 1, updatedAt: 2 }],
+    sessions: [{ id: 'chat-1', title: 'Notes summary', modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL }, messageCount: 1, turnCount: 1, createdAt: 1, updatedAt: 2 }],
     messages: [existingMsg],
   });
 
