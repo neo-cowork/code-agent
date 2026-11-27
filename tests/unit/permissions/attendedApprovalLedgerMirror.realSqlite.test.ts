@@ -97,13 +97,14 @@ describe('attended approval ledger mirror (real SQLite)', () => {
     return existsSync(path.join(dir, 'draft-2.txt'));
   }
 
-  async function raiseApproval(parentToolUseId?: string) {
+  async function raiseApproval(parentToolUseId?: string, backgroundTaskLane = false) {
     const raised = Promise.withResolvers<PermissionRequest>();
     const island = new OrchestratorPermissionIsland({
       getSettings: () => DEFAULT_SETTINGS,
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'async_agent',
       isDetachedRun: () => detached,
+      backgroundTaskLane,
       hasApprovalUi: () => hasUi,
       onEvent: (event) => {
         if (event.type === 'permission_request' && !event.data.resolved) raised.resolve(event.data);
@@ -126,7 +127,7 @@ describe('attended approval ledger mirror (real SQLite)', () => {
   }
 
   it('(a) writes one ledger-faithful row at raise time', async () => {
-    const { island, execution, request } = await raiseApproval(toolCallId);
+    const { island, execution, request } = await raiseApproval(toolCallId, true);
     try {
       const rows = pendingRows();
       expect(rows).toHaveLength(1);
@@ -135,6 +136,7 @@ describe('attended approval ledger mirror (real SQLite)', () => {
         argsRef: { sessionId, toolCallId },
         argsFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
         ledgerFaithful: true,
+        backgroundLane: true,
       });
       expect(fileExists()).toBe(true);
     } finally {

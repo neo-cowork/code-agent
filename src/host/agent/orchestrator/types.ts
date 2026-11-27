@@ -24,6 +24,7 @@ export interface AgentOrchestratorConfig {
   hasApprovalUi: (request: PermissionRequest) => boolean;
   /** 后台任务 lane：此刻没有页面可裁决时为 true，审批停车进收件箱而不是 60s 自动拒绝。缺省 = 不停车。 */
   isDetachedRun?: () => boolean;
+  backgroundTaskLane?: boolean;
   planningService?: PlanningService;
   runRegistry?: RunRegistry;
   getHomeDir?: () => string;

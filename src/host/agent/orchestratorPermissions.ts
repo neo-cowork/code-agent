@@ -123,6 +123,7 @@ export class OrchestratorPermissionIsland {
     getExecutionTopology,
     hasApprovalUi,
     isDetachedRun = () => false,
+    backgroundTaskLane = false,
     onEvent,
     injectedPendingApprovalRepo,
   }: {
@@ -131,6 +132,7 @@ export class OrchestratorPermissionIsland {
     getExecutionTopology: () => ExecutionTopology;
     hasApprovalUi: (request: PermissionRequest) => boolean;
     isDetachedRun?: () => boolean;
+    backgroundTaskLane?: boolean;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
@@ -139,6 +141,7 @@ export class OrchestratorPermissionIsland {
     this.getExecutionTopology = getExecutionTopology;
     this.hasApprovalUi = hasApprovalUi;
     this.isDetachedRun = isDetachedRun;
+    this.backgroundTaskLane = backgroundTaskLane;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
   }
@@ -147,6 +150,7 @@ export class OrchestratorPermissionIsland {
   private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
   private readonly isDetachedRun: () => boolean;
+  private readonly backgroundTaskLane: boolean;
   private readonly hasApprovalUi: (request: PermissionRequest) => boolean;
   private readonly onEvent: (event: AgentEvent) => void;
 
@@ -734,7 +738,9 @@ export class OrchestratorPermissionIsland {
         try {
           const repo = this.getPendingApprovalRepo();
           if (repo) {
-            repo.insert(buildApprovalLedgerRow(fullRequest, permissionLevel, 'tool_approval', buildParkedArgsPreview(fullRequest)));
+            const row = buildApprovalLedgerRow(fullRequest, permissionLevel, 'tool_approval', buildParkedArgsPreview(fullRequest));
+            if (this.backgroundTaskLane) row.payload.backgroundLane = true;
+            repo.insert(row);
             mirrorRepo = repo;
             logger.info('Attended approval mirrored to ledger', { requestId, sessionId, tool });
           }
