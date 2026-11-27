@@ -32,7 +32,6 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
-import { isNativeRecoveryDescriptor } from '../runtime/nativeRecoveryHost';
 import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
@@ -263,7 +262,14 @@ export class TaskManager extends EventEmitter {
    * history is installed verbatim and the existing runId is adopted by the live
    * orchestrator; this path never creates a new user turn.
    */
-  async resumeExistingDurableRun(sessionId: string, runId: string, messages: Message[], options?: AgentRunOptions, messageMetadata?: MessageMetadata, clientMessageId?: string): Promise<void> {
+  async resumeExistingDurableRun(
+    sessionId: string,
+    runId: string,
+    messages: Message[],
+    options?: AgentRunOptions & { recoveredWorkingDirectory?: string },
+    messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
+  ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) throw new Error('TaskManager not initialized. Call initialize() first.');
     if (!this.runRegistry?.hasDurableOwner(runId)) throw new Error(`Durable run ${runId} is not claimed for resume`);
     const existingHandle = this.runRegistry.get(runId);
@@ -278,18 +284,18 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
-      const checkpoint = this.runRegistry.getDurableCheckpointState(runId);
-      if (isNativeRecoveryDescriptor(checkpoint) && checkpoint.envResumePending?.class === 'offline') {
+      const { recoveredWorkingDirectory, ...runOptions } = options ?? {};
+      if (recoveredWorkingDirectory) {
         // Native recovery has revalidated this directory. Keep the same cwd while
         // the live orchestrator re-evaluates the session's current authority.
-        wrapper.orchestrator.setWorkingDirectory(checkpoint.workspace.cwd, { syncWorkspaceServices: false });
+        wrapper.orchestrator.setWorkingDirectory(recoveredWorkingDirectory, { syncWorkspaceServices: false });
       }
       await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,
         {
-          ...options,
-          mode: options?.mode ?? 'normal',
+          ...runOptions,
+          mode: runOptions.mode ?? 'normal',
           runId,
           resumeExistingDurableRun: true,
           disableAutoAgent: true,

@@ -70,7 +70,11 @@ export async function continueEnvBlockedRun(input: {
       const source = messages.find((message) => message.id === descriptor.sourceMessageId && message.role === 'user');
       if (!source) throw new Error('Environment continuation source message is unavailable');
       await input.tasks.resumeExistingDurableRun(plan.envelope.sessionId, runId, messages,
-        { mode: 'normal', disableAutoAgent: true }, source.metadata, source.id);
+        {
+          mode: 'normal',
+          disableAutoAgent: true,
+          ...(envBlocked.class === 'offline' ? { recoveredWorkingDirectory: operation.descriptor.workspace.cwd } : {}),
+        }, source.metadata, source.id);
     },
   };
   const result = await new NativeRecoveryHost(registry, recoveryPorts).createHandler().recover(plan, Date.now());
