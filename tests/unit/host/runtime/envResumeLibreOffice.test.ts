@@ -369,13 +369,20 @@ describe('③ the card follows the install in place and the run finishes by itse
     expect(sofficeRuns()).toHaveLength(1);
   });
 
-  it('a run that cannot park (no durable run) keeps a plain fail-closed result and still sees the progress card', async () => {
+  it('a run that cannot park (no durable run) waits in the call for the install, then tells the model to run the command again', async () => {
     const f = await setup();
     const { ctx, engine } = makeEngine(f.execute as never);
     Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages() });
     let result: Awaited<ReturnType<ToolExecutor['execute']>> | undefined;
     Object.assign(ctx, { onEvent: () => undefined, toolExecutor: { execute: (async (...args: Parameters<ToolExecutor['execute']>) => { result = await f.execute(...args); return result; }) as never } });
-    const [toolResult] = await engine.executeToolsWithHooks([{ id: 'lo-direct', name: 'Bash', arguments: { command: COMMAND } }]);
+    let finished = false;
+    const call = engine.executeToolsWithHooks([{ id: 'lo-direct', name: 'Bash', arguments: { command: COMMAND } }]).finally(() => { finished = true; });
+    await settleUntil(() => cards()[0]?.phase === 'fixing');
+    // The card shows progress while the call is still held; it returns only when the install lands.
+    expect(finished).toBe(false);
+    world.hold = false;
+    world.release!();
+    const [toolResult] = await call;
     out('NON_PARKABLE', { success: toolResult.success, error: toolResult.error, metadata: toolResult.metadata });
     expect(ctx.control.isCancelled).toBe(false);
     expect(result?.success).toBe(false);
@@ -383,8 +390,12 @@ describe('③ the card follows the install in place and the run finishes by itse
     expect(result?.metadata).toMatchObject({ envAssist: { class: 'runtime_missing', phase: 'fixing' } });
     expect((result?.metadata?.envAssist as EnvAssistNotice | undefined)?.parkedToolCallId).toBeUndefined();
     expect(String(result?.error)).toContain('Model guidance (not user copy)');
+    // The call returned only after the install landed: the model is told it is ready and the command did not run.
+    expect(String(result?.error)).toContain('ready now');
     expect(String(result?.error)).not.toMatch(/ENOENT|command not found|not found|Error:/);
-    expect(cards()[0]).toMatchObject({ class: 'runtime_missing', phase: 'fixing' });
+    expect(getLibreOfficeState().phase).toBe('installed');
+    expect(sofficeRuns()).toHaveLength(0);
+    expect(cards()[0]).toMatchObject({ class: 'runtime_missing' });
     expect(cards()[0]!.parkedToolCallId).toBeUndefined();
     expect((await registry.getDurableEnvelope(runId))?.status).toBeUndefined();
   });

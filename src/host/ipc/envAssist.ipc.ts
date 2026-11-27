@@ -198,7 +198,7 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       armEnvResumeOnSessionReturn(notice.sessionId, getApplicationRunRegistry(), 'env_assist_runtime_retry');
       return { status: 'checked', notice: next };
     }
-    if (notice?.phase !== 'needs_user' || action?.kind !== request.actionKind
+    if (notice?.phase !== 'needs_user' || action?.kind !== request.actionKind || !request.payload
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
       return { status: 'rejected' };
     }

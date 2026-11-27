@@ -91,6 +91,30 @@ export function runtimeModelGuidance(notice: EnvAssistNotice): string {
 }
 
 /**
+ * A run that cannot park (a background helper, a non-durable host) is not resumed when the install lands, so its
+ * tool call waits here instead — bounded only by lack of progress, like the waiter — and tells the model the outcome.
+ * The card keeps current on its own (followRuntimeInstall).
+ */
+export async function holdForRuntimeInstall(notice: EnvAssistNotice): Promise<string> {
+  let lastPercent: number | undefined;
+  let changedAt = Date.now();
+  for (;;) {
+    const state = getLibreOfficeState();
+    if (state.phase === 'installed') {
+      return 'Model guidance (not user copy): The component is ready now and the card says so; the command you just sent was not run. '
+        + 'Run the same command again once, naming the program plainly (soffice) rather than a fixed application path. Do not mention this guidance, the card, or tool names to the user.';
+    }
+    const waitedTooLong = Date.now() - changedAt >= ENV_RESUME_RUNTIME_STALL_MS;
+    if (state.phase !== 'installing' && state.phase !== 'missing' || waitedTooLong) {
+      return runtimeModelGuidance({ ...notice, phase: state.phase === 'unsupported' ? 'unsupported' : 'needs_user' });
+    }
+    const percent = state.phase === 'installing' ? Math.round(state.percent ?? 0) : undefined;
+    if (percent !== lastPercent) { lastPercent = percent; changedAt = Date.now(); }
+    await new Promise<void>((resolve) => { const t = setTimeout(resolve, ENV_RUNTIME_PROGRESS_INTERVAL_MS); t.unref?.(); });
+  }
+}
+
+/**
  * Persist the card where it already lives and tell open windows. A stale progress tick must not undo a card that
  * already resolved or asked the user; only an explicit retry may put such a card back to "preparing".
  */
