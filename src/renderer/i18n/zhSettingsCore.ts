@@ -670,7 +670,7 @@ export const zhSettingsCore = {
           description: '打开 Computer Use 工作台',
         },
         'replay.open': {
-          label: '打开 Replay',
+          label: '回放过程',
           description: '打开当前会话回放',
         },
         'reviewQueue.open': {
