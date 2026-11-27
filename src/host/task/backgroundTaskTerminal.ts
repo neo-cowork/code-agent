@@ -16,7 +16,7 @@ import type { AgentEvent } from '../../shared/contract';
 import type { SessionStatus } from '../../shared/contract/session';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
-import { backgroundParentOwnsChildNotice, settleOrHoldBackgroundRun } from '../session/backgroundSettlementHold';
+import { backgroundParentOwnsChildNotice, hasInFlightBackgroundChildren, settleOrHoldBackgroundRun } from '../session/backgroundSettlementHold';
 import { hasApprovedRmSettlementTargets, takeApprovedRmLeftovers } from '../session/approvedRmSettlementTargets';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { broadcastToRenderer } from '../platform';
@@ -110,7 +110,7 @@ export async function closeBackgroundRunAtTerminal(
   const isBackground = backgroundManager.isInBackground(sessionId) && backgroundManager.isTaskRunning(sessionId);
   const leftoverPaths = takeApprovedRmLeftovers(sessionId, runId, 'desktop',
     isBackground && eventType === 'agent_complete' && !runError);
-  if (!isBackground) return;
+  if (!isBackground && !hasInFlightBackgroundChildren(sessionId, runId)) return;
   await settleOrHoldBackgroundRun(backgroundManager, sessionId, runId,
     eventType === 'agent_cancelled'
       ? { status: 'interrupted' }
