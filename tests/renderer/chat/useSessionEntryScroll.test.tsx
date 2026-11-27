@@ -73,6 +73,12 @@ describe('useSessionEntryScroll · 入场隐藏', () => {
     expect(result.current.entryHidden).toBe(false);
   });
 
+  it('单轮会话（新会话首条消息/刚点停止）不隐藏列表，避免消息区空白', () => {
+    const props = setup('s1', turns(1));
+    const { result } = renderHook(() => useSessionEntryScroll(props));
+    expect(result.current.entryHidden).toBe(false);
+  });
+
   it('空会话不隐藏；切换到新会话重新隐藏', () => {
     const props = setup('s1', []);
     const { result, rerender } = renderHook((p) => useSessionEntryScroll(p), { initialProps: props });
