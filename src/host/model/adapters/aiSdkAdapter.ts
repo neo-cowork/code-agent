@@ -77,6 +77,7 @@ import { resolveModelRequestTemperature } from '../../../shared/modelSampling';
 import { summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { getHostUiLocale, getHostUiSurface } from '../../config/hostUiLocale';
 import { logger, makeAiSdkFetch } from './aiSdkFetch';
+import { splitThinkTags } from '../../../shared/modelMarkupStrip';
 import {
   isInferenceClientTimeoutError,
   makeInferenceClientTimeoutError,
@@ -796,16 +797,22 @@ async function generateViaAiSdk(params: {
   // contentParts：text 与 tool_call 的交错顺序。老路径(openaiWrapper)对 tool_use 会带它，
   // 下游据此把 assistant.content 建成数组；缺了会建成字符串，Neo 转换器下一轮
   // 对其 .content.filter 崩（"r.content.filter is not a function"）。对齐契约。
+  const { content, reasoning } = splitThinkTags(responseText, result.reasoningText ?? '');
+  if (content !== responseText) {
+    logger.debug('[AiSdkAdapter] think markup split', {
+      exit: 'generateViaAiSdk', contentCharsBefore: responseText.length, contentCharsAfter: content.length,
+    });
+  }
   const contentParts: NonNullable<ModelResponse['contentParts']> = [];
-  if (responseText) contentParts.push({ type: 'text', text: responseText });
+  if (content) contentParts.push({ type: 'text', text: content });
   for (const tc of toolCalls) contentParts.push({ type: 'tool_call', toolCallId: tc.id });
 
   return {
     type: toolCalls.length > 0 ? 'tool_use' : 'text',
-    content: responseText,
+    content,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     contentParts: contentParts.length > 0 ? contentParts : undefined,
-    thinking: result.reasoningText || undefined,
+    thinking: reasoning || undefined,
     usage: normalizeAiSdkUsage(result.usage ?? {}),
     finishReason: result.finishReason,
   };
@@ -884,8 +891,7 @@ async function streamViaAiSdk(params: {
     const emitSnapshot = (isFinal: boolean): void => {
       if (!onSnapshot) return;
       const snapshot: StreamSnapshot = {
-        content: acc.content,
-        reasoning: acc.reasoning,
+        ...splitThinkTags(acc.content, acc.reasoning),
         toolCalls: [...acc.toolCalls.values()].map((t) => ({
           id: t.id, name: t.name, arguments: stringifyArgs(t.input, t.argsText),
         })),

@@ -101,7 +101,8 @@ export async function persistTaskManagerEvent(
         turnState.toolCalls.push(...message.toolCalls);
       }
 
-      turnState.content = message.content || snapshot?.content || turnState.content;
+      // An empty snapshot can be authoritative when model text was entirely reasoning.
+      turnState.content = message.content || (snapshot?.content ?? turnState.content);
       turnState.reasoning = message.reasoning || snapshot?.reasoning || turnState.reasoning;
 
       if (!turnState.messageId) {

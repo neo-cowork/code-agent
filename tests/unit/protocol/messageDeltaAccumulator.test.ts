@@ -2,6 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { MessageDeltaAccumulator } from '../../../src/host/protocol/messageDeltaAccumulator';
 
 describe('MessageDeltaAccumulator', () => {
+  it.each([
+    { reasoning: '', expectedContent: 'After', expectedReasoning: 'Before' },
+    { reasoning: 'Thinking', expectedContent: 'BeforeAfter', expectedReasoning: 'Thinking' },
+  ])('projects an orphan close tag with reasoning %j without mutating deltas', ({
+    reasoning, expectedContent, expectedReasoning,
+  }) => {
+    const accumulator = new MessageDeltaAccumulator();
+    const append = (path: 'content' | 'reasoning', text: string) => accumulator.apply('session-1', {
+      type: 'message_delta',
+      data: { role: 'assistant', path, op: 'append', text },
+    });
+
+    if (reasoning) append('reasoning', reasoning);
+    append('content', 'Before</thi');
+    expect(append('content', 'nk>')).toMatchObject({
+      content: '', reasoning: expectedReasoning === 'Thinking' ? 'Thinking\nBefore' : 'Before',
+    });
+    expect(append('content', 'After')).toMatchObject({
+      content: expectedContent, reasoning: expectedReasoning,
+    });
+    expect(accumulator.getSnapshot('session-1', true)).toMatchObject({
+      content: expectedContent, reasoning: expectedReasoning, isFinal: true,
+    });
+  });
+
   it('accumulates assistant content and reasoning deltas per session', () => {
     const accumulator = new MessageDeltaAccumulator();
 
