@@ -68,6 +68,14 @@ describe('formatPathForDisplay', () => {
     expect(formatPathForDisplay(`${root}/src/a.ts`, keep)).toBe('./src/a.ts');
     expect(formatPathForDisplay('/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z.txt', { ...keep, maxLength: 20 })).toBe('/a/b/…/y/z.txt');
     expect(formatPathForDisplay('/etc/ssh/sshd_config', { ...keep, maxLength: 60 })).toBe('/etc/ssh/sshd_config');
+    // 四段的超长路径（Linux 临时目录 /tmp/<运行目录>/<目录>/文件）也要省掉中段，不因「留两段实目录」而整条原样露出。
+    expect(formatPathForDisplay('/tmp/code-agent-vitest-run-N0Avis/quiet-new-file-CeZgRb/contract-notes.md', { ...keep, maxLength: 60 }))
+      .toBe('/tmp/…/quiet-new-file-CeZgRb/contract-notes.md');
+    expect(formatPathForDisplay('C:\\Temp\\code-agent-vitest-run-N0Avis\\quiet-new-file-CeZgRb\\contract-notes.md', { ...keep, maxLength: 60 }))
+      .toBe('C:\\Temp\\…\\quiet-new-file-CeZgRb\\contract-notes.md');
+    // 只有三段时没有可省的中段，原样保留。
+    expect(formatPathForDisplay('/tmp/a-very-long-directory-name-that-goes-past-the-sixty-character-limit/contract-notes.md', { ...keep, maxLength: 60 }))
+      .toBe('/tmp/a-very-long-directory-name-that-goes-past-the-sixty-character-limit/contract-notes.md');
     expect(formatPathForDisplay('/var/folders/ab/../../etc/passwd', keep)).toBe('/var/folders/ab/../../etc/passwd');
     expect(formatPathForDisplay('/Users/bob/up/../../etc/passwd', keep)).toBe('/Users/bob/up/../../etc/passwd');
     expect(formatPathForDisplay('/Users/alice/up/../../etc/passwd', keep)).toBe('~/up/../../etc/passwd');

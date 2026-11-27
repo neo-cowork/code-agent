@@ -186,6 +186,27 @@ describe.each(['zh', 'en'] as const)('审批卡路径口径 (%s)', (language) =>
     expect(row).not.toBeNull();
     expect(row!.textContent).toBe(LONG_SYSTEM_PATH);
   });
+
+  it('工作区内写、工作目录未知、四段超长路径（Linux 临时目录形状）：后果句省掉中段，文件行仍给完整路径', () => {
+    i18nState.language = language;
+    appState.workingDirectory = null;
+    sessionState.sessions = [];
+    const dir = '/tmp/code-agent-vitest-run-N0Avis/quiet-new-file-CeZgRb';
+    const target = `${dir}/contract-notes.md`;
+    const card = openCard(makeRequest({
+      id: `ws-write-short-root-${language}`,
+      tool: 'Write',
+      type: 'file_write',
+      boundary: { id: 'file.project_write' },
+      details: { path: target },
+    }));
+    const consequence = screen.getByTestId('permission-consequence').textContent ?? '';
+    expect(consequence).toContain('/tmp/…/quiet-new-file-CeZgRb/contract-notes.md');
+    expect(consequence).not.toContain(dir);
+    const row = card.querySelector(`[title="${target}"]`);
+    expect(row).not.toBeNull();
+    expect(row!.textContent).toBe(target);
+  });
 });
 
 describe('Gap C：审批卡相对路径只认请求所属会话的工作目录，不借用 UI 当前会话目录', () => {

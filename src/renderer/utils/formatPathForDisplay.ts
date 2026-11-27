@@ -44,14 +44,19 @@ function foldExactHomePrefix(path: string, homeDir?: string | null): string {
 /**
  * keepLocation：审批类界面用。工作区外的路径保留完整位置，只对宿主真实 homeDir 折成 `~`（未知时不折）；
  * 给了 maxLength 且超长时，中段省略、保留根前缀（绝对路径保留两段实目录，如 `/Users/Shared`、`/var/folders`）与后两段。
+ * 段数不够留两段实目录时（Linux 的 `/tmp/<运行目录>/<目录>/文件` 只有四段）退到留一段，否则超长路径会原样整条露出。
  */
 function abbreviateMiddle(path: string, maxLength: number): string {
   if (path.length <= maxLength) return path;
   const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
   const parts = path.split(sep);
-  const leadCount = parts[0] === '' ? 3 : 2;
-  if (parts.length <= leadCount + 2) return path;
-  return `${parts.slice(0, leadCount).join(sep)}${sep}…${sep}${parts.slice(-2).join(sep)}`;
+  const preferredLead = parts[0] === '' ? 3 : 2;
+  for (const leadCount of [preferredLead, preferredLead - 1]) {
+    if (parts.length > leadCount + 2) {
+      return `${parts.slice(0, leadCount).join(sep)}${sep}…${sep}${parts.slice(-2).join(sep)}`;
+    }
+  }
+  return path;
 }
 
 export function formatPathForDisplay(
