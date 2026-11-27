@@ -20,6 +20,7 @@ import { sanitizeToolCallsForHistory } from '../messageHandling/converter';
 import type { ContextAssembly } from './contextAssembly';
 import type { RuntimeContext } from './runtimeContext';
 import { attachTurnQualityMetadata } from './turnQuality';
+import { userFacingMessage } from './narrationSuppression';
 
 const BOUNCE_REASONS = {
   goal: '本批工具调用未执行：完成验证未通过，具体原因见随后的系统提示，请先按提示修复。',
@@ -58,7 +59,7 @@ export async function sealBouncedToolCalls(
     metadata: attachTurnQualityMetadata(ctx, undefined, response),
   };
   await contextAssembly.addAndPersistMessage(assistantMessage);
-  ctx.onEvent({ type: 'message', data: assistantMessage });
+  ctx.onEvent({ type: 'message', data: userFacingMessage(assistantMessage) });
 
   const results: ToolResult[] = toolCalls.map((toolCall) => {
     if (handedOffCallIds?.has(toolCall.id)) {

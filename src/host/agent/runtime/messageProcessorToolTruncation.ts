@@ -17,6 +17,7 @@ import { logCollector } from '../../mcp/logCollector.js';
 import { MODEL_MAX_TOKENS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { generateTruncationWarning } from './truncationPrompts';
 import { attachTurnQualityMetadata } from './turnQuality';
+import { userFacingMessage } from './narrationSuppression';
 
 const logger = createLogger('MessageProcessor');
 
@@ -75,7 +76,7 @@ export async function handleTruncatedToolCalls(
         metadata: attachTurnQualityMetadata(ctx, undefined, response),
       };
       await contextAssembly.addAndPersistMessage(truncAssistantMsg);
-      ctx.onEvent({ type: 'message', data: truncAssistantMsg });
+      ctx.onEvent({ type: 'message', data: userFacingMessage(truncAssistantMsg) });
 
       const syntheticResults: ToolResult[] = toolCalls.map((tc: ToolCall) => ({
         toolCallId: tc.id,

@@ -17,6 +17,7 @@ import { MAX_STEPS_REASON } from '../maxStepsFallback';
 import { getHarnessKnob } from '../harnessKnobs';
 import { createLogger } from '../../../services/infra/logger';
 import { detectReplyEgressLeaks } from '../../../../shared/replyEgressLeakDetect';
+import { userFacingMessage } from '../narrationSuppression';
 import {
   logger,
   MAX_PERSISTENT_SYSTEM_CONTEXT_ITEMS,
@@ -277,9 +278,12 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
       const leak = detectReplyEgressLeaks(message.content, ctx.runtime.turn?.runUserPrompt ?? '', {
         hasToolCalls: (message.toolCalls?.length ?? 0) > 0,
       });
+      const suppress = (message.toolCalls?.length ?? 0) > 0 && leak.categories.includes('english_reply_to_zh');
+      if (suppress) message.metadata = { ...message.metadata, narrationSuppressed: true };
       if (leak.categories.length > 0) {
         replyEgressLogger.warn('Reply egress leak detected', {
           reason: 'reply_egress_leak_detected',
+          action: suppress ? 'suppressed' : 'observed',
           sessionId: ctx.runtime.sessionId,
           messageId: message.id,
           categories: leak.categories,
@@ -305,6 +309,7 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   // 两条路径**都**失败时抛（fail-closed）——调用方 messageProcessor 紧接着就 dispatch
   // 工具，落库不成还往下走等于执行一批记录里根本不存在的副作用，重启后无从追溯。
   let persisted = false;
+  const stored = userFacingMessage(message);
   // 只有「真尝试写过且全失败」才算失败。没有 callback 也没有 sessionId 的运行时
   // （一次性/无持久化场景）本就不写库，那不是故障，不能拿它挡住工具。
   let attempted = false;
@@ -314,7 +319,7 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
     if (ctx.runtime.persistMessage) {
       attempted = true;
       try {
-        await ctx.runtime.persistMessage(message);
+        await ctx.runtime.persistMessage(stored);
         persisted = true;
       } catch (error) {
         persistenceError = error;
@@ -331,7 +336,7 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
       attempted = true;
       try {
         const sessionManager = getSessionManager();
-        await sessionManager.addMessageToSession(ctx.runtime.sessionId, message);
+        await sessionManager.addMessageToSession(ctx.runtime.sessionId, stored);
         persisted = true;
       } catch (error) {
         persistenceError = error;
