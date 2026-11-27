@@ -84,8 +84,9 @@ function sameTarget(a: string, b: string): boolean {
 // A delegation can only vouch for a concrete file: extensionless targets count only when they came
 // from a path-typed argument (file_path/filePath/path); url, pattern and command tokens keep the
 // extension requirement so a URL route like /status is never treated as a file.
-const FILE_LIKE_TARGET = /^(?![a-z][a-z0-9+.-]+:\/)(?:.*\/)?[^/]+\.[A-Za-z0-9]{1,8}$/i;
-const SCHEME_TARGET = /^[a-z][a-z0-9+.-]+:\//i;
+const TARGET_SCHEME = '[a-z][a-z0-9+.-]+:\\/';
+const SCHEME_TARGET = new RegExp(`^${TARGET_SCHEME}`, 'i');
+const FILE_LIKE_TARGET = new RegExp(`^(?!${TARGET_SCHEME})(?:.*\\/)?[^/]+\\.[A-Za-z0-9]{1,8}$`, 'i');
 const PATH_STOP = /[\s"'`<>()（）「」《》，。、：；,;]/;
 
 /** Does the delegation prompt name this failed target (file name or path, same-file rules as `sameTarget`)? */
@@ -108,6 +109,17 @@ function promptNamesTarget(prompt: string, target: string): boolean {
     if (sameTarget(candidate, target)) return true;
   }
   return false;
+}
+
+/**
+ * Does the prompt name this file as a file? Same rules as `promptNamesTarget`, except a mention used
+ * only as a directory component does not count: `docs/README.md` names the directory `docs`, never a
+ * file named `docs` — so a `path` argument that is a directory cannot be vouched for by a subpath.
+ */
+function promptNamesFile(prompt: string, target: string): boolean {
+  if (!promptNamesTarget(prompt, target)) return false;
+  const base = target.slice(target.lastIndexOf('/') + 1);
+  return promptNamesTarget(prompt.split(`${base}/`).join(' '), target);
 }
 
 /** A completed, failure-free ledger task for this delegate_task call: the only thing that can stand in for a retry. */
@@ -152,10 +164,10 @@ export function classifyToolSteps(
         if (FILE_LIKE_TARGET.test(target)) return true;
         if (!pathTargets.has(target) || SCHEME_TARGET.test(target)) return false;
         const base = target.slice(target.lastIndexOf('/') + 1);
-        return base !== '' && base !== '.' && base !== '..';
+        return base !== '' && base !== '..';
       });
       const delegatedRecovery = !recovered && files.length > 0
-        && files.every((file) => delegatedPrompts.some((prompt) => promptNamesTarget(prompt, file)));
+        && files.every((file) => delegatedPrompts.some((prompt) => promptNamesFile(prompt, file)));
       if (!recovered && !delegatedRecovery) failed += 1;
     }
   }
