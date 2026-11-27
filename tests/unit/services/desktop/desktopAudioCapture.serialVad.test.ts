@@ -36,7 +36,8 @@ vi.mock('../../../../src/host/services/desktop/audioVadRuntime', () => ({
 vi.mock('../../../../src/host/services/desktop/nativeDesktopService', () => ({
   getNativeDesktopService: () => ({ getStatus: () => ({}) }),
 }));
-vi.mock('../../../../src/host/config/configPaths', () => ({
+vi.mock('../../../../src/host/config/configPaths', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/host/config/configPaths')>()),
   getUserConfigDir: () => vad.configDir,
 }));
 
