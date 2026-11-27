@@ -13,7 +13,7 @@
 
 export const permissionVocabularyZh = {
   /** 动手前都先问你 —— 会话档 default / 专家档 strict */
-  ask: '请求批准',
+  ask: '每次先问我',
   /** 只看不动 —— 会话档 readOnly（专家档没有这一档） */
   readOnly: '只读',
   /** 常规操作自己来，风险操作才问你 —— 会话档 acceptEdits / 专家档 development */
@@ -27,7 +27,7 @@ export const permissionVocabularyZh = {
 };
 
 export const permissionVocabularyEn: typeof permissionVocabularyZh = {
-  ask: 'Request approval',
+  ask: 'Ask every time',
   readOnly: 'Read only',
   autoApprove: 'Approve for me',
   fullAccess: 'Full access',

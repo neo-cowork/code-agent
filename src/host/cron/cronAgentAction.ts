@@ -171,7 +171,7 @@ export async function executeCronAgentAction(
   const leaveEventReply = eventReplyAccountId && eventReplyTargets && eventReplyTargets.length > 0
     ? bindEventReplySession(cronSession.id, eventReplyAccountId, eventReplyTargets)
     : undefined;
-  // 命中规则的可读账号位（账号名；失败回落 accountId，见 cronEventChatNames）。
+  // 命中规则的账号位只使用账号显示名。
   const eventReplyAccountName = eventReplyAccountId ? await resolveEventAccountName(eventReplyAccountId) : undefined;
   // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
   // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
