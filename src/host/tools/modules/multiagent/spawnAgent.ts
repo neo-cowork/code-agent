@@ -1,3 +1,4 @@
+import { truncateAtWordBoundary } from '../../../utils/truncate';
 import { publishBackgroundSubagentVisibility, resolveSingleSpawnRunScope } from '../../../agent/multiagentTools/spawnAgentForegroundBackground';
 import { randomUUID } from 'crypto';
 import { createScopedSwarmAgentId } from '../../../../shared/contract/swarm';
@@ -66,7 +67,9 @@ const ROLE_ALIASES: Record<string, string> = {
 function shortBackgroundTitle(title: string): string {
   const normalized = title.replace(/\s+/g, ' ').trim();
   const chars = Array.from(normalized);
-  return chars.length > 30 ? `${chars.slice(0, 29).join('')}…` : normalized;
+  if (chars.length <= 30) return normalized;
+  // 整词截断；预算内没有边界（一个长 token）时退回旧的硬切——这里没有固定文案可回落。
+  return truncateAtWordBoundary(normalized, 30) ?? `${chars.slice(0, 29).join('')}…`;
 }
 
 function normalizeRole(role: unknown): unknown {

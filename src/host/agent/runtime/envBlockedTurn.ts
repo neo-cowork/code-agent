@@ -1,4 +1,8 @@
-import type { ToolCall } from '../../../shared/contract';
+import { OFFLINE_RESUME_TIMEOUT_MS } from '../../../shared/constants/envResume';
+import { classifyError } from '../../model/errorClassifier';
+import { resolveProviderBaseUrl } from '../../model/providers/providerResolution';
+import { probeOfflineNetwork } from '../../permissions/envAssist/probes/offlineProbe';
+import type { AgentEvent, ModelConfig, ToolCall } from '../../../shared/contract';
 import type { RunEnvelope } from '../../../shared/contract/durableRun';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
 import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
@@ -27,6 +31,35 @@ export function settleEnvBlockedTool(error: unknown, input: {
   // The user already confirmed this call and it never ran: keep a one-shot credential for the resumed run (parkedCallApproval.ts).
   if (input.toolName && error.approvedCallArgs !== undefined) recordParkedCallApproval({ sessionId: input.sessionId, runId: input.runId, tool: input.toolName, args: error.approvedCallArgs });
   input.markCancelled();
+  return true;
+}
+
+export async function settleOfflineInference(error: unknown, input: {
+  config: ModelConfig; runId?: string; sessionId?: string;
+  shouldStop: () => boolean; markCancelled: () => void; onEvent: (event: AgentEvent) => void;
+}): Promise<boolean> {
+  const kind = classifyError(error);
+  if (kind !== 'network' && kind !== 'unavailable') return false;
+  const { runId, sessionId, config } = input;
+  if (!runId || !sessionId || !isQuotaWaitParkableRun(getConfiguredApplicationRunRegistry(), runId)) return false;
+  const endpoint = URL.parse(resolveProviderBaseUrl(config));
+  if (!endpoint || !['http:', 'https:'].includes(endpoint.protocol)) return false;
+  const target = { endpoint: endpoint.origin, provider: config.provider };
+  if (await probeOfflineNetwork(target) || input.shouldStop()) return false;
+  const now = Date.now();
+  const deadlineAt = now + OFFLINE_RESUME_TIMEOUT_MS;
+  notes.set(runId, { class: 'offline', target: 'network', ...target, deadlineAt });
+  input.markCancelled();
+  logger.info('Network unavailable; parking model inference', { runId, sessionId });
+  try {
+    const { publishEnvAssistNotice } = await import('../../permissions/envAssist/toolNotice');
+    await publishEnvAssistNotice({
+      id: `${runId}|offline|network`, sessionId, runId, class: 'offline', phase: 'fixing',
+      sentenceKey: 'env.offline.waiting', resume: { mode: 'auto', parkId: runId, deadlineAt }, updatedAt: now,
+    }, input.onEvent);
+  } catch {
+    logger.warn('Could not publish offline notice', { runId, sessionId });
+  }
   return true;
 }
 

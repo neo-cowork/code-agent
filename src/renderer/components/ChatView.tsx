@@ -1071,7 +1071,7 @@ export const ChatView: React.FC = () => {
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} canAbandonParked={isParkedForUser(durableResume, effectiveIsProcessing)} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} canAbandonParked={durableResume?.envBlocked?.class !== 'offline' && isParkedForUser(durableResume, effectiveIsProcessing)} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 

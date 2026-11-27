@@ -45,7 +45,7 @@ describe('ModelSettings one-shot API key focus', () => {
   it('guide focuses the saved default provider rather than the currently edited provider', async () => {
     const view = render(<Settings initialProvider="deepseek" />);
     const guide = await waitFor(() => {
-      const button = view.getByRole('button', { name: 'No API key yet? Add one here' });
+      const button = view.getByRole('button', { name: 'Add a model' });
       expect(button).toBeTruthy();
       return button;
     });

@@ -602,22 +602,21 @@ describe('ChatView send authentication', () => {
 
 describe('ChatView missing API Key notice', () => {
   it.each([
-    ['en', 'openai', 'No API Key for OpenAI yet. Settings is open — add one, then send again.'],
-    ['zh', 'openai', 'OpenAI 尚未配置密钥。已打开设置，请添加后再发送。'],
-    ['en', 'custom-meeting', 'No API Key for this model yet. Settings is open — add one, then send again.'],
-    ['zh', 'custom-meeting', '这个模型 尚未配置密钥。已打开设置，请添加后再发送。'],
-  ] as const)('toast copy and provider target %s/%s', async (language, provider, expected) => {
+    ['en', 'openai'],
+    ['zh', 'openai'],
+    ['en', 'custom-meeting'],
+    ['zh', 'custom-meeting'],
+  ] as const)('opens the setup page as the only prompt for %s/%s', async (language, provider) => {
     locale.language = language;
     settingsInvokeMock.mockResolvedValue({ models: { default: provider, defaultProvider: 'deepseek', providers: {} } });
     render(React.createElement(ChatView));
     fireEvent.change(screen.getByLabelText('chat-input-field'), { target: { value: '把 notes.txt 的会议记录整理成三个要点' } });
     fireEvent.submit(screen.getByTestId('chat-input'));
-    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(expected));
-    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith(provider);
+    await waitFor(() => expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith(provider));
     expect(appState.openSettingsTab).not.toHaveBeenCalled();
     expect(sendMessageMock).not.toHaveBeenCalled();
     expect((screen.getByLabelText('chat-input-field') as HTMLInputElement).value).toContain('notes.txt');
-    expect(useToastStore.getState().toasts.map((toast) => toast.message).join(' ')).not.toMatch(/Configure a model before sending|先配置一个模型后再发送/);
+    expect(useToastStore.getState().toasts).toEqual([]);
   });
 
   it('without a session, names the unkeyed default and opens its provider settings', async () => {
@@ -674,16 +673,14 @@ describe('ChatView effective session model gate', () => {
     expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
-  it('both models unkeyed names the effective override provider', async () => {
+  it('opens one setup destination for the effective provider when no model is configured', async () => {
     settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: {
       openai: { enabled: true }, claude: { enabled: true },
     } } });
     effectiveModelInvokeMock.mockResolvedValue({ provider: 'claude', model: 'claude-sonnet-4-6', adaptive: false });
     submitPrompt();
-    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(
-      zh.modelSetup.missingApiKey.replace('{provider}', 'Anthropic Claude'),
-    ));
-    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('claude');
+    await waitFor(() => expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('claude'));
+    expect(useToastStore.getState().toasts).toEqual([]);
     expect(sendMessageMock).not.toHaveBeenCalled();
   });
 

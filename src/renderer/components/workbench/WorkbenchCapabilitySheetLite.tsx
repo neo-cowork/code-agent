@@ -13,6 +13,7 @@ import {
   getWorkbenchCapabilityBlockedState,
   type WorkbenchCapabilityRegistryItem,
 } from '../../utils/workbenchCapabilityRegistry';
+import { isConnectorCardConnected } from '../../utils/connectorCardPresentation';
 import {
   getWorkbenchCapabilityQuickActions,
   getWorkbenchCapabilityQuickActionFeedback,
@@ -190,7 +191,7 @@ function renderCapabilityMeta(capability: WorkbenchCapabilityRegistryItem): Reac
   return (
     <div className="space-y-1 text-[11px] text-zinc-400">
       {capability.transport && <div>transport: {capability.transport}</div>}
-      {capability.lifecycle.connectionState === 'connected'
+      {isConnectorCardConnected(capability, capability.lifecycle.connectionState)
         && Number.isFinite(capability.toolCount)
         && Number.isFinite(capability.resourceCount) && (
         <div>tools: {capability.toolCount} · resources: {capability.resourceCount}</div>

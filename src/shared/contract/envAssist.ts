@@ -33,7 +33,7 @@ export interface EnvAssistNotice {
       | { serverName: string; requiredScope?: string }
       | { route: string };
   };
-  resume: { mode: 'auto' | 'manual'; parkId?: string };
+  resume: { mode: 'auto' | 'manual'; parkId?: string; deadlineAt?: number };
   /** Exact call that parked this run; absent for notices from ordinary tool failures. */
   parkedToolCallId?: string;
   doneKey?: string;

@@ -8,6 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract/message';
 import type { TurnQualitySummary } from '../../../src/shared/contract/turnQuality';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { invokeMemoryEntryCommand } from '../../../src/renderer/services/invokeMemoryEntryCommand';
+
+vi.mock('../../../src/renderer/services/invokeMemoryEntryCommand', () => ({
+  invokeMemoryEntryCommand: vi.fn(async () => ({ success: true, data: { flagged: true } })),
+}));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => {
   const state = { currentSessionId: 'session-1', sessions: [], messages: [], runningSessionIds: new Set<string>() };
@@ -203,5 +208,101 @@ describe('TurnCard 记忆芯片每轮只出现一次', () => {
     const chips = memoryChipButtons(container);
     expect(chips).toHaveLength(1);
     expect(chips[0].closest('[data-trace-node-id]')?.getAttribute('data-trace-node-id')).toBe('a2-text');
+  });
+});
+
+// N-MEM-SOURCE-WRONG-FEEDBACK：展开后的每行记忆给「不对 / 过时了」，点了乐观置灰 + 撤销。
+describe('MemorySourceChip 行级负反馈（不对/过时了）', () => {
+  beforeEach(() => {
+    useAppStore.setState({ developerMode: false, disclosureLevel: 'standard', language: 'zh' });
+    vi.mocked(invokeMemoryEntryCommand).mockClear();
+    vi.mocked(invokeMemoryEntryCommand).mockResolvedValue({ success: true, data: { flagged: true } });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useAppStore.setState({ developerMode: false, disclosureLevel: 'standard', language: 'zh' });
+  });
+
+  function renderExpanded(titles: string[]) {
+    const summary = memorySummary(titles);
+    const turn = project([
+      { id: 'u1', role: 'user', content: '写周报', timestamp: 1_000 },
+      assistant('a1', '周报正文。', 2_000, summary),
+    ]);
+    const { container } = render(<TurnCard turn={turn} sessionId="session-1" />);
+    fireEvent.click(memoryChipButtons(container)[0]);
+    return container;
+  }
+
+  it('① 每行都有「不对」「过时了」两个动作', () => {
+    const container = renderExpanded(['周报分三段', '受众是团队']);
+    const rows = container.querySelectorAll('[data-testid="memory-source-rows"] > li');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.textContent).toContain('不对');
+      expect(row.textContent).toContain('过时了');
+    }
+  });
+
+  it('① 点「不对」：行置灰出「已停用 · 你标记为不对」+ 撤销，不再显示两个动作', () => {
+    const container = renderExpanded(['周报分三段']);
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '不对')!);
+    expect(invokeMemoryEntryCommand).toHaveBeenCalledWith(
+      { action: 'memoryEntryFlagInjection', entryId: 'mem-1', flag: 'wrong' },
+    );
+    const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+    expect(row.textContent).toContain('已停用 · 你标记为不对');
+    expect(row.textContent).toContain('撤销');
+    expect(row.textContent).not.toContain('过时了');
+    expect(row.className).toContain('opacity-60');
+  });
+
+  it('① 点「过时了」标记 outdated；撤销调 clearFlag 后动作回到两个', async () => {
+    const container = renderExpanded(['周报分三段']);
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '过时了')!);
+    expect(invokeMemoryEntryCommand).toHaveBeenLastCalledWith(
+      { action: 'memoryEntryFlagInjection', entryId: 'mem-1', flag: 'outdated' },
+    );
+    vi.mocked(invokeMemoryEntryCommand).mockResolvedValueOnce({ success: true, data: { cleared: true } });
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '撤销')!);
+    expect(invokeMemoryEntryCommand).toHaveBeenLastCalledWith(
+      { action: 'memoryEntryClearInjectionFlag', entryId: 'mem-1' },
+    );
+    const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+    expect(row.textContent).toContain('不对');
+    expect(row.textContent).toContain('过时了');
+    expect(row.textContent).not.toContain('已停用');
+  });
+
+  it('① host 写失败时回滚乐观状态（动作回到两个）', async () => {
+    vi.mocked(invokeMemoryEntryCommand).mockResolvedValueOnce({ success: true, data: { flagged: false } });
+    const container = renderExpanded(['周报分三段']);
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '不对')!);
+    await vi.waitFor(() => {
+      const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+      expect(row.textContent).toContain('过时了');
+      expect(row.textContent).not.toContain('已停用');
+    });
+  });
+
+  it('r1 回滚不静默：行上留「没标记上，请重试」，重试成功后提示消失', async () => {
+    vi.mocked(invokeMemoryEntryCommand)
+      .mockResolvedValueOnce({ success: true, data: { flagged: false } })
+      .mockResolvedValueOnce({ success: true, data: { flagged: true } });
+    const container = renderExpanded(['周报分三段']);
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '不对')!);
+    await vi.waitFor(() => {
+      const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+      expect(row.textContent).toContain('没标记上，请重试');
+      expect(row.textContent).not.toContain('已停用');
+    });
+    // 重试：动作还在（回滚后回到两个），再点一次成功 → 置灰、提示消失
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '不对')!);
+    await vi.waitFor(() => {
+      const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+      expect(row.textContent).toContain('已停用 · 你标记为不对');
+      expect(row.textContent).not.toContain('没标记上，请重试');
+    });
   });
 });
