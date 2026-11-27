@@ -1154,9 +1154,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         }}
         atBottomThreshold={96}
         rangeChanged={reportVisibleRange}
-        // 进入/切换会话首帧即底部：定位到最后一条内容的末尾（而非 focused turn
-        // 的顶部——末轮长于一屏时顶置会让用户落在中段）。behavior:'auto' 无动画。
-        initialTopMostItemIndex={projection.turns.length > 0
+        // 进入/切换多轮会话首帧即底部：定位到最后一条内容的末尾（而非 focused turn
+        // 的顶部——末轮长于一屏时顶置会让用户落在中段）。单轮会话（turns.length <= 1）
+        // 只有 1 项且常不满一屏，传 initialTopMostItemIndex 会触发 react-virtuoso 的
+        // visibility:hidden 初始滚动锁导致消息区空白。behavior:'auto' 无动画。
+        initialTopMostItemIndex={projection.turns.length > 1
           ? { index: 'LAST' as const, align: 'end' as const, behavior: 'auto' as const }
           : undefined}
         // B1-R·R4：不开 alignToBottom。它给列表容器 marginTop:auto，把不满一屏的
