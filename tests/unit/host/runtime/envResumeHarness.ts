@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { clearParkedCallApprovals } from '../../../../src/host/permissions/parkedCallApproval';
 import { applySchema } from '../../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../../src/host/services/core/database/migrations';
 import { applyIndexes } from '../../../../src/host/services/core/database/indexes';
@@ -16,6 +17,7 @@ import { getToolDefinitionWithCloudMeta } from '../../../../src/host/tools/dispa
 import { setToolLedgerSink } from '../../../../src/host/tools/toolLedgerSink';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
 import { mailDraftSchema } from '../../../../src/host/tools/modules/connectors/mailDraft.schema';
+import { mailSendSchema } from '../../../../src/host/tools/modules/connectors/mailSend.schema';
 import { getConnectorRegistry } from '../../../../src/host/connectors';
 import { registerAgentContinueRoute } from '../../../../src/web/routes/registerAgentContinueRoute';
 import { makeEngine } from './envResumeContext';
@@ -51,6 +53,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   let blocked = true, executions = 0, resumes = 0;
   const seenCalls: string[] = [], seenRuns: string[] = [];
   const callArgs: Record<string, unknown> = mail ? MAIL_DRAFT_ARGS : {};
+  /** mail only: how the resumed model turn re-issues the draft (default: identical arguments, same run, once). */
+  const reissue: { args?: Record<string, unknown>; runId?: string; twice?: boolean; tool?: string; force?: boolean; preapproveInitial?: boolean } = {};
   const schema: ToolSchema = { name, description: 'Environment recovery fixture', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'string' }, category: 'network', permissionLevel: sideEffect ? 'write' : 'read', readOnly: !sideEffect, requiresPermission: false };
   const mailConnector = {
     id: 'mail', label: 'Mail', capabilities: ['draft_message'], getStatus: async () => ({ connected: true, capabilities: [] }),
@@ -66,6 +70,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   // The connector tools only register on darwin; CI runs Linux, so register the real module (and connector) explicitly there.
   const registeredMailDraft = mail && !protocol.has('mail_draft');
   if (registeredMailDraft) protocol.register(mailDraftSchema, async () => (await import('../../../../src/host/tools/modules/connectors/mailDraft')).mailDraftModule);
+  const registeredMailSend = mail && !protocol.has('mail_send');
+  if (registeredMailSend) protocol.register(mailSendSchema, async () => (await import('../../../../src/host/tools/modules/connectors/mailSend')).mailSendModule);
   if (mail) getConnectorRegistry().register(mailConnector);
   else protocol.register(schema, async () => ({ schema, createHandler: () => ({ schema, execute: async (_args, context) => {
     executions++; seenCalls.push(context.currentToolCallId!); seenRuns.push(context.runId!);
@@ -76,7 +82,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   setToolLedgerSink({
     appendToolExecutionBegin: (input) => events.appendBegin(input),
     appendToolExecutionComplete: (input) => events.appendComplete(input),
-    appendPermissionDecision: () => {},
+    appendPermissionDecision: (input) => out('PERMISSION_DECISION', input),
   });
   const messages = () => sessions.getMessages(sessionId);
   const persist = async (_session: string, message: Message) => { sessions.addMessage(sessionId, message); };
@@ -92,14 +98,21 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       if (mail) {
         // The model's next turn: it reads the recorded "not run" result and issues mail_draft again, once, through the production executor.
         sessions.addMessage(sessionId, { id: 'env-assistant-2', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [{ id: 'env-call-2', name, arguments: callArgs }] });
-        const again = await executor().execute(name, callArgs, { runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
+        const again = await executor(reissue.force).execute(reissue.tool ?? name, reissue.args ?? callArgs, { runId: reissue.runId ?? runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
         sessions.addMessage(sessionId, { id: 'env-tool-2', role: 'tool', content: '', timestamp: Date.now(), toolResults: [{ toolCallId: 'env-call-2', success: again.success, output: again.output, error: again.error }] });
+        if (reissue.twice) await executor().execute(name, reissue.args ?? callArgs, { runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-3' });
       }
       await finalizeOrParkDurableRun({ registry, runId, handle, sessionId, completed: true });
       registry.unregister(runId, handle);
       sessions.updateSession(sessionId, { status: 'idle' });
     },
   } as unknown as TaskManager;
+  // A resumed run keeps going after the test saw `resumes > 0`; tests await it so its tail cannot leak into the next test's fixture.
+  let resumeInflight: Promise<unknown> = Promise.resolve();
+  const rawResume = tasks.resumeExistingDurableRun.bind(tasks);
+  (tasks as { resumeExistingDurableRun: typeof rawResume }).resumeExistingDurableRun = (...args) => {
+    const running = rawResume(...args); resumeInflight = running.catch(() => undefined); return running;
+  };
   databasePorts.current = {
     getSession: (id: string) => sessions.getSession(id),
     getMessages: () => messages(),
@@ -107,8 +120,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     addMessage: (id: string, message: Message) => sessions.addMessage(id, message),
     appendToolExecutionComplete: (input: Parameters<typeof events.appendComplete>[0]) => events.appendComplete(input),
   };
-  const executor = () => {
-    const instance = new ToolExecutor({ workingDirectory: workspace, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return true; } : async () => false });
+  const executor = (forcePermissionHandler = false) => {
+    const instance = new ToolExecutor({ workingDirectory: workspace, forcePermissionHandler, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return { approved: true, approvalSource: 'user' as const };  } : async () => false });
     instance.setAuditEnabled(false); return instance;
   };
   const ports = createApplicationNativeRecoveryPorts(registry, {
@@ -125,11 +138,12 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     },
   });
   const continueRun = () => continueParkedDurableRun({ sessionId, runRegistry: registry, taskManager: tasks, getMessages: async () => messages(), envRecoveryPorts: ports });
-  return { db, registry, repository, sessions, messages, tasks, ports, continueRun,
+  return { db, registry, repository, sessions, messages, tasks, ports, continueRun, reissue,
     counts: () => ({ executions, resumes, seenCalls, seenRuns }),
     mailSaved: () => ({ attempts: mailAttempts.length, saved }),
     mailSubjects: () => [...mailAttempts],
     approvalCards: () => [...approvalCards],
+    resumeIdle: async () => { await resumeInflight; },
     green: () => { blocked = false; },
     wire: (probe: ReturnType<EnvResumeProbeFactory>) => {
       // Exercise the production route registration; wrap only TaskManager's model sink.
@@ -142,6 +156,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       const handle = await registry.startDurable({ runId, sessionId, workspace, cwd: workspace });
       const { ctx, engine } = makeEngine(executor().execute.bind(executor()) as never);
       Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages() });
+      if (reissue.preapproveInitial) ctx.control.preApprovedTools.add('mail_draft');
       const emitted: AgentEvent[] = []; Object.assign(ctx, { onEvent: (event: AgentEvent) => { emitted.push(event); } });
       await engine.executeToolsWithHooks([{ id: toolCallId, name, arguments: callArgs }]);
       if (!ctx.control.isCancelled) throw new Error(`Engine did not cancel: ${JSON.stringify(emitted)}`);
@@ -155,6 +170,6 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       out('TOOL_EVENTS', db.prepare('SELECT * FROM tool_execution_events').all());
       out('COUNTS', { executions, resumes, seenCalls, seenRuns });
     },
-    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (!mail || registeredMailDraft) protocol.unregister(name); },
+    close: () => { clearParkedCallApprovals(runId); registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (registeredMailSend) protocol.unregister('mail_send'); if (!mail || registeredMailDraft) protocol.unregister(name); },
   };
 }
