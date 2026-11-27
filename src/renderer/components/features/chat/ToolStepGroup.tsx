@@ -1,4 +1,5 @@
 import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
+import { backgroundTaskFailureCopy } from '../../../utils/agentFailureCopy';
 import { readHelperOutcomes } from '../../../utils/helperOutcomeCopy';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
@@ -49,6 +50,7 @@ import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalR
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import { useEnvParkedStep } from '../../../hooks/useEnvParkedTarget';
 import { supersededEnvParkedCalls } from '../../../utils/envParkedTurn';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -173,7 +175,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       //  · 仍要计数——直接 continue 会让「WebSearch 失败 → WebFetch 失败 → 模型给出答案」
       //    这种整组都被过滤的情形 label 变成空串，撞上下面 `!label` 的守卫，整个工具组
       //    从时间线上消失，用户连「搜索发生过」都不知道。
-      const benign = isAutoLoadedRetry(tc.metadata) || tc.recovered;
+      const benign = isAutoLoadedRetry(tc.metadata) || (tc.recovered && !terminalById.get(tc.id)?.handedOff);
       const preflight = benign ? null : getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
         toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
       } });
@@ -211,8 +213,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       }),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
       envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
-      blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
-      blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
+      blockedCommands ? interpolatePlural(t.deliveryExperience.blockedCommands, blockedCommands) : '',
+      blockedSteps ? interpolatePlural(t.deliveryExperience.blockedSteps, blockedSteps) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
   }, [terminalById, streamVisibleNodes, t, envParkedStep]);
 
@@ -225,8 +227,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       if (!tc) continue;
       // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，不参与组状态判定
       // （否则组会卡 error/partial、顶红、一直展开，把成功的一轮演成翻车）。
-      if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
       const terminal = terminalById.get(tc.id);
+      if (isAutoLoadedRetry(tc.metadata) || (tc.recovered && !terminal?.handedOff)) continue;
       if (!terminal) continue;
       if (terminal.stepStatus === 'pending-approval') return 'pending-approval';
       if (terminal.state === 'running') hasRunning = true;
@@ -419,10 +421,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const failureReason = useMemo(() => {
     // 与组头 label 同口径：已恢复/自动重试的失败不算数，否则会出现 label 说「1 条未成功」、
     // 原因行说「2 失败」这种自相矛盾。
+    // 已交给后台任务的调用不是它自己的失败：任务失败时读任务的人话原因，其余情况不报失败。
+    const handedOffFailure = toolCalls.map((toolCall) => terminalById.get(toolCall.id))
+      .find((terminal) => terminal?.handedOffOutcome === 'failed' && terminal.handoffTask);
     const unsettled = toolCalls.filter((toolCall) => toolCall.result?.success === false
+      && !terminalById.get(toolCall.id)?.handedOff
       && !isAutoLoadedRetry(toolCall.result?.metadata) && toolCall.result?.metadata?.recovered !== true);
     // 从未执行的作废步不是失败：不进失败计数；全是作废步时只读第一条「未执行 · 原因」。
     const failedCalls = unsettled.filter((toolCall) => !terminalById.get(toolCall.id)?.notRun);
+    if (failedCalls.length === 0 && handedOffFailure?.handoffTask) return backgroundTaskFailureCopy(handedOffFailure.handoffTask, t);
     if (failedCalls.length === 0) return unsettled.length > 0 ? humanizeToolFailureReason(unsettled[0], t) : null;
     if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
     return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
@@ -433,7 +440,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   // 结局优先：这组里有多少次失败已被后续成功恢复——只用于安静地标个「已恢复」，不顶红。
   // skipped（从未执行）的行虽会被投影层降级成 recovered，但不是「失败后恢复」，不计入。
   const recoveredCount = useMemo(
-    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped).length,
+    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped && !terminalById.get(n.toolCall.id)?.handedOff).length,
     [nodes, terminalById],
   );
   const totalDuration = useMemo(() => {
@@ -562,7 +569,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           </span>
         )}
         {status !== 'ok' && outputCount > 0 && (
-          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
+          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{interpolatePlural(t.toolGroup.outputCount, outputCount)}</span>
         )}
         {totalDuration && (
           <span
@@ -632,7 +639,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           )}
           {completedStepsCount > 0 && (
             <div className="pl-1 text-[10px] text-zinc-600">
-              {t.toolGroup.completedSteps.replace('{count}', String(completedStepsCount))}
+              {interpolatePlural(t.toolGroup.completedSteps, completedStepsCount)}
             </div>
           )}
         </div>

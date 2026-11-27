@@ -1250,6 +1250,7 @@
               "enum": [
                 "device",
                 "regular",
+                "absent",
                 "unknown"
               ]
             },
@@ -2962,6 +2963,9 @@
             },
             "parkId": {
               "type": "string"
+            },
+            "deadlineAt": {
+              "type": "number"
             }
           },
           "required": [
@@ -3111,7 +3115,8 @@
               "type": "string",
               "enum": [
                 "idle_reaped",
-                "client_disconnect"
+                "client_disconnect",
+                "offline"
               ]
             }
           },

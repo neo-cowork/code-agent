@@ -6,6 +6,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -29,7 +30,7 @@ export const InlineStrip: React.FC = () => {
       ? error || '压缩失败'
       : result?.totalSavedTokens && result.totalSavedTokens > 0
         ? `已释放 ${formatTokens(result.totalSavedTokens)}`
-        : t.chat.compactionCountBadge.replace('{count}', String(result?.compressionCount ?? 1));
+        : interpolatePlural(t.chat.compactionCountBadge, result?.compressionCount ?? 1);
 
   return (
     <div className="relative mx-auto max-w-3xl px-4 py-1.5 animate-fade-in">

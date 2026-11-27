@@ -87,6 +87,14 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
     || (request.type === 'command' && isDangerousCommand(request.details.command));
 }
 
+/** 高危命令：卡面必须让人看见命令本身与危险标识，不能藏进折叠详情。 */
+export function isHighRiskCommandRequest(request: PermissionRequest): boolean {
+  const risk = request.details.commandRiskLevel;
+  return request.type === 'dangerous_command'
+    || request.dangerLevel === 'danger'
+    || (request.type === 'command' && (risk === 'high' || risk === 'critical'));
+}
+
 function isGenericCommandRequest(request: PermissionRequest): boolean {
   return request.type === 'command'
     && request.tool.trim().toLowerCase() !== 'bash'
@@ -96,13 +104,15 @@ function isGenericCommandRequest(request: PermissionRequest): boolean {
 }
 
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
-  if (request.details.browserSessionGrant) return 'expanded';
-  if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
-  // 没有文件目标的「文件类」请求是中性卡（describeApproval 归 generic），要展开才看得到范围。
-  return (request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit')
-    && fileTarget(request)
-    ? 'compact'
-    : 'expanded';
+  if (request.details.browserSessionGrant || request.rawArgs || request.details.targetApp?.name
+    || isSandboxEscalation(request)
+    || request.reasonCode === PermissionRequestReason.SensitiveStepHandback
+    || request.details.sensitiveStep
+    || isHighRiskCommandRequest(request)
+    // 通用卡的问句只说「以下操作」，带参数预览的卡要批的内容就在预览里：都不能折叠。
+    || isGenericCommandRequest(request)
+    || request.argsPreview) return 'expanded';
+  return 'compact';
 }
 
 export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
@@ -116,6 +126,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target, p) : undefined;
+  // 工作区外是凭据/隐私外泄与误写的关键信号：读、写、改、删的问句都带限定，不只靠后果行。
   const qualifier = isOutsideWorkspace(request) ? p.workspaceOutsideQualifier : '';
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
@@ -160,7 +171,8 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
 
 function fileCountText(count: number | undefined, t: Translations): string {
   if (count === undefined) return '';
-  return t.decisionCard.permission.fileCount.replace('{count}', String(count));
+  const p = t.decisionCard.permission;
+  return (count === 1 ? p.fileCountOne : p.fileCount).replace('{count}', String(count));
 }
 
 /**
@@ -184,6 +196,35 @@ function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets,
   return '';
 }
 
+/** 多目标删除后果行最多点名几个目标，其余并进「等 N 个」。 */
+const DELETE_NAMED_TARGET_LIMIT = 3;
+
+/**
+ * 多目标 rm 的后果句（FB-1618）：宿主的 affectedPath 只是第一个目标、计数却是全部
+ * 目标之和，照抄就成了「一个名字、三个文件」。目标清单确切时按命令顺序点名前 3 个，
+ * 超出的写「等 N 个」；清单不确切（混了通配符/变量/管道）时一个名字都不写——点名
+ * 其中一个会被读成「只删这一个」。单目标与解析不出目标的命令返回 undefined，走原路径。
+ */
+function multiTargetDeletionConsequence(request: PermissionRequest, parsed: RmCommandTargets, t: Translations): string | undefined {
+  const total = parsed.targets.length;
+  if (total <= 1) return undefined;
+  const p = t.decisionCard.permission;
+  if (!parsed.exact) return p.consequenceDeleteUnnamed;
+  const names = parsed.targets
+    .slice(0, DELETE_NAMED_TARGET_LIMIT)
+    .map((target) => formatFilePath(redactCredentialText(target)))
+    .join(p.consequenceDeleteNameJoiner);
+  const named = total > DELETE_NAMED_TARGET_LIMIT
+    ? p.consequenceDeleteNamesMore
+      .replace('{total}', String(total))
+      .replace('{rest}', String(total - DELETE_NAMED_TARGET_LIMIT))
+      .replace('{names}', () => names)
+    : names;
+  return p.consequenceDelete
+    .replace('{target}', () => named)
+    .replace('{count}', deletionCountText(request, parsed, t));
+}
+
 export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
@@ -194,7 +235,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return undefined;
   }
   const p = t.decisionCard.permission;
-  if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
+  if (isGenericCommandRequest(request)) return undefined;
   const parsedRmTargets = parseRmTargets(request.details.command ?? '');
   const target = request.details.affectedPath
     || fileTarget(request)
@@ -208,6 +249,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
   if (deletion) {
+    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
+    if (multiTarget) return multiTarget;
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', deletionCountText(request, parsedRmTargets, t));
@@ -229,33 +272,38 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (request.boundary?.id === 'file.external_read') {
     return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target, p) : p.targetFallback);
   }
-  if (isOutsideWorkspace(request)) {
+  if (request.boundary?.id === 'file.external_write') {
     return p.consequenceOutside
       .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
-  if (request.type === 'network' || request.type === 'mcp') {
+  if (request.details.connectorAccess?.access === 'write' || request.riskClass === 'external'
+    || request.boundary?.id === 'connector.external_write'
+    || (request.type === 'network' && request.details.method && !['GET', 'HEAD', 'OPTIONS'].includes(request.details.method.toUpperCase()))) {
     const connector = request.details.connectorAccess;
     const endpoint = (connector && catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName))
       || request.details.url
-      || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
     return p.consequenceNetwork.replace('{target}', redactCredentialText(endpoint));
   }
   if (request.type === 'file_write' || request.type === 'file_edit') {
+    if (request.details.targetKind === 'absent') return undefined;
     return p.consequenceWrite
       .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'command' || request.type === 'dangerous_command') {
-    const risk = request.details.commandRiskLevel ?? (request.dangerLevel === 'danger' ? 'high' : 'medium');
-    if (risk === 'critical' || risk === 'high') return p.consequenceHighRiskCommand;
+    if (isHighRiskCommandRequest(request)) return p.consequenceHighRiskCommand;
+    // 分类器点了名的两类（#1611）：推到 Git 远端是外发，读凭据路径是隐私，卡面必须说出来。
     const classifierRules = request.decisionTrace?.steps.map((step) => step.rule) ?? [];
     if (classifierRules.includes('B1: sensitive_credential_read')) return p.consequenceCredentialReadCommand;
     if (classifierRules.includes('B1: git_remote_or_credential_write')) return p.consequenceGitRemoteWriteCommand;
-    return risk === 'unknown'
-      ? p.consequenceUnknownRiskCommand
-      : p.consequenceRiskCommand;
+    // 不带 -rf 的多目标 rm（模型最常发的 `rm a.log b.log c.log`）宿主不打删除旗标，
+    // isDeletionRequest 认不出；放在高危/凭据/Git 远端三条之后，确保组合命令
+    // （如 `git push && rm a b`）不顶掉原有风险警告。
+    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
+    if (multiTarget) return multiTarget;
+    // 其余命令（含宿主标 unknown 的——那只表示「不在已知安全名单里」，不是风险结论）不套泛泛的警告。
   }
   return undefined;
 }

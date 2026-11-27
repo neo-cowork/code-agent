@@ -207,6 +207,7 @@ if (mode.startsWith('park')) {
         const results = fixture.messages().filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
         const saves = results.filter((result) => result.success && result.toolCallId === 'env-call-2').length;
         console.log('MAIL_DRAFT', JSON.stringify({ ...fixture.mailSaved(), saves, parkedResult: results.find((result) => result.toolCallId === 'env-call')?.error }));
+        console.log('APPROVAL_CARDS', JSON.stringify(fixture.approvalCards()));
         if (continuingCrash) {
           console.log('AFTER_RETURN', JSON.stringify({
             sessionStatus: fixture.sessions.getSession('env-session')?.status, runStatus: envelope?.status,

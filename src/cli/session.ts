@@ -266,8 +266,22 @@ export class CLISessionManager {
     if (typeof updates.title !== 'string' || !updates.title.trim()) return;
     const title = updates.title;
     void import('../host/services/infra/sessionTitleCloudPush')
-      .then((m) => m.pushSessionTitleToCloud(sessionId, title))
-      .catch(() => { /* fail-open：回写失败不影响本地改名 */ });
+      .then((m) => {
+        try {
+          m.pushSessionTitleToCloud(sessionId, title);
+        } catch (error) {
+          logger.warn('session title cloud push failed: push call threw', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        logger.warn('session title cloud push failed: module import failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   /**
@@ -435,7 +449,12 @@ export class CLISessionManager {
       && typeof message.content === 'string'
       && message.content.trim()
     ) {
-      void this.maybeUpdateTitle(sessionId, message.content).catch(() => { /* 静默降级 */ });
+      void this.maybeUpdateTitle(sessionId, message.content).catch((error: unknown) => {
+        logger.warn('session title generation failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     }
   }
 
@@ -561,6 +580,8 @@ export class CLISessionManager {
     if (!session) return;
     const uiLanguage = await this.readUiLanguage();
     const titleSource = sessionTitleSource(firstMessage, uiLanguage);
+    // 只剩恢复提示（含截断残留）：不起标题也不落 Appshot 固定名，会话保留占位。
+    if (!titleSource.trim()) return;
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 

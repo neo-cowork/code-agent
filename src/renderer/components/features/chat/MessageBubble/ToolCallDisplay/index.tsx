@@ -41,6 +41,7 @@ import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStor
 import { useDurableSwarmRunDetail } from '../../../../../hooks/useDurableSwarmRunDetail';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
 import { isDelegationTool } from '../../../../../utils/agentActivity';
+import { backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
 import { projectSupersededDelegationFailures } from './delegationFailureRuns';
 import {
@@ -51,6 +52,7 @@ import {
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 import { finalizeSessionTaskStatus } from '../../../../../utils/sessionTaskStatusFinalize';
 
 // ============================================================================
@@ -362,26 +364,31 @@ export function ToolCallDisplay({
         )}
         {statusCheckCount > 1 && (
           <span className="shrink-0 text-xs text-zinc-500" data-testid="task-status-check-count">
-            {t.sessionTaskPresentation.checkedTimes.replace('{count}', String(statusCheckCount))}
+            {interpolatePlural(t.sessionTaskPresentation.checkedTimes, statusCheckCount)}
           </span>
         )}
       </div>
 
-      {status === 'error' && (toolCall.result?.userMessage === undefined || !expanded) && !delegationPresentation && (
+      {terminal.handedOff && terminal.handedOffOutcome === 'failed' && terminal.handoffTask && (
+        <div className="ml-6 mt-1 whitespace-normal break-words text-xs leading-5 text-badge-danger" data-testid="handoff-task-failure">
+          {backgroundTaskFailureCopy(terminal.handoffTask, t)}
+        </div>
+      )}
+      {status === 'error' && !terminal.handedOff && (toolCall.result?.userMessage === undefined || !expanded) && !delegationPresentation && (
         <div className="ml-6 mt-1 whitespace-normal break-words text-xs leading-5 text-zinc-400">
           {/* 直接用 humanizeToolFailureReason：它内部已经把顺序排好了（hostReason 登记表 →
               preflight → 其余结构化来源）。这里若先调 toolPreflightCopy 就等于把那个顺序绕过去，
               用户亲手点的拒绝会被渲染成「未能自动批准」，而同一屏上方的组头（走
               humanizeToolFailureReason）显示「审批被拒绝」——同一件事两处自相矛盾。 */}
           {humanizeToolFailureReason(toolCall, t)}
-          {toolCall.result?.metadata?.recovered === true && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
+          {toolCall.result?.metadata?.recovered === true && !terminal.handedOff && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
         </div>
       )}
 
       {/* 已恢复的失败行（recovered ⇒ 非 error）的安静脚注：替代上面那条失败原因行，
           告诉用户这次失败已被后续成功收尾，不再顶红。skipped（从未执行，只是被系统
           关卡拦下后降级）的行不是「失败后恢复」，不挂这条脚注。 */}
-      {status !== 'error' && toolCall.result?.metadata?.recovered === true && !terminal.skipped && !delegationPresentation && (
+      {status !== 'error' && toolCall.result?.metadata?.recovered === true && !terminal.skipped && !terminal.handedOff && !delegationPresentation && (
         <div className="ml-6 mt-1 text-xs leading-5 text-badge-success" data-testid="tool-call-recovered-note">
           {t.deliveryExperience.recovered}
         </div>
@@ -640,7 +647,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
       {showSummary && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className={failed > 0 ? 'text-badge-warning' : 'text-zinc-400'}>
-            {copy.agents.replace('{count}', String(total))}
+            {interpolatePlural(copy.agents, total)}
           </span>
           <span>{copy.completed.replace('{completed}', String(completed)).replace('{total}', String(total))}</span>
           {failed > 0 && (

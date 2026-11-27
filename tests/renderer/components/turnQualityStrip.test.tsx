@@ -312,7 +312,8 @@ describe('TurnQualityStrip expert display name', () => {
       useAppStore.setState({ language: 'en' } as never);
       const { container } = render(<TurnQualityStrip summary={withItems()} />);
       const chip = container.querySelector('button') as HTMLButtonElement;
-      expect(chip.textContent).toContain('Used 1 memories');
+      expect(chip.textContent).toContain('Used 1 memory');
+      expect(chip.textContent).not.toContain('memories');
       fireEvent.click(chip);
       expect(container.textContent).toContain('Settings → Memory');
       useAppStore.setState({ language: 'zh' } as never);

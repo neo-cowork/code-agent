@@ -6,6 +6,18 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { useProviderIconImageSource } from '../../../../utils/providerIconAssets';
 import { getProtocolLabel } from './ModelSettings.helpers';
 
+/** Same branch as the header key label: a pasted key that is not saved, account, or environment. */
+export function isStagedApiKeyUnsaved(
+  providerConfig: Pick<ModelProviderSettings, 'apiKey' | 'apiKeySource'> | undefined,
+  needsApiKey: boolean,
+  hasApiKey: boolean,
+): boolean {
+  if (!needsApiKey || !hasApiKey) return false;
+  const source = providerConfig?.apiKeySource;
+  if (source === 'saved' || source === 'account' || source === 'environment') return false;
+  return Boolean(providerConfig?.apiKey);
+}
+
 export function ProviderSettingsHeader({ title, providerConfig, protocol, baseUrl, needsApiKey, hasApiKey, onEnabledChange }: {
   title: string;
   providerConfig?: ModelProviderSettings;
@@ -21,10 +33,11 @@ export function ProviderSettingsHeader({ title, providerConfig, protocol, baseUr
   const image = isProviderImageIcon(icon);
   const imageSource = useProviderIconImageSource(icon);
   const source = providerConfig?.apiKeySource;
+  const stagedApiKeyUnsaved = isStagedApiKeyUnsaved(providerConfig, needsApiKey, hasApiKey);
   const keyLabel = !needsApiKey ? text.noApiKey : !hasApiKey ? text.waitingApiKey
     : source === 'saved' ? text.apiKeySaved : source === 'account' ? text.apiKeyAccount
       : source === 'environment' ? text.apiKeyEnvironment
-        : providerConfig?.apiKey ? text.apiKeyUnsaved : text.apiKeyAvailable;
+        : stagedApiKeyUnsaved ? text.apiKeyUnsaved : text.apiKeyAvailable;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3">

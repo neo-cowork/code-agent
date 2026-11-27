@@ -29,4 +29,5 @@ export const MEETING_SESSION_LIMITS = {
   /** 会前提醒：每分钟看一次日历，会开始前 2 分钟内提醒（开始后 2 分钟内录制条仍挂着） */
   CALENDAR_POLL_MS: 60 * 1000,
   CALENDAR_LEAD_MS: 2 * 60 * 1000,
+  CALENDAR_WARN_THROTTLE_MS: 30 * 60 * 1000,
 } as const;

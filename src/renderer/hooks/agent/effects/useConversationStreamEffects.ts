@@ -46,6 +46,7 @@ import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 import type { AgentEvent, ConversationStreamEventActions } from './streamEventTypes';
+import { buildCloseAfterSealedTools, isSealedToolResultsMessage } from './hostSealedTurnMessage';
 import {
   getBooleanField,
   isRecord,
@@ -344,11 +345,18 @@ export function applyConversationStreamEvent(
         const snapshotData = normalizeMessageSnapshotPayload(event.data);
         if (!snapshotData) break;
         if (snapshotData.isMeta) break;
-        const targetMessageId = resolveStreamTargetId(state, snapshotData.turnId || snapshotData.messageId || state.currentTurnMessageId);
         const freshMsgs = getFreshMessages();
-        const targetMessage = targetMessageId
+        // 快照点名的是另一条消息（messageId ≠ turnId）且已在列表里（主机封住工具调用后同轮另起的
+        // 收尾消息）：内容属于它，不写回这一轮的草稿。messageId 等于 turnId 是累加器的缺省值，
+        // 仍按轮次走重定向（断流续接分段后，没有提交就收尾的轮次，终态快照要落到续答段）。
+        const named = snapshotData.turnId && snapshotData.messageId && snapshotData.messageId !== snapshotData.turnId
+          ? freshMsgs.find((message) => message.id === snapshotData.messageId && message.role === 'assistant')
+          : undefined;
+        const targetMessageId = named?.id
+          ?? resolveStreamTargetId(state, snapshotData.turnId || snapshotData.messageId || state.currentTurnMessageId);
+        const targetMessage = named ?? (targetMessageId
           ? freshMsgs.find(m => m.id === targetMessageId)
-          : freshMsgs[freshMsgs.length - 1];
+          : freshMsgs[freshMsgs.length - 1]);
 
         if (targetMessage?.role === 'assistant') {
           actions.updateMessage(targetMessage.id, {
@@ -561,6 +569,13 @@ export function applyConversationStreamEvent(
           break;
         }
 
+        // 结果由 addMessage 回填到工具调用上；当正文提交会把结果 JSON 写进草稿、盖掉模型前言。
+        const sealedResults = isSealedToolResultsMessage(event.data) ? event.data : undefined;
+        if (sealedResults) {
+          if (!getFreshMessages().some((message) => message.id === sealedResults.id)) actions.addMessage(sealedResults);
+          break;
+        }
+
         const messageData = normalizeAssistantMessagePayload(event.data);
         if (!messageData) break;
         const targetMessageId = resolveStreamTargetId(state, messageData.turnId || state.currentTurnMessageId);
@@ -582,6 +597,13 @@ export function applyConversationStreamEvent(
         }
 
         if (targetMessage?.role === 'assistant') {
+          const close = buildCloseAfterSealedTools({ draft: targetMessage, commit: messageData, now: now() });
+          if (close) {
+            actions.addMessage(close);
+            state.committedAssistantMessageIds.add(close.id);
+            state.currentTurnMessageId = close.id;
+            break;
+          }
           state.committedAssistantMessageIds.add(targetMessage.id);
           if (messageData.id) {
             state.committedAssistantMessageIds.add(messageData.id);

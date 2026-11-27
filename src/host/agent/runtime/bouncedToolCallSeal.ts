@@ -7,6 +7,7 @@
 // 先落 assistant 消息，再落合成的失败 tool 消息。
 // ============================================================================
 
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
@@ -35,13 +36,15 @@ export async function sealBouncedToolCalls(
   deniedCallIds?: Set<string>,
   /** denied 类：已在同一轮交给后台任务的调用 id（交接成功才传）；封口码用 HANDED_OFF_TO_BACKGROUND，不再读作「没执行」。 */
   handedOffCallIds?: Set<string>,
+  /** The background task row's toolCallId, so the UI can read the handed-off step's outcome from that task. */
+  handoffTaskToolCallId?: string,
 ): Promise<'continue'> {
   const { ctx, contextAssembly } = deps;
+  const userPrompt = inabilityGatePrompt(ctx);
   const reason = kind === 'denied'
-    ? BOUNCE_REASONS.denied(ctx.turn?.runUserPrompt ?? '', 'zh')
+    ? BOUNCE_REASONS.denied(userPrompt, 'zh')
     : BOUNCE_REASONS[kind];
   if (toolCalls.length === 0) return 'continue';
-  const userPrompt = ctx.turn?.runUserPrompt ?? '';
   const assistantMessage: Message = {
     id: contextAssembly.generateId(),
     role: 'assistant',
@@ -64,7 +67,7 @@ export async function sealBouncedToolCalls(
         success: false,
         error: 'HANDED_OFF_TO_BACKGROUND',
         duration: 0,
-        metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND' },
+        metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND', ...(handoffTaskToolCallId ? { handoffTaskToolCallId } : {}) },
       };
     }
     const skipped = deniedCallIds !== undefined && !deniedCallIds.has(toolCall.id);

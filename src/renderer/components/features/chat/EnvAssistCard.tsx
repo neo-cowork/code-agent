@@ -5,12 +5,19 @@ import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { invokeDomain } from '../../../services/ipcService';
 import { useEnvAssistStore } from '../../../stores/envAssistStore';
+import { OfflineEnvAssistCard } from './OfflineEnvAssistCard';
 import { useEnvCardResumesAutomatically } from '../../../hooks/useEnvParkedTarget';
 
 export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice }): React.ReactElement {
-  const { t } = useI18n();
   const live = useEnvAssistStore((state) => state.notices[snapshot.id]);
   const notice = live && live.updatedAt >= snapshot.updatedAt ? live : snapshot;
+  return notice.class === 'offline'
+    ? <OfflineEnvAssistCard notice={notice} />
+    : <PermissionEnvAssistCard notice={notice} />;
+}
+
+function PermissionEnvAssistCard({ notice }: { notice: EnvAssistNotice }): React.ReactElement {
+  const { t } = useI18n();
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -38,7 +45,8 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
   // Resolve only our own copy catalogue. Arbitrary host strings/params never become visible copy.
   const target = notice.target?.id as keyof typeof t.env.sentence;
   const known = Object.hasOwn(t.env.sentence, target);
-  const sentence = notice.phase === 'resolved'
+  const sentence = notice.phase === 'resolved' && notice.sentenceKey === 'env.reused.mail' ? t.env.reused
+    : notice.phase === 'resolved'
     ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
     : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
   // 停车等授权的那一轮：允许后同一任务自动续做，卡上一并说清（输入框上方不再另起一行重复）。

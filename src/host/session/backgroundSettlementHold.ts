@@ -7,13 +7,22 @@ const logger = createLogger('BackgroundSettlementHold');
 type SettlementManager = Pick<ReturnType<typeof getBackgroundTaskManager>, 'isTaskRunning' | 'markCompleted' | 'markFailed'>;
 type Completion = { summary?: string; duration?: number };
 type Outcome = { manager: SettlementManager; input: BackgroundRunSettlementInput; completion?: Completion };
-type Child = { id: string; sessionId: string; parentRunId?: string };
+type Child = { id: string; sessionId: string; parentRunId?: string; leftoverPaths?: readonly string[] };
 
 const executingPrimaryRun = new AsyncLocalStorage<{ sessionId: string; runId: string; active: boolean }>();
 const latestRunBySession = new Map<string, string>();
 const holdsBySession = new Map<string, Map<string, Outcome>>();
 const completionsByRun = new Map<string, { manager: SettlementManager; completion: Completion }>();
 const childrenBySession = new Map<string, Map<string, Child>>();
+const childLeftoversByRun = new Map<string, string[]>();
+
+function mergeLeftoverPaths(a?: readonly string[], b?: readonly string[]): string[] | undefined {
+  if (!a?.length && !b?.length) return undefined;
+  const merged = new Set<string>();
+  for (const p of a ?? []) merged.add(p);
+  for (const p of b ?? []) merged.add(p);
+  return [...merged];
+}
 
 function inFlightChildren(sessionId: string, runId?: string): number {
   let count = 0;
@@ -24,11 +33,18 @@ function inFlightChildren(sessionId: string, runId?: string): number {
   return count;
 }
 
+export function hasInFlightBackgroundChildren(sessionId: string, runId?: string): boolean {
+  return inFlightChildren(sessionId, runId) > 0;
+}
+
 export function backgroundPrimaryRunStarted(sessionId: string, runId: string): void {
   const previous = latestRunBySession.get(sessionId);
   if (previous === runId) return;
   latestRunBySession.set(sessionId, runId);
-  if (previous) completionsByRun.delete(previous);
+  if (previous) {
+    completionsByRun.delete(previous);
+    childLeftoversByRun.delete(previous);
+  }
   for (const heldRunId of holdsBySession.get(sessionId)?.keys() ?? []) {
     logger.info('BACKGROUND_SETTLEMENT_DROPPED', {
       sessionId, runId: heldRunId, inFlightChildCount: inFlightChildren(sessionId, heldRunId),
@@ -91,7 +107,10 @@ export async function settleOrHoldBackgroundRun(
     return;
   }
   const staged = runId ? completionsByRun.get(runId) : undefined;
-  const outcome = { manager, input, completion: completion ?? staged?.completion };
+  const childLeftovers = runId ? childLeftoversByRun.get(runId) : undefined;
+  const mergedLeftovers = mergeLeftoverPaths(input.leftoverPaths, childLeftovers);
+  const mergedInput = mergedLeftovers ? { ...input, leftoverPaths: mergedLeftovers } : input;
+  const outcome = { manager, input: mergedInput, completion: completion ?? staged?.completion };
   if (runId) completionsByRun.delete(runId);
   if (runId && count > 0) {
     const pending = holds ?? new Map<string, Outcome>();
@@ -100,6 +119,7 @@ export async function settleOrHoldBackgroundRun(
     logger.info('BACKGROUND_SETTLEMENT_HELD', { sessionId, runId, inFlightChildCount: count });
     return;
   }
+  if (runId) childLeftoversByRun.delete(runId);
   await applyOutcome(sessionId, outcome);
 }
 
@@ -112,22 +132,31 @@ export function backgroundParentOwnsChildNotice(sessionId: string, childId: stri
 }
 
 /** Returns whether the running background row owns this child's success notice. */
-export function backgroundChildSettled({ id, sessionId, parentRunId }: Child): boolean {
+export function backgroundChildSettled({ id, sessionId, parentRunId, leftoverPaths }: Child): boolean {
   const children = childrenBySession.get(sessionId);
   if (!children?.delete(id)) return false;
   if (children.size === 0) childrenBySession.delete(sessionId);
   const latest = latestRunBySession.get(sessionId);
   const runId = parentRunId ?? latest;
   if (!runId || runId !== latest) return false;
+  if (leftoverPaths?.length) {
+    const merged = mergeLeftoverPaths(childLeftoversByRun.get(runId), leftoverPaths);
+    if (merged) childLeftoversByRun.set(runId, merged);
+  }
   const holds = holdsBySession.get(sessionId);
   const outcome = holds?.get(runId);
   const manager = outcome?.manager ?? completionsByRun.get(runId)?.manager;
   const background = manager?.isTaskRunning(sessionId) ?? false;
   if (outcome && inFlightChildren(sessionId, runId) === 0) {
     holdsBySession.delete(sessionId);
+    const mergedLeftovers = mergeLeftoverPaths(outcome.input.leftoverPaths, childLeftoversByRun.get(runId));
+    childLeftoversByRun.delete(runId);
     if (background) {
+      const finalOutcome = mergedLeftovers
+        ? { ...outcome, input: { ...outcome.input, leftoverPaths: mergedLeftovers } }
+        : outcome;
       logger.info('BACKGROUND_SETTLEMENT_RELEASED', { sessionId, runId, inFlightChildCount: 0 });
-      void applyOutcome(sessionId, outcome).catch((error: unknown) => {
+      void applyOutcome(sessionId, finalOutcome).catch((error: unknown) => {
         logger.warn('Unable to settle completed background run', { sessionId, runId, error: String(error) });
       });
     }

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { accessibilityProbe, automationProbe, inputMonitoringProbe, screenRecordingProbe } from '../../../../../src/host/permissions/envAssist/probes/passiveProbes';
 import type { PassiveBridge, PromptingBridge } from '../../../../../src/host/permissions/envAssist/probes/types';
@@ -285,5 +286,16 @@ describe('diagnosis never prompts', () => {
 
     mint.mockRestore();
     install.mockRestore();
+  });
+});
+
+describe('first-run startup prompt audit', () => {
+  it.each([
+    'src/renderer/App.tsx',
+    'src/renderer/components/onboarding/ModelOnboardingModal.tsx',
+    'src/web/webServer.ts',
+  ])('%s has no direct grant, AppleScript, or notification authorization request', (file) => {
+    const source = readFileSync(file, 'utf8');
+    expect(source).not.toMatch(/\/v1\/grant\/|\brequestGrant\s*\(|\brequestHelperGrant\s*\(|['"]osascript['"]|Notification\.requestPermission\s*\(|requestAuthorizationWithOptions/);
   });
 });

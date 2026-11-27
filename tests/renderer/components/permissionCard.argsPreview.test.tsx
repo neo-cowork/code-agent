@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // ============================================================================
 // PermissionCard 参数预览块（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④）
 // 判据：request.argsPreview 在时渲染预览块（zh/en 两种词条都验证），不在时不渲染。
@@ -5,7 +6,7 @@
 // ============================================================================
 
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract/permission';
 
@@ -62,7 +63,7 @@ function baseRequest(overrides: Partial<ContractPermissionRequest>): ContractPer
 }
 
 function render(): string {
-  return renderToStaticMarkup(React.createElement(PermissionCard));
+  return renderDetails();
 }
 
 describe('PermissionCard argsPreview 呈现', () => {
@@ -133,3 +134,11 @@ describe('PermissionCard argsPreview 呈现', () => {
     expect(html).toContain('永远别提：+ 天气');
   });
 });
+
+function renderDetails(): string {
+  cleanup();
+  const { container } = mount(React.createElement(PermissionCard));
+  const toggle = screen.queryByRole('button', { name: /更多选项与详情|More options & details/ });
+  if (toggle) fireEvent.click(toggle);
+  return container.innerHTML;
+}

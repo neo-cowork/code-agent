@@ -8,14 +8,21 @@
 
 import { MEETING_SESSION_LIMITS } from '../../../shared/constants';
 import type { MeetingUpcoming } from '../../../shared/contract/audioCapture';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('MeetingCalendarReminder');
+
+function errMsg(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export interface CalendarReminderDeps {
   enabled: () => boolean | Promise<boolean>;
   /** 被动读授权（不弹框），完全访问才读日程 */
-  granted: () => Promise<boolean>;
+  granted: () => Promise<boolean | string>;
   upcoming: (fromMs: number, toMs: number) => Promise<MeetingUpcoming[]>;
   isMeetingActive: () => boolean;
-  notify: (event: MeetingUpcoming) => void;
+  notify: (event: MeetingUpcoming) => void | Promise<void>;
   now?: () => number;
 }
 
@@ -24,10 +31,19 @@ export class MeetingCalendarReminder {
   private reminded = new Set<string>();
   private current: MeetingUpcoming | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private lastWarnAt = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly deps: CalendarReminderDeps) {
     this.now = deps.now ?? Date.now;
+  }
+
+  private warnThrottled(reason: string, detail?: Record<string, unknown>): void {
+    const now = this.now();
+    const prev = this.lastWarnAt.get(reason);
+    if (prev !== undefined && now - prev < MEETING_SESSION_LIMITS.CALENDAR_WARN_THROTTLE_MS) return;
+    this.lastWarnAt.set(reason, now);
+    logger.warn(`[meeting-reminder] ${reason}`, detail ? { reason, ...detail } : { reason });
   }
 
   start(): void {
@@ -40,8 +56,13 @@ export class MeetingCalendarReminder {
   async upcoming(): Promise<MeetingUpcoming | null> {
     const cur = this.current;
     if (!cur || this.deps.isMeetingActive()) return null;
-    if (!(await this.deps.enabled())) {
-      this.current = null;
+    try {
+      if (!(await this.deps.enabled())) {
+        this.current = null;
+        return null;
+      }
+    } catch (error) {
+      this.warnThrottled('enabled_failed', { error: errMsg(error) });
       return null;
     }
     return this.now() - cur.startAtMs < MEETING_SESSION_LIMITS.CALENDAR_LEAD_MS ? cur : null;
@@ -52,20 +73,52 @@ export class MeetingCalendarReminder {
   }
 
   async tick(): Promise<void> {
-    if (this.deps.isMeetingActive() || !(await this.deps.enabled())) return;
+    if (this.deps.isMeetingActive()) return;
+    let isEnabled: boolean;
     try {
-      if (!(await this.deps.granted())) return;
+      isEnabled = Boolean(await this.deps.enabled());
+    } catch (error) {
+      this.warnThrottled('enabled_failed', { error: errMsg(error) });
+      return;
+    }
+    if (!isEnabled) return;
+
+    let access: boolean | string;
+    try {
+      access = await this.deps.granted();
+    } catch (error) {
+      this.warnThrottled('granted_failed', { error: errMsg(error) });
+      return;
+    }
+    if (access !== true && access !== 'granted') {
+      this.warnThrottled('not_granted', typeof access === 'string' ? { status: access } : undefined);
+      return;
+    }
+
+    let events: MeetingUpcoming[];
+    try {
       const now = this.now();
-      const events = await this.deps.upcoming(now, now + MEETING_SESSION_LIMITS.CALENDAR_LEAD_MS);
-      for (const e of events) {
-        if (this.reminded.has(e.id)) continue;
-        this.reminded.add(e.id);
-        this.current = e;
-        this.deps.notify(e);
-        break; // 同时有几场只提醒最早那场（原生层已按开始时间排好）
+      events = await this.deps.upcoming(now, now + MEETING_SESSION_LIMITS.CALENDAR_LEAD_MS);
+    } catch (error) {
+      this.warnThrottled('upcoming_failed', { error: errMsg(error) });
+      return;
+    }
+
+    for (const e of events) {
+      if (this.reminded.has(e.id)) continue;
+      this.reminded.add(e.id);
+      this.current = e;
+      try {
+        const res = this.deps.notify(e);
+        if (res && typeof (res as Promise<unknown>).catch === 'function') {
+          void (res as Promise<unknown>).catch((error: unknown) => {
+            this.warnThrottled('notify_failed', { error: errMsg(error) });
+          });
+        }
+      } catch (error) {
+        this.warnThrottled('notify_failed', { error: errMsg(error) });
       }
-    } catch {
-      // 读日历失败（授权被收回、桥不可达）：这一轮不提醒，下一分钟再试
+      break; // 同时有几场只提醒最早那场（原生层已按开始时间排好）
     }
   }
 }

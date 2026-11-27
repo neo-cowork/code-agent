@@ -237,6 +237,17 @@ describe('buildReviewSnippet', () => {
     expect(snippet).toContain('有效内容');
     expect(snippet.match(/用户消息/g)?.length).toBe(1);
   });
+
+  it('剥掉旧恢复提示前缀，只剩提示的消息整条丢弃', () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    const snippet = buildReviewSnippet({
+      userMessages: [`${LEGACY_NOTICE}\n\n`, `${LEGACY_NOTICE}\n\n帮我把三页纪要整理成周报`, '第二轮补充要求'],
+    });
+    expect(snippet).toContain('用户消息1：帮我把三页纪要整理成周报');
+    expect(snippet).toContain('用户消息2：第二轮补充要求');
+    expect(snippet).not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
+  });
 });
 
 describe('buildReviewPrompt', () => {
@@ -264,6 +275,14 @@ describe('reviewConversationForSkill', () => {
 
   it('用户轮数不足 MIN_USER_TURNS → 直接 null，不调用模型', async () => {
     const r = await reviewConversationForSkill({ userMessages: ['只有一轮'] });
+    expect(r).toBeNull();
+    expect(quickModelMocks.memoryTask).not.toHaveBeenCalled();
+  });
+
+  it('只剩恢复提示的消息按空消息处理：清洗后不足门槛 → null，不调用模型', async () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    const r = await reviewConversationForSkill({ userMessages: [`${LEGACY_NOTICE}\n\n`, '帮我把三页纪要整理成周报'] });
     expect(r).toBeNull();
     expect(quickModelMocks.memoryTask).not.toHaveBeenCalled();
   });

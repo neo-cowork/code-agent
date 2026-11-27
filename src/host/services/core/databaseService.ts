@@ -3430,6 +3430,14 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.memoryRepo.searchMemories(query, options);
   }
+  findMemoryByEntryId(entryId: string): import('./repositories').MemoryRecord | null {
+    this.ensureDb();
+    return this.memoryRepo.findMemoryByEntryId(entryId);
+  }
+  listMemoriesWithInjectionFeedback(): import('./repositories').MemoryRecord[] {
+    this.ensureDb();
+    return this.memoryRepo.listMemoriesWithInjectionFeedback();
+  }
   getMemoryStats(): {
     total: number;
     byType: Record<string, number>;

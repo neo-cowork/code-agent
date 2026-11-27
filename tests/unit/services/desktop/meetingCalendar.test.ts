@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const warnSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../../../src/host/services/infra/logger', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  createLogger: () => ({ warn: warnSpy, debug: vi.fn(), info: vi.fn(), error: vi.fn() }),
+}));
+
 import { MeetingCalendarReminder } from '../../../../src/host/services/desktop/meetingCalendar';
 import { MEETING_SESSION_LIMITS as L } from '../../../../src/shared/constants';
 import type { MeetingUpcoming } from '../../../../src/shared/contract/audioCapture';
@@ -19,6 +26,8 @@ function setup(opts: { enabled?: boolean; granted?: boolean; events?: MeetingUpc
 }
 
 describe('会前提醒（只提醒，不自动开录）', () => {
+  beforeEach(() => { warnSpy.mockClear(); });
+
   it('开关关着：不读授权、不读日历、不提醒', async () => {
     const t = setup({ enabled: false, events: [{ id: 'a', title: '周会', startAtMs: 1_060_000 }] });
     await t.r.tick();
@@ -87,5 +96,39 @@ describe('会前提醒（只提醒，不自动开录）', () => {
     t.deps.upcoming.mockRejectedValueOnce(new Error('env_assist_bridge:bridge_http_403'));
     await expect(t.r.tick()).resolves.toBeUndefined();
     expect(t.deps.notify).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith('[meeting-reminder] upcoming_failed', {
+      reason: 'upcoming_failed',
+      error: 'env_assist_bridge:bridge_http_403',
+    });
+  });
+
+  it('同因在节流窗口内只记一次 warn，不同原因立即记，过窗口后再记', async () => {
+    const t = setup();
+    t.deps.granted.mockResolvedValue(false);
+    for (let i = 0; i < 5; i++) {
+      await t.r.tick();
+      t.setNow(1_000_000 + (i + 1) * MIN);
+    }
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith('[meeting-reminder] not_granted', { reason: 'not_granted' });
+
+    // Different reason inside the same window logs immediately
+    t.deps.granted.mockRejectedValueOnce(new Error('probe_boom'));
+    await t.r.tick();
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenLastCalledWith('[meeting-reminder] granted_failed', { reason: 'granted_failed', error: 'probe_boom' });
+
+    // After throttle window passes, same reason logs again
+    t.setNow(1_000_000 + L.CALENDAR_WARN_THROTTLE_MS);
+    await t.r.tick();
+    expect(warnSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('enabled 抛错不逃逸 tick，且记 enabled_failed', async () => {
+    const t = setup();
+    t.deps.enabled.mockImplementation(() => { throw new Error('cfg_read_err'); });
+    await expect(t.r.tick()).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith('[meeting-reminder] enabled_failed', { reason: 'enabled_failed', error: 'cfg_read_err' });
   });
 });

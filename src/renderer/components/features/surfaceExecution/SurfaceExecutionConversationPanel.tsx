@@ -1,9 +1,7 @@
 import React, { useMemo } from 'react';
 import { useI18n } from '../../../hooks/useI18n';
-import {
-  getSurfaceExecutionTranslations,
-  formatSurfaceExecutionCopy,
-} from '../../../i18n/surfaceExecution';
+import { interpolatePlural } from '../../../i18n/interpolate';
+import { getSurfaceExecutionTranslations } from '../../../i18n/surfaceExecution';
 import {
   isUserOpenedSurfaceV1,
   surfaceExecutionScopeKeyV1,
@@ -106,7 +104,7 @@ export function SurfaceExecutionConversationPanel({
           <div>
             <h2 className="text-xs font-medium text-zinc-300">{copy.panel.label}</h2>
             <p className="mt-0.5 text-[10px] text-zinc-600">
-              {formatSurfaceExecutionCopy(copy.panel.sessionCount, { count: visibleSessions.length })}
+              {interpolatePlural(copy.panel.sessionCount, visibleSessions.length)}
             </p>
           </div>
           <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2 py-1 text-[9px] text-zinc-500">
