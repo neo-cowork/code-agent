@@ -16,6 +16,7 @@ interface ConcreteWritePathDenyInput {
   displayPath?: string;
   /** N-PERM-POLICYVERSION E2：传 run 有效规则视图（外部放宽不作用于已开始的 run）。 */
   sessionId?: string;
+  runId?: string;
 }
 
 /**
@@ -37,9 +38,9 @@ export function denyConcreteShellWritePath(
   ];
   const matchedRule = getPolicyEngine().matchUserPathDeny(
     candidates,
-    resolveEffectivePolicyRules(input.sessionId),
+    resolveEffectivePolicyRules(input.sessionId, input.runId),
     // 带角色范围的 nlRules deny 只在该角色的 run 上命中（N-PERM-NL-RULES-K2）。
-    resolveRunUserRuleContext(input.sessionId).roleId,
+    resolveRunUserRuleContext(input.sessionId, input.runId).roleId,
   );
   if (!matchedRule) return undefined;
 

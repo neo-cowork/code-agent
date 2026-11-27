@@ -242,6 +242,7 @@ export interface SandboxEscalationEligibilityInput {
   policyEnforcer: PolicyEnforcer | null | undefined;
   /** Session the approval belongs to; keys the short-lived record of what the user approved deleting. */
   sessionId?: string;
+  runId?: string;
 }
 
 type EscalationTarget = 'file' | 'missing' | 'other';
@@ -307,8 +308,7 @@ function directoryEscalationRefused(candidate: string, home: string): boolean {
 function writePathPolicyBlocksEscalation(
   deniedPath: string,
   resolvedPath: string,
-  workingDirectory: string,
-  policyEnforcer: PolicyEnforcer | null,
+  { workingDirectory, policyEnforcer, sessionId, runId }: SandboxEscalationEligibilityInput,
 ): boolean {
   try {
     return denyConcreteShellWritePath({
@@ -317,6 +317,8 @@ function writePathPolicyBlocksEscalation(
       policyEnforcer,
       pathCandidates: [deniedPath, resolvedPath],
       displayPath: deniedPath,
+      sessionId,
+      runId,
     }) !== undefined;
   } catch {
     // Unclassifiable paths stay hard-denied. A card would add them to the write grant.
@@ -369,7 +371,7 @@ function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string
     return undefined;
   }
   if (input.policyEnforcer === undefined) return undefined;
-  if (writePathPolicyBlocksEscalation(deniedPath, resolvedPath, input.workingDirectory, input.policyEnforcer)) {
+  if (writePathPolicyBlocksEscalation(deniedPath, resolvedPath, input)) {
     return undefined;
   }
   return resolvedPath;
@@ -378,7 +380,7 @@ function resolveEscalationFile(input: SandboxEscalationEligibilityInput): string
 /** Mint literal write paths for all files covered by one user-approved rm. */
 export function approvedSingleFileRmGrant(
   command: string,
-  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'> & { runId?: string },
+  input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
 ): string | string[] | undefined {
   const parsed = extractApprovedRmTargets(command, input.workingDirectory);
   if (!parsed.containsRm) return undefined;
@@ -459,7 +461,7 @@ export function shouldOfferDirectoryEscalation(input: SandboxEscalationEligibili
     return undefined;
   }
   if (input.policyEnforcer === undefined) return undefined;
-  if (writePathPolicyBlocksEscalation(deniedPath, resolvedPath, input.workingDirectory, input.policyEnforcer)) {
+  if (writePathPolicyBlocksEscalation(deniedPath, resolvedPath, input)) {
     return undefined;
   }
   return resolvedPath;

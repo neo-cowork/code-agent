@@ -28,6 +28,7 @@ export type UserRuleOutcome =
 
 interface UserRuleOutcomeInput {
   sessionId?: string;
+  runId?: string;
   /** 规范化后的工具名（与规则书写同一口径，engine 内部再折叠大小写） */
   tool: string;
   /** Bash 类工具的整条命令；无则不参与 command 指定符匹配 */
@@ -44,9 +45,11 @@ export function resolveUserRuleOutcomeForTool(
   sessionId: string | undefined,
   tool: string,
   params: Record<string, unknown>,
+  runId?: string,
 ): UserRuleOutcome {
   return resolveUserRuleOutcome({
     sessionId,
+    runId,
     tool,
     ...(typeof params.command === 'string' && params.command ? { command: params.command } : {}),
     ...(typeof (params.filePath ?? params.file_path ?? params.path) === 'string'
@@ -76,7 +79,7 @@ function ruleString(rule: PolicyRule): string {
  * 规则列表传 run 有效视图，外部放宽不作用于已开始的 run。
  */
 function resolveUserRuleOutcome(input: UserRuleOutcomeInput): UserRuleOutcome {
-  const runContext = resolveRunUserRuleContext(input.sessionId);
+  const runContext = resolveRunUserRuleContext(input.sessionId, input.runId);
   const matched = getPolicyEngine().matchUserRules(
     {
       tool: input.tool,
@@ -89,7 +92,7 @@ function resolveUserRuleOutcome(input: UserRuleOutcomeInput): UserRuleOutcome {
       // 与别的角色都不命中。
       ...(runContext.roleId ? { roleId: runContext.roleId } : {}),
     },
-    resolveEffectivePolicyRules(input.sessionId),
+    resolveEffectivePolicyRules(input.sessionId, input.runId),
   );
   if (matched.length === 0) return { kind: 'none' };
 

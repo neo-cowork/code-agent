@@ -72,6 +72,7 @@ export interface BackgroundTaskRun {
   sessionId: string;
   orchestrator: AgentOrchestrator;
   status: BackgroundTaskRunStatus;
+  delegatedRole?: { roleId?: string };
 }
 
 // ============================================================================

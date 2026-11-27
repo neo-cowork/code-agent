@@ -23,6 +23,7 @@ function shellWriteVerdict(sessionId?: string) {
     workingDirectory: '/tmp/k2-workspace',
     policyEnforcer: null,
     sessionId,
+    runId: sessionId ? RUN : undefined,
   });
 }
 

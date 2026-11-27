@@ -218,6 +218,8 @@ export interface AgentRunOptions {
   resumeExistingDurableRun?: boolean;
   /** auxiliary durable run 的父 run。存在时必须建立真实父子投影。 */
   parentRunId?: string;
+  /** Host-captured permission context of the turn that delegated this background task. */
+  delegatedUserRuleContext?: import('../permissions/runPolicySnapshot').RunUserRuleContext;
   /** 已由上层分配独立执行槽时，禁止分析器再次进入 AutoAgent 扇出。 */
   disableAutoAgent?: boolean;
   /**

@@ -517,10 +517,11 @@ describe('createAgentRouter', () => {
       outcome: ReturnType<typeof resolveUserRuleOutcomeForTool>;
     } | undefined;
     mockRun.mockImplementationOnce(async () => {
+      const runId = mockCreateAgentLoop.mock.calls.at(-1)?.[6]?.runId;
       seen = {
-        initiatingText: resolveRunUserRuleContext(sessionId).initiatingText,
+        initiatingText: resolveRunUserRuleContext(sessionId, runId).initiatingText,
         trustedDelegation: Boolean(mockCreateAgentLoop.mock.calls.at(-1)?.[0].delegationOrigin),
-        outcome: resolveUserRuleOutcomeForTool(sessionId, 'WebFetch', {}),
+        outcome: resolveUserRuleOutcomeForTool(sessionId, 'WebFetch', {}, runId),
       };
     });
     if (delegated) {
@@ -541,7 +542,7 @@ describe('createAgentRouter', () => {
       expect(response.status).toBe(200);
     }
     expect(mockRun).toHaveBeenCalledTimes(1);
-    expect(resolveRunUserRuleContext(sessionId)).toEqual({});
+    expect(resolveRunUserRuleContext(sessionId, mockCreateAgentLoop.mock.calls.at(-1)?.[6]?.runId)).toEqual({});
     if (!seen) throw new Error('AgentLoop did not observe the run context');
     return seen;
   });
@@ -993,8 +994,8 @@ describe('createAgentRouter', () => {
   describe('/api/run 给 run 盖章（角色 + 用户原话），run 结束即清', () => {
     const PHRASE = '照常发周报';
 
-    async function runAndProbe(body: Record<string, unknown>, probe: () => void): Promise<void> {
-      mockRun.mockImplementationOnce(async () => { probe(); });
+    async function runAndProbe(body: Record<string, unknown>, probe: (runId: string) => void): Promise<void> {
+      mockRun.mockImplementationOnce(async () => { probe(mockCreateAgentLoop.mock.calls.at(-1)?.[6]?.runId); });
       const response = await fetch(`${baseUrl}/api/run`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1022,19 +1023,19 @@ describe('createAgentRouter', () => {
     it('用户在聊天里说了触发短语 → 本轮 WebFetch 免询问；跑完盖章清掉', async () => {
       const session = 'session-k2-stamp-hit';
       let during: unknown;
-      await runAndProbe({ prompt: `${PHRASE}，顺便查下官网`, sessionId: session }, () => {
-        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', { url: 'https://example.com' });
+      await runAndProbe({ prompt: `${PHRASE}，顺便查下官网`, sessionId: session }, (runId) => {
+        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', { url: 'https://example.com' }, runId);
       });
       expect(during).toEqual({ kind: 'preapproved', rule: 'WebFetch', phrase: PHRASE });
-      expect(resolveRunUserRuleContext(session)).toEqual({});
+      expect(resolveRunUserRuleContext(session, mockCreateAgentLoop.mock.calls.at(-1)?.[6]?.runId)).toEqual({});
       expect(resolveUserRuleOutcomeForTool(session, 'WebFetch', {})).toEqual({ kind: 'ask', rule: 'WebFetch' });
     });
 
     it('用户没说短语 → 回落 ask', async () => {
       const session = 'session-k2-stamp-miss';
       let during: unknown;
-      await runAndProbe({ prompt: '查下官网', sessionId: session }, () => {
-        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', {});
+      await runAndProbe({ prompt: '查下官网', sessionId: session }, (runId) => {
+        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', {}, runId);
       });
       expect(during).toEqual({ kind: 'ask', rule: 'WebFetch' });
     });
@@ -1042,8 +1043,8 @@ describe('createAgentRouter', () => {
     it('隐藏的系统轮（historyVisibility=meta）即使正文带短语也不算用户说的', async () => {
       const session = 'session-k2-stamp-meta';
       let during: unknown;
-      await runAndProbe({ prompt: `计划已批准：${PHRASE}`, sessionId: session, historyVisibility: 'meta' }, () => {
-        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', {});
+      await runAndProbe({ prompt: `计划已批准：${PHRASE}`, sessionId: session, historyVisibility: 'meta' }, (runId) => {
+        during = resolveUserRuleOutcomeForTool(session, 'WebFetch', {}, runId);
       });
       expect(during).toEqual({ kind: 'ask', rule: 'WebFetch' });
     });
@@ -1052,14 +1053,14 @@ describe('createAgentRouter', () => {
       let withRole: unknown;
       await runAndProbe(
         { prompt: '清理一下临时文件', sessionId: 'session-k2-stamp-role', context: { preferredAgentId: 'explore' } },
-        () => { withRole = resolveUserRuleOutcomeForTool('session-k2-stamp-role', 'Bash', { command: 'rm /tmp/a.txt' }); },
+        (runId) => { withRole = resolveUserRuleOutcomeForTool('session-k2-stamp-role', 'Bash', { command: 'rm /tmp/a.txt' }, runId); },
       );
       expect(withRole).toEqual({ kind: 'handback', rule: 'Bash(rm *)' });
 
       let mainChat: unknown;
       await runAndProbe(
         { prompt: '清理一下临时文件', sessionId: 'session-k2-stamp-main' },
-        () => { mainChat = resolveUserRuleOutcomeForTool('session-k2-stamp-main', 'Bash', { command: 'rm /tmp/a.txt' }); },
+        (runId) => { mainChat = resolveUserRuleOutcomeForTool('session-k2-stamp-main', 'Bash', { command: 'rm /tmp/a.txt' }, runId); },
       );
       expect(mainChat).toEqual({ kind: 'none' });
     });

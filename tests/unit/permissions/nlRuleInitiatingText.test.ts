@@ -113,7 +113,7 @@ describe('端到端：短语只出现在系统注入块里 → 不免审批（�
 
   function outcomeFor(content: string, options?: AgentRunOptions) {
     beginRunPolicy(RUN, SESSION, { initiatingText: resolveText(content, options) });
-    return resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: 'npm publish --tag weekly' });
+    return resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: 'npm publish --tag weekly' }, RUN);
   }
 
   it('用户没说短语、角色资料块里有 → 回落 ask', () => {

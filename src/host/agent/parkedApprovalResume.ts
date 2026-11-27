@@ -20,10 +20,10 @@ import type { PendingApprovalRecord } from '../../shared/contract/pendingApprova
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import { ToolExecutor } from '../tools/toolExecutor';
 import { permissionDenialError } from '../tools/toolPermissionClassification';
 import {
   dispatchLedgerToolApproval,
+  executeRecoveredLedgerTool,
   rejectLedgerToolApproval,
   toolResultEvidence,
   type LedgerToolExecutionPorts,
@@ -97,19 +97,7 @@ function defaultPorts(nowFn: () => number): ParkedApprovalResumePorts | null {
     },
     // 用户已在收件箱批准——审批就是权限，这里的 requestPermission 恒 true
     // （与 nativeRecoveryHost 的恢复执行器同一先例）。
-    async executeTool(input) {
-      const executor = new ToolExecutor({
-        requestPermission: async () => true,
-        workingDirectory: input.workingDirectory,
-        ledgerOrigin: 'desktop',
-      });
-      return executor.execute(input.name, input.arguments, {
-        sessionId: input.sessionId,
-        sourceMessageId: input.sourceMessageId,
-        currentToolCallId: input.toolCallId,
-        turnId: input.toolCallId,
-      });
-    },
+    executeTool: executeRecoveredLedgerTool,
     async persistToolMessage(sessionId, message) {
       getDatabase().addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });
     },
@@ -368,6 +356,7 @@ async function resumeWithPorts(
       messages,
       toolCallId,
       sessionId,
+      runId: typeof payload.nativeRunId === 'string' ? payload.nativeRunId : undefined,
       workingDirectory,
     });
   } catch (error) {

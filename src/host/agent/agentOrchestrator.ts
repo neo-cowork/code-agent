@@ -962,7 +962,10 @@ export class AgentOrchestrator {
       // K2 盖章（N-PERM-NL-RULES-K2）：本轮角色 id 与发起话随快照冻结——带 roleId 的一句话
       // 规则只在这个角色上命中；preapprove 的触发短语在发起话里做逐字子串匹配。发起话只认
       // 用户原话（content），不是拼了系统上下文的 effectiveContent；按来源定值见 runInitiatingText。
-      beginRunPolicy(nativeRunId, sessionId, {
+      const delegatedContext = options?.delegatedUserRuleContext ?? (options?.resumeExistingDurableRun && sessionId
+        ? (await import('../services/commandCenter/sessionCommandTaskRestartRecovery')).recoverDelegatedUserRuleContext(sessionId, nativeRunId)
+        : undefined);
+      beginRunPolicy(nativeRunId, sessionId, delegatedContext ?? {
         roleId: routedRole?.id,
         initiatingText: resolveRunInitiatingText(content, options),
       });

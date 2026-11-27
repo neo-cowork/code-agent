@@ -219,11 +219,11 @@ type ShellWritePathPolicyOutcome =
   | { kind: 'deny'; check: PolicyCheckResult }
   | { kind: 'ask'; uncertain: string[] };
 
-function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string): boolean {
+function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string, runId?: string): boolean {
   // Active policy files union-merge with defaults that always include denied_paths
   // (~/.ssh/**, ~/.aws/**, /etc/**). No file → getPolicyEnforcer returns null.
   if (policyEnforcer?.isActive) return true;
-  return resolveEffectivePolicyRules(sessionId).some((rule) =>
+  return resolveEffectivePolicyRules(sessionId, runId).some((rule) =>
     isUserDenyRule(rule)
     && rule.matcher.toolSpecifier?.specifierType === 'path'
     && Boolean(rule.matcher.toolSpecifier.specifier)
@@ -233,7 +233,7 @@ function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | unde
 function shellWritePathPolicyCheck(
   command: string,
   workingDirectory: string,
-  policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string,
+  policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string, runId?: string,
 ): ShellWritePathPolicyOutcome {
   const parsed = parseShellCommand(command);
   const unresolved: string[] = [];
@@ -255,11 +255,11 @@ function shellWritePathPolicyCheck(
       policyEnforcer,
       pathCandidates: [target.path, targetPath],
       displayPath: target.path,
-      sessionId,
+      sessionId, runId,
     });
     if (denied) return { kind: 'deny', check: denied };
   }
-  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer, sessionId)) {
+  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer, sessionId, runId)) {
     return { kind: 'ask', uncertain: unresolved };
   }
   return { kind: 'allow' };
@@ -1465,7 +1465,7 @@ export class ToolExecutor {
     // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
     context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
-      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer, effectiveSessionId)
+      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer, effectiveSessionId, effectiveRunId)
       : { kind: 'allow' as const };
     if (isBashToolName(policyToolName) && typeof params.command === 'string') {
       const officialSkillShellCheck = await guardShellOfficialSkillWrites(params.command, bashWorkingDirectory);
@@ -1800,12 +1800,15 @@ export class ToolExecutor {
     }
 
     // N-PERM-NL-RULES-K2：deny>handback>ask>preapprove 未命中=ask>命中。ask/handback 强制进审批链；preapprove 命中并入 isPreApproved（同一份排除清单）。
-    const nlRule = resolveUserRuleOutcomeForTool(effectiveSessionId, policyToolName, params);
+    const nlRule = resolveUserRuleOutcomeForTool(effectiveSessionId, policyToolName, params, effectiveRunId);
     const nlExecPolicy = nlRule.kind === 'preapproved' ? nlPreapprovalExecPolicy(policyToolName, params.command, effectiveSessionId, effectiveRunId) : null;
     if (nlExecPolicy === 'forbidden') return denyByExecPolicy(executionToolName, params, permStartTime, effectiveSessionId, this.ledgerOrigin);
     const nlForcesAsk = nlRule.kind === 'ask' || nlRule.kind === 'handback' || nlExecPolicy === 'prompt';
     const nlPreapproved = nlRule.kind === 'preapproved' && !nlForcesAsk && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean) && !(await builtInRulesDeny(policyToolName, params, { sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: canonicalBashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel, workingDirectoryFromToolCall: true }));
-    if (nlRule.kind === 'denied') return { success: false, error: `Blocked by your permission rule (${nlRule.rule}). Denied by your own settings; do not retry or achieve the same effect another way.` };
+    if (nlRule.kind === 'denied') {
+      recordDecision(executionToolName, params, 'policy-deny', 'user-permission-rule', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      return { success: false, error: `Blocked by your permission rule (${nlRule.rule}). Denied by your own settings; do not retry or achieve the same effect another way.` };
+    }
 
     // Check permission if required
     const scheduledWrite = await classifyFileWrite(policyToolName, params, {
@@ -1842,7 +1845,7 @@ export class ToolExecutor {
       peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
     };
     const readOnlyProbeDetail = boundaryViolation ? { skillName: boundaryViolation.skillName } : undefined;
-    const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments };
+    const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, runId: effectiveRunId, currentAttachments: options.currentAttachments };
     // 拓扑 ask（async_agent 后台 Bash）使下面的 P0 块整体跳过：只读探测在此单独放行，其余捷径仍被拓扑 ask 挡住。
     if (isBashToolName(policyToolName) && params.command && !isPreApproved && guardFabricForcesApproval && !guardFabricAskRuleOnly) {
       // 无人值守（cron）会话的只读授权只来自定时任务的文件夹授权，不认用户提示词里的路径：留给下游原有处理。

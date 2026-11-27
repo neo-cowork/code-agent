@@ -33,7 +33,7 @@ afterEach(() => {
 function outcome(command: string, initiatingText: string | undefined) {
   beginRunPolicy(RUN, SESSION, { initiatingText });
   try {
-    return resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command });
+    return resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command }, RUN);
   } finally {
     endRunPolicy(RUN);
   }
@@ -118,10 +118,10 @@ describe('Important 3：热重载改短语立即生效', () => {
     getPolicyEngine().loadUserRules({ nlRules: [{ ...scoped, phrases: ['确认发布', '照常发'] }] });
     getPolicyEngine().loadUserRules({ nlRules: [{ ...scoped, phrases: ['照常发'] }] });
     beginRunPolicy(RUN, SESSION, { roleId: 'publisher', initiatingText: '确认发布' });
-    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd })).toEqual({ kind: 'ask', rule });
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }, RUN)).toEqual({ kind: 'ask', rule });
     endRunPolicy(RUN);
     beginRunPolicy(RUN, SESSION, { roleId: 'another-role', initiatingText: '照常发' });
-    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }).kind).toBe('none');
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }, RUN).kind).toBe('none');
   });
 
   it('换掉全部短语后重载 → 只认新短语', () => {
@@ -142,12 +142,12 @@ describe('Important 3：热重载改短语立即生效', () => {
   it('run 进行中：外部来源删短语立即收紧；外部来源加短语对本 run 冻结，下个 run 生效', () => {
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule, phrases: ['确认发布'] }] });
     beginRunPolicy(RUN, SESSION, { initiatingText: '确认发布，另外悄悄发' });
-    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }).kind).toBe('preapproved');
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }, RUN).kind).toBe('preapproved');
 
     // 配置文件被改（external）：换成另一个短语——对已开始的 run，旧短语立即失效，
     // 新短语（放宽）冻结到下个 run；本 run 不得因新短语免审批。
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule, phrases: ['悄悄发'] }] }, 'external');
-    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }).kind).not.toBe('preapproved');
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }, RUN).kind).not.toBe('preapproved');
     endRunPolicy(RUN);
 
     expect(outcome(cmd, '悄悄发').kind).toBe('preapproved');
@@ -157,8 +157,8 @@ describe('Important 3：热重载改短语立即生效', () => {
   it('run 进行中：用户在设置里改短语（user-ui）立即生效', () => {
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule, phrases: ['确认发布'] }] }, 'user-ui');
     beginRunPolicy(RUN, SESSION, { initiatingText: '照常发' });
-    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd })).toEqual({ kind: 'ask', rule });
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }, RUN)).toEqual({ kind: 'ask', rule });
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule, phrases: ['照常发'] }] }, 'user-ui');
-    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }).kind).toBe('preapproved');
+    expect(resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: cmd }, RUN).kind).toBe('preapproved');
   });
 });

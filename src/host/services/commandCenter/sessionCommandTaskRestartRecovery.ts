@@ -36,6 +36,7 @@ interface RunningMarker {
   shortName: string;
   createdAt: number;
   startedAt: number;
+  permissionRoleId?: string;
   /**
    * settle 已落终态、但「[任务结果]」投影还在会话不可读重试中（登录恢复窗口）：
    * 这份终态快照让重启恢复按真实结局补投，而不是把已完成任务当中断改写成 failed
@@ -61,6 +62,26 @@ function markerPath(taskId: string): string {
   return path.join(markerDir(), `${encodeURIComponent(taskId)}.json`);
 }
 
+/** Restore the role by the original task and session identity. Initiating text is memory-only. */
+export function recoverDelegatedUserRuleContext(sessionId: string, runId: string): { roleId?: string } | undefined {
+  try {
+    const task = getBackgroundTaskLedger().getTask(runId);
+    if (task?.kind === 'session_command_task' && task.sessionId === sessionId && task.runId === runId) {
+      const role = task.metadata?.permissionRoleId;
+      return typeof role === 'string' ? { roleId: role } : {};
+    }
+    const marker = JSON.parse(fs.readFileSync(markerPath(runId), 'utf8')) as RunningMarker;
+    if (marker.taskId === runId && marker.sessionId === sessionId) {
+      return typeof marker.permissionRoleId === 'string' ? { roleId: marker.permissionRoleId } : {};
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('Delegated task permission context could not be restored', { runId, error: String(error) });
+    }
+  }
+  return undefined;
+}
+
 /** 任务进入 running 时调用；写失败只 warn，不影响任务本身。 */
 export function markSessionCommandTaskRunning(task: {
   id: string;
@@ -68,6 +89,7 @@ export function markSessionCommandTaskRunning(task: {
   title: string;
   shortName: string;
   createdAt: number;
+  permissionRoleId?: string;
 }): void {
   try {
     fs.mkdirSync(markerDir(), { recursive: true });
@@ -78,6 +100,7 @@ export function markSessionCommandTaskRunning(task: {
       shortName: task.shortName,
       createdAt: task.createdAt,
       startedAt: Date.now(),
+      permissionRoleId: task.permissionRoleId,
     };
     fs.writeFileSync(markerPath(task.id), JSON.stringify(marker));
   } catch (error) {
@@ -258,7 +281,7 @@ function writeInterruptedLedgerRow(
       startedAt: marker.startedAt,
       completedAt: now,
       failure: { message: text, reason: SESSION_COMMAND_TASK_INTERRUPTED_REASON },
-      metadata: { shortName: marker.shortName, childRunId: marker.taskId },
+      metadata: { shortName: marker.shortName, childRunId: marker.taskId, permissionRoleId: marker.permissionRoleId },
     });
   } catch (error) {
     logger.warn('Restart recovery could not record the ledger row', {
@@ -317,7 +340,7 @@ async function recoverDeferredTerminalResult(
         ...(terminal.status === 'failed' && terminal.detail
           ? { failure: { message: terminal.detail, reason: 'session_command_task_failed' } }
           : {}),
-        metadata: { shortName: marker.shortName, childRunId: marker.taskId },
+        metadata: { shortName: marker.shortName, childRunId: marker.taskId, permissionRoleId: marker.permissionRoleId },
       });
     }
   } catch (error) {

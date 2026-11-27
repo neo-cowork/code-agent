@@ -261,8 +261,9 @@ vi.mock('../../src/host/services/voice/voiceTelemetry', () => ({
 // 专家审批档的门要看「AgentLoop 真跑那一刻的有效档位」，所以 loop 本身换成探针。
 // 本文件其余用例都不碰真 AgentLoop（orchestrator.agentLoop 一律是 null 或 stub）。
 const agentLoopProbe = vi.hoisted(() => ({
-  onRun: undefined as undefined | (() => void),
+  onRun: undefined as undefined | ((config: { toolExecutor?: unknown }) => void | Promise<void>),
   lastConfig: undefined as undefined | {
+    runId?: string;
     systemPrompt?: string;
     systemInstructions?: string[];
     deniedToolNames?: string[];
@@ -288,11 +289,12 @@ vi.mock('../../src/host/services/roleAssets/rolePersonalization', async (importO
 }));
 vi.mock('../../src/host/agent/agentLoop', () => ({
   AgentLoop: class {
-    constructor(config: NonNullable<typeof agentLoopProbe.lastConfig>) {
+    constructor(private readonly config: NonNullable<typeof agentLoopProbe.lastConfig>) {
       agentLoopProbe.lastConfig = config;
     }
-    async run(): Promise<void> { agentLoopProbe.onRun?.(); }
+    async run(): Promise<void> { await agentLoopProbe.onRun?.(this.config); }
     getSerializedCompressionState(): undefined { return undefined; }
+    getGoalRecoverySnapshot(): undefined { return undefined; }
   },
 }));
 
@@ -360,9 +362,18 @@ import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../src/shared/parkedApprov
 import type { AgentRunOptions } from '../../src/host/research/types';
 import { getAllToolDefinitions } from '../../src/host/tools/dispatch/toolDefinitions';
 import { getToolSearchService } from '../../src/host/services/toolSearch/toolSearchService';
+import { createRunContext } from '../../src/host/runtime/runContext';
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
 import { TaskManager } from '../../src/host/task/TaskManager';
+import { SessionCommandCenter } from '../../src/host/services/commandCenter/sessionCommandCenter';
+import { OrchestratorPermissionIsland } from '../../src/host/agent/orchestratorPermissions';
+import { beginRunPolicy, endRunPolicy } from '../../src/host/permissions/runPolicySnapshot';
+import { getDenialRegistry } from '../../src/host/security/denialRegistry';
+import { getToolResolver } from '../../src/host/tools/dispatch/toolResolver';
+import { ToolExecutor } from '../../src/host/tools/toolExecutor';
+import { resetBackgroundTaskLedgerForTest } from '../../src/host/task/backgroundTaskLedger';
+import type { ToolExecutionResult } from '../../src/host/tools/types';
 import { applyTurnSystemContext } from '../../src/host/agent/orchestratorTurnContext';
 import { extractUserRequest, wrapWithTurnSystemContext } from '../../src/shared/utils/turnScaffold';
 import { getPolicyEngine, resetPolicyEngine } from '../../src/host/permissions/policyEngine';
@@ -2452,7 +2463,7 @@ describe('AgentOrchestrator', () => {
     ): Promise<ReturnType<typeof resolveUserRuleOutcomeForTool> | undefined> {
       let seen: ReturnType<typeof resolveUserRuleOutcomeForTool> | undefined;
       agentLoopProbe.onRun = () => {
-        seen = resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: 'npm publish --tag weekly' });
+        seen = resolveUserRuleOutcomeForTool(SESSION, 'Bash', { command: 'npm publish --tag weekly' }, lastAgentLoopConfig()?.runId);
       };
       try {
         await (orchestrator as unknown as {
@@ -2656,5 +2667,129 @@ describe('AgentOrchestrator', () => {
 
       expect(lastAgentLoopConfig()?.deniedToolNames || []).not.toContain('AskUserQuestion');
     });
+  });
+});
+
+describe('K2 delegated Bash permission context', () => {
+  const sessionId = 'k2-delegated-bash';
+  const parentRunId = 'k2-delegating-run';
+  const roleId = 'reports-role';
+  const command = 'chmod 644 note.txt';
+  const rule = 'Bash(chmod *)';
+  const phrase = 'send report';
+
+  it.each([
+    { name: 'inherits role deny', behavior: 'deny' as const, words: 'Prepare the report', kind: 'denied' },
+    { name: 'inherits the initiating phrase', behavior: 'preapprove' as const, words: phrase, kind: 'allowed' },
+    { name: 'ignores a phrase in the delegated prompt', behavior: 'preapprove' as const, words: 'Prepare the report', kind: 'asked' },
+    { name: 'background never shadows foreground hit', behavior: 'preapprove' as const, words: 'Prepare the report', kind: 'asked', foregroundWords: phrase },
+    { name: 'later foreground phrase never reaches older background', behavior: 'preapprove' as const, words: 'Prepare the report', kind: 'asked', foregroundWords: phrase, foregroundStartsLast: true },
+    { name: 'recovers only the persisted role on a restarted background task', behavior: 'deny' as const, words: phrase, kind: 'denied', restart: true },
+    { name: 'asks after restart even when the original turn supplied the phrase', behavior: 'preapprove' as const, words: phrase, kind: 'asked', restart: true },
+  ])('$name', async ({ behavior, words, kind, foregroundWords, foregroundStartsLast, restart }) => {
+    vi.stubEnv('EVAL_DISABLED', 'true');
+    getDenialRegistry().clearAll();
+    const dispatch = vi.spyOn(getToolResolver(), 'execute').mockResolvedValue({ success: true, output: 'dispatched' });
+    const workspace = await nodeFs.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'delegated-rule-'));
+    vi.stubEnv('CODE_AGENT_DATA_DIR', workspace);
+    const workspaceScope = createWorkspaceScope('report-project', [
+      { sourceId: 'report-files', path: workspace, role: 'primary', access: 'read_write' },
+    ]);
+    const manager = new TaskManager({ maxConcurrentTasks: 2 });
+    const center = new SessionCommandCenter(manager, { projectTerminalResult: vi.fn(), wakeForegroundBrain: vi.fn() });
+    const configService = getConfigService();
+    const onApproval = vi.spyOn(OrchestratorPermissionIsland.prototype, 'requestPermission').mockResolvedValue({ approved: false });
+    manager.initialize({ configService, onAgentEvent: vi.fn() });
+    const enterChild = Promise.withResolvers<ToolExecutor>();
+    const releaseChild = Promise.withResolvers<void>();
+    const child = Promise.withResolvers<ToolExecutionResult>();
+    const finished = Promise.withResolvers<void>();
+    manager.on('task_completed', () => finished.resolve());
+    manager.on('task_error', (event: { data: { error: string } }) => {
+      child.reject(new Error(event.data.error));
+      finished.resolve();
+    });
+
+    getPolicyEngine().loadUserRules({ nlRules: [
+      behavior === 'deny' ? { behavior, rule, roleId } : { behavior, rule, phrases: [phrase] },
+    ] });
+    beginRunPolicy(parentRunId, sessionId, { roleId, initiatingText: words });
+    agentLoopProbe.onRun = async ({ toolExecutor }) => {
+      try {
+        if (!toolExecutor) throw new Error('Background run has no ToolExecutor');
+        const executor = toolExecutor as ToolExecutor;
+        enterChild.resolve(executor);
+        await releaseChild.promise;
+        child.resolve(await executor.execute('Bash', { command }, { sourceMessageId: 'delegated-input' }));
+      } catch (error) {
+        child.reject(error);
+      }
+    };
+
+    try {
+      const foregroundRunId = 'k2-other-foreground-run';
+      if (foregroundWords && !foregroundStartsLast) beginRunPolicy(foregroundRunId, sessionId, { initiatingText: foregroundWords });
+      const launched = await center.spawn({
+        sessionId, parentRunId, title: 'Prepare report', shortName: 'Report',
+        laneKey: 'report', submissionKey: 'report', prompt: `Untrusted model prompt: ${phrase}`,
+        options: { mode: 'normal', displayContent: 'Prepare report' }, workspaceScope,
+      });
+      const executor = await enterChild.promise;
+      endRunPolicy(parentRunId);
+      if (foregroundWords) {
+        if (foregroundStartsLast) beginRunPolicy(foregroundRunId, sessionId, { initiatingText: foregroundWords });
+        const foreground = new ToolExecutor({ requestPermission: onApproval, workingDirectory: workspace }).forRun(
+          createRunContext({ runId: foregroundRunId, sessionId, cwd: workspace, workspaceScope }),
+        );
+        const result = await foreground.execute('Bash', { command }, { sessionId, runId: foregroundRunId, sourceMessageId: 'foreground-input' });
+        expect(result.success, result.error).toBe(true);
+        const unnamed = resolveUserRuleOutcomeForTool(sessionId, 'Bash', { command });
+        expect(unnamed).toEqual({ kind: 'ask', rule });
+        dispatch.mockClear();
+        onApproval.mockClear();
+      }
+      if (restart) {
+        if (launched.outcome !== 'started') throw new Error('Delegation did not start');
+        const taskId = launched.task.id;
+        expect(executor.getRunContext()?.runId).toBe(taskId);
+        resetBackgroundTaskLedgerForTest(); // Simulate process loss. Only the running marker can restore the role.
+        const restarted = new TaskManager({ maxConcurrentTasks: 2 });
+        restarted.initialize({ configService, onAgentEvent: vi.fn() });
+        const options = { mode: 'normal' as const, displayContent: 'Prepare report' };
+        const restored = Promise.withResolvers<ToolExecutionResult>();
+        agentLoopProbe.onRun = async ({ toolExecutor }) => {
+          restored.resolve(await (toolExecutor as ToolExecutor).execute('Bash', { command }, { sourceMessageId: 'restored-input' }));
+        };
+        // The original process no longer has an active permission snapshot.
+        endRunPolicy(taskId);
+        await restarted.startBackgroundTask(taskId, sessionId, launched.task.prompt, undefined, options, undefined, workspaceScope);
+        const result = await restored.promise;
+        if (kind === 'denied') expect(result.error).toContain('Blocked by your permission rule');
+        expect(result.success, result.error).toBe(false);
+        expect(onApproval).toHaveBeenCalledTimes(kind === 'asked' ? 1 : 0);
+        expect(dispatch).not.toHaveBeenCalled();
+        return;
+      }
+      releaseChild.resolve();
+      const result = await child.promise;
+      await finished.promise;
+      if (kind === 'denied') expect(result.error).toContain('Blocked by your permission rule');
+      expect(result.success, result.error).toBe(kind === 'allowed');
+      expect(onApproval).toHaveBeenCalledTimes(kind === 'asked' ? 1 : 0);
+      expect(dispatch).toHaveBeenCalledTimes(kind === 'allowed' ? 1 : 0);
+    } finally {
+      releaseChild.resolve();
+      await finished.promise;
+      center.dispose();
+      endRunPolicy(parentRunId);
+      endRunPolicy('k2-other-foreground-run');
+      resetPolicyEngine();
+      resetBackgroundTaskLedgerForTest();
+      agentLoopProbe.onRun = undefined;
+      onApproval.mockRestore();
+      dispatch.mockRestore();
+      vi.unstubAllEnvs();
+      await nodeFs.rm(workspace, { recursive: true, force: true });
+    }
   });
 });

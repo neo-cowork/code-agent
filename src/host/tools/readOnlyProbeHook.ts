@@ -26,6 +26,7 @@ export interface ReadOnlyProbeInput {
   workingDirectory: string;
   workspaceRoot?: string;
   sessionId?: string;
+  runId?: string;
   currentAttachments?: Array<{ path?: string }>;
 }
 
@@ -56,8 +57,8 @@ function sessionAuthority(input: ReadOnlyProbeInput): { userTexts: string[]; att
   return { userTexts, attachmentPaths };
 }
 
-function userRulesAllow(texts: string[], sessionId?: string): boolean {
-  const rules = resolveEffectivePolicyRules(sessionId);
+function userRulesAllow(texts: string[], { sessionId, runId }: ReadOnlyProbeInput): boolean {
+  const rules = resolveEffectivePolicyRules(sessionId, runId);
   return texts.every((command) => BASH_SPELLINGS.every((tool) => {
     const matched = getPolicyEngine().evaluate({
       tool, level: 'execute', description: `tool: ${tool}`, command, sessionId,
@@ -65,20 +66,20 @@ function userRulesAllow(texts: string[], sessionId?: string): boolean {
     if (matched && matched.action !== 'allow') return false;
     // N-PERM-NL-RULES-K2：evaluate 不带角色、也不看触发短语——带角色范围的 ask/handback 与
     // preapprove 未命中（= ask）由一句话规则的消费端判定，命中任一档都放弃探测、回审批链。
-    const nlKind = resolveUserRuleOutcomeForTool(sessionId, tool, { command }).kind;
+    const nlKind = resolveUserRuleOutcomeForTool(sessionId, tool, { command }, runId).kind;
     return nlKind === 'none' || nlKind === 'preapproved';
   }));
 }
 
-function readRulesAllow(absolutePath: string, sessionId?: string): boolean {
-  const rules = resolveEffectivePolicyRules(sessionId);
+function readRulesAllow(absolutePath: string, { sessionId, runId }: ReadOnlyProbeInput): boolean {
+  const rules = resolveEffectivePolicyRules(sessionId, runId);
   return ['Read', 'read'].every((tool) => {
     const matched = getPolicyEngine().evaluate({
       tool, level: 'read', description: `tool: ${tool}`, filePath: absolutePath, sessionId,
     }, rules).matchedRule;
     if (matched && matched.action !== 'allow') return false;
     // N-PERM-NL-RULES-K2：同 userRulesAllow——角色范围与触发短语由一句话规则的消费端判定。
-    const nlKind = resolveUserRuleOutcomeForTool(sessionId, tool, { filePath: absolutePath }).kind;
+    const nlKind = resolveUserRuleOutcomeForTool(sessionId, tool, { filePath: absolutePath }, runId).kind;
     return nlKind === 'none' || nlKind === 'preapproved';
   });
 }
@@ -89,7 +90,7 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
   const plan = compileReadOnlyProbePlan(input.command, { homeDir: os.homedir(), platform: process.platform });
   if (!plan) return null;
   const programs = [...new Set(plan.steps.map((s) => s.program))];
-  if (!userRulesAllow([input.command, ...plan.steps.flatMap((s) => [s.source, ...s.extraSources ?? []])], input.sessionId)) {
+  if (!userRulesAllow([input.command, ...plan.steps.flatMap((s) => [s.source, ...s.extraSources ?? []])], input)) {
     logger.info('readonly_probe_plan_miss', { cause: 'user-or-builtin-rule', programs });
     return null;
   }
@@ -98,7 +99,7 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
     workingDirectory: input.workingDirectory,
     workspaceRoot: scheduleRoot ?? input.workspaceRoot,
     homeDir: os.homedir(),
-    readPathAllowed: (abs) => readRulesAllow(abs, input.sessionId),
+    readPathAllowed: (abs) => readRulesAllow(abs, input),
     ...(scheduleRoot ? { readRoots: [scheduleRoot], userTexts: [], attachmentPaths: [] } : sessionAuthority(input)),
   });
   // 非零退出码的失败呈现（Command exited with code N）由真 Bash 路径负责：放弃，让原链处理。

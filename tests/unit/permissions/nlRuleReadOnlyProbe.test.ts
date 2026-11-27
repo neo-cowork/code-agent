@@ -105,7 +105,7 @@ describe('一句话规则先于只读探测免卡', () => {
       getPermissionModeManager().markUnattendedSession(SESSION);
       executor.setExecutionTopology('async_agent');
     }
-    return executor.execute('Bash', { command }, { sessionId: SESSION });
+    return executor.execute('Bash', { command }, { sessionId: SESSION, runId: RUN_ID });
   }
   const probeRows = () => getDecisionHistory().getAll().filter((entry) => entry.reason === 'readonly-probe-plan');
   // 共享解析器读不懂 `command -v`，所以它不走「已知安全命令」捷径，只可能由只读探测放行。

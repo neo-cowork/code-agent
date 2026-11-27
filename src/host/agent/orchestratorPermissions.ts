@@ -829,6 +829,9 @@ export class OrchestratorPermissionIsland {
         ?? fullRequest.details?.path
         ?? fullRequest.details?.filePath
         ?? fullRequest.details?.url;
+      const localOrigin = fullRequest.turnOrigin?.length === 1 ? fullRequest.turnOrigin[0] : undefined;
+      const nativeRunId = fullRequest.runId ?? (localOrigin?.sessionId === fullRequest.sessionId
+        && (localOrigin?.senderKind === 'user' || localOrigin?.senderKind === 'orchestrator') ? localOrigin.runId : undefined);
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
         ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
@@ -837,6 +840,7 @@ export class OrchestratorPermissionIsland {
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
         ...(hasBackgroundRunIdentity(fullRequest) ? { backgroundLane: true as const } : {}),
+        ...(nativeRunId ? { nativeRunId } : {}),
         ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),

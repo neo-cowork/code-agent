@@ -13,12 +13,38 @@
 import type { Message, ToolResult } from '../../shared/contract';
 import { serializeToolResultsForModel } from '../tools/toolResultMessageContent';
 import type { ToolExecutionResult } from '../tools/types';
+import { withRecoveredRunUserRuleContext } from '../permissions/runPolicySnapshot';
+
+export async function executeRecoveredLedgerTool(
+  input: Parameters<LedgerToolExecutionPorts['executeTool']>[0],
+): Promise<ToolExecutionResult> {
+  const { ToolExecutor } = await import('../tools/toolExecutor');
+  const executor = new ToolExecutor({
+    // The recovery caller has already fenced the exact approved call.
+    requestPermission: async () => true,
+    workingDirectory: input.workingDirectory,
+    ledgerOrigin: 'desktop',
+  });
+  const execute = () => executor.execute(input.name, input.arguments, {
+    sessionId: input.sessionId,
+    runId: input.runId,
+    sourceMessageId: input.sourceMessageId,
+    currentToolCallId: input.toolCallId,
+    turnId: input.toolCallId,
+  });
+  if (!input.runId) return execute();
+  const { recoverDelegatedUserRuleContext } = await import('../services/commandCenter/sessionCommandTaskRestartRecovery');
+  const context = recoverDelegatedUserRuleContext(input.sessionId, input.runId);
+  return context ? withRecoveredRunUserRuleContext(input.sessionId, input.runId, context, execute) : execute();
+}
+
 
 export interface LedgerToolExecutionPorts {
   executeTool(input: {
     name: string;
     arguments: Record<string, unknown>;
     sessionId: string;
+    runId?: string;
     sourceMessageId: string;
     toolCallId: string;
     workingDirectory: string;
@@ -79,6 +105,7 @@ export async function dispatchLedgerToolApproval(
     messages: Message[];
     toolCallId: string;
     sessionId: string;
+    runId?: string;
     sourceMessageId?: string;
     workingDirectory: string;
   },
@@ -91,6 +118,7 @@ export async function dispatchLedgerToolApproval(
     name: persisted.toolCall.name,
     arguments: persisted.toolCall.arguments,
     sessionId: input.sessionId,
+    ...(input.runId ? { runId: input.runId } : {}),
     sourceMessageId: input.sourceMessageId ?? persisted.assistantMessage.id,
     toolCallId: persisted.toolCall.id,
     workingDirectory: input.workingDirectory,

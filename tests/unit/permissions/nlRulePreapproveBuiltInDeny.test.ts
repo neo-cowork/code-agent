@@ -35,6 +35,7 @@ import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permission
 import { beginRunPolicy, endRunPolicy } from '../../../src/host/permissions/runPolicySnapshot';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { getExecPolicyStore, resetExecPolicyStore } from '../../../src/host/security/execPolicy';
+import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { getDecisionHistory } from '../../../src/host/security/decisionHistory';
 import type { AppSettings } from '../../../src/shared/contract';
 
@@ -76,6 +77,7 @@ function isStillPending<T>(promise: Promise<T>): Promise<boolean> {
 beforeEach(() => {
   resetPolicyEngine();
   resetExecPolicyStore();
+  getDenialRegistry().clearAll();
   resetPermissionModeManager();
   resolverState.getDefinition.mockReset();
   resolverState.execute.mockReset();
@@ -105,7 +107,7 @@ describe('④ preapprove 命中短语也越不过内置危险命令硬拒', () =
     beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: `${PHRASE}，动手吧` });
     const island = makeIsland();
 
-    const result = await makeExecutor(island).execute('Bash', { command }, { sessionId: SESSION });
+    const result = await makeExecutor(island).execute('Bash', { command }, { sessionId: SESSION, runId: RUN_ID });
 
     expect(result.success).toBe(false);
     expect(resolverState.execute).not.toHaveBeenCalled();
@@ -120,7 +122,7 @@ describe('④ preapprove 命中短语也越不过内置危险命令硬拒', () =
     beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: `${PHRASE}，动手吧` });
     const island = makeIsland();
 
-    const result = await makeExecutor(island).execute('Bash', { command }, { sessionId: SESSION });
+    const result = await makeExecutor(island).execute('Bash', { command }, { sessionId: SESSION, runId: RUN_ID });
 
     expect(resolverState.execute).not.toHaveBeenCalled();
     expect(result.success).toBe(false);
@@ -132,7 +134,7 @@ describe('④ preapprove 命中短语也越不过内置危险命令硬拒', () =
     beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: `${PHRASE}，动手吧` });
     const island = makeIsland();
 
-    const result = await makeExecutor(island).execute('Bash', { command: 'chmod 644 note.txt' }, { sessionId: SESSION });
+    const result = await makeExecutor(island).execute('Bash', { command: 'chmod 644 note.txt' }, { sessionId: SESSION, runId: RUN_ID });
 
     expect(result.success).toBe(true);
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
@@ -144,7 +146,7 @@ describe('④ preapprove 命中短语也越不过内置危险命令硬拒', () =
     beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: '整理一下文件' });
     const island = makeIsland();
 
-    const resultPromise = makeExecutor(island).execute('Bash', { command: 'chmod 644 note.txt' }, { sessionId: SESSION });
+    const resultPromise = makeExecutor(island).execute('Bash', { command: 'chmod 644 note.txt' }, { sessionId: SESSION, runId: RUN_ID });
 
     expect(await isStillPending(resultPromise)).toBe(true);
     expect(resolverState.execute).not.toHaveBeenCalled();
@@ -176,14 +178,14 @@ describe('NL preapproval respects exec policy', () => {
   it('prompt shows the normal approval even after the user said the trigger phrase', async () => {
     const { island, execution } = prepare('prompt');
     const approval = await Promise.race([
-      execution.then(() => undefined),
+      execution.then((result) => ({ result })),
       new Promise<ReturnType<typeof island.listPendingRequests>[number] | undefined>((resolve) => {
         setTimeout(() => resolve(island.listPendingRequests()[0]), 300);
       }),
     ]);
-    expect(approval).toBeDefined();
+    expect(approval, approval && 'result' in approval ? JSON.stringify(approval.result) : undefined).toHaveProperty('id');
     expect(resolverState.execute).not.toHaveBeenCalled();
-    if (approval) island.handlePermissionResponse(approval.id, 'deny');
+    if (approval && 'id' in approval) island.handlePermissionResponse(approval.id, 'deny');
     await execution;
   });
 });

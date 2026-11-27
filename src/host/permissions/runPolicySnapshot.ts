@@ -13,7 +13,7 @@
 // 消费端（E1-E6）不再直读活状态，改读这里的有效视图。没有快照的路径（CLI/eval/
 // 从不 begin 的测试）视图 === 活状态，行为与 origin/main 完全一致。
 //
-// 子代理不穿 runId：模块内维护 sessionId → 最新活跃 run 的映射，E6 侧只传 sessionId。
+// 旧档位/策略调用仍可用会话栈。一句话规则的角色与原话必须按原生 run id 读取。
 
 import {
   currentPolicyMutationSeq,
@@ -39,6 +39,11 @@ import {
 // 快照存储
 // ----------------------------------------------------------------------------
 
+export interface RunUserRuleContext {
+  roleId?: string;
+  initiatingText?: string;
+}
+
 interface RunPolicySnapshot {
   runId: string;
   sessionId?: string;
@@ -51,11 +56,9 @@ interface RunPolicySnapshot {
   /** null = run 起点没有活跃的 policy 文件（出现新文件是收紧，走活状态）。 */
   enforcer?: PolicyEnforcerState | null;
   /**
-   * N-PERM-NL-RULES-K2 run 盖章：本轮路由到的角色 id 与发起话原文（聊天消息或定时
-   * 任务的 prompt）。带 roleId 的 nl 规则只在这个角色上生效；preapprove 的触发短语
-   * 在发起话里做逐字子串匹配。同会话栈的子代理解析到最新活跃 run 的快照，天然继承。
+   * Host-verified role and initiating text, scoped to this native run.
    */
-  userRuleContext?: { roleId?: string; initiatingText?: string };
+  userRuleContext?: RunUserRuleContext;
 }
 
 const runsById = new Map<string, RunPolicySnapshot>();
@@ -110,7 +113,7 @@ function trimJournalToActiveSnapshots(): void {
 export function beginRunPolicy(
   runId: string,
   sessionId?: string,
-  context?: { roleId?: string; initiatingText?: string },
+  context?: RunUserRuleContext,
 ): void {
   const watermark = currentPolicyMutationSeq();
   let rules: PolicyRule[] | undefined;
@@ -146,7 +149,7 @@ export function beginRunPolicy(
     mode,
     enforcer,
     ...(context && (context.roleId !== undefined || context.initiatingText !== undefined)
-      ? { userRuleContext: context }
+      ? { userRuleContext: { ...context } }
       : {}),
   });
   if (sessionId) {
@@ -166,9 +169,9 @@ export function beginRunPolicy(
 export function beginRunUserRuleContext(
   runId: string,
   sessionId: string | undefined,
-  context: { roleId?: string; initiatingText?: string },
+  context: RunUserRuleContext,
 ): void {
-  runsById.set(runId, { runId, sessionId, watermark: currentPolicyMutationSeq(), userRuleContext: context });
+  runsById.set(runId, { runId, sessionId, watermark: currentPolicyMutationSeq(), userRuleContext: { ...context } });
   if (sessionId) {
     const stack = activeRunsBySession.get(sessionId) ?? [];
     stack.push(runId);
@@ -258,21 +261,28 @@ export function resolveEffectiveSessionMode(sessionId?: string): PermissionMode 
   return effectiveModeFor(findRunSnapshot(undefined, sessionId), sessionId);
 }
 
-/**
- * N-PERM-NL-RULES-K2：会话当前活跃 run 的盖章上下文（角色 id + 发起话）。
- * 没有活跃 run（主聊天未开轮/已结束/从不 begin 的路径）返回空对象——角色域规则
- * 不命中、preapprove 无发起话可匹配（未命中 → ask，永不静默放行）。同会话栈的
- * 子代理解析到最新活跃 run，即继承该轮的角色与发起话。
- */
-export function resolveRunUserRuleContext(sessionId?: string): { roleId?: string; initiatingText?: string } {
-  if (!sessionId) return {};
-  return findRunSnapshot(undefined, sessionId)?.userRuleContext ?? {};
+/** Role and phrase checks require the call's own run identity, including in concurrent lanes. */
+export function resolveRunUserRuleContext(sessionId?: string, runId?: string): RunUserRuleContext {
+  return { ...findExactRunSnapshot(sessionId, runId)?.userRuleContext };
+}
+
+/** A recovered call can apply its persisted role without replacing any live snapshot. */
+export async function withRecoveredRunUserRuleContext<T>(
+  sessionId: string, runId: string, context: RunUserRuleContext, execute: () => Promise<T>,
+): Promise<T> {
+  if (runsById.has(runId)) return execute();
+  runsById.set(runId, { runId, sessionId, watermark: currentPolicyMutationSeq(), userRuleContext: { ...context } });
+  try {
+    return await execute();
+  } finally {
+    endRunPolicy(runId);
+  }
 }
 
 /** E2/E3：用户规则引擎的有效规则列表。 */
-export function resolveEffectivePolicyRules(sessionId?: string): PolicyRule[] {
+export function resolveEffectivePolicyRules(sessionId?: string, runId?: string): PolicyRule[] {
   const live = getPolicyEngine().getRules();
-  const snapshot = findRunSnapshot(undefined, sessionId);
+  const snapshot = runId ? findExactRunSnapshot(sessionId, runId) : findRunSnapshot(undefined, sessionId);
   if (!snapshot) return live;
   return applyRuleFreeze(live, snapshot);
 }

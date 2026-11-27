@@ -357,6 +357,8 @@ export class TaskManager extends EventEmitter {
     const orchestrator = this.createOrchestrator(sessionId, taskId);
     const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
     const session = await getBackgroundTaskSessionContext(sessionId);
+    const delegatedContext = options?.delegatedUserRuleContext
+      ?? (await import('../services/commandCenter/sessionCommandTaskRestartRecovery')).recoverDelegatedUserRuleContext(sessionId, taskId);
 
     // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
     if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
@@ -367,7 +369,10 @@ export class TaskManager extends EventEmitter {
       orchestrator.setWorkingDirectory(session.workingDirectory, { syncWorkspaceServices: false });
     }
 
-    this.backgroundRuns.set(taskId, { taskId, sessionId, orchestrator, status: 'running' });
+    this.backgroundRuns.set(taskId, {
+      taskId, sessionId, orchestrator, status: 'running',
+      delegatedRole: delegatedContext && { roleId: delegatedContext.roleId },
+    });
     this.emitEvent('task_started', sessionId, { taskId });
     try {
       const deniedToolNames = Array.from(new Set([
@@ -383,6 +388,8 @@ export class TaskManager extends EventEmitter {
           mode: options?.mode ?? 'normal',
           runRegistration: 'auxiliary',
           historyVisibility: 'meta',
+          delegatedUserRuleContext: delegatedContext,
+          ...(delegatedContext ? { runId: taskId } : {}),
           disableAutoAgent: true,
           deniedToolNames,
           turnSystemContext: [
@@ -488,6 +495,7 @@ export class TaskManager extends EventEmitter {
         mode: options?.mode ?? 'normal',
         runRegistration: 'auxiliary',
         historyVisibility: 'meta',
+        delegatedUserRuleContext: run.delegatedRole,
         disableAutoAgent: true,
         deniedToolNames,
         turnSystemContext: [

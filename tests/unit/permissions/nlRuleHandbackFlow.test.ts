@@ -193,7 +193,7 @@ describe('② 无人值守 handback：停车 + 通知，不执行、不失败', 
     const island = makeAttendedIsland(repo);
     const executor = makeExecutor(island);
 
-    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
+    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION, runId: RUN_ID });
 
     // 停车挂起：工具不执行，等待人在收件箱裁决
     const rowId = await waitForPark(repo);
@@ -256,7 +256,7 @@ describe('② 无人值守 handback：停车 + 通知，不执行、不失败', 
     const island = makeAttendedIsland(repo);
     const executor = makeExecutor(island);
 
-    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
+    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION, runId: RUN_ID });
     const rowId = await waitForPark(repo);
     expect(await isStillPending(resultPromise)).toBe(true);
     expect(island.handlePermissionResponse(rowId, 'allow')).toBe('delivered');
@@ -285,7 +285,7 @@ describe('① 有人值守 handback：绕过 devModeAutoApprove 强制真人两�
     });
     const executor = makeExecutor(island);
 
-    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
+    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION, runId: RUN_ID });
     const request = await new Promise<Record<string, unknown>>((resolve, reject) => {
       const startedAt = Date.now();
       const timer = setInterval(() => {
@@ -320,7 +320,7 @@ describe('① K1 ask 规则现在真的强制弹审批（已知安全命令也�
     const island = makeAttendedIsland(makeMemoryRepo());
     const executor = makeExecutor(island);
 
-    const resultPromise = executor.execute('Bash', { command: 'git status' }, { sessionId: SESSION });
+    const resultPromise = executor.execute('Bash', { command: 'git status' }, { sessionId: SESSION, runId: RUN_ID });
     const pendingId = await waitForPendingRequest(island);
     expect(await isStillPending(resultPromise)).toBe(true);
     expect(resolverState.execute).not.toHaveBeenCalled();
@@ -342,7 +342,7 @@ describe('④ preapprove：短语命中免卡，未命中出卡；deny 仍硬拒
     const island = makeAttendedIsland(makeMemoryRepo());
     const executor = makeExecutor(island);
 
-    const toolResult = await executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
+    const toolResult = await executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION, runId: RUN_ID });
     expect(toolResult.success).toBe(true);
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
@@ -356,7 +356,7 @@ describe('④ preapprove：短语命中免卡，未命中出卡；deny 仍硬拒
     const island = makeAttendedIsland(repo);
     const executor = makeExecutor(island);
 
-    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
+    const resultPromise = executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION, runId: RUN_ID });
     const rowId = await waitForPark(repo);
     expect(await isStillPending(resultPromise)).toBe(true);
     expect(resolverState.execute).not.toHaveBeenCalled();
@@ -372,7 +372,7 @@ describe('④ preapprove：短语命中免卡，未命中出卡；deny 仍硬拒
     const island = makeAttendedIsland(makeMemoryRepo());
     const executor = makeExecutor(island);
 
-    const toolResult = await executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
+    const toolResult = await executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION, runId: RUN_ID });
     expect(toolResult.success).toBe(false);
     expect(toolResult.error).toContain('Blocked by your permission deny rule');
     expect(resolverState.execute).not.toHaveBeenCalled();
@@ -399,7 +399,7 @@ describe('r9：角色自己的记忆写入仍服从 nlRules', () => {
 
   it('无用户规则时确实命中 role-own-memory 自动放行（回归用例正对照）', async () => {
     const { repo, executor } = prepare();
-    const result = await executor.execute('MemoryWrite', args, { sessionId: SESSION, agentRole: roleId });
+    const result = await executor.execute('MemoryWrite', args, { sessionId: SESSION, runId: RUN_ID, agentRole: roleId });
     expect(result.success).toBe(true);
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
     expect(repo.rows.size).toBe(0);
@@ -409,7 +409,7 @@ describe('r9：角色自己的记忆写入仍服从 nlRules', () => {
   it('deny 在 own-memory 放行块之前硬拒', async () => {
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'deny', rule: 'MemoryWrite', roleId }] });
     const { repo, executor } = prepare();
-    const result = await executor.execute('MemoryWrite', args, { sessionId: SESSION, agentRole: roleId });
+    const result = await executor.execute('MemoryWrite', args, { sessionId: SESSION, runId: RUN_ID, agentRole: roleId });
     expect(result.success).toBe(false);
     expect(result.error).toContain('Blocked by your permission rule');
     expect(resolverState.execute).not.toHaveBeenCalled();
@@ -420,7 +420,7 @@ describe('r9：角色自己的记忆写入仍服从 nlRules', () => {
   it.each(['handback', 'ask'] as const)('%s：角色记忆写入停车且不执行，不被 own-memory 自动批准', async (behavior) => {
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior, rule: 'MemoryWrite', roleId }] });
     const { repo, island, executor } = prepare();
-    const resultPromise = executor.execute('MemoryWrite', args, { sessionId: SESSION, agentRole: roleId });
+    const resultPromise = executor.execute('MemoryWrite', args, { sessionId: SESSION, runId: RUN_ID, agentRole: roleId });
     // 等到执行完成或停车之一，故意回退自动放行时直接断言执行副作用，而非等超时。
     await vi.waitFor(() => expect(repo.rows.size + resolverState.execute.mock.calls.length).toBeGreaterThan(0));
     try {

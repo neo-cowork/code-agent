@@ -862,6 +862,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           newFileGrantSupported: getSandboxManager().supportsNewFileWriteGrant(),
           workingDirectory,
           policyEnforcer: ctx.policyEnforcer as PolicyEnforcer | null | undefined,
+          sessionId: ctx.sessionId, runId: ctx.runId,
         };
         // 文件门优先：文件拒绝今天看到哪张卡一个字不改；文件不合格再看目录子树（N-SANDBOX-ESCALATE-DIR）
         const offeredFilePath = shouldOfferEscalation(eligibility);
