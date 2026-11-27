@@ -232,9 +232,14 @@ export const ProjectCollaborationDetailPane: React.FC<ProjectCollaborationDetail
     });
   };
 
-  // ③「接着做」：复用续接 chip 链路（setContinuationTarget → ChatInput chip → 同卡续接），跳到主入口会话
+  // ③「接着做」：先记下这张卡和它的主会话，再打开那个会话。清目标的监听只在会话 id 变化时动手，
+  // 不会把刚写上、还没切过去的目标清掉。
   const handleFollowUpInChat = () => {
-    useNeoWorkCardStore.getState().setContinuationTarget({ workCardId: workCard.id, title: workCard.title });
+    useNeoWorkCardStore.getState().setContinuationTarget({
+      workCardId: workCard.id,
+      title: workCard.title,
+      conversationId: primaryConversationId,
+    });
     onOpenConversation?.(primaryConversationId);
   };
 

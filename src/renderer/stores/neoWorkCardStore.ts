@@ -35,9 +35,9 @@ interface NeoWorkCardState {
   createAndRun: (input: CreateNeoWorkCardDraftRequest) => Promise<CreateNeoWorkCardDraftResult>;
   /** @neo 跨会话续接：既有 topic 追加一轮（ADR-035）。 */
   continueAndRun: (input: ContinueNeoWorkCardRequest) => Promise<ContinueNeoWorkCardResult>;
-  /** @neo 续接 chip：从 mention 下拉选中既有 topic 后挂在 composer 上（ADR-035 D1）。 */
-  continuationTarget: { workCardId: string; title: string } | null;
-  setContinuationTarget: (target: { workCardId: string; title: string } | null) => void;
+  /** 「接着做」挂在 composer 上的续接目标。conversationId 是这条续接生效的会话。 */
+  continuationTarget: NeoWorkCardContinuationTarget | null;
+  setContinuationTarget: (target: NeoWorkCardContinuationTarget | null) => void;
   updateDraftRevision: (input: UpdateNeoWorkCardDraftRevisionRequest) => Promise<NeoWorkCardDetail>;
   approve: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
   reject: (input: NeoWorkCardReviewActionInput) => Promise<NeoWorkCardDetail>;
@@ -50,6 +50,13 @@ interface NeoWorkCardState {
   approveMemoryCandidate: (input: NeoMemoryCandidateDecisionInput) => Promise<NeoMemoryCandidate>;
   rejectMemoryCandidate: (input: NeoMemoryCandidateDecisionInput) => Promise<NeoMemoryCandidate>;
   upsertDetail: (detail: NeoWorkCardDetail) => void;
+}
+
+/** Composer 续接标记：只在 conversationId 对应当前会话时，下一条发送追加到这张卡。 */
+export interface NeoWorkCardContinuationTarget {
+  workCardId: string;
+  title: string;
+  conversationId: string;
 }
 
 export const NEO_WORK_CARD_LIVE_REFRESH_MS = 1500;

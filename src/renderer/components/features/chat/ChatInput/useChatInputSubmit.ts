@@ -19,6 +19,7 @@ import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
+import { useNeoWorkCardStore } from '../../../../stores/neoWorkCardStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
@@ -767,6 +768,17 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         if (!opts?.steer && !opts?.toBackground) {
           const routing = routeEnvelopeToQuestionCard(currentSessionId, stamped, t.userQuestion.composerHint);
           if (routing) return routing;
+        }
+        const continuation = useNeoWorkCardStore.getState().continuationTarget;
+        if (
+          currentSessionId && continuation?.conversationId === currentSessionId
+          && (stamped.sessionId ?? currentSessionId) === currentSessionId && !opts?.toBackground
+        ) {
+          if (isProcessing) {
+            toast.error(t.neoContinuation.waitForReply);
+            return false;
+          }
+          return settleSendWithinTimeout(onSend(stamped));
         }
         if (isProcessing && !neverQueueToSession && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;

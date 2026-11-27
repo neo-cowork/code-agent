@@ -117,6 +117,7 @@ import {
 import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
+import { useNeoWorkCardContinuationSend } from './features/chat/useNeoWorkCardContinuationSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
 import { DurableParkedNotice, DurableResumeNotice, isParkedForUser, shouldShowParkedNotice, useParkedNoticeYields, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
@@ -682,6 +683,7 @@ export const ChatView: React.FC = () => {
     handleSendEnvelopeWithImportResume,
     getVisibleMessagesForSend,
   );
+  const sendWithWorkCardContinuation = useNeoWorkCardContinuationSend(handleSendEnvelopeWithCronFollowUp);
 
   useAssistantFeedbackEvents(setPendingAssistantFeedback);
 
@@ -1067,7 +1069,7 @@ export const ChatView: React.FC = () => {
               迁入聊天列后参与布局，几何上不可能再压 composer。 */}
           <BackgroundSessionPanel />
 
-          <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithCronFollowUp} onSteer={handleSteerEnvelope}
+          <ChatInput ref={chatInputRef} onSend={sendWithWorkCardContinuation} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}

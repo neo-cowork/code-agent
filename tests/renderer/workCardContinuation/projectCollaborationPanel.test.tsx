@@ -745,7 +745,11 @@ describe('topic 元数据展示（S1）', () => {
     fireEvent.click(screen.getByTestId('neo-topic-row-a'));
     fireEvent.click(screen.getByTestId('neo-topic-detail-followup-chat'));
 
-    expect(useNeoWorkCardStore.getState().continuationTarget).toEqual({ workCardId: 'a', title: 'topic a' });
+    expect(useNeoWorkCardStore.getState().continuationTarget).toEqual({
+      workCardId: 'a',
+      title: 'topic a',
+      conversationId: 'session-2',
+    });
     // ② 主会话规则：主入口 = 最近一轮落点会话（session-2），不是源会话
     expect(calls).toEqual(['session-2']);
   });

@@ -165,6 +165,66 @@ describe('continueAndRunNeoWorkCard', () => {
     })).toThrowError(/还在跑/);
   });
 
+  it.each([
+    { scenario: 'persisted reply', reply: '已补上结论。', nextTurn: false, expectedStatus: 'in_result_review' },
+    { scenario: 'empty reply', reply: ' ', nextTurn: false, expectedStatus: 'failed' },
+    { scenario: 'background-only reply', reply: '后台任务已完成。', nextTurn: false, meta: true, expectedStatus: 'failed' },
+    { scenario: 'reply to a later user message', reply: '另一个请求完成了。', nextTurn: true, expectedStatus: 'failed' },
+  ])('ends a same-conversation continuation in $expectedStatus for $scenario', async ({
+    reply,
+    meta,
+    nextTurn,
+    expectedStatus,
+  }) => {
+    const workCardId = createCompletedCard();
+    const previous: Message[] = [
+      { id: 'turn_1', role: 'user', content: '整理竞品报告', timestamp: 1 },
+      { id: 'reply_1', role: 'assistant', content: '已整理。', timestamp: 2 },
+    ];
+    const anchor: Message = { id: 'turn_round2', role: 'user', content: '补上结论', timestamp: 3 };
+    const liveMessages: Message[] = [
+      ...previous,
+      anchor,
+      { id: 'reply_tool_call', role: 'assistant', content: '', timestamp: 4 },
+      { id: 'reply_tool_result', role: 'tool', content: '已写入文件', timestamp: 5 },
+    ];
+    const taskManager = {
+      ...stubTaskManager(),
+      getOrCreateCurrentOrchestrator: () => ({ getMessages: () => liveMessages }),
+      startTask: vi.fn<NeoTagTaskManager['startTask']>(async () => {
+        const persisted = [...liveMessages];
+        if (nextTurn) {
+          persisted.push({ id: 'turn_3', role: 'user', content: '另一个请求', timestamp: 6 });
+        }
+        persisted.push({ id: 'reply_2', role: 'assistant', content: reply, timestamp: 7, isMeta: meta });
+        sessionsById.set('conv_A', {
+          messages: persisted,
+        });
+      }),
+    };
+
+    const continued = continueAndRunNeoWorkCard({
+      workCardId,
+      conversationId: 'conv_A',
+      turnId: anchor.id,
+      userText: anchor.content,
+      requesterUserId: 'user_1',
+      taskManager,
+      service,
+      now: () => NOW + 10,
+    });
+    const { runId } = await continued.run;
+
+    const detail = service.get(workCardId);
+    expect(detail?.workCard.status).toBe(expectedStatus);
+    expect(detail?.deltas.at(-1)).toMatchObject({ runId, conversationId: 'conv_A' });
+    if (expectedStatus === 'failed') {
+      expect(detail?.workCard.blockedReason).toContain('没有生成最终回复');
+    } else {
+      expect(detail?.workCard.blockedReason).toBeFalsy();
+    }
+  });
+
   it('persists the runtime error as the failed work card blocked reason', async () => {
     const created = service.createDraft(draft(), NOW);
     service.approveRevision({

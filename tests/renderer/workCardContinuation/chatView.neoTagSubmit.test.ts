@@ -189,7 +189,7 @@ describe('Neo tag ChatView submit boundary', () => {
 });
 
 describe('Neo tag continuation submit (ADR-035)', () => {
-  const target = { workCardId: 'nwc_1', title: '整理竞品报告' };
+  const target = { workCardId: 'nwc_1', title: '整理竞品报告', conversationId: 'conv_B' };
   const fakeResult = () => ({
     detail: makeDetail({
       projectId: 'proj_1',

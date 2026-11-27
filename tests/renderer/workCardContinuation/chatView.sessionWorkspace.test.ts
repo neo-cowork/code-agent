@@ -81,6 +81,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => (
   useSessionStore: Object.assign(
     (selector?: (state: typeof sessionState) => unknown) => selector ? selector(sessionState) : sessionState,
     {
+      subscribe: vi.fn(() => () => {}),
       getState: () => ({
         ...sessionState,
         clearPendingUserQuestion: (request: { id: string; sessionId?: string }) => {
@@ -144,15 +145,19 @@ vi.mock('../../../src/renderer/stores/swarmStore', () => ({
     )),
 }));
 
-vi.mock('../../../src/renderer/stores/neoWorkCardStore', () => ({
-  ensureNeoWorkCardLiveUpdates: vi.fn(),
-  isNeoWorkCardAwaitingRuntimeTerminal: () => false,
-  NEO_WORK_CARD_LIVE_REFRESH_MS: 1_000,
-  selectNeoWorkCardDetailsForConversation: () => [],
-  useNeoWorkCardStore: (selector: (state: { loadForConversation: () => Promise<void> }) => unknown) => (
-    selector({ loadForConversation: vi.fn(async () => {}) })
-  ),
-}));
+vi.mock('../../../src/renderer/stores/neoWorkCardStore', () => {
+  const state = { loadForConversation: vi.fn(async () => {}), continuationTarget: null };
+  return {
+    ensureNeoWorkCardLiveUpdates: vi.fn(),
+    isNeoWorkCardAwaitingRuntimeTerminal: () => false,
+    NEO_WORK_CARD_LIVE_REFRESH_MS: 1_000,
+    selectNeoWorkCardDetailsForConversation: () => [],
+    useNeoWorkCardStore: Object.assign(
+      (selector: (value: typeof state) => unknown) => selector(state),
+      { getState: () => state },
+    ),
+  };
+});
 
 vi.mock('../../../src/renderer/stores/localBridgeStore', () => ({
   useLocalBridgeStore: () => ({

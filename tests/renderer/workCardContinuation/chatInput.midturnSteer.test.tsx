@@ -30,6 +30,8 @@ import {
 } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
 import { submitSteerEnvelope } from '../../../src/renderer/components/features/chat/chatViewSteer';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
+import { toast } from '../../../src/renderer/hooks/useToast';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { markOptimisticUserSendFailed } from '../../../src/renderer/utils/optimisticUserSend';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
@@ -196,6 +198,28 @@ describe('同 id 入队回执状态机', () => {
 });
 
 describe('mid-turn composer submission', () => {
+  it.each([false, true])('keeps a continuation draft during an active turn (steer=%s)', async (steer) => {
+    const restoreToast = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-1');
+    const params = makeParams();
+    const target = { workCardId: 'card-1', title: '竞品摘要', conversationId: 'session-running' };
+    useNeoWorkCardStore.getState().setContinuationTarget(target);
+    const { result } = renderHook(() => useChatInputSubmit(params));
+    try {
+      await act(async () => {
+        await result.current.handleSubmit(undefined, { steer });
+      });
+      expect(restoreToast).toHaveBeenCalledWith('等当前回复结束后，再发送这条续接消息。');
+      expect(params.setValue).toHaveBeenLastCalledWith(params.value);
+      expect(params.onSend).not.toHaveBeenCalled();
+      expect(params.onSteer).not.toHaveBeenCalled();
+      expect(domainInvoke).not.toHaveBeenCalled();
+      expect(useNeoWorkCardStore.getState().continuationTarget).toBe(target);
+    } finally {
+      useNeoWorkCardStore.getState().setContinuationTarget(null);
+      restoreToast.mockRestore();
+    }
+  });
+
   it.each([
     ['Cmd+Enter', { metaKey: true }],
     ['Ctrl+Enter', { ctrlKey: true }],

@@ -24,6 +24,7 @@ import {
 import { UserQuestionCard } from '../../../src/renderer/components/UserQuestionCard';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useNeoWorkCardStore } from '../../../src/renderer/stores/neoWorkCardStore';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const SESSION = 'session-q';
@@ -92,6 +93,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useNeoWorkCardStore.getState().setContinuationTarget(null);
   vi.restoreAllMocks();
 });
 
@@ -123,6 +125,19 @@ describe('composer 文字 × 提问卡片', () => {
     await submit(makeParams({ value: '都要' }));
     expect(responseCalls()[0]?.[1]).toEqual({ requestId: 'q-1', answers: { 范围: ['都要'] } });
     expect(enqueueCalls()).toHaveLength(0);
+  });
+
+  it('续接标记仍在时，先提交待答卡片的答案并保留续接目标', async () => {
+    const target = { workCardId: 'card-1', title: '竞品摘要', conversationId: SESSION };
+    useNeoWorkCardStore.getState().setContinuationTarget(target);
+    useSessionStore.getState().addPendingUserQuestion(request());
+    const params = makeParams();
+    await submit(params);
+
+    expect(responseCalls()).toEqual([[IPC_CHANNELS.USER_QUESTION_RESPONSE, { requestId: 'q-1', answers: { 时间: '明晚' } }]]);
+    expect(enqueueCalls()).toHaveLength(0);
+    expect(params.onSend).not.toHaveBeenCalled();
+    expect(useNeoWorkCardStore.getState().continuationTarget).toBe(target);
   });
 
   it('先在 composer 发文字、再点选项：只有一次回答，不产生新消息', async () => {

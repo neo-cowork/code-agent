@@ -6,6 +6,7 @@ import type {
   CreateNeoWorkCardDraftRequest,
   CreateNeoWorkCardDraftResult,
 } from '@shared/contract/tag';
+import type { NeoWorkCardContinuationTarget } from '../../../stores/neoWorkCardStore';
 import { parseLeadingNeoTagInvocation } from './ChatInput/neoMentionRouting';
 
 export interface BuildNeoWorkCardDraftRequestParams {
@@ -132,7 +133,7 @@ export async function submitNeoTagDraft(
 export interface SubmitNeoTagContinuationParams {
   envelope: ConversationEnvelope;
   conversationId: string;
-  continuationTarget: { workCardId: string; title: string };
+  continuationTarget: NeoWorkCardContinuationTarget;
   requesterUserId: string;
   runContinuation: (input: ContinueNeoWorkCardRequest) => Promise<ContinueNeoWorkCardResult>;
 }
