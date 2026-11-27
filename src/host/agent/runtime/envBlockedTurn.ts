@@ -2,7 +2,6 @@ import { OFFLINE_RESUME_TIMEOUT_MS } from '../../../shared/constants/envResume';
 import { classifyError } from '../../model/errorClassifier';
 import { resolveProviderBaseUrl } from '../../model/providers/providerResolution';
 import { probeOfflineNetwork } from '../../permissions/envAssist/probes/offlineProbe';
-import { publishEnvAssistNotice } from '../../permissions/envAssist/toolNotice';
 import type { AgentEvent, ModelConfig, ToolCall } from '../../../shared/contract';
 import type { RunEnvelope } from '../../../shared/contract/durableRun';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
@@ -53,6 +52,7 @@ export async function settleOfflineInference(error: unknown, input: {
   input.markCancelled();
   logger.info('Network unavailable; parking model inference', { runId, sessionId });
   try {
+    const { publishEnvAssistNotice } = await import('../../permissions/envAssist/toolNotice');
     await publishEnvAssistNotice({
       id: `${runId}|offline|network`, sessionId, runId, class: 'offline', phase: 'fixing',
       sentenceKey: 'env.offline.waiting', resume: { mode: 'auto', parkId: runId, deadlineAt }, updatedAt: now,
