@@ -157,12 +157,13 @@ async function setup(): Promise<{ park: () => Promise<Array<{ type?: string; dat
   vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
   vi.stubEnv('CODE_AGENT_LIBREOFFICE_MANAGED_ONLY', '1');
   vi.stubEnv('CODE_AGENT_NO_RUNTIME_AUTOINSTALL', '0');
-  Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
   fs.writeFileSync(path.join(workspace, 'deck.pptx'), 'PK\u0003\u0004 heresian deck');
   // The real installer verifies the image against the pinned sha256: pin it to this hermetic image for the test only.
   build.sha256 = crypto.createHash('sha256').update('fake LibreOffice disk image (hermetic test)').digest('hex');
 
+  // Open the database before the platform is stubbed: better-sqlite3 picks its native binding by process.platform.
   db = new Database(':memory:');
+  Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
   const fixtureLogger = createLogger('EnvResumeLibreOfficeFixture');
   applySchema(db, fixtureLogger); applySessionsMigrations(db, fixtureLogger); applyIndexes(db);
   sessions = new SessionRepository(db);
