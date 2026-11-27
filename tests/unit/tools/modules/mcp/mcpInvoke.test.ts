@@ -58,6 +58,7 @@ interface MockClient {
   isConnected: ReturnType<typeof vi.fn>;
   ensureConnected: ReturnType<typeof vi.fn>;
   getStatus: ReturnType<typeof vi.fn>;
+  getServerState: ReturnType<typeof vi.fn>;
   callTool: ReturnType<typeof vi.fn>;
   // Sentinels: must NOT be called by the native tool on abort
   disconnect: ReturnType<typeof vi.fn>;
@@ -75,6 +76,7 @@ function makeMockClient(overrides: Partial<MockClient> = {}): MockClient {
       resourceCount: 0,
       promptCount: 0,
     }),
+    getServerState: vi.fn().mockReturnValue(undefined),
     callTool: vi.fn(),
     disconnect: vi.fn(),
     removeServer: vi.fn(),
