@@ -76,6 +76,7 @@ import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessi
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
+import { recordUnfinishedRmSettlementTargets } from '../../host/tools/modules/shell/unfinishedRmSettlementTargets';
 import { hasInFlightBackgroundChildren, settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
@@ -1580,6 +1581,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
+        if (event.type === 'tool_call_end') recordUnfinishedRmSettlementTargets(sessionId, runContext.runId, messages, event.data, runContext.cwd);
         // 终态（完成/取消/失败）只由本路由收尾处发一次：引擎失败时 runFinalizer 先发 error 再抛出，
         // 这里再转一遍手机就收到两条 error ⇒ 两条「任务失败」推送（FB-193，爸 build 51 真机）。
         if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled' && event.type !== 'error') {

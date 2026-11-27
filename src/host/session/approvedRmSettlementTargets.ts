@@ -9,6 +9,7 @@ export function recordApprovedRmSettlementTargets(
   sessionId: string | undefined,
   runId: string | undefined,
   paths: readonly string[],
+  source: 'approval' | 'unfinished_rm' = 'approval',
 ): void {
   if (!sessionId || paths.length === 0) return;
   const runs = targetsBySession.get(sessionId) ?? new Map<string | undefined, Set<string>>();
@@ -25,7 +26,7 @@ export function recordApprovedRmSettlementTargets(
   if (targets.size === 0) return;
   runs.set(runId, targets);
   targetsBySession.set(sessionId, runs);
-  logger.info('Approved rm settlement targets recorded', { sessionId, runId, targetCount: targets.size });
+  logger.info('Approved rm settlement targets recorded', { sessionId, runId, targetCount: targets.size, source });
 }
 
 export function hasApprovedRmSettlementTargets(sessionId: string, runId?: string): boolean {
