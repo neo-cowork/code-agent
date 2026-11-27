@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 网页版存不了密钥：「还没有密钥？先在这里填」引导条不能出现；桌面版保持原样。
+// Web shows the desktop setup path without offering a key edit it cannot save.
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -22,7 +22,7 @@ beforeEach(() => { webMode.value = true; });
 afterEach(() => { cleanup(); useAppStore.setState({ language: 'zh' }); });
 
 describe.each([['zh', zh], ['en', en]] as const)('ModelKeyGuide web mode (%s)', (language, locale) => {
-  const label = locale.settings.model.header.noKeyGuide;
+  const label = locale.modelSetup.addModel;
   const view = () => {
     useAppStore.setState({ language });
     return render(<ModelKeyGuide settings={settings} defaultProvider="openai" />);
@@ -30,7 +30,14 @@ describe.each([['zh', zh], ['en', en]] as const)('ModelKeyGuide web mode (%s)', 
 
   it('web: 不出现引导按钮', () => {
     const { container } = view();
-    expect(container.textContent).not.toContain(label);
+    expect(container.querySelector('[data-model-key-guide]')?.textContent).toBe(locale.modelSetup.noModelWeb);
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  it('does not show setup guidance when a model is configured', () => {
+    useAppStore.setState({ language });
+    const ready = { models: { default: 'openai', providers: { openai: { enabled: true, apiKeyConfigured: true } } } } as unknown as AppSettings;
+    const { container } = render(<ModelKeyGuide settings={ready} defaultProvider="openai" />);
     expect(container.querySelector('[data-model-key-guide]')).toBeNull();
   });
 
