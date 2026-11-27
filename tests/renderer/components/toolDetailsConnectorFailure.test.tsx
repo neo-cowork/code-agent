@@ -171,7 +171,7 @@ describe('Connector failure cards (real executeMail / executeRemindersCreate sha
     if (res.ok) return;
     expect(res.code).toBe('not_found');
 
-    const { toolCall, traceNode } = fromHostResult(
+    const { traceNode } = fromHostResult(
       'tc-mail-not-found',
       'mail',
       { action: 'list_messages', mailbox: 'Nope', limit: 3 },
