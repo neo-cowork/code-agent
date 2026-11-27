@@ -58,7 +58,10 @@ describe('tool cards show the user message produced by tool execution', () => {
     }
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
 
   it('shows only the plain sentence for a denied read of another slot’s memory', async () => {
     const home = mkdtempSync(path.join(os.tmpdir(), 'neo-slot-user-message-'));
@@ -117,6 +120,7 @@ describe('tool cards show the user message produced by tool execution', () => {
   });
 
   it('shows one reconnect sentence for a Reminders read with the connector off', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
     const call = { id: 'reminders', name: 'reminders', arguments: { action: 'list_reminders' } };
     const result = await getToolResolver().execute(call.name, call.arguments, {
       workingDirectory: os.tmpdir(),
