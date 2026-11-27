@@ -57,6 +57,17 @@ const fiveLogs = rmRequest('delete-five', 'rm -rf a.log b.log c.log d.log e.log'
 const mixedWildcard = rmRequest('delete-mixed', 'rm -rf a.log *.log', { affectedPath: '/workspace/logs/a.log' });
 const singleFile = rmRequest('delete-single', 'rm -rf a.log', { affectedPath: '/workspace/logs/a.log', affectedFileCount: 1 });
 
+// 真跑实录的形状：不带 -rf 的 rm 没有删除旗标，宿主不盘点（无 affectedPath / affectedFileCount）。
+const plainRmFiveLogs: PermissionRequest = {
+  id: 'delete-plain-five',
+  sessionId: 'request-session',
+  tool: 'Bash',
+  type: 'command',
+  details: { command: 'rm -v old-logs/a.log old-logs/b.log old-logs/c.log old-logs/d.log old-logs/e.log' },
+  boundary: { id: 'command.shell' },
+  timestamp: 1,
+};
+
 function consequenceOf(request: PermissionRequest, language: 'zh' | 'en'): string | null {
   i18nState.language = language;
   render(<PermissionCard requestOverride={request} sessionIdOverride="session-current" />);
@@ -74,6 +85,13 @@ describe('PermissionCard delete consequence names', () => {
     ['en', 'Permanently deletes a.log, b.log, c.log and 2 more (5 files) without using Trash.'],
   ] as const)('%s: 5 个确切目标点名前 3 个并写出总数', (language, expected) => {
     expect(consequenceOf(fiveLogs, language)).toBe(expected);
+  });
+
+  it.each([
+    ['zh', '将永久删除 old-logs/a.log、old-logs/b.log、old-logs/c.log 等 5 个（约 5 个文件），不进回收站。'],
+    ['en', 'Permanently deletes old-logs/a.log, old-logs/b.log, old-logs/c.log and 2 more (5 files) without using Trash.'],
+  ] as const)('%s: 不带 -rf 的 5 目标 rm 也在卡面写后果行', (language, expected) => {
+    expect(consequenceOf(plainRmFiveLogs, language)).toBe(expected);
   });
 
   it.each([

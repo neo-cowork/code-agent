@@ -586,6 +586,33 @@ describe('deletion consequence names every target of a multi-target rm', () => {
     expect(permissionConsequence(request, en, 'en')).toBe('Permanently deletes d1, d2, d3 and 2 more (40 files) without using Trash.');
   });
 
+  // 真跑实录：模型删 5 个日志发的是不带 -rf 的 `rm -v …`，宿主不打删除旗标（无
+  // commandSecurityFlags、无 affectedPath）。后果行照样点名，否则卡面一句后果都没有。
+  it.each([
+    ['rm -v old-logs/a.log old-logs/b.log old-logs/c.log old-logs/d.log old-logs/e.log',
+      '将永久删除 old-logs/a.log、old-logs/b.log、old-logs/c.log 等 5 个（约 5 个文件），不进回收站。',
+      'Permanently deletes old-logs/a.log, old-logs/b.log, old-logs/c.log and 2 more (5 files) without using Trash.'],
+    ['cd old-logs && rm a.log b.log', '将永久删除 a.log、b.log（约 2 个文件），不进回收站。', 'Permanently deletes a.log, b.log (2 files) without using Trash.'],
+    ['rm a.log *.log', '将永久删除多个文件，不进回收站。', 'Permanently deletes multiple files without using Trash.'],
+  ])('没有删除旗标的多目标 %s 也写后果行（zh + en）', (command, zhCopy, enCopy) => {
+    const request: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command } };
+    expect(permissionConsequence(request, zh)).toBe(zhCopy);
+    expect(permissionConsequence(request, en, 'en')).toBe(enCopy);
+  });
+
+  it.each([
+    ['rm a.log'],
+    ['rm -v ./a.log'],
+    ['rm *.log'],
+    ['git rm a.log b.log'],
+    ['docker rm web-1 web-2'],
+    ['ls a.log b.log'],
+  ])('没有删除旗标的 %s 与 main 一致：不写后果行', (command) => {
+    const request: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command } };
+    expect(permissionConsequence(request, zh)).toBeUndefined();
+    expect(permissionConsequence(request, en, 'en')).toBeUndefined();
+  });
+
   // 反向变异门：名字选择退回 targets[0]（或宿主 affectedPath）就会只剩 a.log 配「3 个文件」。
   it.each([
     ['zh', zh, '、'],

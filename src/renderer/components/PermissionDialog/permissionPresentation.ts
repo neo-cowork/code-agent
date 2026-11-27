@@ -248,9 +248,14 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
-  if (deletion) {
+  // 不带 -rf 的多目标 rm（模型最常发的 `rm a.log b.log c.log`）宿主不打删除旗标，
+  // isDeletionRequest 认不出，卡面曾一句后果都没有；多目标后果句对它同样成立。只放宽
+  // 这一句：危险样式与默认拒绝仍由 isDeletionRequest 决定，单目标 rm 保持原样。
+  if (deletion || request.type === 'command' || request.type === 'dangerous_command') {
     const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
     if (multiTarget) return multiTarget;
+  }
+  if (deletion) {
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', deletionCountText(request, parsedRmTargets, t));
