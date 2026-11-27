@@ -330,6 +330,7 @@ function LiveDecisionSlot({
       aria-label={t.decisionCard.pendingLabel}
       className="w-full shrink-0 chat-col-pad pb-2"
       data-testid="decision-slot"
+      data-permission-request-id={current?.request.id}
     >
       {collapsed && (
         <div className="mx-auto flex max-w-3xl justify-end">
@@ -355,6 +356,7 @@ function LiveDecisionSlot({
             </div>
           )}
           <PermissionCard
+            key={current.request.id}
             requestOverride={current.request}
             sessionIdOverride={current.sessionId}
             remainingCount={decisionCount - 1}
