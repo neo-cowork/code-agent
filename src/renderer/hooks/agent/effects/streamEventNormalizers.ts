@@ -667,6 +667,7 @@ export function normalizeUserMessagePayload(data: unknown): UserMessagePayload |
     id,
     content,
     ...(getNumberField(data, 'timestamp') !== undefined ? { timestamp: getNumberField(data, 'timestamp') } : {}),
+    ...(typeof data.source === 'string' && ['user', 'skill', 'system', 'goal', 'model', 'automation'].includes(data.source) ? { source: data.source as UserMessagePayload['source'] } : {}),
     ...(Array.isArray(data.attachments) ? { attachments: data.attachments as UserMessagePayload['attachments'] } : {}),
     ...(isRecord(data.metadata) ? { metadata: data.metadata as UserMessagePayload['metadata'] } : {}),
   };
