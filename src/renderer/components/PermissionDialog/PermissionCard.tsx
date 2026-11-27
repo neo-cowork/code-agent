@@ -600,6 +600,7 @@ export function PermissionCard({
     : appGrantCard
       ? appOptions
       : options;
+  const secondaryOptions = quietFace ? options.filter((option) => option.id === 'run' || option.id === '24h') : [];
 
   // 已决请求不再由 PermissionCard 渲染；结果归属到对应工具步骤旁的一行存证。
   if (settled) return null;
@@ -706,8 +707,8 @@ export function PermissionCard({
           ) : null}
           {(request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write') && <p className="text-xs text-zinc-400">{p.workspaceOutside}</p>}
           <RequestDetails request={request} hideConsequence={Boolean(faceConsequence)} />
-          {quietFace && <div className="space-y-2" data-testid="permission-secondary-choices">
-            {options.filter((option) => option.id === 'run' || option.id === '24h').map((option) => (
+          {secondaryOptions.length > 0 && <div className="space-y-2" data-testid="permission-secondary-choices">
+            {secondaryOptions.map((option) => (
               <Button key={option.id} size="sm" variant="ghost"
                 className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-lg border border-zinc-700 p-2.5 text-left hover:border-zinc-600"
                 onClick={() => { void handleApproval(option.id as ApprovalLevel); }}>
@@ -715,10 +716,8 @@ export function PermissionCard({
                   <span className="block text-sm font-medium text-zinc-200">{option.label}</span>
                   <span className="mt-0.5 block text-xs font-normal text-zinc-400">{option.description}</span>
                 </span>
-                <kbd className="mt-0.5 shrink-0 rounded bg-zinc-700 px-1 py-0.5 font-mono text-2xs text-zinc-400">{option.shortcut}</kbd>
               </Button>
             ))}
-            <p className="text-xs text-zinc-400">{p.keyboardHints}</p>
           </div>}
         </>
       }
