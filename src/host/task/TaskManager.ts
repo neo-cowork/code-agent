@@ -51,7 +51,7 @@ import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
 import { describeFailedCommand, getTaskDeliveryFailure } from './taskDeliveryVerdict';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
-import { recoverDelegatedUserRuleContext } from '../services/commandCenter/sessionCommandTaskRestartRecovery';
+import { recoverDelegatedUserRuleContext } from '../services/commandCenter/sessionCommandTaskMarker';
 import {
   DEFAULT_CONFIG,
   SESSION_STOP_REQUESTED_EVENT,

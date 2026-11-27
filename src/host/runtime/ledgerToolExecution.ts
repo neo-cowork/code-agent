@@ -32,7 +32,7 @@ export async function executeRecoveredLedgerTool(
     turnId: input.toolCallId,
   });
   if (!input.runId) return execute();
-  const { recoverDelegatedUserRuleContext } = await import('../services/commandCenter/sessionCommandTaskRestartRecovery');
+  const { recoverDelegatedUserRuleContext } = await import('../services/commandCenter/sessionCommandTaskMarker');
   const context = recoverDelegatedUserRuleContext(input.sessionId, input.runId);
   if (!context) return execute();
   const { withRecoveredRunUserRuleContext } = await import('../permissions/runPolicySnapshot');

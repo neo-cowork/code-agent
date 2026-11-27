@@ -2691,7 +2691,6 @@ describe('K2 delegated Bash permission context', () => {
     getDenialRegistry().clearAll();
     const dispatch = vi.spyOn(getToolResolver(), 'execute').mockResolvedValue({ success: true, output: 'dispatched' });
     const workspace = await nodeFs.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'delegated-rule-'));
-    vi.stubEnv('CODE_AGENT_DATA_DIR', workspace);
     const workspaceScope = createWorkspaceScope('report-project', [
       { sourceId: 'report-files', path: workspace, role: 'primary', access: 'read_write' },
     ]);

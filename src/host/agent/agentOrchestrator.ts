@@ -963,7 +963,7 @@ export class AgentOrchestrator {
       // 规则只在这个角色上命中；preapprove 的触发短语在发起话里做逐字子串匹配。发起话只认
       // 用户原话（content），不是拼了系统上下文的 effectiveContent；按来源定值见 runInitiatingText。
       const delegatedContext = options?.delegatedUserRuleContext ?? (options?.resumeExistingDurableRun && sessionId
-        ? (await import('../services/commandCenter/sessionCommandTaskRestartRecovery')).recoverDelegatedUserRuleContext(sessionId, nativeRunId)
+        ? (await import('../services/commandCenter/sessionCommandTaskMarker')).recoverDelegatedUserRuleContext(sessionId, nativeRunId)
         : undefined);
       beginRunPolicy(nativeRunId, sessionId, delegatedContext ?? {
         roleId: routedRole?.id,

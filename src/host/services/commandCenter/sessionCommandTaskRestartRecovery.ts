@@ -10,7 +10,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Message } from '../../../shared/contract';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
-import { getUserConfigDir } from '../../config/configPaths';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -23,11 +22,11 @@ import type { SessionTaskResultStatusWordLocale } from '../../../shared/constant
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
 import { clampTaskResultCardSummary } from './taskResultHandback';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
+import { sessionCommandMarkerDir, sessionCommandMarkerPath } from './sessionCommandTaskMarker';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
 const SESSION_COMMAND_TASK_INTERRUPTED_REASON = 'session_command_task_interrupted_by_restart';
-const MARKER_DIR = 'session-command-running';
 
 interface RunningMarker {
   taskId: string;
@@ -54,34 +53,6 @@ interface RunningMarker {
 
 type ResultStatus = 'completed' | 'failed' | 'cancelled';
 
-function markerDir(): string {
-  return path.join(getUserConfigDir(), MARKER_DIR);
-}
-
-function markerPath(taskId: string): string {
-  return path.join(markerDir(), `${encodeURIComponent(taskId)}.json`);
-}
-
-/** Restore the role by the original task and session identity. Initiating text is memory-only. */
-export function recoverDelegatedUserRuleContext(sessionId: string, runId: string): { roleId?: string } | undefined {
-  try {
-    const task = getBackgroundTaskLedger().getTask(runId);
-    if (task?.kind === 'session_command_task' && task.sessionId === sessionId && task.runId === runId) {
-      const role = task.metadata?.permissionRoleId;
-      return typeof role === 'string' ? { roleId: role } : {};
-    }
-    const marker = JSON.parse(fs.readFileSync(markerPath(runId), 'utf8')) as RunningMarker;
-    if (marker.taskId === runId && marker.sessionId === sessionId) {
-      return typeof marker.permissionRoleId === 'string' ? { roleId: marker.permissionRoleId } : {};
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.warn('Delegated task permission context could not be restored', { runId, error: String(error) });
-    }
-  }
-  return undefined;
-}
-
 /** 任务进入 running 时调用；写失败只 warn，不影响任务本身。 */
 export function markSessionCommandTaskRunning(task: {
   id: string;
@@ -92,7 +63,7 @@ export function markSessionCommandTaskRunning(task: {
   permissionRoleId?: string;
 }): void {
   try {
-    fs.mkdirSync(markerDir(), { recursive: true });
+    fs.mkdirSync(sessionCommandMarkerDir(), { recursive: true });
     const marker: RunningMarker = {
       taskId: task.id,
       sessionId: task.sessionId,
@@ -102,7 +73,7 @@ export function markSessionCommandTaskRunning(task: {
       startedAt: Date.now(),
       permissionRoleId: task.permissionRoleId,
     };
-    fs.writeFileSync(markerPath(task.id), JSON.stringify(marker));
+    fs.writeFileSync(sessionCommandMarkerPath(task.id), JSON.stringify(marker));
   } catch (error) {
     logger.warn('Failed to write running marker; a restart mid-task will not be reported', {
       taskId: task.id,
@@ -113,7 +84,7 @@ export function markSessionCommandTaskRunning(task: {
 
 export function clearSessionCommandTaskMarker(taskId: string): void {
   try {
-    fs.rmSync(markerPath(taskId), { force: true });
+    fs.rmSync(sessionCommandMarkerPath(taskId), { force: true });
   } catch (error) {
     logger.warn('Failed to remove running marker', {
       taskId,
@@ -139,7 +110,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
   detail?: string;
 }): void {
   try {
-    fs.mkdirSync(markerDir(), { recursive: true });
+    fs.mkdirSync(sessionCommandMarkerDir(), { recursive: true });
     let base: RunningMarker = {
       taskId: task.id,
       sessionId: task.sessionId,
@@ -149,7 +120,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
       startedAt: task.createdAt,
     };
     try {
-      const existing = JSON.parse(fs.readFileSync(markerPath(task.id), 'utf8')) as RunningMarker;
+      const existing = JSON.parse(fs.readFileSync(sessionCommandMarkerPath(task.id), 'utf8')) as RunningMarker;
       if (existing?.taskId === task.id) base = existing;
     } catch {
       // 读不到旧标记（本不该发生）：用兜底形状，宁可带上终态也不能丢
@@ -164,7 +135,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
         settledAt: Date.now(),
       },
     };
-    fs.writeFileSync(markerPath(task.id), JSON.stringify(marker));
+    fs.writeFileSync(sessionCommandMarkerPath(task.id), JSON.stringify(marker));
   } catch (error) {
     logger.warn('Failed to stamp the running marker with the terminal outcome; a restart in the retry window would misread the task as interrupted', {
       taskId: task.id,
@@ -219,7 +190,7 @@ function resolveLocale(): 'zh' | 'en' {
 }
 
 function readMarkers(): Array<{ file: string; marker: RunningMarker }> {
-  const dir = markerDir();
+  const dir = sessionCommandMarkerDir();
   let files: string[];
   try {
     files = fs.readdirSync(dir).filter((name) => name.endsWith('.json'));
