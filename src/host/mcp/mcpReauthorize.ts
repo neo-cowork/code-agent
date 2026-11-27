@@ -39,3 +39,40 @@ export async function reauthorizeMcpServer(
   setMcpScopeUpgradeHint(serverIdentity, undefined);
   return { success: false, error: reconnected.error ?? 'authorization was not completed' };
 }
+
+/**
+ * Silent OAuth recovery: reconnect keeping existing client registration and refresh token,
+ * without opening a browser. Returns a distinguishable reason when skipped or failed.
+ */
+export async function silentReconnectMcpServer(
+  client: MCPClient,
+  serverName: string,
+): Promise<{ success: boolean; reason?: string; error?: string }> {
+  const state = client.getServerState(serverName);
+  if (!state?.config.enabled) return { success: false, reason: 'server_unavailable' };
+  if (!isHttpStreamableConfig(state.config) || state.config.auth !== 'oauth') {
+    return { success: false, reason: 'not_oauth' };
+  }
+  const serverIdentity = client.getServerIdentity(serverName);
+  if (!serverIdentity) return { success: false, reason: 'identity_unavailable' };
+  const tokens = new McpOAuthProvider({
+    serverIdentity,
+    serverName,
+    redirectUrl: () => 'http://127.0.0.1/oauth-management',
+    state: () => 'oauth-management',
+    onRedirectToAuthorization: () => {
+      throw new Error('silent recovery cannot start interactive authorization');
+    },
+  }).tokens();
+  if (!tokens?.refresh_token) {
+    const refreshRejected = typeof state.error === 'string' && /invalid[_ ]grant|refresh/i.test(state.error);
+    return { success: false, reason: refreshRejected ? 'refresh_failed' : 'no_refresh_token' };
+  }
+  try {
+    await client.disconnect(serverName);
+    await client.connect(state.config, undefined, { interactiveOAuth: false });
+    return client.isConnected(serverName) ? { success: true } : { success: false, reason: 'not_connected' };
+  } catch (error) {
+    return { success: false, reason: 'refresh_failed', error: error instanceof Error ? error.message : String(error) };
+  }
+}

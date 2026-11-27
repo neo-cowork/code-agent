@@ -8,6 +8,7 @@ import type {
 } from '../../../protocol/tools';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { executeTmeetCommand } from './tmeetToolCli';
+import { isCliNotLoggedInError } from '../../../connectors/cli/cliLoginError';
 import { tmeetMeetingCreateSchema as schema } from './tmeetMeetingCreate.schema';
 
 function requiredString(args: Record<string, unknown>, key: string): string {
@@ -140,12 +141,15 @@ async function executeTmeetMeetingCreate(
     };
   } catch (error) {
     const failure = `Tencent Meeting create failed: ${error instanceof Error ? error.message : String(error)}`;
+    const notLoggedIn = isCliNotLoggedInError('tmeet', error);
     return {
       ok: false,
       error: failure,
+      ...(notLoggedIn ? { code: 'cli_not_logged_in' } : {}),
       meta: {
         action: 'meeting.create',
         connector: 'tmeet',
+        ...(notLoggedIn ? { lostCode: 'cli_not_logged_in' } : {}),
         subject: args.subject,
         artifact: createFailedReceiptArtifact({
           sourceTool: schema.name,

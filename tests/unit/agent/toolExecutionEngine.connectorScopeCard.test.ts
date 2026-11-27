@@ -199,7 +199,7 @@ describe('buildConnectorToolFailureEvent helpUrl', () => {
   });
 });
 
-describe('MCP 401 → connector_required(lost_login)', () => {
+describe('MCP 401 → unified env_assist_notice (login_expired), no competing lost_login card', () => {
   const authFailure = (): ToolResult => ({
     toolCallId: '',
     success: false,
@@ -207,15 +207,11 @@ describe('MCP 401 → connector_required(lost_login)', () => {
     metadata: { mcpAuthorizationRequired: true, server: 'notion' },
   });
 
-  it('emits exactly one lost_login card per failing 401 tool call, after tool_call_end', async () => {
+  it('routes failing 401 tool call into env_assist_notice without emitting a competing connector_required(lost_login) card', async () => {
     const { ctx, engine } = makeEngine(vi.fn(async () => authFailure()));
     await engine.executeToolsWithHooks([{ id: 'c4', name: 'mcp__notion__read_page', arguments: {} } as ToolCall]);
-    const types = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls.map(([event]) => (event as { type: string }).type);
-    expect(connectorEvents(ctx)).toEqual([{
-      type: 'connector_required',
-      data: { connectors: [{ id: 'notion', source: 'selected', reason: 'lost_login', lostCode: 'mcp_oauth_authorization_required' }] },
-    }]);
-    expect(types.indexOf('connector_required')).toBeGreaterThan(types.lastIndexOf('tool_call_end') - 1);
+    expect(connectorEvents(ctx)).toEqual([]);
+    expect(buildConnectorToolFailureEvent(authFailure())).toBeNull();
   });
 
   it('insufficient_scope keeps its own card and a success never emits one', async () => {

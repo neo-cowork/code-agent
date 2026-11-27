@@ -6,6 +6,7 @@ import { classifyCuaFailure } from '../../mcp/cuaFailureStats';
 import { sandboxDeniedWritePath } from '../../tools/shell/sandboxFailureDiagnostics';
 import { parseCuaToolName } from '../cuaAppTarget';
 import type { CuaHelperPermissionState } from './cua/helperPermissionState';
+import { resolveLoginExpiredTarget } from './loginRecovery';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
 
 const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {
@@ -112,7 +113,18 @@ export function classifyEnvBlocker(input: {
     blocker = 'perm_files';
     target = 'files';
     pane = 'filesAndFolders';
-  } else return null;
+  } else {
+    const login = resolveLoginExpiredTarget(input.toolName, result.code ?? metadata.code, metadata);
+    if (!login) return null;
+    return {
+      id: `${input.runId}|login_expired|${login.target}`,
+      sessionId: input.sessionId, runId: input.runId, class: 'login_expired',
+      target: { id: login.target, labelKey: `env.target.${login.target}` },
+      phase: 'needs_user', sentenceKey: 'env.sentence.loginExpired',
+      action: { kind: 'reauthorize', labelKey: 'env.allow.loginExpired', payload: { serverName: login.target } },
+      resume: { mode: 'auto' }, updatedAt: Date.now(),
+    };
+  }
   return {
     id: `${input.runId}|${blocker}|${target}`,
     sessionId: input.sessionId, runId: input.runId, class: blocker,

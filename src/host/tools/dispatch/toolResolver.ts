@@ -1,6 +1,8 @@
 import { withConnectorReconnectGuidance } from './connectorReconnectGuidance';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
+import { resolveLoginExpiredTarget, trySilentLoginRecovery } from '../../permissions/envAssist/loginRecovery';
 import { envBlockForToolFailure } from '../../agent/runtime/envBlockedTurn';
+import { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY } from '../../mcp/mcpErrors';
 import { getPermissionModeManager } from '../../permissions/modes';
 // ============================================================================
 // Tool Resolver — subagent 使用的工具解析 + dispatch 接口
@@ -132,7 +134,7 @@ class ProtocolToolResolver implements ToolResolver {
       const mcpClient = getMCPClient();
       const mcpToolName = mcpClient.parseMCPToolName(dispatchName);
       if (mcpToolName) {
-        const result = await mcpClient.callTool(
+        const callMcp = () => mcpClient.callTool(
           ctx.currentToolCallId ?? `mcp-${Date.now()}`,
           mcpToolName.serverName,
           mcpToolName.toolName,
@@ -143,18 +145,36 @@ class ProtocolToolResolver implements ToolResolver {
             sessionId: (ctx as { sessionId?: string }).sessionId,
           },
         );
+        let result = await callMcp();
+        if (!result.success && !ctx.abortSignal?.aborted && result.metadata?.[MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]) {
+          const recovered = await trySilentLoginRecovery({ kind: 'mcp', target: mcpToolName.serverName });
+          if (recovered.recovered && !ctx.abortSignal?.aborted) {
+            result = await callMcp();
+          }
+        }
+        const metadata = {
+          ...(result.metadata ?? {}),
+          serverName: mcpToolName.serverName,
+          toolName: mcpToolName.toolName,
+          duration: result.duration,
+        };
+        if (!result.success) {
+          const envBlock = envBlockForToolFailure({
+            toolName: dispatchName,
+            code: undefined,
+            metadata,
+            runId: ctx.runId,
+            toolCallId: ctx.currentToolCallId,
+          });
+          if (envBlock) throw envBlock;
+        }
         return ensureFailedToolResultError(dispatchName, {
           success: result.success,
           output: result.output,
           error: result.error,
           outputPath: result.outputPath,
           result: result.output,
-          metadata: {
-            ...(result.metadata ?? {}),
-            serverName: mcpToolName.serverName,
-            toolName: mcpToolName.toolName,
-            duration: result.duration,
-          },
+          metadata,
         });
       }
 
@@ -193,6 +213,17 @@ class ProtocolToolResolver implements ToolResolver {
           protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, reuseCanUseTool));
         }
       }
+      if (!protoResult.ok && !ctx.abortSignal?.aborted) {
+        const loginTarget = resolveLoginExpiredTarget(dispatchName, protoResult.code, protoResult.meta);
+        if (loginTarget) {
+          const recovered = await trySilentLoginRecovery(loginTarget);
+          if (recovered.recovered && !ctx.abortSignal?.aborted) {
+            const permit = firstPermit;
+            const reuseCanUseTool: typeof canUseTool = permit?.allow ? async () => permit : canUseTool;
+            protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, reuseCanUseTool));
+          }
+        }
+      }
       if (protoResult.ok) {
         const output = typeof protoResult.output === 'string'
           ? protoResult.output
@@ -204,7 +235,13 @@ class ProtocolToolResolver implements ToolResolver {
           metadata: protoResult.meta,
         };
       }
-      const envBlock = envBlockForToolFailure({ toolName: dispatchName, code: protoResult.code, runId: ctx.runId, toolCallId: ctx.currentToolCallId });
+      const envBlock = envBlockForToolFailure({
+        toolName: dispatchName,
+        code: protoResult.code,
+        metadata: protoResult.meta,
+        runId: ctx.runId,
+        toolCallId: ctx.currentToolCallId,
+      });
       if (envBlock) throw envBlock;
       return {
         success: false,

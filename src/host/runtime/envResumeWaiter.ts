@@ -1,6 +1,7 @@
 import type { RunEnvelope } from '../../shared/contract/durableRun';
 import { getRunInterruptCause } from '../../shared/contract/durableRun';
 import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_TIMEOUT_MS } from '../../shared/constants/envResume';
+import { OAUTH_FLOW_TIMEOUT_MS } from '../connectors/oauth/oauthCoordinator';
 import { createLogger } from '../services/infra/logger';
 import type { RunRegistry } from './runRegistry';
 
@@ -40,7 +41,8 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
       ...(error ? { error: error instanceof Error ? error.message : String(error) } : {}),
     });
   };
-  loop.deadline = setTimeout(() => stop('timeout'), ENV_RESUME_TIMEOUT_MS);
+  const timeoutMs = input.envBlocked.class === 'login_expired' ? OAUTH_FLOW_TIMEOUT_MS : ENV_RESUME_TIMEOUT_MS;
+  loop.deadline = setTimeout(() => stop('timeout'), timeoutMs);
   loop.deadline.unref?.();
   let probe: EnvResumeProbe;
   try {

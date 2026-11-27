@@ -21,6 +21,17 @@ export function getCachedCliConnectorConnectionStatus(
   return statusCache.get(connectorId);
 }
 
+export function updateCliConnectorConnectionStatusCache(
+  status: { id: string; connected: boolean; lostReason?: ConnectorLostCode },
+): void {
+  if (!isCliConnectorId(status.id)) return;
+  statusCache.set(status.id, {
+    connected: status.connected,
+    checkedAt: Date.now(),
+    ...(!status.connected && status.lostReason ? { lostReason: status.lostReason } : {}),
+  });
+}
+
 export function replaceCliConnectorConnectionStatusCache(
   statuses: Array<{ id: string; connected: boolean; lostReason?: ConnectorLostCode }>,
 ): void {

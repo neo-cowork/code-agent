@@ -1,6 +1,7 @@
 import type { ToolCall } from '../../../shared/contract';
 import type { RunEnvelope } from '../../../shared/contract/durableRun';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
+import { resolveLoginExpiredTarget } from '../../permissions/envAssist/loginRecovery';
 import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { isQuotaWaitParkableRun } from '../../runtime/quotaWaitParkability';
 import { createLogger } from '../../services/infra/logger';
@@ -43,12 +44,16 @@ export function envBlockedCancelledClosures(runId: string | undefined, toolCalls
  * ponytail: only calendar and mail_draft park; mail_send, reminders, screen and accessibility keep the ordinary failure.
  */
 export function envBlockForToolFailure(input: {
-  toolName: string; code: unknown; runId?: string; toolCallId?: string;
+  toolName: string; code: unknown; metadata?: Record<string, unknown>; runId?: string; toolCallId?: string;
 }): EnvBlockedError | null {
-  if (input.code !== 'not_authorized' || !input.toolCallId) return null;
-  if (input.toolName !== 'calendar' && input.toolName !== 'mail_draft') return null;
+  if (!input.toolCallId) return null;
   if (!isQuotaWaitParkableRun(getConfiguredApplicationRunRegistry(), input.runId)) return null;
-  return input.toolName === 'calendar'
-    ? new EnvBlockedError('perm_calendars', 'calendar', input.toolCallId)
-    : new EnvBlockedError('perm_automation', 'mail', input.toolCallId);
+  if (input.code === 'not_authorized' && (input.toolName === 'calendar' || input.toolName === 'mail_draft')) {
+    return input.toolName === 'calendar'
+      ? new EnvBlockedError('perm_calendars', 'calendar', input.toolCallId)
+      : new EnvBlockedError('perm_automation', 'mail', input.toolCallId);
+  }
+  const login = resolveLoginExpiredTarget(input.toolName, input.code, input.metadata);
+  if (login) return new EnvBlockedError('login_expired', login.target, input.toolCallId);
+  return null;
 }

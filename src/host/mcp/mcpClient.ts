@@ -83,6 +83,7 @@ import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
 import {
   formatMcpConnectionError,
   formatMcpConnectorErrorExit,
+  MCP_AUTHORIZATION_REQUIRED_METADATA_KEY,
   mcpAuthorizationRequiredMetadata,
   mcpInsufficientScopeMetadata,
   isOAuthAuthorizationRequiredError,
@@ -364,9 +365,13 @@ export class MCPClient extends EventEmitter {
   /**
    * 连接到单个服务器
    */
-  async connect(config: MCPServerConfig, abortSignal?: AbortSignal): Promise<void> {
+  async connect(
+    config: MCPServerConfig,
+    abortSignal?: AbortSignal,
+    options?: { interactiveOAuth?: boolean },
+  ): Promise<void> {
     const pendingTeardown = this.teardownGate.inflight(config.name);
-    if (pendingTeardown) { await pendingTeardown; return this.connect(config, abortSignal); }
+    if (pendingTeardown) { await pendingTeardown; return this.connect(config, abortSignal, options); }
     abortSignal?.throwIfAborted();
     // 检查是否已连接
     if (isInProcessConfig(config)) {
@@ -399,6 +404,7 @@ export class MCPClient extends EventEmitter {
 
       // 外部服务器远程连接 fetch failed 时重建 transport 做一次有界重试；认证错误不会重试。
       const transportConfig = resolveServerConfigSecrets(config);
+      let interactiveOAuthAllowed = options?.interactiveOAuth !== false;
       const connected = await retryTransientRemoteMCPConnection(async (attemptNumber) => {
         // Prefer the native fetch path. If it hits a transient network failure,
         // rebuild once through the configured proxy instead of forcing every MCP
@@ -407,7 +413,19 @@ export class MCPClient extends EventEmitter {
           ? this.getServerIdentity(config.name)
           : undefined;
         const authProvider = isHttpStreamableConfig(config) && config.auth === 'oauth' && serverIdentity
-          ? createOAuthProviderForServer(config, serverIdentity)
+          ? createOAuthProviderForServer(config, serverIdentity, undefined, {
+            allowInteractiveRedirect: () => interactiveOAuthAllowed,
+            onSaveTokens: () => {
+              if (!interactiveOAuthAllowed) {
+                logger.info('Login silent recovery succeeded via OAuth token refresh', { kind: 'mcp', connectorId: config.name });
+              }
+            },
+            onInvalidateTokens: () => {
+              if (!interactiveOAuthAllowed && state) {
+                state.error = 'oauth-authorization-required: refresh_token rejected (invalid_grant)';
+              }
+            },
+          })
           : undefined;
         const { transport, connectTimeout } = createTransport(transportConfig, {
           useProxy: attemptNumber > 1,
@@ -453,6 +471,7 @@ export class MCPClient extends EventEmitter {
         },
       });
 
+      interactiveOAuthAllowed = false;
       this.clients.set(config.name, connected.client);
       this.transports.set(config.name, connected.transport);
       this.bumpServerConnectionGeneration(config.name, true);
@@ -1009,7 +1028,13 @@ export class MCPClient extends EventEmitter {
       ensureConnected: (signal) => this.ensureConnected(serverName, signal),
       retireIfCurrent: (stale) => this.retireStaleClient(serverName, stale),
     });
-    if (acquired.failure) return acquired.failure;
+    if (acquired.failure) {
+      const stateError = this.serverStates.get(serverName)?.error;
+      if (this.isOAuthServer(serverName) && typeof stateError === 'string' && stateError.startsWith('oauth-authorization-required')) {
+        return { ...acquired.failure, metadata: { ...(acquired.failure.metadata ?? {}), [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true } };
+      }
+      return acquired.failure;
+    }
     const client = acquired.client;
     if (!client) return notConnected(toolCallId, serverName);
 
@@ -1095,6 +1120,20 @@ export class MCPClient extends EventEmitter {
         }
       }
 
+      const oauthMeta = this.isOAuthServer(serverName)
+        ? (mcpInsufficientScopeMetadata(error) ?? mcpAuthorizationRequiredMetadata(error))
+        : undefined;
+      if (oauthMeta?.[MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]) {
+        const refreshRejected = this.serverStates.get(serverName)?.error?.includes('refresh_token rejected');
+        await this.disconnect(serverName).catch(() => undefined);
+        const state = this.serverStates.get(serverName);
+        if (state) {
+          state.status = 'error';
+          state.error = refreshRejected
+            ? 'oauth-authorization-required: refresh_token rejected (invalid_grant)'
+            : formatMcpConnectionError(error);
+        }
+      }
       return {
         toolCallId,
         success: false,
@@ -1103,7 +1142,7 @@ export class MCPClient extends EventEmitter {
         error: formatMcpConnectorErrorExit(error) ?? errorMessage,
         duration: Date.now() - startTime,
         // 「重新授权」只对 OAuth 连接器走得通；API Key / Bearer / stdio 的 403 不发卡
-        ...(this.isOAuthServer(serverName) ? { metadata: mcpInsufficientScopeMetadata(error) ?? mcpAuthorizationRequiredMetadata(error) } : {}),
+        ...(oauthMeta ? { metadata: oauthMeta } : {}),
       };
     }
   }

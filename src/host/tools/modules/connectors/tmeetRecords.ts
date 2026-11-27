@@ -13,6 +13,7 @@ import type { CanUseToolFn, ToolContext, ToolHandler, ToolModule, ToolResult } f
 import type { ToolSchema } from '../../../protocol/tools';
 import { MEETING_SESSION_LIMITS } from '../../../../shared/constants';
 import { executeTmeetCommand } from './tmeetToolCli';
+import { isCliNotLoggedInError } from '../../../connectors/cli/cliLoginError';
 import { tmeetRecordListSchema } from './tmeetRecordList.schema';
 import { tmeetRecordReadSchema } from './tmeetRecordRead.schema';
 
@@ -137,6 +138,9 @@ export async function runTmeetRecordList(exec: Exec, args: Record<string, unknow
   try {
     return { ok: true, output: formatRecordList(parseData(await exec(cli, 'tmeet record list'), 'record list')) };
   } catch (error) {
+    if (isCliNotLoggedInError('tmeet', error)) {
+      return { ok: false, error: friendlyTmeetError(error), code: 'cli_not_logged_in', meta: { connector: 'tmeet', lostCode: 'cli_not_logged_in' } };
+    }
     return { ok: false, error: friendlyTmeetError(error) };
   }
 }
@@ -156,6 +160,9 @@ export async function runTmeetRecordRead(exec: Exec, args: Record<string, unknow
       parts.push(`## 转写${truncated ? '（太长，后面部分已省略）' : ''}（时刻相对录制开始）\n${body || '（没有转写内容）'}`);
     }
   } catch (error) {
+    if (isCliNotLoggedInError('tmeet', error)) {
+      return { ok: false, error: friendlyTmeetError(error), code: 'cli_not_logged_in', meta: { connector: 'tmeet', lostCode: 'cli_not_logged_in' } };
+    }
     return { ok: false, error: friendlyTmeetError(error) };
   }
   return { ok: true, output: parts.join('\n\n') };

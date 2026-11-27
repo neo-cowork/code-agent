@@ -12,7 +12,17 @@ export const envAssistZh = {
   allow: { calendar: '允许访问日历', mail: '允许访问邮件', reminders: '允许访问提醒事项', screen: '允许查看屏幕', computer: '允许操作电脑', files: '打开文件和文件夹设置', helperScreen: '允许查看屏幕', helperComputer: '允许操作电脑' },
   done: { calendar: '已允许 Neo 访问「日历」。', mail: '已允许 Neo 控制「邮件」。', reminders: '已允许 Neo 控制「提醒事项」。', screen: '已允许 Neo 录制屏幕。', computer: '已允许 Neo 使用辅助功能。', files: '已允许 Neo 访问「文件和文件夹」。', helperScreen: '已允许电脑控制助手录制屏幕。', helperComputer: '已允许电脑控制助手使用辅助功能。' },
   autoResume: '允许后会自动接着做。',
-  target: { calendar: '日历', mail: '邮件', reminders: '提醒事项', screen: '屏幕', computer: '电脑', files: '文件和文件夹', helperScreen: '屏幕', helperComputer: '电脑' },
+  target: { calendar: '日历', mail: '邮件', reminders: '提醒事项', screen: '屏幕', computer: '电脑', files: '文件和文件夹', helperScreen: '屏幕', helperComputer: '电脑', feishu: '飞书', tmeet: '腾讯会议' },
+  login: {
+    expired: '「{name}」登录过期了，重新登录后我会继续。',
+    verifying: '正在等待「{name}」完成登录…',
+    done: '已重新登录「{name}」。',
+    unconfirmed: '「{name}」还没登录成功。你可以再试一次，或者这次先不用它。',
+    skipped: '好的，这次先不用「{name}」。',
+    signInAgain: '重新登录',
+    tryAgain: '再试一次',
+    skip: '这次先跳过',
+  },
 };
 
 export const envAssistEn: typeof envAssistZh = {
@@ -29,5 +39,15 @@ export const envAssistEn: typeof envAssistZh = {
   allow: { calendar: 'Allow Calendar', mail: 'Allow Mail', reminders: 'Allow Reminders', screen: 'Allow screen recording', computer: 'Allow accessibility', files: 'Open Files and Folders settings', helperScreen: 'Allow screen recording', helperComputer: 'Allow accessibility' },
   done: { calendar: 'Neo can now access Calendar.', mail: 'Neo can now control Mail.', reminders: 'Neo can now control Reminders.', screen: 'Neo can now record your screen.', computer: 'Neo can now use accessibility features.', files: 'Neo can now access Files and Folders.', helperScreen: 'The computer-control helper can now record your screen.', helperComputer: 'The computer-control helper can now use accessibility features.' },
   autoResume: 'Neo picks the task back up once you allow it.',
-  target: { calendar: 'Calendar', mail: 'Mail', reminders: 'Reminders', screen: 'Screen', computer: 'Computer', files: 'Files and Folders', helperScreen: 'Screen', helperComputer: 'Computer' },
+  target: { calendar: 'Calendar', mail: 'Mail', reminders: 'Reminders', screen: 'Screen', computer: 'Computer', files: 'Files and Folders', helperScreen: 'Screen', helperComputer: 'Computer', feishu: 'Feishu', tmeet: 'Tencent Meeting' },
+  login: {
+    expired: '{name} sign-in expired — sign in and I will continue.',
+    verifying: 'Waiting for {name} sign-in…',
+    done: 'Signed in to {name} again.',
+    unconfirmed: '{name} is not signed in yet. You can try again, or skip it this time.',
+    skipped: 'Okay, skipping {name} this time.',
+    signInAgain: 'Sign in again',
+    tryAgain: 'Try again',
+    skip: 'Skip this time',
+  },
 };

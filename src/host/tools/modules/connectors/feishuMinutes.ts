@@ -16,6 +16,7 @@ import * as path from 'path';
 import type { CanUseToolFn, ToolContext, ToolHandler, ToolModule, ToolResult } from '../../../protocol/tools';
 import { MEETING_SESSION_LIMITS } from '../../../../shared/constants';
 import { feishuCliDescriptor } from '../../../../shared/constants/cliConnectorDescriptors';
+import { isCliNotLoggedInError } from '../../../connectors/cli/cliLoginError';
 import { createLarkCliDriver } from '../../../connectors/feishu/larkCli';
 import { feishuMinutesSearchSchema } from './feishuMinutesSearch.schema';
 import { feishuMinutesReadSchema } from './feishuMinutesRead.schema';
@@ -135,6 +136,9 @@ export async function runFeishuMinutesSearch(exec: LarkExec, args: Record<string
     const body = hits.map((h) => `- ${h.title} · token ${h.token} · ${h.description}`).join('\n');
     return { ok: true, output: body + (pageToken ? `\n还有更多，page_token: ${pageToken}` : '') };
   } catch (error) {
+    if (isCliNotLoggedInError('feishu', error)) {
+      return { ok: false, error: friendlyLarkError(error), code: 'cli_not_logged_in', meta: { connector: 'feishu', lostCode: 'cli_not_logged_in' } };
+    }
     return { ok: false, error: friendlyLarkError(error) };
   }
 }
@@ -146,6 +150,9 @@ export async function runFeishuMinutesRead(exec: LarkExec, args: Record<string, 
   try {
     d = await fetchFeishuMinute(exec, token);
   } catch (error) {
+    if (isCliNotLoggedInError('feishu', error)) {
+      return { ok: false, error: friendlyLarkError(error), code: 'cli_not_logged_in', meta: { connector: 'feishu', lostCode: 'cli_not_logged_in' } };
+    }
     return { ok: false, error: friendlyLarkError(error) };
   }
   const out: string[] = [];

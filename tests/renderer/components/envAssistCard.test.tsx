@@ -138,5 +138,100 @@ describe('EnvAssistCard', () => {
     useSessionStore.setState({ sessions: [] });
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalled());
   });
+
+  describe('login_expired card (S7)', () => {
+    const loginNotice = (over: Partial<EnvAssistNotice> = {}): EnvAssistNotice => ({
+      id: 'run|login_expired|feishu',
+      sessionId: 'session',
+      runId: 'run',
+      class: 'login_expired',
+      target: { id: 'feishu', labelKey: 'env.target.feishu' },
+      phase: 'needs_user',
+      sentenceKey: 'env.sentence.loginExpired',
+      action: { kind: 'reauthorize', labelKey: 'env.allow.loginExpired', payload: { serverName: 'feishu' } },
+      resume: { mode: 'auto' },
+      updatedAt: 1,
+      ...over,
+    });
+
+    it.each([
+      ['zh', '「飞书」登录过期了，重新登录后我会继续。', '重新登录'],
+      ['en', 'Feishu sign-in expired — sign in and I will continue.', 'Sign in again'],
+    ] as const)('renders one sentence and one Sign in again button even without desktop settings availability (%s)', async (language, expectedSentence, expectedButton) => {
+      mocks.language = language;
+      mocks.invoke.mockImplementation(async (_domain, action) => (
+        action === 'getAvailability' ? { available: false } : { status: 'checked', outcome: { status: 'denied' } }
+      ));
+      const { container } = render(<EnvAssistCard notice={loginNotice()} />);
+      const buttons = await screen.findAllByRole('button');
+      expect(buttons).toHaveLength(1);
+      expect(container.querySelectorAll('p')).toHaveLength(1);
+      expect(container.querySelector('p')!.textContent).toBe(expectedSentence);
+      expect(buttons[0].textContent).toBe(expectedButton);
+      expect(container.textContent).not.toMatch(/401|oauth|token|cli_not_logged_in|reauthorize|mcp__/i);
+      fireEvent.click(buttons[0]);
+      await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'act', {
+        noticeId: 'run|login_expired|feishu',
+        actionKind: 'reauthorize',
+        payload: { serverName: 'feishu' },
+      }));
+    });
+
+    it.each([
+      ['zh', '「飞书」还没登录成功。你可以再试一次，或者这次先不用它。', '再试一次', '这次先跳过', '好的，这次先不用「飞书」。'],
+      ['en', 'Feishu is not signed in yet. You can try again, or skip it this time.', 'Try again', 'Skip this time', 'Okay, skipping Feishu this time.'],
+    ] as const)('cancel/abandon renders honest copy with Retry and secondary Skip, no internal words (%s)', async (language, expectedSentence, expectedRetry, expectedSkip, expectedDeclined) => {
+      mocks.language = language;
+      const unconfirmed = loginNotice({
+        phase: 'unconfirmed',
+        sentenceKey: 'env.sentence.loginUnconfirmed',
+        action: { kind: 'reauthorize', labelKey: 'env.retry.loginExpired', payload: { serverName: 'feishu' } },
+        updatedAt: 2,
+      });
+      const declined = loginNotice({
+        phase: 'declined',
+        sentenceKey: 'env.sentence.loginSkipped',
+        action: undefined,
+        updatedAt: 3,
+      });
+      mocks.invoke.mockImplementation(async (_domain, action, payload) => {
+        if (action === 'act' && (payload as { actionKind?: string }).actionKind === 'skip_step') {
+          return { status: 'checked', outcome: { status: 'denied' }, notice: declined };
+        }
+        return { status: 'checked', outcome: { status: 'denied' } };
+      });
+      const { container } = render(<EnvAssistCard notice={unconfirmed} />);
+      const buttons = await screen.findAllByRole('button');
+      expect(buttons.map((b) => b.textContent)).toEqual([expectedRetry, expectedSkip]);
+      expect(container.querySelector('p')!.textContent).toBe(expectedSentence);
+      expect(container.textContent).not.toMatch(/401|oauth|token|cli_not_logged_in|unconfirmed|reauthorize|skip_step/i);
+      fireEvent.click(buttons[1]);
+      await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'act', {
+        noticeId: unconfirmed.id,
+        actionKind: 'skip_step',
+        payload: { serverName: 'feishu' },
+      }));
+      await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
+      expect(container.querySelector('p')!.textContent).toBe(expectedDeclined);
+    });
+
+    it.each([
+      ['zh', '已重新登录「notes」。'],
+      ['en', 'Signed in to notes again.'],
+    ] as const)('resolved custom MCP server renders done sentence with no button (%s)', async (language, expectedDone) => {
+      mocks.language = language;
+      const resolved = loginNotice({
+        id: 'run|login_expired|notes',
+        target: { id: 'notes', labelKey: 'env.target.notes' },
+        phase: 'resolved',
+        doneKey: 'env.done.loginExpired',
+        action: undefined,
+        updatedAt: 4,
+      });
+      render(<EnvAssistCard notice={resolved} />);
+      expect(screen.getByTestId('env-assist-card').textContent).toBe(expectedDone);
+      expect(screen.queryByRole('button')).toBeNull();
+    });
+  });
 });
 

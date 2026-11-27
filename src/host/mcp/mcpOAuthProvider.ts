@@ -1,9 +1,10 @@
-import type {
-  OAuthClientProvider,
-  OAuthDiscoveryState,
-  OAuthClientInformationMixed,
-  OAuthClientMetadata,
-  OAuthTokens,
+import {
+  UnauthorizedError,
+  type OAuthClientProvider,
+  type OAuthDiscoveryState,
+  type OAuthClientInformationMixed,
+  type OAuthClientMetadata,
+  type OAuthTokens,
 } from '@modelcontextprotocol/client';
 import { applyMcpScopeUpgradeHint } from './mcpScopeUpgrade';
 import { getSecureStorage, type SecureStorageService } from '../services/core/secureStorage';
@@ -24,6 +25,8 @@ export interface McpOAuthProviderOptions {
   state: () => string | Promise<string>;
   onRedirectToAuthorization: (authUrl: URL) => void | Promise<void>;
   beforeClientMetadata?: () => void | Promise<void>;
+  onSaveTokens?: (tokens: OAuthTokens) => void;
+  onInvalidateTokens?: () => void;
 }
 
 export class McpOAuthProvider implements OAuthClientProvider {
@@ -32,6 +35,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
   private readonly stateResolver: () => string | Promise<string>;
   private readonly redirectHandler: (authUrl: URL) => void | Promise<void>;
   private readonly beforeClientMetadata?: () => void | Promise<void>;
+  private readonly onSaveTokens?: (tokens: OAuthTokens) => void;
+  private readonly onInvalidateTokens?: () => void;
   private readonly secureStorage: SecureStorageService;
 
   constructor(options: McpOAuthProviderOptions, secureStorage: SecureStorageService = getSecureStorage()) {
@@ -44,6 +49,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
     this.stateResolver = options.state;
     this.redirectHandler = options.onRedirectToAuthorization;
     this.beforeClientMetadata = options.beforeClientMetadata;
+    this.onSaveTokens = options.onSaveTokens;
+    this.onInvalidateTokens = options.onInvalidateTokens;
     this.secureStorage = secureStorage;
   }
 
@@ -87,6 +94,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   saveTokens(tokens: OAuthTokens): void {
     this.writeJson('tokens', tokens);
+    this.onSaveTokens?.(tokens);
   }
 
   redirectToAuthorization(authorizationUrl: URL): void | Promise<void> {
@@ -140,6 +148,9 @@ export class McpOAuthProvider implements OAuthClientProvider {
     }
     if (scope === 'all' || scope === 'discovery') {
       this.secureStorage.delete(this.issuerKey());
+    }
+    if (scope === 'all' || scope === 'tokens') {
+      this.onInvalidateTokens?.();
     }
   }
 
@@ -213,25 +224,24 @@ export function createOAuthProviderForServer(
   config: MCPHttpStreamableServerConfig,
   serverIdentity: string,
   coordinator: McpOAuthCoordinator = getMcpOAuthCoordinator(),
+  options?: { allowInteractiveRedirect?: () => boolean; onSaveTokens?: (tokens: OAuthTokens) => void; onInvalidateTokens?: () => void },
 ): McpOAuthProvider {
   let activeFlow: McpOAuthFlow | undefined;
-  let provider: McpOAuthProvider;
-  const ensureFlow = async () => {
-    const authorizationServerIssuer = provider.authorizationServerIssuer();
-    if (!authorizationServerIssuer) {
+  const ensureFlow = async (issuer: string | undefined) => {
+    if (!issuer) {
       throw new Error('MCP OAuth authorization server issuer is not available');
     }
     activeFlow = await coordinator.beginFlow({
       serverName: config.name,
       serverIdentity,
-      authorizationServerIssuer,
+      authorizationServerIssuer: issuer,
       serverUrl: new URL(config.serverUrl).toString(),
       ...(config.scope !== undefined ? { configSource: config.scope } : {}),
     });
     return activeFlow;
   };
 
-  provider = new McpOAuthProvider({
+  const provider: McpOAuthProvider = new McpOAuthProvider({
     serverIdentity,
     serverName: config.name,
     redirectUrl: () => {
@@ -242,10 +252,16 @@ export function createOAuthProviderForServer(
       );
     },
     state: async () => {
-      return (await ensureFlow()).state;
+      if (options?.allowInteractiveRedirect && !options.allowInteractiveRedirect()) {
+        throw new UnauthorizedError('Interactive OAuth authorization deferred until user initiates sign-in');
+      }
+      return (await ensureFlow(provider.authorizationServerIssuer())).state;
     },
     onRedirectToAuthorization: async (authUrl) => {
-      const flow = await ensureFlow();
+      if (options?.allowInteractiveRedirect && !options.allowInteractiveRedirect()) {
+        throw new UnauthorizedError('Interactive OAuth authorization deferred until user initiates sign-in');
+      }
+      const flow = await ensureFlow(provider.authorizationServerIssuer());
       await coordinator.handleAuthorizationRedirect({
         serverIdentity,
         flowId: flow.flowId,
@@ -253,8 +269,13 @@ export function createOAuthProviderForServer(
       });
     },
     beforeClientMetadata: async () => {
-      await ensureFlow();
+      if (options?.allowInteractiveRedirect && !options.allowInteractiveRedirect()) {
+        throw new UnauthorizedError('Interactive OAuth registration deferred until user initiates sign-in');
+      }
+      await ensureFlow(provider.authorizationServerIssuer());
     },
+    ...(options?.onSaveTokens ? { onSaveTokens: options.onSaveTokens } : {}),
+    ...(options?.onInvalidateTokens ? { onInvalidateTokens: options.onInvalidateTokens } : {}),
   });
   return provider;
 }

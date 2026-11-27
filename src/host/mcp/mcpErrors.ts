@@ -1,6 +1,8 @@
 import {
   InsufficientScopeError,
   METHOD_NOT_FOUND,
+  OAuthError,
+  OAuthErrorCode,
   ProtocolError,
   SdkErrorCode,
   SdkHttpError,
@@ -17,6 +19,7 @@ const SERVICE_UNAVAILABLE_ERROR_PREFIX = 'mcp-service-unavailable';
 
 export function isOAuthAuthorizationRequiredError(error: unknown): boolean {
   if (UnauthorizedError.isInstance(error)) return true;
+  if (OAuthError.isInstance(error) && error.code !== OAuthErrorCode.ServerError) return true;
   if (SdkHttpError.isInstance(error)) {
     return error.code === SdkErrorCode.ClientHttpAuthentication || error.status === 401;
   }
@@ -27,7 +30,9 @@ export function isOAuthAuthorizationRequiredError(error: unknown): boolean {
 
 export function formatMcpConnectionError(error: unknown): string {
   if (isOAuthAuthorizationRequiredError(error)) {
-    const message = error instanceof Error ? error.message : 'authorization required';
+    const message = OAuthError.isInstance(error)
+      ? `${error.code}${error.message ? `: ${error.message}` : ''}`
+      : (error instanceof Error ? error.message : 'authorization required');
     return `${OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX}: ${message}`;
   }
   // 设置页 state.error 面向用户：中文短句。给模型的英文出路在 formatMcpConnectorErrorExit。

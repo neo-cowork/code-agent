@@ -17,10 +17,20 @@ import { cuaHelperProbe } from '../permissions/envAssist/probes/cuaHelperProbe';
 import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
 import type { ProbeResult, ReadOnlyProbe } from '../permissions/envAssist/probes/types';
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
-import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
+import {
+  markLoginNoticeDeclined,
+  markLoginNoticeUnconfirmed,
+  resolveEnvAssistNotice,
+  resolveOpenLoginNoticesForTarget,
+} from '../permissions/envAssist/toolNotice';
+import {
+  markSkippedLoginToolCall,
+  probeLoginStatus,
+  reauthorizeLoginTarget,
+} from '../permissions/envAssist/loginRecovery';
 import { createLogger } from '../services/infra/logger';
 import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
-import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
+import { armEnvResumeOnSessionReturn, clearEnvResumeWaiter, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 const logger = createLogger('EnvAssistIpc');
@@ -50,6 +60,12 @@ interface EnvAssistDependencies {
   /** A probe read calendar full access: settle every calendar card in every session (default: settleCalendarGranted). */
   calendarGranted?: (entry: string) => Promise<void>;
   sleep?: CalendarSettingDeps['sleep'];
+  /** S7 login_expired overrides for tests; defaults use MCP reauthorizeMcpServer / CLI connect + status probe. */
+  reauthorize?: (serverName: string, requiredScope?: string) => Promise<{ success: boolean; error?: string }>;
+  probeLogin?: (target: string) => Promise<'green' | 'red' | 'unavailable'>;
+  markUnconfirmed?: (notice: EnvAssistNotice) => Promise<EnvAssistNotice | undefined>;
+  markDeclined?: (notice: EnvAssistNotice) => Promise<EnvAssistNotice | undefined>;
+  continueAfterSkip?: (notice: EnvAssistNotice) => Promise<void>;
 }
 
 async function defaultCalendarReminderSetting(): Promise<NonNullable<EnvAssistDependencies['calendarReminderSetting']>> {
@@ -163,6 +179,11 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const notice = await deps.findNotice(parsed.data.noticeId);
     // Already resolved elsewhere (another card, the reminder switch, System Settings): give the card its done copy.
     if (notice?.phase === 'resolved') return { status: 'checked', outcome: { status: 'granted' }, notice };
+    if (notice?.class === 'login_expired' && (notice.phase === 'needs_user' || notice.phase === 'unconfirmed') && notice.target?.id) {
+      const status = await (deps.probeLogin ?? probeLoginStatus)(notice.target.id);
+      if (status === 'green') return settle(deps, notice, { status: 'checked', outcome: { status: 'granted' } });
+      return { status: 'checked', outcome: status === 'unavailable' ? { status: 'unavailable', reason: 'login_probe_unavailable' } : { status: 'denied' } };
+    }
     const actionPayload = notice?.action?.payload;
     if (notice?.phase !== 'needs_user' || !actionPayload || !('pane' in actionPayload)) return { status: 'rejected' };
     const probe = noticeProbe(deps, notice, actionPayload.pane);
@@ -185,6 +206,53 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const request = parsed.data;
     const notice = await deps.findNotice(request.noticeId);
     const action = notice?.action;
+    if (request.actionKind === 'reauthorize') {
+      if (notice?.class !== 'login_expired'
+        || (notice.phase !== 'needs_user' && notice.phase !== 'unconfirmed')
+        || action?.kind !== 'reauthorize'
+        || !action.payload || !('serverName' in action.payload)
+        || action.payload.serverName !== request.payload.serverName
+        || action.payload.requiredScope !== request.payload.requiredScope) {
+        return { status: 'rejected' };
+      }
+      const res = await (deps.reauthorize ?? reauthorizeLoginTarget)(request.payload.serverName, request.payload.requiredScope);
+      if (res.success) {
+        return settle(deps, notice, { status: 'checked', outcome: { status: 'granted' } });
+      }
+      clearEnvResumeWaiter(notice.runId);
+      const unconfirmed = await (deps.markUnconfirmed ?? markLoginNoticeUnconfirmed)(notice);
+      return { status: 'checked', outcome: { status: 'denied' }, ...(unconfirmed ? { notice: unconfirmed } : {}) };
+    }
+    if (request.actionKind === 'skip_step') {
+      if (notice?.class !== 'login_expired' || notice.phase !== 'unconfirmed') return { status: 'rejected' };
+      if (request.payload?.serverName && request.payload.serverName !== notice.target?.id) return { status: 'rejected' };
+      clearEnvResumeWaiter(notice.runId);
+      const declined = await (deps.markDeclined ?? markLoginNoticeDeclined)(notice);
+      if (notice.parkedToolCallId) {
+        markSkippedLoginToolCall(notice.runId, notice.parkedToolCallId);
+        const resumeAfterSkip = deps.continueAfterSkip ?? (async (currentNotice: EnvAssistNotice) => {
+          const registry = getApplicationRunRegistry();
+          if (!registry.findRecoveredWaitingRun({ sessionId: currentNotice.sessionId })) return;
+          const [{ continueParkedDurableRun }, { getTaskManager }] = await Promise.all([
+            import('../app/durableRunContinuation'),
+            import('../task/TaskManager'),
+          ]);
+          await continueParkedDurableRun({
+            sessionId: currentNotice.sessionId,
+            expectedRunId: currentNotice.runId,
+            runRegistry: registry,
+            taskManager: getTaskManager(),
+          });
+        });
+        void resumeAfterSkip(notice).catch((error: unknown) => {
+          logger.warn('Env-assist skip continuation failed', {
+            noticeId: notice.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+      return { status: 'checked', outcome: { status: 'denied' }, ...(declined ? { notice: declined } : {}) };
+    }
     if (notice?.phase !== 'needs_user' || action?.kind !== request.actionKind
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
       return { status: 'rejected' };
@@ -306,6 +374,20 @@ registerEnvAssistHandlers.routes = routes;
  * Distinguishable degrade reasons are logged; 'unavailable' stops the waiter (manual Continue still works).
  */
 export const envResumeProbeFactory: EnvResumeProbeFactory = (block) => {
+  if (block.class === 'login_expired') {
+    return async () => {
+      const status = await probeLoginStatus(block.target);
+      if (status === 'green') {
+        await resolveOpenLoginNoticesForTarget(block.target).catch((error: unknown) => {
+          logger.warn('Failed to settle login_expired notice after probe turned green', {
+            target: block.target,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+      return status;
+    };
+  }
   // Calendar runs (perm_calendars, and perm_automation runs parked before the switch) resume on the EventKit truth.
   if (block.target === 'calendar' && (block.class === 'perm_calendars' || block.class === 'perm_automation')) {
     const client = resolveShellBridgeClientFromEnv();

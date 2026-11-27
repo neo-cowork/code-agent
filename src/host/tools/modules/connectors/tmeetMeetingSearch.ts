@@ -9,6 +9,7 @@ import type {
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { formatTmeetMeetingReceipt } from './tmeetMeetingReceipt';
 import { executeTmeetCommand } from './tmeetToolCli';
+import { isCliNotLoggedInError } from '../../../connectors/cli/cliLoginError';
 import { tmeetMeetingSearchSchema as schema } from './tmeetMeetingSearch.schema';
 
 function optionalString(args: Record<string, unknown>, key: string): string | undefined {
@@ -111,12 +112,15 @@ async function executeTmeetMeetingSearch(
     };
   } catch (error) {
     const failure = `Tencent Meeting search failed: ${error instanceof Error ? error.message : String(error)}`;
+    const notLoggedIn = isCliNotLoggedInError('tmeet', error);
     return {
       ok: false,
       error: failure,
+      ...(notLoggedIn ? { code: 'cli_not_logged_in' } : {}),
       meta: {
         action: 'meeting.search',
         connector: 'tmeet',
+        ...(notLoggedIn ? { lostCode: 'cli_not_logged_in' } : {}),
         artifact: createFailedReceiptArtifact({
           sourceTool: schema.name,
           sessionId: ctx.sessionId,
