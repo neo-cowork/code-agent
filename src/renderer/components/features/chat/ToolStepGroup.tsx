@@ -348,10 +348,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   // （原先还挂了一档 toolFailureCode 兜底，已删：它不可达——那一行只在 status 为
   //   partial/error 时渲染，而那两种状态成立就必然存在 success===false 的 toolCall，
   //   failureReason 于是必非空，永远轮不到那一档。）
-  const permissionRequestOutcome = permissionEvidence.some(({ denied }) => denied)
-    ? t.outcomeWords['failed-approval-denied'].timeline
+  const permissionRequestReason = permissionEvidence.some(({ denied }) => denied)
+    ? t.decisionCard.permission.deniedReasonWithNextStep
+      .replace('{reason}', t.outcomeWords['failed-approval-denied'].timeline.reason)
+      .replace('{nextStep}', t.decisionCard.permission.deniedNextStep)
     : permissionEvidence.some(({ timedOut }) => timedOut)
-      ? t.outcomeWords['failed-timeout'].timeline
+      ? t.outcomeWords['failed-timeout'].timeline.reason
       : null;
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
@@ -556,7 +558,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
+              {permissionRequestReason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
         </span>
@@ -595,6 +597,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   ? `${t.outcomeWords['failed-timeout'].timeline.label} · ${t.outcomeWords['failed-timeout'].timeline.reason} · ${stepLabel}`
                   : `${statusLabel} · ${stepLabel}${count > 1 ? ` · ${t.decisionCard.permission.settledAllowedFolded.replace('{count}', String(count))}` : ''}`}
             </summary>
+            {denied && (
+              <p
+                className="mt-1 whitespace-normal break-words text-[11px] leading-4 text-zinc-400"
+                data-testid="permission-decision-denied-next-step"
+              >
+                {t.decisionCard.permission.deniedNextStep}
+              </p>
+            )}
             <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-primary px-2 py-1.5 text-[10px] leading-4 text-zinc-500">
               {details}
             </pre>
