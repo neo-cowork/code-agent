@@ -48,6 +48,8 @@ const legacyLines: Record<string, string[]> = {
   "src/host/permissions/envAssist/screenshotFailureCause.ts": ["// osascript without Automation (Apple Events) permission reports"],
   // Comment describes existing connector tool preloading.
   "src/host/agent/runtime/contextAssembly/deferredToolPreload.ts": ["// 才拿得到，模型常直接绕 Bash osascript（FB-498）。命中意图才预载，避免每轮多挂"],
+  // Detection regex matching tool/shell words inside user text; never executes them.
+  "src/host/agent/runtime/contextAssembly/sessionCommandCenterPreannounce.ts": ["const TOOL_OR_SHELL_WORD_PATTERN = /\\b(?:bash|zsh|shell|terminal|osascript|applescript|powershell|curl|sudo)\\b/i;"],
   // Photo archive plugin comments describe connector execution.
   "src/host/plugins/builtin/photoArchive/index.ts": ["// - src/host/connectors/native/photos.ts — Photos.app osascript connector", "// - 'shell' — 调用 photos connector 的 osascript 和 vision-tagger 子进程"],
   // Existing named-window screenshot tool uses AppleScript window lookup.
