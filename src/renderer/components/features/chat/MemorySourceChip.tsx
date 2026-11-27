@@ -3,6 +3,7 @@ import { Brain } from 'lucide-react';
 import type { TurnQualityMemoryBlockType, TurnQualityMemoryItem, TurnQualitySummary } from '@shared/contract/turnQuality';
 import { Button } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 import { invokeMemoryEntryCommand } from '../../../services/invokeMemoryEntryCommand';
 
@@ -45,7 +46,7 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
   const used = usedMemory(summary);
   if (!used) return null;
   const { items } = used;
-  const label = t.memorySource.usedCount.replace('{count}', String(items.length));
+  const label = interpolatePlural(t.memorySource.usedCount, items.length);
 
   const dropFlag = (entryId: string) => {
     setFlags((current) => {

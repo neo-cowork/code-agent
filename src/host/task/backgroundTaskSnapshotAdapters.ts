@@ -24,7 +24,10 @@ import {
 } from '../tools/modules/shell/backgroundTaskSources';
 import { type BackgroundTaskLedger, getBackgroundTaskLedger } from './backgroundTaskLedger';
 import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
-import { isLikelyUnansweredMacOsAutomationPrompt } from './macosAutomationPrompt';
+import {
+  commandMayAwaitSystemPrompt,
+  isLikelyUnansweredMacOsAutomationPrompt,
+} from './macosAutomationPrompt';
 import { getConfigService } from '../services/core/configService';
 import { createLogger } from '../services/infra/logger';
 
@@ -208,6 +211,7 @@ export function syncShellTaskSnapshotToLedger(
   );
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
+  const mayAwaitSystemPrompt = commandMayAwaitSystemPrompt(task.displayCommand ?? task.command);
   const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
     command: task.command,
     status,
@@ -235,6 +239,8 @@ export function syncShellTaskSnapshotToLedger(
     metadata: {
       createdBy: 'neo',
       originalTaskId: task.taskId,
+      ...(task.ownerAgentId ? { ownerAgentId: task.ownerAgentId } : {}),
+      ...(mayAwaitSystemPrompt ? { mayAwaitSystemPrompt: true } : {}),
       exitCode: task.exitCode,
       recoveryStatus,
       ...(automationPromptLikely ? { automationPromptLikely: true } : {}),

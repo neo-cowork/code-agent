@@ -4,9 +4,12 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import type { IpcMain } from '../../../src/host/platform';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 
 type BackgroundTasks = typeof import('../../../src/host/tools/shell/backgroundTasks');
 type ProtocolRegistry = ReturnType<typeof import('../../../src/host/tools/protocolRegistry').getProtocolRegistry>;
+type DomainHandler = (_event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
 type FakeModelMode = 'complete' | 'http-error';
 
@@ -32,6 +35,11 @@ let SubagentExecutor: typeof import('../../../src/host/agent/subagentExecutor').
 let getConfigService: typeof import('../../../src/host/services/core/configService').getConfigService;
 let getSystemPromptHint: typeof import('../../../src/shared/i18n/sessionTaskSlot').getSystemPromptHint;
 let handoverTimedOutCommand: typeof import('../../../src/host/tools/shell/timeoutHandover').handoverTimedOutCommand;
+let registerTaskHandlers: typeof import('../../../src/host/ipc/task.ipc').registerTaskHandlers;
+let installBackgroundTaskEventAdapters: typeof import('../../../src/host/task/backgroundTaskSnapshotAdapters').installBackgroundTaskEventAdapters;
+let resetBackgroundTaskEventAdaptersForTest: typeof import('../../../src/host/task/backgroundTaskSnapshotAdapters').resetBackgroundTaskEventAdaptersForTest;
+let getBackgroundTaskLedger: typeof import('../../../src/host/task/backgroundTaskLedger').getBackgroundTaskLedger;
+let resetBackgroundTaskLedgerForTest: typeof import('../../../src/host/task/backgroundTaskLedger').resetBackgroundTaskLedgerForTest;
 let consoleError: MockInstance<typeof console.error>;
 const taskIds = new Set<string>();
 const processGroups = new Set<number>();
@@ -211,10 +219,22 @@ beforeAll(async () => {
   ({ getConfigService } = await import('../../../src/host/services/core/configService'));
   ({ getSystemPromptHint } = await import('../../../src/shared/i18n/sessionTaskSlot'));
   ({ handoverTimedOutCommand } = await import('../../../src/host/tools/shell/timeoutHandover'));
+  ({ registerTaskHandlers } = await import('../../../src/host/ipc/task.ipc'));
+  ({
+    installBackgroundTaskEventAdapters,
+    resetBackgroundTaskEventAdaptersForTest,
+  } = await import('../../../src/host/task/backgroundTaskSnapshotAdapters'));
+  ({
+    getBackgroundTaskLedger,
+    resetBackgroundTaskLedgerForTest,
+  } = await import('../../../src/host/task/backgroundTaskLedger'));
 }, 60_000);
 
 beforeEach(() => {
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  resetBackgroundTaskEventAdaptersForTest();
+  resetBackgroundTaskLedgerForTest();
+  installBackgroundTaskEventAdapters(getBackgroundTaskLedger());
 });
 
 afterEach(async () => {
@@ -232,6 +252,8 @@ afterEach(async () => {
   processGroups.clear();
   backgroundTasks.cleanupCompletedTasks();
   backgroundTasks.clearPersistedTasks();
+  resetBackgroundTaskEventAdaptersForTest();
+  resetBackgroundTaskLedgerForTest();
   consoleError.mockRestore();
 });
 
@@ -242,14 +264,16 @@ afterAll(async () => {
 });
 
 describe.sequential('subagent leftover background shells', () => {
-  it('completed terminal reports its real Bash child, excludes main/user tasks, and persists the owner', async () => {
+  it('completed terminal reports its real Bash child by human title, excludes main/user tasks, and persists the owner', async () => {
     await setLocale('en');
     const main = backgroundTasks.startBackgroundTask('sleep 7330', cwd, 60_000, {
       sessionId: 'main-session',
       ownerAgentId: 'primary',
+      displayName: 'Main session watcher',
     });
     const userBackgrounded = backgroundTasks.startBackgroundTask('sleep 7331', cwd, 60_000, {
       sessionId: 'main-session',
+      displayName: 'User background watcher',
     });
     expect(main.success).toBe(true);
     expect(userBackgrounded.success).toBe(true);
@@ -259,22 +283,38 @@ describe.sequential('subagent leftover background shells', () => {
     const result = await runAgent({
       agentId: 'completed-agent',
       command: 'sleep 7332',
+      description: 'Local preview server',
       mode: 'complete',
     });
     const owned = taskForOwner('completed-agent');
     expect(result.success).toBe(true);
     expect(owned).toBeDefined();
-    expect(result.output).toContain(owned!.taskId);
-    expect(result.output).toContain('sleep 7332');
+    expect(result.output).toContain('Local preview server');
     expect(result.output).toContain('running 1 second');
     expect(result.output).toContain('Still running — can be stopped manually.');
+    expect(result.output).not.toContain(owned!.taskId);
+    expect(result.output).not.toContain('sleep 7332');
     expect(result.output).not.toContain(main.taskId!);
     expect(result.output).not.toContain(userBackgrounded.taskId!);
+    expect(result.output).not.toContain('Main session watcher');
+    expect(result.output).not.toContain('User background watcher');
     const ownedPid = backgroundTasks.getBackgroundTask(owned!.taskId)?.process.pid;
     expect(ownedPid).toEqual(expect.any(Number));
     expect(isProcessAlive(ownedPid!)).toBe(true);
     expect(backgroundTasks.getAllBackgroundTasks().find((task) => task.taskId === main.taskId)?.ownerAgentId).toBeUndefined();
     expect(backgroundTasks.getAllBackgroundTasks().find((task) => task.taskId === userBackgrounded.taskId)?.ownerAgentId).toBeUndefined();
+
+    const ledgerRow = getBackgroundTaskLedger().getTask(`shell:${owned!.taskId}`);
+    expect(ledgerRow).toMatchObject({
+      id: `shell:${owned!.taskId}`,
+      kind: 'shell',
+      status: 'running',
+      metadata: expect.objectContaining({
+        originalTaskId: owned!.taskId,
+        ownerAgentId: 'completed-agent',
+      }),
+    });
+    expect(ledgerRow?.metadata?.mayAwaitSystemPrompt).toBeUndefined();
 
     backgroundTasks.persistRunningTasks();
     const persisted = JSON.parse(await readFile(path.join(dataDir, 'background-tasks.json'), 'utf8')) as Array<Record<string, unknown>>;
@@ -298,20 +338,26 @@ describe.sequential('subagent leftover background shells', () => {
     console.log(`RAW EN REPORT\n${result.output}`);
   }, 20_000);
 
-  it('reuses the permission-prompt predicate and exact Chinese hint copy', async () => {
+  it('reuses the permission-prompt predicate and exact Chinese hint copy without leaking raw command or task id', async () => {
     await setLocale('zh');
     const result = await runAgent({
       agentId: 'system-prompt-agent',
       command: `sleep 7333 # osascript ${'x'.repeat(100)}`,
+      description: '等待系统自动化授权',
       mode: 'complete',
     });
     const owned = taskForOwner('system-prompt-agent');
     expect(owned).toBeDefined();
     expect(result.output).toContain(getSystemPromptHint('zh'));
-    expect(result.output).toContain('sleep 7333 # osascript');
+    expect(result.output).toContain('等待系统自动化授权');
     expect(result.output).toContain('仍在运行，可手动停止。');
-    const summary = /^- `([^`]+)`/m.exec(result.output)?.[1];
-    expect(summary?.length).toBeLessThanOrEqual(80);
+    expect(result.output).not.toContain(owned!.taskId);
+    expect(result.output).not.toContain('sleep 7333');
+    expect(result.output).not.toContain('osascript');
+    expect(getBackgroundTaskLedger().getTask(`shell:${owned!.taskId}`)?.metadata).toMatchObject({
+      ownerAgentId: 'system-prompt-agent',
+      mayAwaitSystemPrompt: true,
+    });
     const ownedPid = backgroundTasks.getBackgroundTask(owned!.taskId)?.process.pid;
     expect(ownedPid).toEqual(expect.any(Number));
     expect(isProcessAlive(ownedPid!)).toBe(true);
@@ -326,9 +372,17 @@ describe.sequential('subagent leftover background shells', () => {
       description: 'Ask Finder for selection',
       mode: 'complete',
     });
-    expect(taskForOwner('described-system-prompt-agent')).toBeDefined();
+    const owned = taskForOwner('described-system-prompt-agent');
+    expect(owned).toBeDefined();
     expect(result.output).toContain(getSystemPromptHint('zh'));
-    expect(result.output).toContain('sleep 7334 # osascript');
+    expect(result.output).toContain('仍在运行，可手动停止。');
+    expect(result.output).not.toContain(owned!.taskId);
+    expect(result.output).not.toContain('sleep 7334');
+    expect(result.output).not.toContain('osascript');
+    expect(getBackgroundTaskLedger().getTask(`shell:${owned!.taskId}`)?.metadata).toMatchObject({
+      ownerAgentId: 'described-system-prompt-agent',
+      mayAwaitSystemPrompt: true,
+    });
   }, 20_000);
 
   it('failed terminal returns the still-running child report without killing it', async () => {
@@ -338,6 +392,7 @@ describe.sequential('subagent leftover background shells', () => {
       await runAgent({
         agentId: 'failed-agent',
         command: 'sleep 7334',
+        description: 'Failed worker preview server',
         mode: 'http-error',
       });
     } catch (error) {
@@ -346,8 +401,10 @@ describe.sequential('subagent leftover background shells', () => {
     const owned = taskForOwner('failed-agent');
     expect(owned).toBeDefined();
     expect(thrown).toBeInstanceOf(Error);
-    expect((thrown as Error).message).toContain(owned!.taskId);
+    expect((thrown as Error).message).toContain('Failed worker preview server');
     expect((thrown as Error).message).toContain('Still running — can be stopped manually.');
+    expect((thrown as Error).message).not.toContain(owned!.taskId);
+    expect((thrown as Error).message).not.toContain('sleep 7334');
     const ownedPid = backgroundTasks.getBackgroundTask(owned!.taskId)?.process.pid;
     expect(ownedPid).toEqual(expect.any(Number));
     expect(isProcessAlive(ownedPid!)).toBe(true);
@@ -362,6 +419,7 @@ describe.sequential('subagent leftover background shells', () => {
     const result = await runAgent({
       agentId: 'cancelled-agent',
       command: 'sleep 7335',
+      description: 'Cancelled worker server',
       mode: 'complete',
       abortOnTaskStart: true,
     });
@@ -369,8 +427,10 @@ describe.sequential('subagent leftover background shells', () => {
     expect(result.success).toBe(false);
     expect(result.cancellationReason).toBe('user-cancel');
     expect(owned).toBeDefined();
-    expect(result.output).toContain(owned!.taskId);
+    expect(result.output).toContain('Cancelled worker server');
     expect(result.output).toContain('Still running — can be stopped manually.');
+    expect(result.output).not.toContain(owned!.taskId);
+    expect(result.output).not.toContain('sleep 7335');
     const ownedPid = backgroundTasks.getBackgroundTask(owned!.taskId)?.process.pid;
     expect(ownedPid).toEqual(expect.any(Number));
     expect(isProcessAlive(ownedPid!)).toBe(true);
@@ -384,6 +444,7 @@ describe.sequential('subagent leftover background shells', () => {
     await setLocale('en');
     const started = backgroundTasks.startBackgroundTask('sleep 7336', cwd, 60_000, {
       ownerAgentId: 'early-failure-agent',
+      displayName: 'Early failure background server',
     });
     expect(started.success).toBe(true);
     recordTask(started.taskId!);
@@ -407,13 +468,67 @@ describe.sequential('subagent leftover background shells', () => {
     });
     expect(result.success).toBe(false);
     expect(result.iterations).toBe(0);
-    expect(result.output).toContain(started.taskId!);
+    expect(result.output).toContain('Early failure background server');
+    expect(result.output).toContain('Still running — can be stopped manually.');
+    expect(result.output).not.toContain(started.taskId!);
+    expect(result.output).not.toContain('sleep 7336');
     const ownedPid = backgroundTasks.getBackgroundTask(started.taskId!)?.process.pid;
     expect(ownedPid).toEqual(expect.any(Number));
     expect(isProcessAlive(ownedPid!)).toBe(true);
     const warnings = warnsFor(started.taskId!, 'early-failure');
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.[1]).toMatchObject({ pid: expect.any(Number) });
+  }, 20_000);
+
+  it('stop through registerTaskHandlers cancelBackgroundTask kills the whole process group and flips the ledger row', async () => {
+    await setLocale('en');
+    const handlers = new Map<string, DomainHandler>();
+    const fakeIpc = {
+      handle: vi.fn((channel: string, handler: DomainHandler) => {
+        handlers.set(channel, handler);
+      }),
+    } as unknown as IpcMain;
+    registerTaskHandlers(fakeIpc, () => null);
+    const taskHandler = handlers.get(IPC_DOMAINS.TASK);
+    expect(taskHandler).toBeDefined();
+
+    const result = await runAgent({
+      agentId: 'stop-ipc-agent',
+      command: 'sh -c "sleep 7338 & sleep 7339 & wait"',
+      description: 'Notes preview server',
+      mode: 'complete',
+    });
+    expect(result.success).toBe(true);
+    const owned = taskForOwner('stop-ipc-agent');
+    expect(owned).toBeDefined();
+
+    const ledgerId = `shell:${owned!.taskId}`;
+    const beforeLedger = getBackgroundTaskLedger().getTask(ledgerId);
+    expect(beforeLedger).toMatchObject({
+      id: ledgerId,
+      kind: 'shell',
+      status: 'running',
+      metadata: expect.objectContaining({
+        originalTaskId: owned!.taskId,
+        ownerAgentId: 'stop-ipc-agent',
+      }),
+    });
+
+    const ownedPid = backgroundTasks.getBackgroundTask(owned!.taskId)?.process.pid;
+    expect(ownedPid).toEqual(expect.any(Number));
+    await vi.waitFor(() => expect(pgrepProcessGroup(ownedPid!)).not.toBe(''), { timeout: 5_000, interval: 50 });
+
+    const stopResponse = await taskHandler!(null, {
+      action: 'cancelBackgroundTask',
+      payload: { taskId: ledgerId },
+    });
+    expect(stopResponse).toEqual({ success: true, data: { cancelled: true } });
+
+    await vi.waitFor(() => expect(pgrepProcessGroup(ownedPid!)).toBe(''), { timeout: 5_000, interval: 50 });
+    expect(isProcessAlive(ownedPid!)).toBe(false);
+    await vi.waitFor(() => {
+      expect(getBackgroundTaskLedger().getTask(ledgerId)?.status).toBe('cancelled');
+    }, { timeout: 5_000, interval: 50 });
   }, 20_000);
 
   it('foreground-timeout adoption carries the same owning agent field', async () => {
