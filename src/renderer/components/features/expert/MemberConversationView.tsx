@@ -39,6 +39,7 @@ import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
 import { stopSessionAgent } from '../../../utils/stopSessionAgent';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 /** 轨迹只回看最近这几条：成员视图是「他现在在干嘛」，不是全量审计日志。 */
 const RUN_TRAIL_LIMIT = 12;
@@ -364,7 +365,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <section data-testid="member-usage" className="flex items-center gap-3 text-[11px] text-zinc-500">
             {typeof toolCalls === 'number' && (
               <span className="inline-flex items-center gap-1">
-                <Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(toolCalls))}
+                <Wrench className="h-3.5 w-3.5" />{interpolatePlural(text.tools, toolCalls)}
               </span>
             )}
             {durationText && (
@@ -504,7 +505,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </section>
 
         <section data-testid="member-usage" className="flex items-center gap-3 text-[11px] text-zinc-500">
-          <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(agent.toolCalls ?? 0))}</span>
+          <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{interpolatePlural(text.tools, agent.toolCalls ?? 0)}</span>
           {durationText && (
             <span data-testid="member-usage-duration" className="inline-flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" aria-hidden />{durationText}

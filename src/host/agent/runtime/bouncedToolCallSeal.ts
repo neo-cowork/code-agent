@@ -7,6 +7,7 @@
 // 先落 assistant 消息，再落合成的失败 tool 消息。
 // ============================================================================
 
+import { inabilityGatePrompt } from './backgroundWakeMessage';
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
@@ -39,11 +40,11 @@ export async function sealBouncedToolCalls(
   handoffTaskToolCallId?: string,
 ): Promise<'continue'> {
   const { ctx, contextAssembly } = deps;
+  const userPrompt = inabilityGatePrompt(ctx);
   const reason = kind === 'denied'
-    ? BOUNCE_REASONS.denied(ctx.turn?.runUserPrompt ?? '', 'zh')
+    ? BOUNCE_REASONS.denied(userPrompt, 'zh')
     : BOUNCE_REASONS[kind];
   if (toolCalls.length === 0) return 'continue';
-  const userPrompt = ctx.turn?.runUserPrompt ?? '';
   const assistantMessage: Message = {
     id: contextAssembly.generateId(),
     role: 'assistant',

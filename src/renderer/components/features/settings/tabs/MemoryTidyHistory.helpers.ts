@@ -9,6 +9,7 @@ import type {
   MemoryTidyRunView,
 } from '@shared/contract/memory';
 import { formatMemoryEntryUpdatedAt } from './MemoryEntriesManager';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { zh } from '../../../../i18n/zh';
 
 export type MemoryTidyCopy = typeof zh.settings.memoryTidy;
@@ -28,9 +29,10 @@ export function buildTidyRunSummary(run: MemoryTidyRunView, copy: MemoryTidyCopy
   }
   const parts: string[] = [];
   if (run.mergeCount > 0) {
-    parts.push(copy.summaryMerged
-      .replace('{groups}', String(run.mergeCount))
-      .replace('{cards}', String(tidyPutAwayCount(run) - run.conflictCount)));
+    parts.push(interpolatePlural(copy.summaryMerged, run.mergeCount, {
+      groups: run.mergeCount,
+      cards: tidyPutAwayCount(run) - run.conflictCount,
+    }));
   }
   if (run.conflictCount > 0) {
     parts.push((run.mergeCount > 0 ? copy.summaryConflictSuffix : copy.summaryConflictOnly)
@@ -55,9 +57,7 @@ export function buildTidyPreviewSentence(
   if (preview.wouldChangeNothing || (mergeCount === 0 && preview.conflicts.length === 0)) {
     return `${intro} ${copy.previewNothing}`;
   }
-  let sentence = `${intro} ${copy.previewWouldChange
-    .replace('{groups}', String(mergeCount))
-    .replace('{cards}', String(sourceCount))}`;
+  let sentence = `${intro} ${interpolatePlural(copy.previewWouldChange, mergeCount, { groups: mergeCount, cards: sourceCount })}`;
   if (preview.conflicts.length > 0) {
     sentence += copy.previewConflictSuffix.replace('{count}', String(preview.conflicts.length));
   }

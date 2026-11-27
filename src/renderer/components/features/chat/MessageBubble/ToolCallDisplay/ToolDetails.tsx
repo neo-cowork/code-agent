@@ -49,6 +49,7 @@ import {
   FileResultDisplay,
   VideoResultDisplay,
 } from './ToolResultMediaDisplays';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 // Shiki 高亮内核按需动态加载,只在真的渲染 JSON 高亮时才下载。
 const LazyShikiCodeBlock = lazy(() => import('../ShikiCodeBlock'));
 
@@ -149,7 +150,7 @@ function CappedResultBody({
         >
           {showAll
             ? copy.collapse
-            : copy.expandRemaining.replace('{count}', String(overflow))}
+            : interpolatePlural(copy.expandRemaining, overflow)}
         </button>
       )}
     </>

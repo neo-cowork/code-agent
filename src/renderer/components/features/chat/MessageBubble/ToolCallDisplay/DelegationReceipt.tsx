@@ -11,7 +11,9 @@ import { useMemberViewStore } from '../../../../../stores/memberViewStore';
 import { useDelegationRetry } from '../../../../../hooks/useDelegationRetry';
 import { DeleteIncompleteActions } from '../../../background/DeleteIncompleteActions';
 import { GuiTakeoverDisclosureRows } from '../../../GuiTakeoverDisclosureRows';
+import { DelegationLeftoverShells } from './DelegationLeftoverShells';
 import type { DelegationPresentation } from './delegationPresentation';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 const HEADLINE_SENTENCE_END = /[。.!！?？]+$/u;
 
@@ -92,7 +94,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
     <div className="ml-6 mt-0.5 space-y-0.5 text-xs text-zinc-500" data-testid="delegation-receipt">
       {guiDisclosures}
       {presentation.stepCount !== undefined && (
-        <div>{t.chat.delegationReceipt.steps.replace('{count}', String(presentation.stepCount))}</div>
+        <div>{interpolatePlural(t.chat.delegationReceipt.steps, presentation.stepCount)}</div>
       )}
       {presentation.outputs.length > 0 && (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -139,6 +141,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
           {toolFailure.detail && <span className="text-zinc-400"> · {toolFailure.detail}</span>}
         </div>
       )}
+      <DelegationLeftoverShells presentation={presentation} />
       {(presentation.state === 'failed' || presentation.state === 'cancelled') && (
         <DelegationRetryActions presentation={presentation} />
       )}

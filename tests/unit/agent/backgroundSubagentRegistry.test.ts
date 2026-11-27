@@ -271,11 +271,11 @@ describe('BackgroundSubagentRegistry', () => {
       expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: 'Max iterations reached', failureCode: AgentFailureCode.StepCapReached });
     });
 
-    it.each(['step_cap', 'no_conclusion'] as const)('keeps the leftover background shell report (with taskId) after the %s conclusion', async (kind) => {
+    it.each(['step_cap', 'no_conclusion'] as const)('keeps the leftover background shell report (by human title, without taskId) after the %s conclusion', async (kind) => {
       const reg = new BackgroundSubagentRegistry();
       const conclusion = kind === 'step_cap' ? '后台任务做到第 3 步（上限 3 步）就用完了步数。' : '后台任务停下来了，但没有留下最终结果。';
       const report = formatSubagentLeftoverShellReport(
-        [{ commandSummary: 'npm run dev', taskId: 'shell-task-42', elapsedMs: 1000, mayAwaitSystemPrompt: false }], 'zh',
+        [{ title: '本地预览服务', elapsedMs: 1000, mayAwaitSystemPrompt: false }], 'zh',
       );
       // 与完成路径同形：output 已带报告，stopHint 带同一份报告对象（不重扫 shell）。
       const agentId = reg.spawn(async () => ({
@@ -287,7 +287,8 @@ describe('BackgroundSubagentRegistry', () => {
       const output = reg.getStatus(agentId)?.result?.output ?? '';
       expect(result?.output).toBe(output);
       expect(output.startsWith(conclusion)).toBe(true);
-      expect(output).toContain('shell-task-42');
+      expect(output).toContain('本地预览服务');
+      expect(output).toContain('仍在运行，可手动停止。');
       // 判定与错误文本不动：error 仍只是结论，不混入报告。
       expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: conclusion });
     });

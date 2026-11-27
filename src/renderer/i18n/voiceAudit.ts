@@ -10,7 +10,7 @@ export const voiceAuditZh = {
     timelineError: '通话时间线读取失败：{message}',
     retry: '重试',
     callList: '本会话通话',
-    callCount: '{count} 通',
+    callCount: { one: '{count} 通', other: '{count} 通' },
     callTime: '时间',
     duration: '时长',
     dispatchCount: '派单',
@@ -53,7 +53,7 @@ export const voiceAuditZh = {
     exportFailed: '语音审计 Markdown 导出失败：{message}',
     unknown: '未知',
     seconds: '{value} 秒',
-    eventCount: '{count} 条',
+    eventCount: { one: '{count} 条', other: '{count} 条' },
   },
 };
 
@@ -69,7 +69,7 @@ export const voiceAuditEn: typeof voiceAuditZh = {
     timelineError: 'Failed to load the call timeline: {message}',
     retry: 'Retry',
     callList: 'Calls in this session',
-    callCount: '{count} calls',
+    callCount: { one: '{count} call', other: '{count} calls' },
     callTime: 'Time',
     duration: 'Duration',
     dispatchCount: 'Dispatches',
@@ -112,6 +112,6 @@ export const voiceAuditEn: typeof voiceAuditZh = {
     exportFailed: 'Failed to export voice audit Markdown: {message}',
     unknown: 'Unknown',
     seconds: '{value}s',
-    eventCount: '{count} events',
+    eventCount: { one: '{count} event', other: '{count} events' },
   },
 };
