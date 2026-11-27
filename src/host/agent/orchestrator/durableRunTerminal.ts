@@ -14,6 +14,7 @@ import type { RunRegistry } from '../../runtime/runRegistry';
 import type { RunHandle } from '../../runtime/runContext';
 import { isNativeRecoveryDescriptor } from '../../runtime/nativeRecoveryHost';
 import { clearQuotaWaitNote, peekQuotaWaitDueAt } from '../runtime/contextAssembly/quotaWaitTurn';
+import { clearParkedCallApprovals } from '../../permissions/parkedCallApproval';
 import { createLogger } from '../../services/infra/logger';
 import type { AgentEvent } from '../../../shared/contract';
 import { isTerminalAgentError } from '../../../shared/utils/agentErrorClassification';
@@ -99,6 +100,7 @@ export async function finalizeOrParkDurableRun(
     } catch (error) {
       clearEnvBlockedNote(input.runId);
       clearQuotaWaitNote(input.runId);
+      clearParkedCallApprovals(input.runId);
       logger.error('Failed to park durable run on user stop; falling back to terminal cancelled', error);
       await terminal(input);
       return;
@@ -108,6 +110,7 @@ export async function finalizeOrParkDurableRun(
     return;
   }
   clearEnvBlockedNote(input.runId);
+  clearParkedCallApprovals(input.runId);
   if (dueAt !== undefined) clearQuotaWaitNote(input.runId);
   await terminal(input);
 }

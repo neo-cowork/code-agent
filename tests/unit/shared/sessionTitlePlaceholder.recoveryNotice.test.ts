@@ -52,7 +52,7 @@ describe('deriveFallbackSessionTitle ignores the recovery notice', () => {
 
 describe('deriveRuleSummaryTitle ignores the recovery notice', () => {
   it('summarises the real text after the prefix', () => {
-    expect(deriveRuleSummaryTitle(NOTICE_PREFIXED)).toBe('把三页会议纪要整理成一份周报发给团队');
+    expect(deriveRuleSummaryTitle(NOTICE_PREFIXED)).toBe('三页会议纪要整理成一份周报发给团队');
     expect(deriveRuleSummaryTitle(NOTICE_PREFIXED)).not.toMatch(LEAK);
   });
 

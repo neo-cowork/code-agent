@@ -45,14 +45,17 @@ function probeChangesReadRoot(command: unknown, workingDirectory: string, worksp
   const auth = { workingDirectory, workspaceRoot, homeDir: os.homedir(), userTexts: [], attachmentPaths: [] };
   let directory = workingDirectory;
   let outside = false;
-  for (const { cmd } of plan.steps) {
-    if (cmd.kind === 'cd') {
-      directory = path.resolve(directory, cmd.path);
-      // Conditional cd steps may be skipped. Once a branch can leave the roots,
-      // a later syntactic cd cannot prove that every read has returned inside.
-      outside ||= authorizeProbePath(directory, auth) === null;
-    } else if (outside && ['file-read', 'file-loop', 'ls', 'xattr', 'test', 'python'].includes(cmd.kind)) {
-      return true;
+  for (const step of plan.steps) {
+    // `when` 是 `if` 的分支语句：条件本身读一次路径，分支里的命令照样要看
+    for (const cmd of step.cmd.kind === 'when' ? [step.cmd.test, step.cmd.cmd] : [step.cmd]) {
+      if (cmd.kind === 'cd') {
+        directory = path.resolve(directory, cmd.path);
+        // Conditional cd steps may be skipped. Once a branch can leave the roots,
+        // a later syntactic cd cannot prove that every read has returned inside.
+        outside ||= authorizeProbePath(directory, auth) === null;
+      } else if (outside && ['file-read', 'file-loop', 'ls', 'xattr', 'test', 'stat', 'python'].includes(cmd.kind)) {
+        return true;
+      }
     }
   }
   return false;
