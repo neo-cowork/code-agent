@@ -139,6 +139,7 @@ describe('turnQuality', () => {
 
     const memory = summary.score.breakdown.find((item) => item.dimension === 'memory');
     expect(memory).toMatchObject({ score: 12, max: 20, reasons: ['未命中可见记忆'] });
+    expect(summary.agentScorecard?.memoryUsed).toBe(0);
   });
 
   it('(b) user-directives + 2 条 user-memory 只计 user-memory 条目', () => {
@@ -171,6 +172,7 @@ describe('turnQuality', () => {
 
     const memory = summary.score.breakdown.find((item) => item.dimension === 'memory');
     expect(memory).toMatchObject({ score: 20, max: 20, reasons: ['注入 2 条可见记忆'] });
+    expect(summary.agentScorecard?.memoryUsed).toBe(2);
   });
 
   it('capabilities 透出 requestedAgentId（显式选择降级时 ≠ agentId，供徽标判定）', () => {

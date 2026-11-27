@@ -308,7 +308,9 @@ export function buildTurnQualitySummary(
       agentName: ctx.agentName,
       model: `${provider}/${model}`,
       strategyProfile: decision?.strategyProfile,
-      memoryUsed: memory.blocks.reduce((sum, block) => sum + (block.items?.length || block.count || 0), 0),
+      memoryUsed: memory.blocks.reduce((sum, block) => (
+        block.blockType === 'user-directives' ? sum : sum + (block.items?.length || block.count || 0)
+      ), 0),
       toolsUsed: toolsUsed?.length || 0,
       warnings: warnings?.length || 0,
       score,
