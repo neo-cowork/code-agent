@@ -60,7 +60,7 @@ describe('/permissions 诊断块跟随界面语言', () => {
     expect(text).not.toMatch(/[一-鿿]/);
     for (const id of OUTCOMES) expect(text).not.toContain(id);
     expect(text).toContain('Auto-approved');
-    expect(text).toContain('Request approval');
+    expect(text).toContain('Ask every time');
     expect(text).toContain('3 ms');
   });
 

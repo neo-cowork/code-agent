@@ -182,6 +182,67 @@ describe('DurableRecoveryRuntime startup ordering', () => {
     db.close();
   });
 
+  it('keeps a run this process still drives when timers stalled past the lease', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const db = new Database(':memory:');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const registry = new RunRegistry();
+    const kernel = new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'live-worker',
+      leaseDurationMs: 200,
+    });
+    registry.configureDurableKernel(kernel);
+    const handle = await registry.startDurable({
+      runId: 'run-stalled',
+      sessionId: 'session-stalled',
+      workspace: '/repo',
+      cwd: '/repo',
+    }, Date.now());
+    const recover = vi.fn(async () => ({ status: 'recovered' as const, reason: 'test recovery' }));
+    const runtime = createDurableRecoveryRuntime({
+      registry,
+      kernel,
+      dataDir: '/tmp/durable-runtime-test',
+      getMcpClient: () => { throw new Error('unused'); },
+      externalRunners: { codex: vi.fn(), claude: vi.fn() } as never,
+      handlerOverrides: { native: { name: 'native_test', engineKind: 'native', recover } },
+    });
+    const consoleError = vi.spyOn(console, 'error');
+
+    // The event loop freezes (laptop sleep, SIGSTOP): the clock jumps past the lease and neither the
+    // heartbeat timer nor the sweeper timer fired. The sweeper then runs before the heartbeat.
+    vi.setSystemTime(1_000 + 5_000);
+    expect(await repository.get('run-stalled')).toMatchObject({ owner: { leaseExpiresAt: 1_200 } });
+    const results = await runtime.recoverAndDispatch(Date.now());
+
+    expect(results).toEqual([]);
+    expect(recover).not.toHaveBeenCalled();
+    expect(await repository.get('run-stalled')).toMatchObject({
+      attempt: 1,
+      status: 'running',
+      owner: { processInstanceId: 'live-worker', epoch: 1, leaseExpiresAt: 6_200 },
+    });
+    expect(registry.get('run-stalled')).toBe(handle);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('Durable lease renewed after timer stall'),
+      expect.objectContaining({ runId: 'run-stalled', overdueMs: 4_800, via: 'sweep' }),
+    );
+    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('[durable-sweeper] reclaimed'));
+    await expect(registry.terminalDurable('run-stalled', {
+      now: Date.now(),
+      status: 'completed',
+      reason: 'completed',
+      event: { type: 'run_completed', payload: { sessionId: 'session-stalled' }, recordedAt: Date.now() },
+    }, handle)).resolves.toMatchObject({ runId: 'run-stalled', status: 'completed', attempt: 1 });
+    registry.clear();
+    await runtime.shutdown();
+    db.close();
+  });
+
   it('does not reenter recovery while the previous tick is still running', async () => {
     vi.useFakeTimers();
     let finishFirstSweep: ((value: RunRehydrationPlan[]) => void) | undefined;
