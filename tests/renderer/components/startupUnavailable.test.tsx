@@ -137,18 +137,18 @@ describe('startup unavailable placeholders through public entries', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: t.sidebar.connectionRetry }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.getByText(t.sidebar.modelLoading)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /切换模型|Switch model/ })).toBeNull();
-    invoke.mockResolvedValue({ success: true, data: { models: { default: 'xiaomi', providers: { xiaomi: { model: 'mimo-v2.6-flash' } } } } });
+    invoke.mockResolvedValue({ success: true, data: { models: { default: 'xiaomi', providers: { xiaomi: { model: 'mimo-v2.6-flash', apiKeyConfigured: true } } } } });
     fireEvent.click(screen.getByRole('button', { name: t.sidebar.connectionRetry }));
     await waitFor(() => expect(screen.getByRole('button', { name: /切换模型|Switch model/ }).textContent).toContain('MiMo'));
     expect(useAppStore.getState().settingsLoaded).toBe(true);
     expect(screen.queryByTestId('model-loading')).toBeNull();
   });
 
-  it('model Retry accepts successful settings without a configured model', async () => {
+  it('model Retry shows setup after loading settings without a configured model', async () => {
     invoke.mockResolvedValue({ success: true, data: {} });
     render(<ModelSlot currentModel="glm-5.3" />);
     fireEvent.click(screen.getByRole('button', { name: en.sidebar.connectionRetry }));
-    await waitFor(() => expect(screen.getByRole('button', { name: /切换模型|Switch model/ })).toBeTruthy());
+    expect(await screen.findByRole('button', { name: en.settings.model.models.switcherPanel.configureModel })).toBeTruthy();
     expect(useAppStore.getState().settingsLoaded).toBe(true);
   });
 

@@ -166,7 +166,9 @@ export interface RunEnvelope {
   autoResumeCount?: number;
   /** Wall-clock time a quota_wait park may continue. Cleared with the cause. */
   quotaWaitDueAt?: number;
-  envBlocked?: { class: EnvBlockerClass; target: string; toolCallId: string };
+  envBlocked?:
+    | { class: Exclude<EnvBlockerClass, 'offline'>; target: string; toolCallId: string }
+    | { class: 'offline'; target: 'network'; toolCallId?: never; endpoint: string; provider: string; deadlineAt: number };
   terminal?: RunTerminal;
   createdAt: number;
   updatedAt: number;
@@ -383,7 +385,10 @@ export function assertRunParkMetadata(envelope: RunEnvelope): void {
     const block = envelope.envBlocked;
     if (getRunInterruptCause(envelope) !== 'env_blocked' || !block || !isEnvBlockerClass(block.class)
       || typeof block.target !== 'string' || !block.target.trim()
-      || typeof block.toolCallId !== 'string' || !block.toolCallId.trim()) {
+      || (block.class === 'offline'
+        ? block.target !== 'network' || block.toolCallId !== undefined || !Number.isFinite(block.deadlineAt)
+          || typeof block.endpoint !== 'string' || !block.endpoint || typeof block.provider !== 'string' || !block.provider
+        : typeof block.toolCallId !== 'string' || !block.toolCallId.trim())) {
       throw new Error('Invalid envBlocked metadata');
     }
   }

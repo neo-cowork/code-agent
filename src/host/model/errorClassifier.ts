@@ -80,7 +80,7 @@ const MESSAGE_PATTERNS: Array<[RegExp, ErrorClass]> = [
   [/model.*(?:not.?found|deprecated|decommission|retired|does not exist)|(?:deprecated|retired).*model/i, 'model_deprecated'],
   [/rate limit|too many requests|quota exceeded/i, 'rate_limit'],
   [/invalid_api_key|authentication_error|invalid token|unauthorized|forbidden/i, 'auth'],
-  [/econnreset|econnrefused|etimedout|socket hang up|network error|fetch failed/i, 'network'],
+  [/econnreset|econnrefused|enotfound|eai_again|etimedout|socket hang up|network (?:error|request failed)|fetch failed/i, 'network'],
   [/service unavailable|bad gateway|gateway timeout|internal server error/i, 'unavailable'],
 ];
 

@@ -2,7 +2,7 @@
 // N-ONBOARD-CONNECTOR-STEP：既有首启 gating 不因新连接器步改变——
 // 模型已配置（checkApiKeyConfigured=true）时 onboarding modal（含连接器步）整个不出现。
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/renderer/utils/platform', () => ({
@@ -97,7 +97,10 @@ beforeEach(() => {
   authState.setShowAuthModal.mockReset();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.removeItem('code-agent-model-onboarding-skipped');
+});
 
 function stubApiKeyConfigured(configured: boolean, settings = {}) {
   // 未知的 domain action 一律 reject，与真实 ipcService 在 jsdom（无 bridge）下的行为一致：
@@ -141,6 +144,22 @@ describe('first-run onboarding gating', () => {
       interval: 150,
     });
   });
+});
+
+describe('first-run model setup skip', () => {
+  it('keeps one wizard across reloads and leaves only the setup banner', async () => {
+    stubApiKeyConfigured(false);
+    const first = render(<App />);
+    await screen.findByTestId('onboarding-stepper', {}, { timeout: 8_000 });
+    fireEvent.click(screen.getByRole('button', { name: /跳过|Skip for now/ }));
+    expect(screen.queryByTestId('onboarding-stepper')).toBeNull();
+    first.unmount();
+    invokeDomain.mockClear();
+    render(<App />);
+    await waitForOnboardingCheck();
+    expect(screen.queryByTestId('onboarding-stepper')).toBeNull();
+    expect(screen.getAllByText(/还没接入模型|No model connected yet/)).toHaveLength(1);
+  }, 15_000);
 });
 
 describe('App startup font size', () => {

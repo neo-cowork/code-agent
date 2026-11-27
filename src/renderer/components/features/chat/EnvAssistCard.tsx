@@ -5,12 +5,19 @@ import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { invokeDomain } from '../../../services/ipcService';
 import { useEnvAssistStore } from '../../../stores/envAssistStore';
+import { OfflineEnvAssistCard } from './OfflineEnvAssistCard';
 import { useEnvCardResumesAutomatically } from '../../../hooks/useEnvParkedTarget';
 
 export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice }): React.ReactElement {
-  const { t } = useI18n();
   const live = useEnvAssistStore((state) => state.notices[snapshot.id]);
   const notice = live && live.updatedAt >= snapshot.updatedAt ? live : snapshot;
+  return notice.class === 'offline'
+    ? <OfflineEnvAssistCard notice={notice} />
+    : <PermissionEnvAssistCard notice={notice} />;
+}
+
+function PermissionEnvAssistCard({ notice }: { notice: EnvAssistNotice }): React.ReactElement {
+  const { t } = useI18n();
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {

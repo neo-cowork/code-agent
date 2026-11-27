@@ -62,15 +62,13 @@ describe('ensureModelConfigured effective session model', () => {
     expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('openai');
   });
 
-  it('names the override provider when both models are unkeyed', async () => {
+  it('opens the effective provider setup without duplicating the guide when both models are unkeyed', async () => {
     mockResolution({
       models: { default: 'openai', providers: { openai: { enabled: true }, claude: { enabled: true } } },
     }, { provider: 'claude', model: 'claude-sonnet-4-6', adaptive: false });
 
     await expect(ensureModelConfigured(zh, 'zh', { currentSessionId: 'session-1' })).resolves.toBe(false);
-    expect(useToastStore.getState().toasts.at(-1)?.message).toBe(
-      zh.modelSetup.missingApiKey.replace('{provider}', 'Anthropic Claude'),
-    );
+    expect(useToastStore.getState().toasts).toEqual([]);
     expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('claude');
   });
 
