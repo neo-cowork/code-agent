@@ -54,24 +54,40 @@ export const f07: FlowDef = {
         const ids = family(data, env.sessionIds);
         const events = inSessions(data.toolEvents, ids);
         // 两次调用是这条流程的前提：模型只 curl 了一次就没有「后续同类操作」可验，按任务书要求如实失败，不降级成「点过一次」
-        const bashCalls = events.filter((e) => e.tool_name === 'Bash' && e.phase === 'begin').length;
-        if (bashCalls < 2) {
-          env.note(`模型只发了 ${bashCalls} 次 Bash（要求两条单独的 curl），没有第二次同类调用可验授权记忆`);
-          throw new Error(`模型没有调用两次同类工具（Bash begin 只有 ${bashCalls} 次），无法验证「本次任务内允许」的授权记忆（模型分支）`);
+        const curlCalls = events.filter((e) => {
+          if (e.tool_name !== 'Bash' || e.phase !== 'begin' || typeof e.params_json !== 'string') return false;
+          try {
+            const params = JSON.parse(e.params_json) as { command?: unknown } | null;
+            return typeof params?.command === 'string' && params.command.includes('curl');
+          } catch {
+            return false;
+          }
+        }).length;
+        if (curlCalls < 2) {
+          env.note(`模型只发了 ${curlCalls} 次 Bash/curl（要求两条单独的 curl），没有第二次同类调用可验授权记忆`);
+          throw new Error(`模型没有调用两次同类工具（Bash/curl begin 只有 ${curlCalls} 次），无法验证「本次任务内允许」的授权记忆（模型分支）`);
         }
         await expectDb(env, (d) => {
           const rows = inSessions(d.permissionDecisions, family(d, env.sessionIds))
             .filter((r) => r.tool_name === 'Bash')
             .sort((a, b) => Number(a.recorded_at) - Number(b.recorded_at));
           if (!rows.length) return `没有 Bash 的审批记录：\n${describeRows(inSessions(d.permissionDecisions, ids), ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
-          const first = rows[0];
-          if (first.history_outcome !== 'ask-approved' || first.final_outcome !== 'allow') {
-            return `第一条 Bash 审批不是 allow | ask-approved：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+          // 11-27 nightly 中模型先用 pwd 确认目录，自动放行的探查不属于审批卡。
+          const anchorIndex = rows.findIndex((r) => String(r.history_outcome ?? '').startsWith('ask'));
+          const anchor = rows[anchorIndex];
+          if (anchor?.history_outcome !== 'ask-approved' || anchor.final_outcome !== 'allow') {
+            return `首条 Bash 询问记录缺失或不是 allow | ask-approved：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
           }
-          const auto = rows.slice(1).filter((r) => r.history_outcome === 'auto-approve' && String(r.reason ?? '').includes('tool_grant:run'));
-          if (!auto.length) return `后续 Bash 调用没有命中授权记忆（auto-approve / tool_grant:run）：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
-          const reAsked = rows.slice(1).filter((r) => String(r.history_outcome ?? '').startsWith('ask'));
-          if (reAsked.length) return `首条之后还有 Bash 再问了用户（授权记忆没拦住二次弹卡）：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+          if (rows.slice(0, anchorIndex).some((r) => r.final_outcome !== 'allow' || String(r.reason ?? '').includes('tool_grant:'))) {
+            return `审批卡之前有 Bash 未放行或提前命中授权记忆：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+          }
+          const later = rows.slice(anchorIndex + 1);
+          if (!later.some((r) => r.history_outcome === 'auto-approve' && String(r.reason ?? '').includes('tool_grant:run'))) {
+            return `后续 Bash 调用没有命中授权记忆（auto-approve / tool_grant:run）：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+          }
+          if (later.some((r) => String(r.history_outcome ?? '').startsWith('ask'))) {
+            return `审批卡之后还有 Bash 再问了用户（授权记忆没拦住二次弹卡）：\n${describeRows(rows, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+          }
           return null;
         });
       },
