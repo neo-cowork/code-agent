@@ -407,7 +407,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
       const outputRefs = task.status === 'completed' ? [] : buildTaskOutputRefs(task, t);
       const duration = formatBackgroundTaskDuration(task.durationMs);
       const resume = backgroundTaskResumeHint(task, outputRefs, language);
-      const failureMessage = status === 'blocked' ? task.failure?.message.trim() : undefined;
+      const failureMessage = status === 'blocked' && typeof task.failure?.message === 'string' ? task.failure.message.trim() : undefined;
       return {
         id: `background:${task.id}`,
         scope: 'global' as const,

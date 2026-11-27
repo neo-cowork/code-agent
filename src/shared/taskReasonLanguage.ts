@@ -114,8 +114,13 @@ function stripMarkdownAndUrls(raw: string): string {
     .replace(/\*(?=\S)([^*\n]+?)\*/g, '$1');
 }
 
+/** 表格行、分隔线不是一句话：挑第一句时跳过 */
+const TABLE_OR_RULE_LINE_PATTERN = /^(?:\|.*|[-=:| ]{3,})$/;
+/** 第一句总在开头附近；只清洗这一段，整屏日志不必全量过正则 */
+const REASON_SCAN_LENGTH = 2000;
+
 function firstSentence(text: string): string {
-  const line = text.split('\n').map((item) => item.trim()).find(Boolean) ?? '';
+  const line = text.split('\n').map((item) => item.trim()).find((item) => item && !TABLE_OR_RULE_LINE_PATTERN.test(item)) ?? '';
   return (FIRST_SENTENCE_PATTERN.exec(line)?.[0] ?? line).replace(/[:：]\s*$/, '').trim();
 }
 
@@ -131,7 +136,7 @@ interface BackgroundFailureDescription extends TaskBlockedReasonDescription {
  */
 export function describeBackgroundFailure(raw: string, language: 'zh' | 'en'): BackgroundFailureDescription {
   const trimmed = raw.trim();
-  const described = describeTaskBlockedReason(firstSentence(stripMarkdownAndUrls(trimmed)));
+  const described = describeTaskBlockedReason(firstSentence(stripMarkdownAndUrls(trimmed.slice(0, REASON_SCAN_LENGTH))));
   const matchesLanguage = HAN_PATTERN.test(described.reason) === (language === 'zh');
   const reason = matchesLanguage ? described.reason : '';
   const category = hasInsufficientBalanceSignal(trimmed) ? 'model' : describeTaskBlockedReason(trimmed).category;

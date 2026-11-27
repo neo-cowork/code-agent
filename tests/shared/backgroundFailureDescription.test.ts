@@ -86,6 +86,19 @@ describe('describeBackgroundFailure', () => {
       .toBe('没能连上服务，稍后再试。');
   });
 
+  it('skips table rows and rules when picking the first sentence', () => {
+    const table = '| 检查项 | 结果 |\n|---|---|\n| 文件名 | 供应商B报价单.xlsx |\n\n---\n\n文件开头不是表格文件应有的标记。后面还有别的说明。';
+    expect(describeBackgroundFailure(table, 'zh').reason).toBe('文件开头不是表格文件应有的标记。');
+    expect(describeBackgroundFailure('| a | b |\n|---|---|\n| 1 | 2 |', 'en')).toMatchObject({ reason: '', category: 'unknown' });
+  });
+
+  it('a very long log still yields its opening sentence and keeps the whole text as detail', () => {
+    const long = `没能读出报价单。\n${'at step (worker.js:1:1)\n'.repeat(4000)}`;
+    const result = describeBackgroundFailure(long, 'zh');
+    expect(result.reason).toBe('没能读出报价单。');
+    expect(result.detail).toBe(long.trim());
+  });
+
   it('does not split a sentence on a decimal point', () => {
     expect(describeBackgroundFailure('Price 0.12 per unit could not be checked. More text', 'en').reason)
       .toBe('Price 0.12 per unit could not be checked.');
