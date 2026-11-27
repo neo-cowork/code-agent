@@ -774,11 +774,14 @@ export const MCPSettings: React.FC = () => {
                 ) : (
                   mcpServers.map((server) => {
                     const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: language });
-                    const statusClass = getStatusBadgeClass(server.lifecycle.connectionState);
+                    const connectionState = server.lifecycle.connectionState;
+                    const connected = isConnectorCardConnected(server, connectionState);
+                    const statusState = connected || connectionState !== 'connected' ? connectionState : 'disconnected';
+                    const statusClass = getStatusBadgeClass(statusState);
                     const requiresReauthorization = isMcpAuthenticationFailure(server);
                     const isOAuthServer = server.authMode === 'oauth';
                     // 计数只在真正加载过（connected）后展示；未连接/懒加载未触发时没有计数这回事
-                    const hasLoadedCounts = server.lifecycle.connectionState === 'connected'
+                    const hasLoadedCounts = connected
                       && Number.isFinite(server.toolCount)
                       && Number.isFinite(server.resourceCount);
 
@@ -794,9 +797,9 @@ export const MCPSettings: React.FC = () => {
                             <span
                               data-testid={`mcp-diagnostic-status-dot-${server.id}`}
                               aria-hidden="true"
-                              className={`h-2 w-2 flex-shrink-0 rounded-full ${server.lifecycle.connectionState === 'connected' ? 'bg-mark-success' : 'bg-zinc-600'}`}
+                              className={`h-2 w-2 flex-shrink-0 rounded-full ${connected ? 'bg-mark-success' : 'bg-zinc-600'}`}
                             />
-                            {getStatusIcon(server.lifecycle.connectionState)}
+                            {getStatusIcon(statusState)}
                             <div className="min-w-0">
                               <div className="truncate text-sm font-medium text-zinc-200">{server.label}</div>
                               <div className="mt-0.5 truncate text-[11px] text-zinc-500">{server.id}</div>
