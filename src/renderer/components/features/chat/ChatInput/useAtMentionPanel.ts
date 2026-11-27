@@ -28,6 +28,7 @@ import { getProjectDisplayName } from '../../../../utils/projectDisplayName';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 import {
   buildArtifactRows,
+  buildFileRows,
   buildLibraryRows,
   buildSessionRows,
   flattenAtMentionRows,
@@ -292,13 +293,21 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       : [],
     [activeTab, groupLimit, libraryItems, projectId, pinnedIds, query],
   );
+  // 文件名过滤只取最后一个 '/' 之后的部分：@src/fo 应列 <base>/src 再按 'fo' 过滤；
+  // 整个 query 当子串会把 'src/' 也算进文件名，@src/ 会一行都不剩（浏览子目录就废了）。
+  const fileNameFilter = query.slice(query.lastIndexOf('/') + 1);
   // FB-3095：文件组 = 本会话附件（query 无 '/' 时、与工作区文件同一文件名过滤口径、新上传在前）
   // + 工作区文件。附件候选在工作目录之外也成立（无 baseDir 时 files 恒空、附件仍进列表）。
   const fileRows = useMemo(
     () => activeTab === 'all' || activeTab === 'files'
-      ? mergeSessionAttachmentRows(sessionAttachmentMessages, files, query, groupLimit, resolveAtMentionBaseDir(sessionId))
+      ? mergeSessionAttachmentRows(
+          sessionAttachmentMessages,
+          buildFileRows(files, fileNameFilter, groupLimit, resolveAtMentionBaseDir(sessionId)),
+          query,
+          groupLimit,
+        )
       : [],
-    [activeTab, files, groupLimit, query, sessionAttachmentMessages, sessionId],
+    [activeTab, fileNameFilter, files, groupLimit, query, sessionAttachmentMessages, sessionId],
   );
   const sessionRows = useMemo(
     () => activeTab === 'all' || activeTab === 'sessions'

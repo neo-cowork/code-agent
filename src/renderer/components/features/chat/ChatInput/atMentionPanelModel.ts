@@ -176,7 +176,7 @@ const ABSOLUTE_FILE_PATH_RE = /^(\/|[A-Za-z]:[\\/])/;
 /**
  * FB-3095：@ 面板的文件组原来只列工作目录（listFiles），用户在本会话上传过的附件
  * （落盘在 <data>/uploads/<uuid>/，不在工作目录里）永远搜不到。这里把当前会话
- * role==='user' 消息里带绝对 path、非 folder 的附件并进文件组。规则：
+ * role==='user' 消息里带绝对 path、非 folder 的附件并进已建好的工作区文件行。规则：
  * - query 含 '/'（在浏览子目录）时不掺附件，只列目录内容；
  * - 文件名过滤与工作区文件同一口径（query 最后一段子串、大小写不敏感、空 query 跳过点开头条目）；
  * - 附件行在前（新上传在前），之后是工作区行；同名只留一行——工作区文件赢，
@@ -185,16 +185,13 @@ const ABSOLUTE_FILE_PATH_RE = /^(\/|[A-Za-z]:[\\/])/;
  */
 export function mergeSessionAttachmentRows(
   messages: readonly Message[],
-  workspaceFiles: AtMentionFileMatch[],
+  workspaceRows: AtMentionFileRow[],
   query: string,
   limit = AT_MENTION_GROUP_LIMIT,
-  baseDir?: string | null,
 ): AtMentionFileRow[] {
-  const fileNameFilter = query.slice(query.lastIndexOf('/') + 1);
-  const workspaceRows = buildFileRows(workspaceFiles, fileNameFilter, limit, baseDir);
   if (query.includes('/')) return workspaceRows;
 
-  const normalized = fileNameFilter.trim().toLowerCase();
+  const normalized = query.slice(query.lastIndexOf('/') + 1).trim().toLowerCase();
   const taken = new Set(workspaceRows.map((row) => row.name));
   const attachmentRows: AtMentionFileRow[] = [];
   for (let i = messages.length - 1; i >= 0; i -= 1) {
