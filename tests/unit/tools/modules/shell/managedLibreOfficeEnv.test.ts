@@ -118,6 +118,7 @@ describe('token match: only soffice / libreoffice run as a program', () => {
     'soffice --headless \\\n  --convert-to pdf',
     '! command -v soffice &>/dev/null && echo missing || soffice --headless',
   ])('refuses to run %j while nothing is installed', (command) => {
+    vi.stubEnv('CODE_AGENT_NO_RUNTIME_AUTOINSTALL', '0');
     const result = run(command);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -125,6 +126,13 @@ describe('token match: only soffice / libreoffice run as a program', () => {
       expect(result.envBlocked).toEqual({ class: 'runtime_missing', target: 'libreoffice' });
       expect(result.waitable).toBe(true);
     }
+  });
+
+  it('with auto-install switched off nothing is on its way, so the refusal is not worth waiting for', () => {
+    // CODE_AGENT_NO_RUNTIME_AUTOINSTALL=1 is the suite default.
+    const result = run('soffice --headless --convert-to pdf deck.pptx');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.waitable).toBe(false);
   });
 });
 

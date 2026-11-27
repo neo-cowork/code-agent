@@ -46,8 +46,8 @@ const MAIL_PERMISSION_REFUSED_NOT_RUN =
 // renderer recognises as "no result of this call exists" (toolExecutionPresentation.isToolInterruptionPlaceholder).
 const RUNTIME_READY_NOT_RUN =
   'not run: the component this command needs was still being prepared when this call was made, so nothing was executed '
-  + 'and no result was recorded. It is ready now. Call this same command again once, naming the program plainly (soffice) '
-  + 'rather than a fixed application path.';
+  + 'and no result was recorded. It should be ready now. Call this same command again once, naming the program plainly (soffice) '
+  + 'rather than a fixed application path; if it still reports the component is being prepared, wait for the card to say it is ready.';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;

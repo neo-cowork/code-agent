@@ -333,7 +333,7 @@ describe('③ the card follows the install in place and the run finishes by itse
     expect(parked.success).toBe(false);
     expect(parked.error).toContain('not run: the component this command needs was still being prepared');
     expect(parked.error).toContain('nothing was executed');
-    expect(parked.error).toContain('It is ready now');
+    expect(parked.error).toContain('It should be ready now');
     expect(parked.error).not.toMatch(/crashed|cancelled before/);
     const again = toolResults().find((result) => result.toolCallId === secondCallId)!;
     out('REISSUED_RESULT', { success: again.success, output: again.output });
@@ -351,6 +351,33 @@ describe('③ the card follows the install in place and the run finishes by itse
     expect(messages().filter((m) => m.role === 'user')).toHaveLength(1);
     expect(logCount('Environment auto-continue stopped')).toBe(0);
     out('LOGS', store.logs.map(([text, data]) => `${text} ${JSON.stringify(data)}`));
+  });
+
+  it('a run that cannot park stops waiting the moment its call is aborted (Stop pressed mid-install) and the install carries on', async () => {
+    const f = await setup();
+    const { ctx, engine } = makeEngine(f.execute as never);
+    Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages() });
+    Object.assign(ctx, { onEvent: () => undefined });
+    const stop = new AbortController();
+    ctx.control.setRunAbortController(stop);
+    let finished = false;
+    const call = engine.executeToolsWithHooks([{ id: 'lo-stop', name: 'Bash', arguments: { command: COMMAND } }]).finally(() => { finished = true; });
+    await settleUntil(() => cards()[0]?.phase === 'fixing');
+    expect(finished).toBe(false);
+    const abortedAt = Date.now();
+    stop.abort();
+    const [toolResult] = await call;
+    out('ABORTED_HOLD', { waitedMsAfterAbort: Date.now() - abortedAt, error: toolResult.error });
+    // Back within one poll interval, with a plain "stopped, nothing ran" result — not the "ready, run it again" one.
+    expect(Date.now() - abortedAt).toBeLessThan(1_000);
+    expect(String(toolResult.error)).toContain('stopped before this command ran');
+    expect(String(toolResult.error)).not.toContain('ready now');
+    expect(sofficeRuns()).toHaveLength(0);
+    // The install is not cancelled: it is still on its way (the download is held) and finishes when released.
+    expect(getLibreOfficeState().phase).toBe('installing');
+    world.hold = false;
+    world.release!();
+    await settleUntil(() => getLibreOfficeState().phase === 'installed');
   });
 
   it('no hard 120 s cutoff: the wait outlives the fixed permission window while progress keeps moving', async () => {

@@ -359,7 +359,10 @@ export function applyManagedLibreOffice(
     );
     state = getLibreOfficeState();
   }
-  return refuse(state.phase === 'failed' ? state.error?.code ?? 'LIBREOFFICE_RUNTIME_INSTALL_FAILED'
+  const refusal = refuse(state.phase === 'failed' ? state.error?.code ?? 'LIBREOFFICE_RUNTIME_INSTALL_FAILED'
     : state.phase === 'unsupported' ? 'LIBREOFFICE_RUNTIME_UNSUPPORTED' : 'LIBREOFFICE_RUNTIME_INSTALLING',
   state.phase === 'installing' ? state.percent : undefined);
+  // Auto-install switched off (a developer/CI switch) and nothing installed: nothing is on its way, so a run must not park for it.
+  if (state.phase === 'missing' && process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1') refusal.waitable = false;
+  return refusal;
 }

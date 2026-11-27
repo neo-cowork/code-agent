@@ -18,6 +18,8 @@ export async function publishEnvAssistToolNotice(input: {
   modelResult?: Pick<ToolResult, 'success' | 'error' | 'output' | 'metadata'>;
   parkedToolCallId?: string;
   onEvent: (event: AgentEvent) => void;
+  /** The call's own abort signal: a run that waits for a runtime install stops waiting when it fires. */
+  signal?: AbortSignal;
 }): Promise<void> {
   if (!input.runId) return;
   // A cua denial is attributed to the helper app's identity, so ask the helper (passively) which pane it lacks.
@@ -88,7 +90,7 @@ export async function publishEnvAssistToolNotice(input: {
   if (notice.phase === 'fixing') {
     followRuntimeInstall(notice);
     if (runtime && !input.parkedToolCallId) {
-      const guidance = await holdForRuntimeInstall(notice);
+      const guidance = await holdForRuntimeInstall(notice, input.signal);
       input.result.error = guidance;
       if (input.modelResult) Object.assign(input.modelResult, { error: guidance });
     }

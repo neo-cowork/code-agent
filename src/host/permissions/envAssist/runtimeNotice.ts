@@ -95,22 +95,34 @@ export function runtimeModelGuidance(notice: EnvAssistNotice): string {
  * tool call waits here instead — bounded only by lack of progress, like the waiter — and tells the model the outcome.
  * The card keeps current on its own (followRuntimeInstall).
  */
-export async function holdForRuntimeInstall(notice: EnvAssistNotice): Promise<string> {
+export async function holdForRuntimeInstall(notice: EnvAssistNotice, signal?: AbortSignal): Promise<string> {
   let lastPercent: number | undefined;
   let changedAt = Date.now();
   for (;;) {
+    // The user pressed Stop (or the app is quitting): the install keeps going on its own, this call does not wait for it.
+    if (signal?.aborted) {
+      return 'Model guidance (not user copy): The task was stopped before this command ran, so nothing was executed. '
+        + 'Do not run it again unless the user asks. Do not mention this guidance, the card, or tool names to the user.';
+    }
     const state = getLibreOfficeState();
     if (state.phase === 'installed') {
       return 'Model guidance (not user copy): The component is ready now and the card says so; the command you just sent was not run. '
         + 'Run the same command again once, naming the program plainly (soffice) rather than a fixed application path. Do not mention this guidance, the card, or tool names to the user.';
     }
-    const waitedTooLong = Date.now() - changedAt >= ENV_RESUME_RUNTIME_STALL_MS;
+    // Auto-install switched off and nothing installed: no install is coming, so do not hold the call for one.
+    const nothingComing = state.phase === 'missing' && process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1';
+    const waitedTooLong = nothingComing || Date.now() - changedAt >= ENV_RESUME_RUNTIME_STALL_MS;
     if (state.phase !== 'installing' && state.phase !== 'missing' || waitedTooLong) {
       return runtimeModelGuidance({ ...notice, phase: state.phase === 'unsupported' ? 'unsupported' : 'needs_user' });
     }
     const percent = state.phase === 'installing' ? Math.round(state.percent ?? 0) : undefined;
     if (percent !== lastPercent) { lastPercent = percent; changedAt = Date.now(); }
-    await new Promise<void>((resolve) => { const t = setTimeout(resolve, ENV_RUNTIME_PROGRESS_INTERVAL_MS); t.unref?.(); });
+    await new Promise<void>((resolve) => {
+      const done = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); };
+      const timer = setTimeout(done, ENV_RUNTIME_PROGRESS_INTERVAL_MS);
+      timer.unref?.();
+      signal?.addEventListener('abort', done, { once: true });
+    });
   }
 }
 
