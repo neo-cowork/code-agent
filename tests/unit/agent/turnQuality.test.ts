@@ -121,6 +121,58 @@ describe('turnQuality', () => {
     });
   });
 
+  it('(a) 只注入常驻 user-directives 的轮次不算命中记忆', () => {
+    const ctx = runtime();
+
+    recordTurnMemoryBlock(ctx, {
+      blockType: 'user-directives',
+      trigger: 'session_start',
+      source: 'directive-memory-packer',
+      injected: true,
+      chars: 200,
+      count: 1,
+      items: [
+        { entryId: 'dir-1', title: 'Always give the conclusion first', kind: 'directive', scope: 'global', status: 'active' },
+      ],
+    });
+    const summary = buildTurnQualitySummary(ctx);
+
+    const memory = summary.score.breakdown.find((item) => item.dimension === 'memory');
+    expect(memory).toMatchObject({ score: 12, max: 20, reasons: ['未命中可见记忆'] });
+  });
+
+  it('(b) user-directives + 2 条 user-memory 只计 user-memory 条目', () => {
+    const ctx = runtime();
+
+    recordTurnMemoryBlock(ctx, {
+      blockType: 'user-directives',
+      trigger: 'session_start',
+      source: 'directive-memory-packer',
+      injected: true,
+      chars: 200,
+      count: 1,
+      items: [
+        { entryId: 'dir-1', title: 'Always give the conclusion first', kind: 'directive', scope: 'global', status: 'active' },
+      ],
+    });
+    recordTurnMemoryBlock(ctx, {
+      blockType: 'user-memory',
+      trigger: 'session_start',
+      source: 'memory-packer',
+      injected: true,
+      chars: 300,
+      count: 2,
+      items: [
+        { entryId: 'mem-1', title: '周报结构', kind: 'user', scope: 'global', status: 'active' },
+        { entryId: 'mem-2', title: '受众是团队', kind: 'user', scope: 'global', status: 'active' },
+      ],
+    });
+    const summary = buildTurnQualitySummary(ctx);
+
+    const memory = summary.score.breakdown.find((item) => item.dimension === 'memory');
+    expect(memory).toMatchObject({ score: 20, max: 20, reasons: ['注入 2 条可见记忆'] });
+  });
+
   it('capabilities 透出 requestedAgentId（显式选择降级时 ≠ agentId，供徽标判定）', () => {
     const ctx = runtime({
       agentId: 'default',
