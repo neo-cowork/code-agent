@@ -49,7 +49,7 @@ import {
   resolveAgentActivityTarget,
   toDelegationDisplayToolCall,
 } from './delegationPresentation';
-import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
+import { classifyToolName, humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
 import { interpolatePlural } from '../../../../../i18n/interpolate';
@@ -254,7 +254,8 @@ export function ToolCallDisplay({
   const backgroundShellLaunch = isBashTool(toolCall) && result?.success === true
     && (result.metadata?.background === true
       || (result.metadata?.pty === true && typeof result.metadata.outputFile === 'string'));
-  const canExpand = status !== 'interrupted' && !backgroundShellLaunch;
+  const isQuestion = classifyToolName(toolCall.name) === 'askUser';
+  const canExpand = status !== 'interrupted' && !backgroundShellLaunch && !isQuestion;
 
   // 工具行默认折叠（含 error）：失败回合常常一连十几条同样的报错，全展开会糊成
   // 一面墙（2026-06-25 dogfood：工件修复死锁 trace 不可读）。折叠态仍保留红左边框 +
@@ -357,7 +358,7 @@ export function ToolCallDisplay({
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !(delegationTool && displayToolCall.result?.output === '') && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && !isQuestion && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !(delegationTool && displayToolCall.result?.output === '') && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={displayToolCall} inline />
           </span>
@@ -429,7 +430,7 @@ export function ToolCallDisplay({
       {!backgroundShellLaunch && expanded && receipt && (
         <ReceiptDetail receipt={receipt} toolCall={displayToolCall} />
       )}
-      {!backgroundShellLaunch && expanded && !receipt && (
+      {!backgroundShellLaunch && !isQuestion && expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
             toolCall={displayToolCall}

@@ -65,27 +65,51 @@ export const f09: FlowDef = {
       run: async (env) => {
         // 长任务里抓页面要审批：先把当口的卡允许掉，让回合继续跑，再找空档点停止
         const page = env.page;
-        for (;;) {
-          const card = page.getByTestId('permission-card').first();
-          if (await card.isVisible().catch(() => false)) { await approveCard(page); continue; }
-          const stop = page.getByTestId('composer-stop-button');
-          if (await stop.isVisible().catch(() => false)) { await stop.click(); break; }
-          await sleep(200);
-        }
-        // 点完应进入「停止中」（composer-stop-stopping），再到回合收尾；两者都见不到就是停止键没生效
-        const stopping = page.getByTestId('composer-stop-stopping');
-        const deadline = Date.now() + STOP_SETTLE_TIMEOUT_MS;
-        let sawStopping = false;
-        while (Date.now() < deadline) {
-          if (await stopping.isVisible().catch(() => false)) sawStopping = true;
-          const stillStopping = await stopping.isVisible().catch(() => false);
-          const stillRunning = await page.getByTestId('composer-stop-button').isVisible().catch(() => false);
-          if (!stillStopping && !stillRunning) break;
-          await sleep(150);
-        }
-        if (!sawStopping) {
-          env.note('点停止后没有看到「停止中」（composer-stop-stopping）就收尾了');
-          throw new Error('点停止后没有出现 composer-stop-stopping（停止中状态），回合就结束了');
+        // 点完应进入「停止中」（composer-stop-stopping），再到回合收尾；两者都见不到就是停止键没生效。
+        // 取消在 <150ms 内完成时，轮询可能错过瞬态 DOM，先装 MutationObserver 记录是否真实渲染过。
+        await page.evaluate(() => {
+          const w = window as unknown as { __f09SawStopping?: boolean; __f09StoppingObserver?: MutationObserver };
+          w.__f09SawStopping = Boolean(document.querySelector('[data-testid="composer-stop-stopping"]'));
+          w.__f09StoppingObserver?.disconnect();
+          const obs = new MutationObserver(() => {
+            if (document.querySelector('[data-testid="composer-stop-stopping"]')) {
+              w.__f09SawStopping = true;
+            }
+          });
+          obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-testid'] });
+          w.__f09StoppingObserver = obs;
+        });
+        try {
+          for (;;) {
+            const card = page.getByTestId('permission-card').first();
+            if (await card.isVisible().catch(() => false)) { await approveCard(page); continue; }
+            const stop = page.getByTestId('composer-stop-button');
+            if (await stop.isVisible().catch(() => false)) { await stop.click(); break; }
+            await sleep(200);
+          }
+          const stopping = page.getByTestId('composer-stop-stopping');
+          const deadline = Date.now() + STOP_SETTLE_TIMEOUT_MS;
+          let sawStopping = false;
+          while (Date.now() < deadline) {
+            if (await stopping.isVisible().catch(() => false)) sawStopping = true;
+            const stillStopping = await stopping.isVisible().catch(() => false);
+            const stillRunning = await page.getByTestId('composer-stop-button').isVisible().catch(() => false);
+            if (!stillStopping && !stillRunning) break;
+            await sleep(150);
+          }
+          if (!sawStopping) {
+            sawStopping = await page.evaluate(() => Boolean((window as unknown as { __f09SawStopping?: boolean }).__f09SawStopping)).catch(() => false);
+          }
+          if (!sawStopping) {
+            env.note('点停止后没有看到「停止中」（composer-stop-stopping）就收尾了');
+            throw new Error('点停止后没有出现 composer-stop-stopping（停止中状态），回合就结束了');
+          }
+        } finally {
+          await page.evaluate(() => {
+            const w = window as unknown as { __f09StoppingObserver?: MutationObserver };
+            w.__f09StoppingObserver?.disconnect();
+            delete w.__f09StoppingObserver;
+          }).catch(() => undefined);
         }
         if (await page.getByTestId('composer-stop-stopping').isVisible().catch(() => false)
           || await page.getByTestId('composer-stop-button').isVisible().catch(() => false)) {
