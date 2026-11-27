@@ -23,12 +23,12 @@ import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import { htmlLocalityLocationLabel } from '../utils/htmlLocality';
 import {
   ARTIFACT_PREVIEW_SANDBOX,
-  capturePreviewFrame,
   clearPreviewFrameSelection,
   createPreviewFrameDocument,
   readPreviewFrameSelection,
   sendPreviewFrameSelectionMode,
 } from '../utils/previewFrameBridge';
+import { usePreviewLongScreenshotExport } from '../hooks/usePreviewLongScreenshotExport';
 import { loadPreviewFrameCaptureSource } from '../utils/previewFrameCaptureSource';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
 import { ArtifactStandingRefresh, type ArtifactStandingRefreshHandle } from './ArtifactStandingRefresh';
@@ -465,7 +465,6 @@ export const PreviewPanel: React.FC = () => {
   const [artifactFlash, setArtifactFlash] = useState(false);
   const lastLoadedRef = useRef<LoadedSnapshot | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [publishInfo, setPublishInfo] = useState<DeliverablePublishInfo | null>(null);
@@ -654,35 +653,12 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
-  const handleExportLongScreenshot = async () => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
-    setIsExporting(true);
-    setErrorState(null);
-    try {
-      const blob = await capturePreviewFrame(iframe);
-      if (iframeRef.current !== iframe) return;
-
-      const url = URL.createObjectURL(blob);
-      const fileName = (previewFilePath?.split('/').pop() || 'preview').replace(/\.[^.]+$/, '');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${fileName}-long-screenshot.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      if (iframeRef.current !== iframe) return;
-      logger.error('Long screenshot export failed', err);
-      setErrorState(err instanceof DOMException && err.name === 'SecurityError'
-        ? pv.crossOriginScreenshot
-        : pv.screenshotFailed);
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const { isExporting, handleExportLongScreenshot } = usePreviewLongScreenshotExport({
+    iframeRef,
+    previewFilePath,
+    isHtml,
+    mode,
+  });
 
   const handleOpenWithDefault = () => {
     if (!previewFilePath) return;

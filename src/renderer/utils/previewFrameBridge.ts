@@ -63,12 +63,36 @@ export function readPreviewFrameSelection(
   return { selector, tag, text };
 }
 
-export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<Blob> {
+export type PreviewCaptureErrorReason =
+  | 'cross-origin'
+  | 'capture-failed'
+  | 'timeout'
+  | 'preview-changed';
+
+export class PreviewCaptureError extends Error {
+  readonly reason: PreviewCaptureErrorReason;
+
+  constructor(reason: PreviewCaptureErrorReason, message: string) {
+    super(message);
+    this.name = 'PreviewCaptureError';
+    this.reason = reason;
+  }
+}
+
+export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<string> {
   const frame = iframe.contentWindow;
   const revision = Number(iframe.dataset.previewRevision);
-  const source = await loadPreviewFrameCaptureSource();
+  let source: string;
+  try {
+    source = await loadPreviewFrameCaptureSource();
+  } catch (error) {
+    throw new PreviewCaptureError(
+      'capture-failed',
+      error instanceof Error ? error.message : 'Failed to load screenshot renderer',
+    );
+  }
   if (!frame || !Number.isSafeInteger(revision) || iframe.contentWindow !== frame || !iframe.isConnected) {
-    throw new Error('Preview changed');
+    throw new PreviewCaptureError('preview-changed', 'Preview changed');
   }
 
   const id = ++nextCaptureId;
@@ -80,7 +104,7 @@ export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<Bl
     };
     const handleLoad = () => {
       cleanup();
-      reject(new Error('Preview changed'));
+      reject(new PreviewCaptureError('preview-changed', 'Preview changed'));
     };
     const handleMessage = (event: MessageEvent<unknown>) => {
       const data = readFrameMessage(event, iframe.contentWindow);
@@ -88,33 +112,48 @@ export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<Bl
         || data.revision !== revision || data.id !== id) return;
       cleanup();
       if (data.failure === 'cors') {
-        reject(new DOMException('Screenshot contains cross-origin resources', 'SecurityError'));
+        reject(new PreviewCaptureError('cross-origin', 'Screenshot contains cross-origin resources'));
+        return;
+      }
+      if (data.failure === 'capture') {
+        reject(new PreviewCaptureError('capture-failed', 'Screenshot capture failed'));
         return;
       }
 
       const { png } = data;
       if (typeof png !== 'string' || png.length > MAX_PNG_LENGTH || !png.startsWith(PNG_PREFIX)) {
-        reject(new Error('Invalid screenshot response'));
+        reject(new PreviewCaptureError('capture-failed', 'Invalid screenshot response'));
         return;
       }
+      const base64 = png.slice(PNG_PREFIX.length);
       try {
-        const binary = window.atob(png.slice(PNG_PREFIX.length));
-        if (!binary.startsWith(PNG_SIGNATURE)) throw new Error('Invalid PNG signature');
-        const bytes = new Uint8Array(binary.length);
-        for (let index = 0; index < binary.length; index += 1) {
-          bytes[index] = binary.charCodeAt(index);
+        const binary = window.atob(base64);
+        if (!binary.startsWith(PNG_SIGNATURE)) {
+          reject(new PreviewCaptureError('capture-failed', 'Invalid PNG signature'));
+          return;
         }
-        resolve(new Blob([bytes], { type: 'image/png' }));
+        resolve(base64);
       } catch (error) {
-        reject(error);
+        reject(new PreviewCaptureError(
+          'capture-failed',
+          error instanceof Error ? error.message : 'Invalid PNG base64 payload',
+        ));
       }
     };
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error('Screenshot response timed out'));
+      reject(new PreviewCaptureError('timeout', 'Screenshot response timed out'));
     }, ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS.RESPONSE);
     window.addEventListener('message', handleMessage);
     iframe.addEventListener('load', handleLoad);
-    frame.postMessage({ type: 'neo-preview-screenshot', id, source }, '*');
+    try {
+      frame.postMessage({ type: 'neo-preview-screenshot', id, source }, '*');
+    } catch (error) {
+      cleanup();
+      reject(new PreviewCaptureError(
+        'capture-failed',
+        error instanceof Error ? error.message : 'Failed to request screenshot',
+      ));
+    }
   });
 }
