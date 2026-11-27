@@ -20,12 +20,13 @@ import {
   listUnifiedMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
   updateMemoryEntry,
+  type MemoryEntryDatabase,
 } from '../../../src/host/memory/memoryEntryRuntime';
 import { archiveMemoryFile, listMemoryFiles } from '../../../src/host/lightMemory/lightMemoryIpc';
 
 const PANEL_JOURNAL: MemoryChangeJournalContext = { actor: 'user_manual' };
 
-function fakeDb() {
+function fakeDb(): MemoryEntryDatabase & { rows: MemoryRecord[] } {
   const rows: MemoryRecord[] = [];
   return {
     rows,
@@ -45,13 +46,10 @@ function fakeDb() {
       rows.push(next);
       return next;
     }),
-    updateMemory: vi.fn((id: string, patch: Partial<MemoryRecord>) => {
-      const target = rows.find((row) => row.id === id);
+    updateMemory: vi.fn((id: string, patch: Partial<MemoryRecord>): MemoryRecord | null => {
+      const target = rows.find((row) => row.id === id) ?? null;
       if (target) Object.assign(target, patch);
-    }),
-    deleteMemory: vi.fn((id: string) => {
-      const idx = rows.findIndex((row) => row.id === id);
-      if (idx >= 0) rows.splice(idx, 1);
+      return target;
     }),
   };
 }
