@@ -196,6 +196,35 @@ function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets,
   return '';
 }
 
+/** 多目标删除后果行最多点名几个目标，其余并进「等 N 个」。 */
+const DELETE_NAMED_TARGET_LIMIT = 3;
+
+/**
+ * 多目标 rm 的后果句（FB-1618）：宿主的 affectedPath 只是第一个目标、计数却是全部
+ * 目标之和，照抄就成了「一个名字、三个文件」。目标清单确切时按命令顺序点名前 3 个，
+ * 超出的写「等 N 个」；清单不确切（混了通配符/变量/管道）时一个名字都不写——点名
+ * 其中一个会被读成「只删这一个」。单目标与解析不出目标的命令返回 undefined，走原路径。
+ */
+function multiTargetDeletionConsequence(request: PermissionRequest, parsed: RmCommandTargets, t: Translations): string | undefined {
+  const total = parsed.targets.length;
+  if (total <= 1) return undefined;
+  const p = t.decisionCard.permission;
+  if (!parsed.exact) return p.consequenceDeleteUnnamed;
+  const names = parsed.targets
+    .slice(0, DELETE_NAMED_TARGET_LIMIT)
+    .map((target) => formatFilePath(redactCredentialText(target)))
+    .join(p.consequenceDeleteNameJoiner);
+  const named = total > DELETE_NAMED_TARGET_LIMIT
+    ? p.consequenceDeleteNamesMore
+      .replace('{total}', String(total))
+      .replace('{rest}', String(total - DELETE_NAMED_TARGET_LIMIT))
+      .replace('{names}', () => names)
+    : names;
+  return p.consequenceDelete
+    .replace('{target}', () => named)
+    .replace('{count}', deletionCountText(request, parsed, t));
+}
+
 export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
@@ -220,6 +249,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
   if (deletion) {
+    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
+    if (multiTarget) return multiTarget;
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', deletionCountText(request, parsedRmTargets, t));
