@@ -258,6 +258,8 @@ function onChildPath(pathEnv: string | undefined, name: string, managedRoot: str
  * (so the managed-only seam hides the system ones); any other explicit path only if it really is on disk.
  */
 function fixedPathResolvable(word: string): boolean {
+  // The managed-only seam: a soffice outside the managed root (system app, Homebrew link) does not exist for this run.
+  if (process.env[LIBREOFFICE_MANAGED_ONLY_ENV] === '1') return fs.existsSync(word) && path.resolve(word).startsWith(`${resolveLibreOfficeRoot()}${path.sep}`);
   return LIBREOFFICE_SEARCH_PATHS.includes(word) ? getLibreOfficeCandidates().includes(word) : fs.existsSync(word);
 }
 
