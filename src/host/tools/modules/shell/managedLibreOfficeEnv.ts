@@ -4,16 +4,18 @@
 // 挂在 createEvalSafeShellEnv 末尾（与托管 Python 同一处，bash 前台/后台/PTY 三条路径共用）。
 // 只看「把 soffice / libreoffice 当程序执行」的命令——命令位的词，不是引号里、echo 后面、
 // 注释或 heredoc 正文里的文字：
-//   托管副本已装、子进程 PATH 上还解析不到 ⇒ 只把托管的 Contents/MacOS 追加到 PATH 末尾
-//     （从不前置，PATH 其余部分逐字节不动）；
+//   托管副本已装、命令里的 soffice / libreoffice 由它来解析 ⇒ 只把托管的 Contents/MacOS 追加到 PATH 末尾
+//     （从不前置，PATH 其余部分逐字节不动），并给 LibreOffice 两个在 Bash 沙箱里起得来的环境变量；
 //   本机没有 ⇒ 不执行：后台起一次 ensureLibreOffice（单飞），返回 fail-closed 结果。
 //     停不停车由 Bash 模块按 run 能不能等来决定（parkMissingRuntime）。
 // 不以 soffice / libreoffice 当程序用的命令：环境逐字节不变。
 // ============================================================================
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { ToolContext } from '../../../protocol/tools';
+import { pathToFileURL } from 'node:url';
 import { LIBREOFFICE_SEARCH_PATHS } from '../../media/ppt/constants';
 import { LIBREOFFICE_MANAGED_ONLY_ENV } from '../../../runtime/libreOffice/constants';
 import { ensureLibreOffice } from '../../../runtime/libreOffice/ensure';
@@ -33,6 +35,10 @@ const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 const DIGITS = /^\d+$/;
 const WHITESPACE = /\s/;
 const BRACE_KEYWORD = /[\s;|&]/;
+/** LibreOffice's per-user settings live under the temp directory the Bash sandbox already lets it write. */
+const OFFICE_PROFILE_DIRNAME = 'neo-libreoffice-profile';
+/** Must match the owner-approved Unix-socket directory in src/host/sandbox/seatbelt.ts (`allowOfficeIpc`). */
+const OFFICE_IPC_SOCKET_DIR = '/private/tmp';
 
 export interface ManagedLibreOfficeBlock {
   ok: false;
@@ -289,7 +295,19 @@ function refuse(code: ManagedLibreOfficeBlock['code'], percent: number | undefin
 }
 
 /**
- * 解析得到 ⇒ 原样放行；托管副本在、只是 PATH 上没有 ⇒ 追加到 PATH 末尾后放行；
+ * LibreOffice started through Bash runs inside the sandbox: it cannot bind its single-instance pipe where it
+ * normally would (the profile only allows the owner-approved location) and cannot write its settings under HOME.
+ * Point both at places the sandbox already grants. Values the caller set itself are left alone.
+ */
+function prepareLibreOfficeEnv(env: Record<string, string>, logger?: ToolContext['logger']): void {
+  const tmp = process.env.TMPDIR || os.tmpdir();
+  env.UserInstallation ??= pathToFileURL(path.join(tmp, OFFICE_PROFILE_DIRNAME)).href;
+  env.OSL_SOCKET_PATH ??= OFFICE_IPC_SOCKET_DIR;
+  logger?.debug('Bash child env: LibreOffice pointed at its sandbox-writable pipe and profile');
+}
+
+/**
+ * 解析得到 ⇒ 原样放行；由托管副本解析 ⇒ PATH 末尾追加（如果还没有）+ 沙箱可用的环境变量；
  * 本机没有 ⇒ 不执行，返回 fail-closed 结果并（除非关了自动安装）后台起一次安装。
  */
 export function applyManagedLibreOffice(
@@ -301,17 +319,29 @@ export function applyManagedLibreOffice(
   const words = libreOfficeCommands(command);
   if (words.length === 0) return null;
   const managedRoot = resolveLibreOfficeRoot();
-  const bareMissing = words.filter((word) => !word.includes('/') && !onChildPath(env.PATH, word, managedRoot));
+  const bare = words.filter((word) => !word.includes('/'));
+  const bareMissing = bare.filter((word) => !onChildPath(env.PATH, word, managedRoot));
   const fixedMissing = words.filter((word) => word.includes('/') && !fixedPathResolvable(word));
-  if (bareMissing.length + fixedMissing.length === 0) return null;
-
   const managedPath = managedLibreOfficePath(managedRoot);
+  // Nothing to add unless the managed copy is (or is about to be) what answers the command.
+  if (bareMissing.length + fixedMissing.length === 0
+    && !(fs.existsSync(managedPath) && bare.length > 0 && bare.every((word) => (pathLookup(env.PATH, word) ?? '').startsWith(`${managedRoot}${path.sep}`)))) return null;
+
   if (fs.existsSync(managedPath) && fixedMissing.length === 0) {
     const managedDir = path.dirname(managedPath);
-    if (!(env.PATH ?? '').split(path.delimiter).includes(managedDir)) {
-      env.PATH = env.PATH ? `${env.PATH}${path.delimiter}${managedDir}` : managedDir;
+    if (bareMissing.length > 0 && !(env.PATH ?? '').split(path.delimiter).includes(managedDir)) {
+      const shadowedBySeam = process.env[LIBREOFFICE_MANAGED_ONLY_ENV] === '1'
+        && bareMissing.some((word) => {
+          const hit = pathLookup(env.PATH, word);
+          return hit !== null && !hit.startsWith(`${managedRoot}${path.sep}`);
+        });
+      // Production always appends to the END of PATH. Only under the managed-only seam, when a system soffice
+      // sits earlier on PATH (e.g. /opt/homebrew/bin/soffice on a dev machine), place the managed copy ahead of it
+      // so the seam truly runs the managed copy instead of silently falling back to the system binary.
+      env.PATH = !env.PATH ? managedDir : shadowedBySeam ? `${managedDir}${path.delimiter}${env.PATH}` : `${env.PATH}${path.delimiter}${managedDir}`;
+      logger?.debug('Bash child env: added managed LibreOffice directory to PATH', { placement: shadowedBySeam ? 'seam_front' : 'tail' });
     }
-    logger?.debug('Bash child env: appended the managed LibreOffice directory to the end of PATH');
+    prepareLibreOfficeEnv(env, logger);
     return null;
   }
 

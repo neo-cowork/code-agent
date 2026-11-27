@@ -183,13 +183,21 @@ describe('missing: fail closed with plain guidance', () => {
 describe('installed: the managed directory goes to the end of PATH, nothing else moves', () => {
   it('appends once, never prepends, and leaves every other entry and variable byte-identical', () => {
     installManaged();
+    const baseline = createEvalSafeShellEnv({ PATH: '/usr/bin:/bin', HOME: '/Users/example' }, '/tmp/project', undefined, {
+      allowNetwork: false, command: 'echo ok',
+    });
     const result = createEvalSafeShellEnv({ PATH: '/usr/bin:/bin', HOME: '/Users/example' }, '/tmp/project', undefined, {
       allowNetwork: false, command: 'soffice --headless --convert-to pdf deck.pptx',
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
+    expect(baseline.ok && result.ok).toBe(true);
+    if (baseline.ok && result.ok) {
       expect(result.env.PATH).toBe(`/usr/bin:/bin${path.delimiter}${managedDir}`);
       expect(result.env.HOME).toBe('/Users/example');
+      // …and LibreOffice is pointed at the two places the Bash sandbox lets it use (nothing else is added).
+      const added = Object.keys(result.env).filter((key) => !(key in baseline.env)).sort();
+      expect(added).toEqual(['OSL_SOCKET_PATH', 'UserInstallation']);
+      expect(result.env.OSL_SOCKET_PATH).toBe('/private/tmp');
+      expect(result.env.UserInstallation).toMatch(/^file:\/\/.*\/neo-libreoffice-profile$/);
     }
     const twice = run(`PATH="/usr/bin:/bin:${managedDir}" true; soffice --version`, `/usr/bin:/bin${path.delimiter}${managedDir}`);
     expect(twice.ok && twice.env.PATH).toBe(`/usr/bin:/bin${path.delimiter}${managedDir}`);
@@ -200,6 +208,28 @@ describe('installed: the managed directory goes to the end of PATH, nothing else
     installManaged();
     const result = run('echo "soffice" && which soffice');
     expect(result.ok && result.env.PATH).toBe('/usr/bin:/bin');
+    expect(result.ok && result.env.UserInstallation).toBeUndefined();
+  });
+
+  it('leaves values the caller already set alone, and still prepares the env when the managed dir is already on PATH', () => {
+    installManaged();
+    const result = createEvalSafeShellEnv({ PATH: `${managedDir}${path.delimiter}/usr/bin`, UserInstallation: 'file:///Users/example/my-profile', OSL_SOCKET_PATH: '/Users/example/sockets' }, '/tmp/project', undefined, {
+      allowNetwork: false, command: 'libreoffice --headless --convert-to pdf a.docx',
+    });
+    expect(result.ok && result.env).toMatchObject({ PATH: `${managedDir}${path.delimiter}/usr/bin`, UserInstallation: 'file:///Users/example/my-profile', OSL_SOCKET_PATH: '/Users/example/sockets' });
+  });
+
+  it('does not prepare the env when a soffice somewhere else on PATH answers (that copy is not this hook\'s)', () => {
+    installManaged();
+    const otherBin = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-lo-other-'));
+    fs.writeFileSync(path.join(otherBin, 'soffice'), '#!/bin/sh\n', { mode: 0o755 });
+    delete process.env.CODE_AGENT_LIBREOFFICE_MANAGED_ONLY;
+    try {
+      const result = run('soffice --version', `/usr/bin${path.delimiter}${otherBin}${path.delimiter}/bin`);
+      expect(result.ok && result.env.UserInstallation).toBeUndefined();
+    } finally {
+      fs.rmSync(otherBin, { recursive: true, force: true });
+    }
   });
 
   it('a PATH-less environment gets exactly the managed directory', () => {

@@ -20,10 +20,8 @@ import type { LibreOfficeState } from '../../runtime/libreOffice/types';
 import type { EnvResumeProbe } from '../../runtime/envResumeWaiter';
 import { queueNoticeWrite } from './noticeWriteQueue';
 
-export const RUNTIME_TARGET = 'libreoffice';
+const RUNTIME_TARGET = 'libreoffice';
 const RUNTIME_CODES = /^LIBREOFFICE_RUNTIME_/;
-/** A card in one of these phases is still open: a new notice for the same target re-points to it instead of adding one. */
-const LIVE_PHASES: readonly EnvAssistNotice['phase'][] = ['fixing', 'needs_user'];
 const logger = createLogger('EnvRuntimeNotice');
 
 /** The blocker behind a failed tool result when it is a runtime Neo installs: the run's park note, or the shell hook's code. */
@@ -107,7 +105,9 @@ async function writeRuntimeNotice(next: EnvAssistNotice, options: { retry?: bool
 interface Follower { notice: EnvAssistNotice; changedAt: number }
 const followers = new Map<string, Follower>();
 let tick: ReturnType<typeof setTimeout> | undefined;
+let stallTimer: ReturnType<typeof setTimeout> | undefined;
 let kickRequested = false;
+let publishing = false;
 
 function kickInstall(reason: string): void {
   if (process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1') return;
@@ -118,44 +118,60 @@ function kickInstall(reason: string): void {
   );
 }
 
-/** Stop following a card (the run is over or parked elsewhere); the publisher exits once nothing is followed. */
-export function unfollowRuntimeNotice(notice: Pick<EnvAssistNotice, 'id'>): void {
-  followers.delete(notice.id);
+/** No progress for the whole stall window: say so and hand the user the one button (same rule as the waiter). */
+async function stallOut(): Promise<void> {
+  const waiting = [...followers.values()].filter((follower) => follower.notice.phase === 'fixing');
+  followers.clear();
+  for (const { notice, changedAt } of waiting) {
+    const target = notice.target?.id ?? RUNTIME_TARGET;
+    logger.warn('LibreOffice install made no progress; asking the user', { noticeId: notice.id, stallMs: ENV_RESUME_RUNTIME_STALL_MS, since: changedAt });
+    await writeRuntimeNotice({
+      ...notice, phase: 'needs_user', sentenceKey: `env.sentence.${target}Stalled`, action: { kind: 'recheck', labelKey: `env.retry.${target}` },
+      progress: undefined, sentenceParams: undefined, updatedAt: Date.now(),
+    });
+  }
+}
+
+/** The stall window starts over on every progress change, exactly like the waiter's. */
+function rearmStall(): void {
+  if (stallTimer) clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => { stallTimer = undefined; void stallOut(); }, ENV_RESUME_RUNTIME_STALL_MS);
+  stallTimer.unref?.();
 }
 
 async function publishTick(): Promise<void> {
   tick = undefined;
-  const state = getLibreOfficeState();
-  const now = Date.now();
-  // An install that died with its process (kill -9 mid-download): a card still waiting is the user asking for it again.
-  if (state.phase === 'missing' && !kickRequested) { kickRequested = true; kickInstall('card_still_waiting'); }
-  for (const [id, follower] of [...followers]) {
-    const { notice } = follower;
-    const next = runtimeNoticeFor({
-      sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
-      parkedToolCallId: notice.parkedToolCallId, now, state,
-    });
-    const stalled = now - follower.changedAt >= ENV_RESUME_RUNTIME_STALL_MS;
-    if (next.phase === 'fixing' && stalled) {
-      // No progress for the whole stall window: say so and hand the user the one button.
-      followers.delete(id);
-      logger.warn('LibreOffice install made no progress; asking the user', { noticeId: id, stallMs: ENV_RESUME_RUNTIME_STALL_MS });
-      await writeRuntimeNotice({ ...next, phase: 'needs_user', sentenceKey: `env.sentence.${next.target?.id}Stalled`, action: { kind: 'recheck', labelKey: `env.retry.${next.target?.id}` }, progress: undefined, sentenceParams: undefined });
-      continue;
-    }
-    if (next.phase !== 'fixing') {
-      followers.delete(id);
+  if (publishing) return;
+  publishing = true;
+  try {
+    const state = getLibreOfficeState();
+    const now = Date.now();
+    // An install that died with its process (kill -9 mid-download): a card still waiting is the user asking for it again.
+    if (state.phase === 'missing' && !kickRequested) { kickRequested = true; kickInstall('card_still_waiting'); }
+    for (const [id, follower] of [...followers]) {
+      const { notice } = follower;
+      const next = runtimeNoticeFor({
+        sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
+        parkedToolCallId: notice.parkedToolCallId, now, state,
+      });
+      if (next.phase !== 'fixing') {
+        followers.delete(id);
+        await writeRuntimeNotice(next);
+        continue;
+      }
+      if (next.progress?.percent === notice.progress?.percent) continue;
+      followers.set(id, { notice: next, changedAt: now });
+      rearmStall();
       await writeRuntimeNotice(next);
-      continue;
     }
-    if (next.progress?.percent === notice.progress?.percent) continue;
-    followers.set(id, { notice: next, changedAt: now });
-    await writeRuntimeNotice(next);
-  }
+  } finally { publishing = false; }
   if (followers.size > 0) {
     tick = setTimeout(() => { void publishTick(); }, ENV_RUNTIME_PROGRESS_INTERVAL_MS);
     tick.unref?.();
-  } else kickRequested = false;
+  } else {
+    kickRequested = false;
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = undefined; }
+  }
 }
 
 /** Keep a "preparing" card current while the install runs. Idempotent per card. */
@@ -163,6 +179,7 @@ export function followRuntimeInstall(notice: EnvAssistNotice): void {
   if (notice.phase !== 'fixing') return;
   followers.set(notice.id, { notice, changedAt: Date.now() });
   if (tick === undefined) {
+    rearmStall();
     tick = setTimeout(() => { void publishTick(); }, ENV_RUNTIME_PROGRESS_INTERVAL_MS);
     tick.unref?.();
   }
@@ -185,14 +202,25 @@ export async function retryRuntimeInstall(notice: EnvAssistNotice): Promise<EnvA
 /**
  * Passive read for the env-resume waiter. An install that died with the process is started again (single flight);
  * the parked run's card is followed again so it keeps showing progress after a restart.
+ * On terminal states (installed / failed / unsupported), sync the card first so the user sees "ready" / "retry"
+ * before the resumed turn starts or the waiter exits (no race with the 1 s progress ticker).
  */
 export function libreOfficeResumeProbe(scope?: { runId: string; sessionId: string }): EnvResumeProbe {
   let refollowed = false;
   return async () => {
     const state = getLibreOfficeState();
-    if (state.phase === 'installed') return 'green';
-    if (state.phase === 'unsupported') return 'unavailable';
-    if (state.phase === 'failed') return 'failed';
+    if (state.phase === 'installed') {
+      if (scope) await syncScopeNotice(scope, state);
+      return 'green';
+    }
+    if (state.phase === 'unsupported') {
+      if (scope) await syncScopeNotice(scope, state);
+      return 'unavailable';
+    }
+    if (state.phase === 'failed') {
+      if (scope) await syncScopeNotice(scope, state);
+      return 'failed';
+    }
     if (!refollowed) {
       refollowed = true;
       if (state.phase === 'missing') { kickRequested = true; kickInstall('resume_probe'); }
@@ -200,6 +228,23 @@ export function libreOfficeResumeProbe(scope?: { runId: string; sessionId: strin
     }
     return { status: 'red', progress: state.phase === 'installing' ? Math.round(state.percent ?? 0) : undefined };
   };
+}
+
+async function syncScopeNotice(scope: { runId: string; sessionId: string }, state: LibreOfficeState): Promise<void> {
+  try {
+    const messages = await getSessionManager().getMessages(scope.sessionId);
+    const notice = messages.findLast((message: Message) => message.metadata?.envAssist?.runId === scope.runId
+      && message.metadata.envAssist.class === 'runtime_missing')?.metadata?.envAssist;
+    if (notice?.phase !== 'fixing') return;
+    followers.delete(notice.id);
+    const next = runtimeNoticeFor({
+      sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
+      parkedToolCallId: notice.parkedToolCallId, now: Date.now(), state,
+    });
+    if (next.phase !== 'fixing') await writeRuntimeNotice(next);
+  } catch (error) {
+    logger.warn('Runtime card terminal sync failed', { runId: scope.runId, error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function refollow(scope: { runId: string; sessionId: string }): Promise<void> {
@@ -215,10 +260,16 @@ async function refollow(scope: { runId: string; sessionId: string }): Promise<vo
   }
 }
 
-/** A card re-mounted (page reload) asks for its current copy; passively re-follow a card that still says "preparing". */
+/** A card re-mounted (page reload) asks for its current copy; passively sync and re-follow a card that still says "preparing". */
 export async function recheckRuntimeNotice(notice: EnvAssistNotice): Promise<EnvAssistNotice> {
-  if (notice.phase === 'fixing') followRuntimeInstall(notice);
-  return notice;
+  if (notice.phase !== 'fixing') return notice;
+  const next = runtimeNoticeFor({
+    sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
+    parkedToolCallId: notice.parkedToolCallId, now: Date.now(),
+  });
+  if (next.phase !== notice.phase || next.progress?.percent !== notice.progress?.percent) {
+    await writeRuntimeNotice(next);
+  }
+  if (next.phase === 'fixing') followRuntimeInstall(next);
+  return next;
 }
-
-export const runtimeNoticeInternals = { LIVE_PHASES };

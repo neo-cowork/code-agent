@@ -193,7 +193,10 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     if (request.actionKind === 'recheck') {
       // "Retry install" on a runtime card. Only that card, while it is the one asking, gets a new attempt.
       if (notice?.phase !== 'needs_user' || !isRuntimeNotice(notice) || action?.kind !== 'recheck') return { status: 'rejected' };
-      return { status: 'checked', notice: await (deps.runtimeRetry ?? retryRuntimeInstall)(notice) };
+      const next = await (deps.runtimeRetry ?? retryRuntimeInstall)(notice);
+      // Re-arm the env-resume waiter (it stopped when the earlier attempt failed/stalled) so the parked run resumes once ready.
+      armEnvResumeOnSessionReturn(notice.sessionId, getApplicationRunRegistry(), 'env_assist_runtime_retry');
+      return { status: 'checked', notice: next };
     }
     if (notice?.phase !== 'needs_user' || action?.kind !== request.actionKind
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
