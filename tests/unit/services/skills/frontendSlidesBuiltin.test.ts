@@ -195,7 +195,10 @@ describe('packaged frontend-slides builtin', () => {
     const result = await executeSkill({ command: 'frontend-slides' }, ctx, async () => ({ allow: true }));
     expect(result.ok).toBe(true);
     expect(result.meta?.isSkillActivation).toBe(true);
-    const injected = result.meta?.skillResult?.newMessages?.filter((message) => message.isMeta) ?? [];
+    const skillResult = result.meta?.skillResult as
+      | { newMessages?: Array<{ isMeta?: boolean; content: string }> }
+      | undefined;
+    const injected = skillResult?.newMessages?.filter((message) => message.isMeta) ?? [];
     expect(injected).toHaveLength(1);
     expect(injected[0].content).toContain('不要调用 `ask_user_question`');
     expect(injected[0].content).toContain('不要向用户提问');
