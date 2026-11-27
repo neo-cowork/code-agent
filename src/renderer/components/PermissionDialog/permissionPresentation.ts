@@ -7,6 +7,7 @@ import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { PermissionRequestReason } from '@shared/contract';
+import { findConnectorToolMetadata } from '@shared/contract/workbenchTools';
 import type { RmCommandTargets } from '@shared/rmCommandTargets';
 import { parseRmTargets } from '@shared/rmCommandTargets';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
@@ -115,6 +116,91 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
   return 'compact';
 }
 
+const MAX_OBJECT_PREVIEW_CHARS = 60;
+
+function sanitizeObjectLabel(raw: string): string | undefined {
+  const collapsed = redactCredentialText(raw).replace(/\s+/gu, ' ').trim();
+  if (!collapsed) return undefined;
+  return collapsed.length > MAX_OBJECT_PREVIEW_CHARS
+    ? `${collapsed.slice(0, MAX_OBJECT_PREVIEW_CHARS - 1)}…`
+    : collapsed;
+}
+
+function firstRecipientFromRawArgs(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const first = value.split(/[,;\n]/u).map((part) => part.trim()).find(Boolean);
+    return first ? sanitizeObjectLabel(first) : undefined;
+  }
+  if (Array.isArray(value)) {
+    const first = value.find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    return first ? sanitizeObjectLabel(first) : undefined;
+  }
+  return undefined;
+}
+
+function extractSafeObjectFromRecord(record: Record<string, unknown> | undefined): string | undefined {
+  if (!record) return undefined;
+  for (const key of ['title', 'subject'] as const) {
+    const val = record[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      const clean = sanitizeObjectLabel(val);
+      if (clean) return clean;
+    }
+  }
+  const recipient = firstRecipientFromRawArgs(record.to);
+  if (recipient) return recipient;
+  if (typeof record.name === 'string' && record.name.trim().length > 0) {
+    const clean = sanitizeObjectLabel(record.name);
+    if (clean) return clean;
+  }
+  return undefined;
+}
+
+function extractSafeObject(request: PermissionRequest): string | undefined {
+  const fromRawArgs = extractSafeObjectFromRecord(request.rawArgs);
+  if (fromRawArgs) return fromRawArgs;
+  const fromDetails = extractSafeObjectFromRecord(request.details as Record<string, unknown> | undefined);
+  if (fromDetails) return fromDetails;
+  if (typeof request.argsPreview === 'string' && request.argsPreview.trim().length > 0) {
+    const firstSegment = request.argsPreview
+      .split(/[·|\n;,]/u)
+      .map((seg) => seg.trim())
+      .find(Boolean);
+    if (firstSegment) {
+      return sanitizeObjectLabel(firstSegment);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 共享的「动作 + 对象」一句话问句，在回落到无内容兜底句前由 permissionSummary 与 describeKind 共用。
+ * 绝不暴露原始工具名；对象经 redactCredentialText 脱敏。
+ */
+export function actionObjectQuestion(
+  request: PermissionRequest,
+  t: Translations,
+  language: Language = 'zh',
+): string | undefined {
+  const p = t.decisionCard.permission;
+  const meta = findConnectorToolMetadata(request.tool);
+  const rawAction = meta?.action ? (language === 'en' ? meta.action.en : meta.action.zh) : undefined;
+  const action = rawAction
+    ? (language === 'en' ? rawAction.charAt(0).toUpperCase() + rawAction.slice(1) : rawAction)
+    : undefined;
+  const object = extractSafeObject(request);
+  if (action && object) {
+    return p.questionActionWithObject.replace('{action}', action).replace('{object}', object);
+  }
+  if (action) {
+    return p.questionActionOnly.replace('{action}', action);
+  }
+  if (object) {
+    return p.questionObjectOnly.replace('{object}', object);
+  }
+  return undefined;
+}
+
 export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
   const browser = request.details.browserSessionGrant;
   const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
@@ -123,7 +209,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
     .replace('{site}', browser.target?.slice(browser.target.indexOf('@') + 1) ?? copy.unknownSite);
 
   const p = t.decisionCard.permission;
-  if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
+  if (isGenericCommandRequest(request)) return actionObjectQuestion(request, t, language) ?? p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target, p) : undefined;
   // 工作区外是凭据/隐私外泄与误写的关键信号：读、写、改、删的问句都带限定，不只靠后果行。
@@ -136,13 +222,21 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   }
   switch (request.type) {
     case 'file_read':
-      return compactTarget ? p.questionFileRead.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget
+        ? p.questionFileRead.replace('{target}', `${compactTarget}${qualifier}`)
+        : (actionObjectQuestion(request, t, language) ?? p.questionFallback);
     case 'file_write':
-      return compactTarget ? p.questionFileWrite.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget
+        ? p.questionFileWrite.replace('{target}', `${compactTarget}${qualifier}`)
+        : (actionObjectQuestion(request, t, language) ?? p.questionFallback);
     case 'file_edit':
-      return compactTarget ? p.questionFileEdit.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget
+        ? p.questionFileEdit.replace('{target}', `${compactTarget}${qualifier}`)
+        : (actionObjectQuestion(request, t, language) ?? p.questionFallback);
     case 'file_delete':
-      return compactTarget ? p.questionFileDelete.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget
+        ? p.questionFileDelete.replace('{target}', `${compactTarget}${qualifier}`)
+        : (actionObjectQuestion(request, t, language) ?? p.questionFallback);
     case 'command':
       return p.questionCommand;
     case 'dangerous_command':
@@ -160,12 +254,12 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
         ? p.questionMcpGeneric
         : request.details.url
           ? p.questionNetwork.replace('{target}', redactCredentialText(request.details.url))
-          : p.questionFallback;
+          : (actionObjectQuestion(request, t, language) ?? p.questionFallback);
     }
     case 'mcp':
       return p.questionMcpGeneric;
     default:
-      return p.questionFallback;
+      return actionObjectQuestion(request, t, language) ?? p.questionFallback;
   }
 }
 
