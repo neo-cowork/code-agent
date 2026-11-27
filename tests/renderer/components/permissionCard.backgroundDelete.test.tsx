@@ -2,7 +2,7 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { PermissionRequest } from '../../../src/shared/contract';
+import { PermissionRequestReason, type PermissionRequest } from '../../../src/shared/contract';
 
 const invoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
@@ -42,7 +42,7 @@ function makeBackgroundDeleteRequest(id = 'perm-bg-rm-1'): PermissionRequest {
     tool: 'Bash',
     type: 'command',
     reason: 'Recursive/forced deletion of a specific path',
-    reasonCode: 'shell_high_risk',
+    reasonCode: PermissionRequestReason.ShellHighRisk,
     details: {
       command: 'rm -v ~/old-cache/preview-cache.tmp ~/old-cache/draft-backup.bak',
       commandRiskLevel: 'high',
