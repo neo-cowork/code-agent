@@ -720,3 +720,65 @@ describe('egress precheck (ADR-066 刀 0)', () => {
     expect(result.securityFlags).not.toContain('egress_unresolvable_target');
   });
 });
+
+describe('plain single-file rm', () => {
+  it.each([
+    'rm "/Users/u/outside/old-notes.txt"',
+    'rm ~/Desktop/old-notes.txt',
+    'rm "/Users/u/My Notes/old.txt" 2>&1; echo "rm_exit=$?"',
+    'rm /Users/u/a.txt 2>/dev/null || true',
+  ])('marks one explicit file as medium: %s', (command) => {
+    expect(validateCommand(command, 'posix')).toMatchObject({
+      allowed: true,
+      riskLevel: 'medium',
+      securityFlags: ['single_file_delete'],
+    });
+  });
+
+  it.each([
+    'rm /Users/u/a.txt /Users/u/b.txt',
+    'rm /Users/u/a.txt && rm /Users/u/b.txt',
+    'rm -r /Users/u/dir',
+    'rm -R /Users/u/dir',
+    'rm --recursive /Users/u/dir',
+    'rm -rf /Users/u/dir',
+    'rm -f /Users/u/a.txt',
+    'rm --force /Users/u/a.txt',
+    'rm /Users/u/dir -rf',
+    'rm -- /Users/u/a.txt',
+    'rm -i /Users/u/a.txt',
+    'rm /Users/u/*.txt',
+    'rm "/Users/u/*.txt"',
+    'rm /Users/u/notes/',
+    'rm /Users/u/../../etc/passwd',
+    'rm ~/.ssh/id_rsa',
+    'rm //etc/hosts',
+    'rm /Users/u/$NAME.txt',
+    'sudo rm /Users/u/a.txt',
+    'bash -c "rm /Users/u/a.txt"',
+    '/bin/rm /Users/u/a.txt',
+    'rm /Users/u/a.txt &',
+    'rm /Users/u/a.txt & echo done',
+    'rm /Users/u/a.txt > /Users/u/b.txt',
+    'rm /Users/u/a.txt 2>> /Users/u/log.txt',
+    'rm /Users/u/a.txt < /Users/u/notes.txt',
+    'rm /Users/u/a.txt; cat /Users/u/notes.txt',
+    'rm /Users/u/a.txt && open /Users/u/b.app',
+    'rm /Users/u/a.txt | tee /Users/u/c.txt',
+  ])('keeps the targeted delete high: %s', (command) => {
+    const result = validateCommand(command, 'posix');
+    expect(result.riskLevel).toBe('high');
+    expect(result.securityFlags).toContain('recursive_delete_targeted');
+    expect(result.securityFlags).not.toContain('single_file_delete');
+  });
+
+  it.each([
+    'rm /etc/hosts',
+    'rm /',
+    'rm ~',
+    'rm /Users',
+    'rm /Applications',
+  ])('still blocks critical deletes: %s', (command) => {
+    expect(validateCommand(command, 'posix')).toMatchObject({ allowed: false, riskLevel: 'critical' });
+  });
+});
