@@ -428,6 +428,31 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
     expect(inputAfterSave).toBe(view.container.querySelector('input[data-model-api-key]'));
   });
 
+  it('a pasted-but-unsaved key keeps the DeepSeek row out of "✓ Key" until the real save lands', async () => {
+    await startRealHost();
+    const view = render(<Settings />);
+    const keyInput = await waitFor(() => {
+      const input = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
+      expect(input).toBeTruthy();
+      return input!;
+    });
+    const findDeepSeekRow = () =>
+      Array.from(view.container.querySelectorAll('aside button')).find((btn) => btn.textContent?.includes('DeepSeek'));
+    await waitFor(() => expect(findDeepSeekRow()?.textContent).toBeTruthy());
+    expect(findDeepSeekRow()?.textContent).not.toContain('✓ Key');
+
+    // 粘贴 key 未点保存：行仍不算「已有 Key」，行尾与保存条同显「未保存」
+    fireEvent.change(keyInput, { target: { value: DEEPSEEK_KEY } });
+    await waitFor(() => expect(findDeepSeekRow()?.textContent).toContain('API Key not saved yet'));
+    expect(findDeepSeekRow()?.textContent).not.toContain('✓ Key');
+    expect(view.container.querySelector('[data-testid="provider-save-bar"]')?.textContent).toContain('API Key not saved yet');
+
+    fireEvent.click(findSaveButton(view.container));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Provider configuration saved'));
+    await waitFor(() => expect(findDeepSeekRow()?.textContent).toContain('✓ Key'));
+    expect(view.container.querySelector('[data-testid="provider-save-bar"]')?.textContent).not.toContain('API Key not saved yet');
+  });
+
   it('promote keeps a main task model slot that already points at a usable provider', async () => {
     await startRealHost();
     // 预置：zhipu 已有 key（可用），任务主模型档显式指向 zhipu——用户能用且选过的档位，
@@ -502,5 +527,10 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
     expect(configService.getSettings().models.providers.deepseek.apiKeyConfigured).toBe(false);
     // (c) 下一次 send 的判据依旧是 false（默认指针 longcat 仍无 key）
     expect(hasConfiguredDefaultRuntimeModel(await freshSettingsGet())).toBe(false);
+    // (d) 列表行同样不认这个未落盘的草稿：DeepSeek 行仍无「✓ Key」
+    const deepseekRow = Array.from(view.container.querySelectorAll('aside button'))
+      .find((btn) => btn.textContent?.includes('DeepSeek'));
+    expect(deepseekRow?.textContent).not.toContain('✓ Key');
+    expect(deepseekRow?.textContent).toContain('API Key not saved yet');
   });
 });
