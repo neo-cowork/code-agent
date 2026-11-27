@@ -355,6 +355,23 @@ describe('spawn_agent dispatch to protocol-native service', () => {
     expect(formatSystemReminderForCompletions(records)).toContain(`- ${label}: completed`);
   });
 
+  it('run_in_background receipt title truncates at a word boundary, not mid-word', async () => {
+    executeSpawnAgentMock.mockResolvedValue({ success: true, output: 'done' });
+    const handler = await spawnAgentModule.createHandler();
+    const result = await handler.execute(
+      { role: 'coder', task: 'Read seven documents and count them by topic carefully', run_in_background: true },
+      makeCtx({ sessionId: 'background-title-boundary-session' }),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 旧实现 slice(0, 29) 会得到「…and coun…」半词；整词截断必须落在完整词上。
+    expect(result.output).toContain('已在后台开始处理「Read seven documents and count…」');
+    expect(result.output).not.toContain('coun…」');
+    expect(result.output).not.toContain('count t…');
+  });
+
   it('run_in_background uses a child-owned abort signal', async () => {
     const parent = new AbortController();
     let childSignal: AbortSignal | undefined;
