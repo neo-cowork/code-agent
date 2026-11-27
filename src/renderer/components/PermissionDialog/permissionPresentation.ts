@@ -248,14 +248,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
-  // 不带 -rf 的多目标 rm（模型最常发的 `rm a.log b.log c.log`）宿主不打删除旗标，
-  // isDeletionRequest 认不出，卡面曾一句后果都没有；多目标后果句对它同样成立。只放宽
-  // 这一句：危险样式与默认拒绝仍由 isDeletionRequest 决定，单目标 rm 保持原样。
-  if (deletion || request.type === 'command' || request.type === 'dangerous_command') {
+  if (deletion) {
     const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
     if (multiTarget) return multiTarget;
-  }
-  if (deletion) {
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', deletionCountText(request, parsedRmTargets, t));
@@ -303,6 +298,11 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     const classifierRules = request.decisionTrace?.steps.map((step) => step.rule) ?? [];
     if (classifierRules.includes('B1: sensitive_credential_read')) return p.consequenceCredentialReadCommand;
     if (classifierRules.includes('B1: git_remote_or_credential_write')) return p.consequenceGitRemoteWriteCommand;
+    // 不带 -rf 的多目标 rm（模型最常发的 `rm a.log b.log c.log`）宿主不打删除旗标，
+    // isDeletionRequest 认不出；放在高危/凭据/Git 远端三条之后，确保组合命令
+    // （如 `git push && rm a b`）不顶掉原有风险警告。
+    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
+    if (multiTarget) return multiTarget;
     // 其余命令（含宿主标 unknown 的——那只表示「不在已知安全名单里」，不是风险结论）不套泛泛的警告。
   }
   return undefined;
