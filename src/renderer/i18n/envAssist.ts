@@ -1,4 +1,11 @@
 export const envAssistZh = {
+  offline: {
+    waiting: '网络断了，恢复后我会自动继续。',
+    timedOut: '仍未联网。连上网络后，点「继续」接着做。',
+    resolved: '网络已恢复。',
+    continue: '继续',
+    recheckFailed: '暂时无法继续，请稍后再试。',
+  },
   sentence: {
     calendar: '要看你的日程，需要你允许 Neo 访问「日历」。',
     mail: '要读写你的邮件，需要你允许 Neo 控制「邮件」。',
@@ -17,6 +24,13 @@ export const envAssistZh = {
 };
 
 export const envAssistEn: typeof envAssistZh = {
+  offline: {
+    waiting: 'The network is down. I’ll continue automatically when it’s back.',
+    timedOut: 'Still offline. Connect and tap Continue to pick up where I left off.',
+    resolved: 'Network connection restored.',
+    continue: 'Continue',
+    recheckFailed: 'Couldn’t continue. Please try again.',
+  },
   sentence: {
     calendar: 'To read your schedule, Neo needs your OK to access Calendar.',
     mail: 'To read and write your email, Neo needs your OK to control Mail.',

@@ -859,7 +859,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       title={modelText.title}
       description={modelText.description}
     >
-      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <WebModeBanner />
 
       {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
@@ -891,6 +890,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           </Button>
         }
       >
+      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}

@@ -1,10 +1,10 @@
 import React from 'react';
 import type { AppSettings, ModelProvider } from '@shared/contract';
+import { hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { Button } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { isWebMode } from '../../../../utils/platform';
-import { providerRequiresApiKey } from './ModelSettings.helpers';
 
 export function ModelKeyGuide({ settings, defaultProvider }: {
   settings: AppSettings | null;
@@ -12,16 +12,16 @@ export function ModelKeyGuide({ settings, defaultProvider }: {
 }) {
   const { t } = useI18n();
   const openModelSettings = useAppStore((state) => state.openModelSettings);
-  if (isWebMode()) return null; // 网页版存不了密钥：引导填密钥会与页面说明矛盾
-  const requiringKeys = Object.entries(settings?.models.providers ?? {})
-    .filter(([provider]) => providerRequiresApiKey(provider as ModelProvider));
-  if (!requiringKeys.length || requiringKeys.some(([, config]) => config.apiKeyConfigured || config.apiKey)) return null;
-  const target = providerRequiresApiKey(defaultProvider) ? defaultProvider : requiringKeys[0][0] as ModelProvider;
+  if (!settings || hasConfiguredRuntimeModels(settings)) return null;
+  const web = isWebMode();
   return (
-    <div data-model-key-guide className="flex items-center justify-between gap-3 rounded-lg border border-badge-warning/30 bg-badge-warning px-4 py-3">
-      <Button variant="secondary" size="sm" onClick={() => openModelSettings(target)}>
-        {t.settings.model.header.noKeyGuide}
-      </Button>
+    <div data-model-key-guide role="status" className="flex items-center justify-between gap-3 rounded-lg border border-border-strong bg-void px-4 py-3 text-sm text-text-primary">
+      <span>{web ? t.modelSetup.noModelWeb : t.modelSetup.noModelDesktop}</span>
+      {!web && (
+        <Button variant="secondary" size="sm" onClick={() => openModelSettings(defaultProvider)}>
+          {t.modelSetup.addModel}
+        </Button>
+      )}
     </div>
   );
 }
