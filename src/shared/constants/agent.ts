@@ -119,7 +119,7 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v153: integrate main with the people memory prompt surface.
 // sys-v154: an explicit PPT style preview request is routed to the bundled theme-samples.mjs.
 // sys-v155: same ticket, next round: the style samples and the style question come from the foreground conversation; a background task only renders and reports.
-export const PROMPT_VERSION = 'sys-v156' as const;
+export const PROMPT_VERSION = 'sys-v157' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

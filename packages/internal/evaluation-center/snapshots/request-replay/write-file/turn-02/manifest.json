@@ -19,7 +19,7 @@
       "messageId": "msg-03"
     }
   ],
-  "toolSchemaHash": "4c8fbcfac6f5075bc13b6ba913706a4965bd27e800c4fe539c1ed87345a073ff",
+  "toolSchemaHash": "807163ec0a28e7d00f5e19fe3d40b963ba3096720141af276e0edbb219d2cef2",
   "toolNames": [
     "AskUserQuestion",
     "Bash",
