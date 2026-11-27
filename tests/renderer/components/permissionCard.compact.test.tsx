@@ -160,7 +160,8 @@ describe('PermissionCard quiet face', () => {
       existing.unmount();
       renderRequest({ ...externalWrite, details: { path: '/Users/example/Documents/contract-notes.md', targetKind: 'absent' } });
       expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
-      expect(screen.getByTestId('permission-consequence').textContent).toBe('将在工作区外新建 contract-notes.md（约 1 个文件）。');
+      // 工作区外的目标留完整位置（路径显示口径由 N-FIX-ABS-PATH-DISPLAY-SYSTEMIC 统一，本单不改）。
+      expect(screen.getByTestId('permission-consequence').textContent).toBe('将在工作区外新建 /Users/example/Documents/contract-notes.md（约 1 个文件）。');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
@@ -210,7 +211,7 @@ describe('PermissionCard quiet face', () => {
     expect(screen.getByText('Allow writing report.md (outside workspace)?')).toBeTruthy();
     expect(screen.getByText('Write file')).toBeTruthy();
     const consequence = screen.getByTestId('permission-consequence').textContent ?? '';
-    expect(consequence).toBe('Writes report.md outside the workspace (1 file) and may overwrite existing content.');
+    expect(consequence).toBe('Writes /Users/me/Documents/report.md outside the workspace (1 file) and may overwrite existing content.');
     expect(consequence).not.toMatch(/[\u3000-\u303F\uFF00-\uFFEF]/u);
     expect(screen.queryByText('允许写入 report.md（工作区外）？')).toBeNull();
   });

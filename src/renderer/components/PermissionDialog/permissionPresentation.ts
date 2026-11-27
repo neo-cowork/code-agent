@@ -242,12 +242,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target, p) : p.targetFallback);
   }
   if (request.boundary?.id === 'file.external_write') {
-    const outsideTarget = humanTarget && humanTarget !== redactCredentialText(target ?? '')
-      ? humanTarget
-      : (target ? compactFileTarget(target, p) : p.targetFallback);
     const template = request.details.targetKind === 'absent' ? p.consequenceOutsideNew : p.consequenceOutside;
     return template
-      .replace('{target}', outsideTarget)
+      .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.details.connectorAccess?.access === 'write' || request.riskClass === 'external'
