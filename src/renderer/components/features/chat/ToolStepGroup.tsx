@@ -302,6 +302,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const p = t.decisionCard.permission;
     const requestDetails = request.details as Record<string, unknown>;
     const denied = request.decision === 'deny' || request.decision === 'never';
+    const deniedOnce = request.decision === 'deny';
     const timedOut = request.decision === 'timeout';
     const superseded = request.decision === 'superseded';
     const statusLabel = superseded
@@ -328,7 +329,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const details = redactCredentialText(JSON.stringify(request.details, null, 2));
 
     const allowed = !denied && !timedOut && !superseded;
-    return [{ request, statusLabel, stepLabel, details, timedOut, denied, nodeIndex: nodes.indexOf(node), foldKey: allowed && request.tool === 'ExcelAutomate' ? `${request.tool}:${classifyToolCall(request.tool, requestDetails)}` : null }];
+    return [{ request, statusLabel, stepLabel, details, timedOut, denied, deniedOnce, nodeIndex: nodes.indexOf(node), foldKey: allowed && request.tool === 'ExcelAutomate' ? `${request.tool}:${classifyToolCall(request.tool, requestDetails)}` : null }];
   }), [nodes, resolvedPermissionRequests, t]);
   // 连续、同工具同步骤类的「你已允许」折成一行带次数；拒绝 / 超时 / 被顶替从不折叠。
   const permissionEvidenceRows = useMemo(() => permissionEvidence.reduce<Array<typeof permissionEvidence[number] & { count: number }>>((rows, item) => {
@@ -348,13 +349,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   // （原先还挂了一档 toolFailureCode 兜底，已删：它不可达——那一行只在 status 为
   //   partial/error 时渲染，而那两种状态成立就必然存在 success===false 的 toolCall，
   //   failureReason 于是必非空，永远轮不到那一档。）
-  const permissionRequestReason = permissionEvidence.some(({ denied }) => denied)
+  const permissionRequestReason = permissionEvidence.some(({ deniedOnce }) => deniedOnce)
     ? t.decisionCard.permission.deniedReasonWithNextStep
       .replace('{reason}', t.outcomeWords['failed-approval-denied'].timeline.reason)
       .replace('{nextStep}', t.decisionCard.permission.deniedNextStep)
-    : permissionEvidence.some(({ timedOut }) => timedOut)
-      ? t.outcomeWords['failed-timeout'].timeline.reason
-      : null;
+    : permissionEvidence.some(({ denied }) => denied)
+      ? t.outcomeWords['failed-approval-denied'].timeline.reason
+      : permissionEvidence.some(({ timedOut }) => timedOut)
+        ? t.outcomeWords['failed-timeout'].timeline.reason
+        : null;
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
     [toolCalls],
@@ -583,7 +586,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      {permissionEvidenceRows.map(({ request, statusLabel, stepLabel, details, timedOut, denied, count }) => (
+      {permissionEvidenceRows.map(({ request, statusLabel, stepLabel, details, timedOut, denied, deniedOnce, count }) => (
         <div
           key={request.id}
           className="ml-4 flex items-start gap-2 pl-3 text-[11px] leading-5 text-zinc-500"
@@ -597,7 +600,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   ? `${t.outcomeWords['failed-timeout'].timeline.label} · ${t.outcomeWords['failed-timeout'].timeline.reason} · ${stepLabel}`
                   : `${statusLabel} · ${stepLabel}${count > 1 ? ` · ${t.decisionCard.permission.settledAllowedFolded.replace('{count}', String(count))}` : ''}`}
             </summary>
-            {denied && (
+            {deniedOnce && (
               <p
                 className="mt-1 whitespace-normal break-words text-[11px] leading-4 text-zinc-400"
                 data-testid="permission-decision-denied-next-step"

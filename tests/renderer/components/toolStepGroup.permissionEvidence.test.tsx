@@ -266,5 +266,31 @@ describe('ToolStepGroup resolved permission evidence', () => {
       fireEvent.click(screen.getByRole('button', { name: en.decisionCard.permission.retry }));
       expect(state.sendPrompt).toHaveBeenCalledWith(en.decisionCard.permission.retryPrompt);
     });
+
+    it('永久拒绝（decision=never）不承诺审批卡会重新出现（zh / en）', () => {
+      state.language = 'zh';
+      state.resolved = [deniedWriteReq('never')];
+      const { unmount } = render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const zhHeader = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(zhHeader).toContain(zh.outcomeWords['failed-approval-denied'].timeline.reason);
+      expect(zhHeader).not.toContain(zh.decisionCard.permission.deniedNextStep);
+      const zhDetails = screen.getByTestId('permission-decision-details').textContent ?? '';
+      expect(zhDetails).toContain('未获批准 · 审批被拒绝');
+      expect(zhDetails).not.toContain(zh.decisionCard.permission.deniedNextStep);
+      expect(screen.queryByTestId('permission-decision-denied-next-step')).toBeNull();
+      unmount();
+
+      state.language = 'en';
+      render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const enHeader = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(enHeader).toContain(en.outcomeWords['failed-approval-denied'].timeline.reason);
+      expect(enHeader).not.toContain(en.decisionCard.permission.deniedNextStep);
+      const enDetails = screen.getByTestId('permission-decision-details').textContent ?? '';
+      expect(enDetails).toContain('Not approved · The approval was denied');
+      expect(enDetails).not.toContain(en.decisionCard.permission.deniedNextStep);
+      expect(screen.queryByTestId('permission-decision-denied-next-step')).toBeNull();
+    });
   });
 });
