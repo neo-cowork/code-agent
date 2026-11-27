@@ -16,7 +16,7 @@ export const EnvAssistNoticeSchema = z.object({
       z.object({ serverName: z.string(), requiredScope: z.string().optional() }), z.object({ route: z.string() }),
     ]).optional(),
   }).optional(),
-  resume: z.object({ mode: z.enum(['auto', 'manual']), parkId: z.string().optional() }),
+  resume: z.object({ mode: z.enum(['auto', 'manual']), parkId: z.string().optional(), deadlineAt: z.number().optional() }),
   parkedToolCallId: z.string().optional(),
   doneKey: z.string().optional(), updatedAt: z.number(),
   devDiagnostic: z.object({ rawRef: z.string() }).optional(),

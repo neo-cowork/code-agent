@@ -1,3 +1,4 @@
+import { peekEnvBlockedNote } from './envBlockedTurn';
 // ============================================================================
 // RunFinalizer — Session end processing, trace, telemetry, budget, todos
 // Extracted from AgentLoop
@@ -543,10 +544,11 @@ export class RunFinalizer {
     const terminalEventType = getRunTerminalAgentEventType(terminalStatus);
     logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
     logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);
+    const waitingForNetwork = peekEnvBlockedNote(this.ctx.runId)?.class === 'offline';
     if (terminalEventType === 'agent_cancelled') {
       this.ctx.onEvent({
         type: 'agent_cancelled',
-        data: this.ctx.control.cancelReason === 'client-disconnect' ? { reason: 'client_disconnect' } : this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+        data: waitingForNetwork ? { reason: 'offline' } : this.ctx.control.cancelReason === 'client-disconnect' ? { reason: 'client_disconnect' } : this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       });
     } else {
       this.ctx.onEvent({ type: terminalEventType, data: null });

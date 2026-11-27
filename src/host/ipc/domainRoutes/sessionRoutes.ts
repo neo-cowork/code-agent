@@ -366,7 +366,8 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
         import('../../runtime/envResumeWaiter'),
         import('../../app/applicationRunRegistry'),
       ]);
-      armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'domain:session:load');
+      const messages = 'messages' in session && Array.isArray(session.messages) ? session.messages : undefined;
+      armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'domain:session:load', messages);
     }
     return session;
   },
