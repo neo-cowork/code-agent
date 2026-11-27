@@ -93,7 +93,8 @@ describe('token match: only soffice / libreoffice run as a program', () => {
     const result = assemble(command);
     expect(result.ok).toBe(true);
     // 逐键逐值与一条不含 soffice 的命令一致：没有被改写的 PATH，也没有多出来的变量。
-    expect(result.ok && result.env).toEqual(assemble('true').ok && assemble('true').env);
+    const plain = assemble('true');
+    expect(result.ok && result.env).toEqual(plain.ok && plain.env);
     expect(ensureMock).not.toHaveBeenCalled();
   });
 

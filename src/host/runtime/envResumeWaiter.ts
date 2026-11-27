@@ -4,7 +4,7 @@ import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_RUNTIME_STALL_MS, ENV_RESUME_TI
 import { createLogger } from '../services/infra/logger';
 import type { RunRegistry } from './runRegistry';
 
-export type EnvResumeProbeStatus = 'green' | 'red' | 'unavailable' | 'failed';
+type EnvResumeProbeStatus = 'green' | 'red' | 'unavailable' | 'failed';
 /** `progress` (runtime installs): each new value restarts the stall window; `failed` ends the wait without resuming. */
 export type EnvResumeProbe = () => Promise<EnvResumeProbeStatus | { status: EnvResumeProbeStatus; progress?: number }>;
 type Block = NonNullable<RunEnvelope['envBlocked']>;

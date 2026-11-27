@@ -12,6 +12,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../../src/shared/contract';
 import type { EnvAssistNotice } from '../../../../src/shared/contract/envAssist';
+import { createLogger } from '../../../../src/host/services/infra/logger';
 import { getLibreOfficeState } from '../../../../src/host/runtime/libreOffice/state';
 import type { EnsureLibreOfficeOptions } from '../../../../src/host/runtime/libreOffice/types';
 
@@ -128,7 +129,7 @@ let bashExecutions: number;
 
 const messages = () => sessions.getMessages(sessionId);
 const cardRows = () => db.prepare("SELECT id, metadata FROM messages WHERE id LIKE 'env-assist:%' ORDER BY rowid").all() as Array<{ id: string; metadata: string }>;
-const cards = () => cardRows().map((row) => ({ id: row.id, ...JSON.parse(row.metadata).envAssist as Record<string, unknown> }));
+const cards = () => cardRows().map((row) => JSON.parse(row.metadata).envAssist as EnvAssistNotice);
 const toolResults = () => messages().filter((m) => m.role === 'tool').flatMap((m) => m.toolResults ?? []);
 const durableStatus = () => (db.prepare('SELECT status FROM durable_runs WHERE run_id = ?').get(runId) as { status?: string } | undefined)?.status;
 const logCount = (needle: string) => store.logs.filter(([text]) => text.includes(needle)).length;
@@ -148,7 +149,7 @@ async function modelReissues(execute: ToolExecutor['execute']): Promise<void> {
   resumedTurns++;
 }
 
-async function setup(): Promise<{ park: () => Promise<void>; execute: ToolExecutor['execute']; tasks: unknown }> {
+async function setup(): Promise<{ park: () => Promise<Array<{ type?: string; data?: unknown }>>; execute: ToolExecutor['execute']; tasks: unknown }> {
   workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'env-resume-lo-')));
   dataDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'env-resume-lo-data-')));
   sofficeLog = path.join(os.tmpdir(), `neo-test-soffice-${process.pid}.log`);
@@ -162,7 +163,8 @@ async function setup(): Promise<{ park: () => Promise<void>; execute: ToolExecut
   build.sha256 = crypto.createHash('sha256').update('fake LibreOffice disk image (hermetic test)').digest('hex');
 
   db = new Database(':memory:');
-  applySchema(db); applySessionsMigrations(db); applyIndexes(db);
+  const fixtureLogger = createLogger('EnvResumeLibreOfficeFixture');
+  applySchema(db, fixtureLogger); applySessionsMigrations(db, fixtureLogger); applyIndexes(db);
   sessions = new SessionRepository(db);
   events = new ToolExecutionEventRepository(db);
   const repository = new DurableRunRepository(db); repository.migrate();
@@ -201,7 +203,7 @@ async function setup(): Promise<{ park: () => Promise<void>; execute: ToolExecut
   registerAgentContinueRoute({ post: () => {} } as never, registry, () => tasks as never, async () => messages(), envResumeProbeFactory);
   return {
     execute, tasks,
-    park: async () => {
+    park: async (): Promise<Array<{ type?: string; data?: unknown }>> => {
       const handle = await registry.startDurable({ runId, sessionId, workspace, cwd: workspace });
       const { ctx, engine } = makeEngine(execute as never);
       Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages() });
@@ -305,9 +307,9 @@ describe('③ the card follows the install in place and the run finishes by itse
     const f = await setup();
     await f.park();
     const total = build.bytes;
-    world.report!(Math.round(total * 0.375)); // 10 + 30 = 40%
+    world.report!(Math.round(total * 0.375), total); // 10 + 30 = 40%
     await settleUntil(() => cards()[0]?.progress && (cards()[0].progress as { percent: number }).percent === 40);
-    world.report!(Math.round(total * 0.75)); // 70%
+    world.report!(Math.round(total * 0.75), total); // 70%
     await settleUntil(() => (cards()[0].progress as { percent: number } | undefined)?.percent === 70);
     out('CARDS_MID_RUN', liveCards());
     expect(cards()).toHaveLength(1);
@@ -356,7 +358,7 @@ describe('③ the card follows the install in place and the run finishes by itse
       await f.park();
       // 2.6 s real = 260 s warped (> ENV_RESUME_TIMEOUT_MS, < ENV_RESUME_RUNTIME_STALL_MS), progress every 300 ms.
       for (let step = 1; step <= 8; step++) {
-        world.report!(Math.round(build.bytes * (0.05 * step)));
+        world.report!(Math.round(build.bytes * (0.05 * step)), build.bytes);
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
       expect(cards()[0]?.phase).toBe('fixing');
@@ -468,7 +470,7 @@ describe('⑥ the install died with the process: the park survives and coming ba
   it('in-memory install state lost, card left at "preparing 40%": REST session return re-arms the waiter, the install restarts, the run finishes', async () => {
     const f = await setup();
     await f.park();
-    world.report!(Math.round(build.bytes * 0.375));
+    world.report!(Math.round(build.bytes * 0.375), build.bytes);
     await settleUntil(() => (cards()[0].progress as { percent: number } | undefined)?.percent === 40);
     // Process death: the waiter loop, single-flight install, and progress only lived in memory.
     clearEnvResumeWaiter(runId);

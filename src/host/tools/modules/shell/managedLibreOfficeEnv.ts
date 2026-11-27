@@ -229,7 +229,7 @@ function scanCommands(text: string, scan: Scan): void {
 }
 
 /** Every soffice / libreoffice the command runs as a program, spelled the way the command spells it. */
-export function libreOfficeCommands(command: string): string[] {
+function libreOfficeCommands(command: string): string[] {
   const scan: Scan = { words: [], expectCommand: true, prefixPending: false, commandWrapper: false, redirectTarget: false, lookupTarget: false, skipUntilDo: false, caseDepth: 0, current: '', started: false, quotedStart: false, dynamic: false };
   scanCommands(command, scan);
   return scan.words.filter((word) => LIBREOFFICE_COMMANDS.has(path.posix.basename(word)));
