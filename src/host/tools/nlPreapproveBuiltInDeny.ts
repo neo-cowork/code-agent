@@ -11,6 +11,11 @@
 
 import { PermissionClassifier, type ClassificationContext } from './permissionClassifier';
 import { createLogger } from '../services/infra/logger';
+import { matchEffectiveExecPolicy } from '../permissions/runPolicySnapshot';
+import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
+import { recordDecision } from './toolExecutorDecisionTrace';
+import { isBashToolName } from './toolNames';
+import type { ToolExecutionResult } from './types';
 
 const logger = createLogger('NlPreapproveBuiltInDeny');
 
@@ -33,4 +38,26 @@ export async function builtInRulesDeny(
     });
     return true;
   }
+}
+
+/** A phrase can waive the ordinary question. An explicit exec policy still wins. */
+export function nlPreapprovalExecPolicy(
+  toolName: string, command: unknown, sessionId?: string, runId?: string,
+): 'forbidden' | 'prompt' | null {
+  if (!isBashToolName(toolName) || typeof command !== 'string' || !command) return null;
+  try {
+    const decision = matchEffectiveExecPolicy(command, sessionId, runId);
+    return decision === 'allow' ? null : decision;
+  } catch (error) {
+    logger.warn('NL preapproval could not check exec policy', { error: String(error) });
+    return 'prompt';
+  }
+}
+
+export function denyByExecPolicy(
+  toolName: string, params: Record<string, unknown>, startTime: number,
+  sessionId: string | undefined, origin: ToolLedgerOrigin,
+): ToolExecutionResult {
+  recordDecision(toolName, params, 'policy-deny', 'exec-policy', startTime, undefined, sessionId, origin);
+  return { success: false, error: `Blocked by exec policy: ${String(params.command).substring(0, 80)}` };
 }

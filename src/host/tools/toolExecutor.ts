@@ -127,7 +127,7 @@ import { eventReplyPermissionRequest } from './eventReplySession';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine, isUserDenyRule } from '../permissions/policyEngine';
 import { resolveUserRuleOutcomeForTool, handbackDoneModelText } from '../permissions/userRuleOutcome';
-import { builtInRulesDeny } from './nlPreapproveBuiltInDeny';
+import { builtInRulesDeny, denyByExecPolicy, nlPreapprovalExecPolicy } from './nlPreapproveBuiltInDeny';
 import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { noteReadOnlyProbeSkipped, tryReadOnlyProbeBehindGates } from './readOnlyProbeGate';
@@ -1801,8 +1801,10 @@ export class ToolExecutor {
 
     // N-PERM-NL-RULES-K2：deny>handback>ask>preapprove 未命中=ask>命中。ask/handback 强制进审批链；preapprove 命中并入 isPreApproved（同一份排除清单）。
     const nlRule = resolveUserRuleOutcomeForTool(effectiveSessionId, policyToolName, params);
-    const nlForcesAsk = nlRule.kind === 'ask' || nlRule.kind === 'handback';
-    const nlPreapproved = nlRule.kind === 'preapproved' && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean) && !(await builtInRulesDeny(policyToolName, params, { sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: canonicalBashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel, workingDirectoryFromToolCall: true }));
+    const nlExecPolicy = nlRule.kind === 'preapproved' ? nlPreapprovalExecPolicy(policyToolName, params.command, effectiveSessionId, effectiveRunId) : null;
+    if (nlExecPolicy === 'forbidden') return denyByExecPolicy(executionToolName, params, permStartTime, effectiveSessionId, this.ledgerOrigin);
+    const nlForcesAsk = nlRule.kind === 'ask' || nlRule.kind === 'handback' || nlExecPolicy === 'prompt';
+    const nlPreapproved = nlRule.kind === 'preapproved' && !nlForcesAsk && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean) && !(await builtInRulesDeny(policyToolName, params, { sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: canonicalBashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel, workingDirectoryFromToolCall: true }));
     if (nlRule.kind === 'denied') return { success: false, error: `Blocked by your permission rule (${nlRule.rule}). Denied by your own settings; do not retry or achieve the same effect another way.` };
 
     // Check permission if required
@@ -1834,7 +1836,7 @@ export class ToolExecutor {
 
     // 只读探测闸门（2b）：全部为假才跑 tryReadOnlyProbe；被挡时 readonly_probe_plan_miss 带上变量名。
     const readOnlyProbeGates = {
-      forcePermissionHandler: Boolean(this.forcePermissionHandler), readArgumentForcesClassification, protectedWriteForcesConfirmation,
+      forcePermissionHandler: Boolean(this.forcePermissionHandler), nlExecPolicyPrompt: nlExecPolicy === 'prompt', readArgumentForcesClassification, protectedWriteForcesConfirmation,
       policyForcesConfirmation, readOnlyForcesConfirmation, boundaryViolation: Boolean(boundaryViolation), unresolvedWriteTargetForcesAsk,
       writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification,
       peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
@@ -1856,20 +1858,14 @@ export class ToolExecutor {
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
     // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
+    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk && nlExecPolicy !== 'prompt') {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
       // 命令拆词失败时只允许下方的进程内只读探测（它真执行成功才放行），其余放行路径一律不走。
       if (!commandAnalysisFailedReason) try {
         const policyDecision = matchEffectiveExecPolicy(cmd, effectiveSessionId);
-        if (policyDecision === 'forbidden') {
-          recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
-          return {
-            success: false,
-            error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
-          };
-        }
+        if (policyDecision === 'forbidden') return denyByExecPolicy(executionToolName, params, permStartTime, effectiveSessionId, this.ledgerOrigin);
         if (!this.forcePermissionHandler && policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });

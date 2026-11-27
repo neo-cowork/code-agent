@@ -84,6 +84,11 @@ function findRunSnapshot(runId?: string, sessionId?: string): RunPolicySnapshot 
   return undefined;
 }
 
+function findExactRunSnapshot(sessionId?: string, runId?: string): RunPolicySnapshot | undefined {
+  const snapshot = runId ? runsById.get(runId) : undefined;
+  return snapshot?.sessionId === sessionId ? snapshot : undefined;
+}
+
 function trimJournalToActiveSnapshots(): void {
   if (runsById.size === 0) {
     trimPolicyMutationsAtOrBelow(currentPolicyMutationSeq());
@@ -273,9 +278,9 @@ export function resolveEffectivePolicyRules(sessionId?: string): PolicyRule[] {
 }
 
 /** E5：按有效 exec 规则匹配命令决策（null = 不命中，走常规权限流程）。 */
-export function matchEffectiveExecPolicy(command: string, sessionId?: string): PolicyDecision | null {
+export function matchEffectiveExecPolicy(command: string, sessionId?: string, runId?: string): PolicyDecision | null {
   const store = getExecPolicyStore();
-  const snapshot = findRunSnapshot(undefined, sessionId);
+  const snapshot = runId ? findExactRunSnapshot(sessionId, runId) : findRunSnapshot(undefined, sessionId);
   if (!snapshot?.execRules) return store.match(command);
   const snapIds = new Set(snapshot.execRules.map(execRuleId));
   const frozenAway = new Set<string>();

@@ -34,6 +34,8 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { beginRunPolicy, endRunPolicy } from '../../../src/host/permissions/runPolicySnapshot';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { getExecPolicyStore, resetExecPolicyStore } from '../../../src/host/security/execPolicy';
+import { getDecisionHistory } from '../../../src/host/security/decisionHistory';
 import type { AppSettings } from '../../../src/shared/contract';
 
 const SESSION = 'k2-preapprove-builtin-deny-session';
@@ -73,6 +75,7 @@ function isStillPending<T>(promise: Promise<T>): Promise<boolean> {
 
 beforeEach(() => {
   resetPolicyEngine();
+  resetExecPolicyStore();
   resetPermissionModeManager();
   resolverState.getDefinition.mockReset();
   resolverState.execute.mockReset();
@@ -148,5 +151,39 @@ describe('④ preapprove 命中短语也越不过内置危险命令硬拒', () =
     expect(island.listPendingRequests()).toHaveLength(1);
     island.handlePermissionResponse(island.listPendingRequests()[0].id, 'deny');
     await resultPromise;
+  });
+});
+
+describe('NL preapproval respects exec policy', () => {
+  const command = 'chmod 644 note.txt';
+
+  function prepare(decision: 'forbidden' | 'prompt') {
+    getExecPolicyStore().addRule(command.split(' '), decision);
+    getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'preapprove', rule: 'Bash(chmod *)', phrases: [PHRASE] }] });
+    beginRunPolicy(RUN_ID, SESSION, { initiatingText: PHRASE });
+    const island = makeIsland();
+    return { island, execution: makeExecutor(island).execute('Bash', { command }, { sessionId: SESSION, runId: RUN_ID }) };
+  }
+
+  it('forbidden denies dispatch even after the user said the trigger phrase', async () => {
+    const { island, execution } = prepare('forbidden');
+    expect(await execution).toMatchObject({ success: false, error: expect.stringContaining('Blocked by exec policy') });
+    expect(getDecisionHistory().getRecent(1)[0]).toMatchObject({ outcome: 'policy-deny', reason: 'exec-policy' });
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(island.listPendingRequests()).toHaveLength(0);
+  });
+
+  it('prompt shows the normal approval even after the user said the trigger phrase', async () => {
+    const { island, execution } = prepare('prompt');
+    const approval = await Promise.race([
+      execution.then(() => undefined),
+      new Promise<ReturnType<typeof island.listPendingRequests>[number] | undefined>((resolve) => {
+        setTimeout(() => resolve(island.listPendingRequests()[0]), 300);
+      }),
+    ]);
+    expect(approval).toBeDefined();
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    if (approval) island.handlePermissionResponse(approval.id, 'deny');
+    await execution;
   });
 });
