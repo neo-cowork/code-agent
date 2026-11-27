@@ -69,7 +69,7 @@ function fromHostResult(
     ...(!res.ok && res.code ? { code: res.code } : {}),
   };
   const error = res.ok ? undefined : res.error;
-  const userMessage = res.userMessage;
+  const userMessage = res.ok ? undefined : res.userMessage;
   const toolCall: ToolCall = {
     id,
     name,
