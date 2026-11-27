@@ -90,6 +90,7 @@ export const sidebarZh = {
     deletedCount: { one: '已删除 {count} 个对话', other: '已删除 {count} 个对话' },
     // 更新入口
     updateAvailable: '更新可用',
+    upgradeForInterfaceUpdates: '升级后才能收到界面更新',
     newVersion: '新版本',
     viewUpdateContent: '查看 Agent Neo {version} 更新内容',
     // 账号菜单
@@ -501,6 +502,7 @@ export const sidebarEn: typeof sidebarZh = {
     delete: 'Delete',
     deletedCount: { one: 'Deleted {count} conversation', other: 'Deleted {count} conversations' },
     updateAvailable: 'Update available',
+    upgradeForInterfaceUpdates: 'Update to receive interface updates',
     newVersion: 'New version',
     viewUpdateContent: 'See what’s new in Agent Neo {version}',
     userMenu: 'Account menu',
