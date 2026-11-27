@@ -9,6 +9,8 @@ export const durableStoppedZh = {
     otherStop: '任务停在这里 · 点「继续」接着做',
     envWaiting: '等你允许{target} · 允许后自动继续',
     envWaitingStep: '等你允许{target}',
+    envPreparing: '正在准备{target} · 准备好后自动继续',
+    envPreparingStep: '正在准备{target}',
     envTargetFallback: '所需权限',
   },
 };
@@ -21,6 +23,8 @@ export const durableStoppedEn: typeof durableStoppedZh = {
     otherStop: 'The task paused here · press Continue to pick it up',
     envWaiting: 'Waiting for you to allow {target} · it continues by itself once allowed',
     envWaitingStep: 'Waiting for you to allow {target}',
+    envPreparing: 'Preparing {target} · it continues by itself once ready',
+    envPreparingStep: 'Preparing {target}',
     envTargetFallback: 'the needed access',
   },
 };

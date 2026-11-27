@@ -125,6 +125,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               stepLabel: tc.stepLabel,
             },
             envWaitingTarget: envParkedStep?.toolCallId === tc.id ? envParkedStep.target : undefined,
+            envWaitingRuntime: envParkedStep?.toolCallId === tc.id ? envParkedStep.isRuntime : undefined,
           }, t).line;
         }
         const stepStatus = terminal.stepStatus;
@@ -163,7 +164,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     let skippedBash = 0;
     let staleUnfinished = 0;
     const notRunNames: string[] = [];
-    let envWaiting: string | undefined;
+    let envWaiting: { target: string; isRuntime: boolean } | undefined;
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
       if (!tc) continue;
@@ -185,7 +186,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       // 陈旧未完成（会话已离线）：不进进行时/未成功词表，统一用展开行同源的
       // 中断结局词收口（多步组没有逐条人话行，只报结局词，明细展开可看）。
       if (terminalById.get(tc.id)?.state === 'interrupted') {
-        if (envParkedStep?.toolCallId === tc.id) envWaiting = envParkedStep.target;
+        if (envParkedStep?.toolCallId === tc.id) envWaiting = { target: envParkedStep.target, isRuntime: envParkedStep.isRuntime };
         else staleUnfinished += 1;
         continue;
       }
@@ -210,7 +211,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           .filter(Boolean).join(t.deliveryExperience.labelSeparator);
       }),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
-      envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
+      envWaiting ? (envWaiting.isRuntime ? t.durableStopped.envPreparingStep : t.durableStopped.envWaitingStep).replace('{target}', envWaiting.target) : '',
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
       blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);

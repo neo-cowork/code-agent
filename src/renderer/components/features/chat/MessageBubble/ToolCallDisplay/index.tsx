@@ -170,7 +170,7 @@ export function ToolCallDisplay({
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
   const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, toolCall.result === undefined);
-  const envWaitingTarget = useEnvParkedTarget(sessionId, toolCall.id);
+  const envWaiting = useEnvParkedTarget(sessionId, toolCall.id);
   const awaitingApproval = toolCall.result === undefined
     && isToolCallAwaitingApproval(toolCall.id, sessionId, {
       pendingPermissionRequest,
@@ -340,7 +340,7 @@ export function ToolCallDisplay({
           }
         }}
       >
-        <StatusIndicator status={status} quietError={quietError} envWaiting={Boolean(envWaitingTarget)} />
+        <StatusIndicator status={status} quietError={quietError} envWaiting={Boolean(envWaiting)} />
         {delegationPresentation
           ? <DelegationHeader presentation={delegationPresentation} />
           : <ToolHeader
@@ -348,7 +348,8 @@ export function ToolCallDisplay({
               status={status}
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
-              envWaitingTarget={envWaitingTarget}
+              envWaitingTarget={envWaiting?.target}
+              envWaitingRuntime={envWaiting?.isRuntime}
               showDetailName={canExpand && expanded}
               hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}

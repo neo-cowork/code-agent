@@ -41,6 +41,8 @@ interface Props {
   hideStatusLabel?: boolean;
   /** 这一步停在等环境授权上：人话授权目标（「日历」），状态说在等什么而不是「已中断」。 */
   envWaitingTarget?: string;
+  /** 停在等运行时准备（runtime_missing）。 */
+  envWaitingRuntime?: boolean;
 }
 
 /**
@@ -84,6 +86,7 @@ export function ToolHeader({
   showDetailName = false,
   hideStatusLabel = false,
   envWaitingTarget,
+  envWaitingRuntime,
 }: Props) {
   const { t, language } = useI18n();
   const openPreview = useAppStore((s) => s.openPreview);
@@ -92,7 +95,7 @@ export function ToolHeader({
   // 而不是裸露 "Read"/"Bash" 这类工具名——两条路径都已经是完整句子，不再需要
   // 单独的 params 副标题（避免语义重复）。
   const assembled = status === 'interrupted'
-    ? buildToolStatusLineCopy({ status, interruptionReason, toolCall, envWaitingTarget }, t)
+    ? buildToolStatusLineCopy({ status, interruptionReason, toolCall, envWaitingTarget, envWaitingRuntime }, t)
     : null;
   const preflight = toolPreflightCopy(toolCall, t);
   const rawArgs = toolCall.arguments as Record<string, unknown> | undefined;
