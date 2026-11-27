@@ -76,7 +76,7 @@ import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessi
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
-import { settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
+import { hasInFlightBackgroundChildren, settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -1777,7 +1777,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const isBackground = backgroundManager.isTaskRunning(sessionId);
       const leftoverPaths = takeApprovedRmLeftovers(sessionId, runContext.runId, 'web',
         isBackground && finalStatus === 'completed');
-      if (isBackground) {
+      if (isBackground || hasInFlightBackgroundChildren(sessionId, runContext.runId)) {
         const errorData = runController.lastTerminalErrorData;
         await settleOrHoldBackgroundRun(backgroundManager, sessionId, runContext.runId, {
           status: finalStatus,

@@ -37,6 +37,7 @@ import {
 import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { commandGrantKey, commandGrantTarget } from '../permissions/commandGrantTarget';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
+import { publishParkedReuseNotice, resolveParkedCallApproval } from '../permissions/parkedCallApproval';
 import { classifyFileWrite } from './fileWriteClassification';
 import { classifyToolPath } from './utils/toolPathKind';
 import { createLogger } from '../services/infra/logger';
@@ -1322,6 +1323,7 @@ export class ToolExecutor {
       || ((options.spawnDepth ?? 0) === 0 ? 'primary' : undefined);
 
     let browserApprovedAction: string | undefined;
+    let parkedReuseNotice = false;
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
@@ -2237,24 +2239,30 @@ export class ToolExecutor {
         shouldForceConfirm = false;
         logger.debug('ConfirmationGate preview error:', error);
       }
-      const preAskBlocked = Boolean(commandAnalysisFailedReason)
+      const blockedExceptBoundary = Boolean(commandAnalysisFailedReason) || classifierFailedReason !== undefined
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
           || peerOriginForcesConfirmation || launderRetryForcesAsk
-          || nlForcesAsk
-          || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
+          || nlForcesAsk || Boolean(cuaSensitiveStep)
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
           || scheduleWriteGrantRequired
           || shouldForceConfirm;
-      const preAsk = needsUserApproval ? resolvePreAskGrant({
+      const preAskBlocked = blockedExceptBoundary || boundaryAskForcesConfirmation;
+      // 停靠前已确认、从未执行的同一调用（一次性凭证）：确认与执行仍一对一，不算给信任边界开例外。
+      const parkedApproval = needsUserApproval ? resolveParkedCallApproval({
+        toolName: executionToolName, params, sessionId: effectiveSessionId, runId: effectiveRunId,
+        sourceMessageId: options.sourceMessageId, turnOrigin: options.turnOrigin, blockedByOtherGate: blockedExceptBoundary,
+      }) : null;
+      if (parkedApproval) parkedReuseNotice = true;
+      const preAsk = parkedApproval ?? (needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget, commandGrantTarget: commandGrantKey(executionToolName, exactCommandTarget, effectiveSessionId, params),
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: preAskBlocked,
-      }) : null;
+      }) : null);
       if (preAsk) {
         if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
         if (executionToolName === 'terminal_write' && preAsk.ledgerReason === 'tool_grant:24h') context.approvedToolCall = { toolName: executionToolName, args: { ...params } };
@@ -2909,11 +2917,15 @@ export class ToolExecutor {
         });
       }
 
+      if (parkedReuseNotice && result.success) await publishParkedReuseNotice({ sessionId: effectiveSessionId, runId: effectiveRunId, toolCallId: options.currentToolCallId });
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
       return { ...appendUserEditedArgsNote(result, params, userEditedKeys), metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
-      if (error instanceof EnvBlockedError) throw error;
+      if (error instanceof EnvBlockedError) {
+        error.approvedCallArgs = userApproved && executionToolName === 'mail_draft' ? params : undefined;
+        throw error;
+      }
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
       executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');

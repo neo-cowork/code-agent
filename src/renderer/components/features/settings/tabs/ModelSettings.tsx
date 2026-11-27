@@ -73,7 +73,8 @@ import {
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ModelKeyGuide } from './ModelKeyGuide';
-import { ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { isStagedApiKeyUnsaved, ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { ProviderSaveBar } from './ProviderSaveBar';
 import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
@@ -858,7 +859,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       title={modelText.title}
       description={modelText.description}
     >
-      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <WebModeBanner />
 
       {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
@@ -890,6 +890,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           </Button>
         }
       >
+      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}
@@ -997,33 +998,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   }}
                 />
               )}
-
-              {/* ── 保存 ── */}
-              <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
-                {providerFormDirty && (
-                  <span className="inline-flex w-fit items-center rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning">
-                    {modelText.header.unsavedBadge}
-                  </span>
-                )}
-                <Button
-                  disabled={isWebMode()} title={webNote}
-                  onClick={handleSave}
-                  loading={isSaving}
-                  size="lg"
-                  variant="primary"
-                  className="w-full"
-                >
-                  {isSaving ? t.common.saving : modelText.header.saveConfig}
-                </Button>
-                <span className="text-xs text-zinc-500">
-                  {modelText.header.saveHintPrefix}{providerTitle}{modelText.header.saveHintSuffix}
-                </span>
-              </div>
             </>
           )}
         </div>
       </div>
       </SettingsSection>
+
+      {/* 吸底的包含块必须从视口内开始。窄屏下列表面板叠在表单上方，
+          表单列的顶边会落到折叠线附近，sticky 拉不出那一列。 */}
+      {!isAddingProvider && (
+        <ProviderSaveBar
+          dirty={providerFormDirty}
+          apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, hasApiKey)}
+          saving={isSaving}
+          disabled={isWebMode()}
+          disabledTitle={webNote}
+          providerTitle={providerTitle}
+          onSave={handleSave}
+        />
+      )}
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

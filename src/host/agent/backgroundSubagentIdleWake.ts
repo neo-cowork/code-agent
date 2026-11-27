@@ -1,4 +1,5 @@
 import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
+import { truncateAtWordBoundary } from '../utils/truncate';
 import type { MessageMetadata } from '../../shared/contract';
 import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { RunSessionConflictError } from '../runtime/runRegistry';
@@ -67,8 +68,9 @@ async function flushWake(sessionId: string): Promise<void> {
       const task = records[0];
       if (!task) return;
       const firstLine = task.title.trim().split(/\r?\n/, 1)[0].trim();
-      const characters = Array.from(firstLine);
-      const shortName = characters.length > 24 ? `${characters.slice(0, 24).join('').trimEnd()}…` : firstLine;
+      // 整词截断；预算内没有边界（一个长 token）时退回旧的硬切——这里没有固定文案可回落。
+      const shortName = truncateAtWordBoundary(firstLine, 24)
+        ?? `${Array.from(firstLine).slice(0, 24).join('').trimEnd()}…`;
       const message = getAgentErrorMessage(error) ?? (error instanceof Error ? error.message : String(error));
       try {
         // 写不进（登录恢复窗口里会话对当前 owner 不可读）时，这个包装会等登录态

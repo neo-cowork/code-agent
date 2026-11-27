@@ -30,17 +30,18 @@ beforeEach(() => {
 });
 
 describe.each([['zh', zh], ['en', en]] as const)('ensureModelConfigured web toast (%s)', (language, locale) => {
-  it.each([['no configured model', unkeyed], ['other model configured', unkeyedWithOther]])('web, %s, skip-sign-in path: web wording', async (_n, settings) => {
-    invokeDomainMock.mockResolvedValue(settings);
+  it('uses web wording when another model is configured', async () => {
+    invokeDomainMock.mockResolvedValue(unkeyedWithOther);
     await expect(ensureModelConfigured(locale, language, { openSettingsWhenReady: true })).resolves.toBe(false);
     expect(useToastStore.getState().toasts.at(-1)?.message).toBe(locale.modelSetup.webSetupDesktopOnly.replace('{provider}', language === 'zh' ? 'OpenAI' : 'OpenAI'));
     expect(appState.openModelSettings).toHaveBeenCalledWith('openai');
   });
 
-  it('desktop: wording unchanged', async () => {
-    webMode.value = false;
+  it.each([true, false])('opens model settings without a duplicate toast when no model exists (web=%s)', async (isWeb) => {
+    webMode.value = isWeb;
     invokeDomainMock.mockResolvedValue(unkeyed);
     await ensureModelConfigured(locale, language, { openSettingsWhenReady: true });
-    expect(useToastStore.getState().toasts.at(-1)?.message).toBe(locale.modelSetup.missingApiKey.replace('{provider}', 'OpenAI'));
+    expect(useToastStore.getState().toasts).toEqual([]);
+    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('openai');
   });
 });

@@ -1,11 +1,11 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 import type { Code, Link, Nodes, PhrasingContent } from 'mdast';
 import { isChartSpecSource } from '@shared/chartSpec';
+import { remarkMathPandoc } from './remarkMathPandoc';
 
-const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMathPandoc);
 
 /** 这些语言一律不参与去重：**无法在 markdown 预处理层保证它们真会渲染出块头按钮**。
  *

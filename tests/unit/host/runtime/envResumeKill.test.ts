@@ -180,6 +180,7 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('not run: Mail automation permission was missing');
     expect(second).not.toContain('process crashed');
     expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(labeledLine(second, 'APPROVAL_CARDS')).toContain('["mail_draft"]');
     expect(countUserMessages(second)).toBe(1);
   }, PROCESS_CASE_TIMEOUT_MS);
 
@@ -189,6 +190,7 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('"status":"completed"');
     expect(second).toContain('not run: Mail automation permission was missing');
     expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(labeledLine(second, 'APPROVAL_CARDS')).toContain('["mail_draft"]');
     expect(countUserMessages(second)).toBe(1);
   }, PROCESS_CASE_TIMEOUT_MS);
 
@@ -202,6 +204,7 @@ describe('environment park survives process kill', () => {
     expect(labeledLine(second, 'AFTER_RETURN')).toContain('"sessionStatus":"idle","runStatus":"completed","userMessages":1');
     expect(labeledLine(second, 'AFTER_RETURN')).toContain('"subjects":["Rollback plan 3"],"seenRuns":["env-run"]');
     expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(labeledLine(second, 'APPROVAL_CARDS')).toContain('["mail_draft"]');
     expect(countUserMessages(second)).toBe(1);
   }, PROCESS_CASE_TIMEOUT_MS);
 });

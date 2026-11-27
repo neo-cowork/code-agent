@@ -31,6 +31,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('EnvAssistCard', () => {
+  it.each([['zh', '已按你刚才的确认保存草稿。'], ['en', 'Saved the draft as you confirmed a moment ago.']])('shows the reused-confirmation line in plain words (%s)', (language, line) => {
+    mocks.language = language;
+    const reused: EnvAssistNotice = { ...notice, id: 'run|parked_reuse|c', target: { id: 'mail', labelKey: 'env.target.mail' }, phase: 'resolved', sentenceKey: 'env.reused.mail', action: undefined };
+    const { container } = render(<EnvAssistCard notice={reused} />);
+    expect(container.textContent).toBe(line);
+    expect(container.textContent).not.toMatch(/mail_draft|env\.|run\|/);
+  });
+
   it.each(['zh', 'en'])('renders one sentence and one button without diagnostics even in developer mode (%s)', async (language) => {
     mocks.language = language;
     useAppStore.setState({ developerMode: true });
@@ -140,3 +148,27 @@ describe('EnvAssistCard', () => {
   });
 });
 
+
+describe('offline environment card', () => {
+  it.each([['zh', zh], ['en', en]] as const)('offers just one manual recheck after the deadline (%s)', async (language, locale) => {
+    mocks.language = language;
+    const offline: EnvAssistNotice = {
+      id: 'run|offline|network', sessionId: 'session', runId: 'run', class: 'offline', phase: 'fixing',
+      sentenceKey: 'env.offline.waiting', resume: { mode: 'auto', deadlineAt: Date.now() + 100_000 }, updatedAt: 1,
+    };
+    const view = render(<EnvAssistCard notice={offline} />);
+    expect(screen.getByText(locale.env.offline.waiting)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+
+    const expired = { ...offline, resume: { ...offline.resume, deadlineAt: Date.now() - 1 } };
+    view.rerender(<EnvAssistCard notice={expired} />);
+    expect(await screen.findByText(locale.env.offline.timedOut)).toBeTruthy();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    mocks.invoke.mockResolvedValueOnce({ status: 'checked', notice: { ...expired, phase: 'resolved', updatedAt: 2 } });
+    fireEvent.click(screen.getByRole('button', { name: locale.env.offline.continue }));
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('domain:envAssist', 'recheckOffline', { noticeId: offline.id });
+    expect(await screen.findByText(locale.env.offline.resolved)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+});

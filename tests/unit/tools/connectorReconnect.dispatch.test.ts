@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { getToolResolver } from '../../../src/host/tools/dispatch/toolResolver';
 import { executePocToolViaProtocol } from '../../../src/host/tools/dispatch/shadowAdapter';
+import { withConnectorReconnectGuidance } from '../../../src/host/tools/dispatch/connectorReconnectGuidance';
 import { getConnectorRegistry } from '../../../src/host/connectors/registry';
+import { CalendarFailure } from '../../../src/host/connectors/native/calendar';
 import type { Connector, ConnectorStatus } from '../../../src/host/connectors/base';
 import type { ToolContext } from '../../../src/host/tools/types';
 import { calendarSchema } from '../../../src/host/tools/modules/connectors/calendar.schema';
@@ -44,6 +46,7 @@ function registerReminders(status: ConnectorStatus) {
 describe('connector reconnect guidance through real protocol dispatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
     // The calendar tool registers on macOS only; register the real schema and module where
     // it is missing so the dispatch wrapper is exercised on the Linux CI runner as well.
     const registry = getProtocolRegistry();
@@ -54,6 +57,10 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
       registry.register(remindersSchema, async () => (await import('../../../src/host/tools/modules/connectors/reminders')).remindersModule);
     }
     getConnectorRegistry().configure([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it.each(['resolver', 'adapter'])('%s preserves missing-connector failure and adds a reconnect exit', async (path) => {
@@ -212,6 +219,86 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
       expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', {
         connectorId: 'reminders', toolName: 'reminders', reason: 'status-not-connected',
       });
+    });
+  });
+
+  describe('platform-unsupported guidance', () => {
+    it.each(['resolver', 'adapter'])('%s turns calendar code:unavailable into desktop-only guidance without reconnect wording', async (path) => {
+      const status: ConnectorStatus = { connected: false, readiness: 'unavailable', capabilities: ['list_events'] };
+      getConnectorRegistry().register({
+        id: 'calendar',
+        label: 'Calendar',
+        capabilities: ['list_events'],
+        getCachedStatus: () => status,
+        getStatus: async () => status,
+        execute: async () => { throw new CalendarFailure('unavailable'); },
+      });
+
+      const result = await execute(path, 'list_events', 'calendar');
+      expect(result.success).toBe(false);
+      expect(result.metadata?.code).toBe('unavailable');
+      expect(result.error).not.toContain('Capability Hub > Connectors');
+      expect(result.error).toContain('reconnecting will not help');
+      expect(result.error).toContain('Agent Neo desktop app on macOS');
+      expect(result.error).toContain('只能在桌面应用中访问日历。');
+      expect(result.error).toContain('never state that there are no events');
+      expect(warn).toHaveBeenCalledWith('Connector call unsupported on current platform', {
+        connectorId: 'calendar', toolName: 'calendar', reason: 'platform-unsupported',
+      });
+    });
+
+    it('is idempotent when withConnectorReconnectGuidance is called twice on a platform-unsupported result', () => {
+      const first = withConnectorReconnectGuidance('calendar', {
+        ok: false,
+        code: 'unavailable',
+        error: 'Calendar is only available in the Agent Neo desktop app on macOS.',
+      });
+      const second = withConnectorReconnectGuidance('calendar', first);
+      expect(second).toEqual(first);
+    });
+
+    it.each(['resolver', 'adapter'])('%s treats status.unavailable=true on non-darwin as platform-unsupported', async (path) => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+
+      const result = await execute(path, 'get_status', 'calendar');
+      expect(result.success).toBe(true);
+      expect(result.metadata?.modelGuidance).not.toContain('Capability Hub > Connectors');
+      expect(result.metadata?.modelGuidance).toContain('reconnecting will not help');
+      expect(result.metadata?.modelGuidance).toContain('Agent Neo desktop app on macOS');
+      expect(result.metadata?.modelGuidance).toContain('只能在桌面应用中访问日历。');
+      expect(result.metadata?.modelGuidance).toContain('never state that there are no events');
+      expect(warn).toHaveBeenCalledWith('Connector call unsupported on current platform', {
+        connectorId: 'calendar', toolName: 'calendar', reason: 'platform-unsupported',
+      });
+    });
+
+    it('uses platform_unsupported copy for non-calendar connectors on non-darwin and detailCode', () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+      const mailResult = withConnectorReconnectGuidance('mail', {
+        ok: true,
+        output: 'Mail is not connected on this computer.',
+        meta: { status: { connected: false, unavailable: true } },
+      });
+      expect(mailResult.ok).toBe(true);
+      if (mailResult.ok) {
+        expect(mailResult.meta?.modelGuidance).not.toContain('Capability Hub > Connectors');
+        expect(mailResult.meta?.modelGuidance).toContain('此连接器只能在 Mac 上使用。');
+        expect(mailResult.meta?.modelGuidance).toContain('reconnecting will not help');
+        expect(mailResult.meta?.modelGuidance).toContain('never state that there are no emails');
+      }
+
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+      const detailResult = withConnectorReconnectGuidance('calendar', {
+        ok: true,
+        output: 'Calendar unavailable.',
+        meta: { status: { connected: false, detailCode: 'calendar_desktop_only' } },
+      });
+      expect(detailResult.ok).toBe(true);
+      if (detailResult.ok) {
+        expect(detailResult.meta?.modelGuidance).not.toContain('Capability Hub > Connectors');
+        expect(detailResult.meta?.modelGuidance).toContain('只能在桌面应用中访问日历。');
+        expect(detailResult.meta?.modelGuidance).toContain('reconnecting will not help');
+      }
     });
   });
 });

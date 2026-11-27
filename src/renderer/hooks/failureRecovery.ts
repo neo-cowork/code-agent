@@ -14,7 +14,8 @@ function isRetrievalTool(name: string | undefined): boolean {
  * 所以真实的 Bash 失败不受影响。
  */
 function isGateBounce(toolCall: ToolCallNode): boolean {
-  return toolCall.metadata?.bounced === true;
+  // A call handed to a background task is not a failure a later success fixed: its state comes from that task.
+  return toolCall.metadata?.bounced === true && toolCall.metadata.code !== 'HANDED_OFF_TO_BACKGROUND';
 }
 
 /** 失败的工具调用在「之后出现成功标志」时是否可降级为已恢复。 */

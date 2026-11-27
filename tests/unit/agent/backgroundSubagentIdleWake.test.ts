@@ -347,6 +347,26 @@ describe('background subagent idle wake', () => {
   });
 
 
+  it('truncates a long task title at a word boundary in the wake failure note', async () => {
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      if (!observer) throw new Error('Expected the wake error observer');
+      observer('long-title-session', { type: 'error', data: { message: 'wake blew up' } });
+    });
+    // 旧实现 slice(0, 24) 会得到「Compare Tauri and Electr…」半词（FB-1933 同款病形）。
+    await seedCompletion('agent-long-title', 'long-title-session', 'Compare Tauri and Electron startup time');
+    scheduleBackgroundSubagentIdleWake(trigger('agent-long-title', 'long-title-session'));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith('Compare Tauri and…', 'wake_failed');
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith(
+      'long-title-session',
+      'wake failed: Compare Tauri and…',
+      { taskId: 'agent-long-title', reason: 'wake_failed', title: 'Compare Tauri and…' },
+    );
+  });
+
   it('does not record a failure note when the wake turn already reported and only hit its one-step budget', async () => {
     taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
     taskManagerMocks.startTask.mockImplementation(async () => {
@@ -456,7 +476,7 @@ describe('background subagent idle wake', () => {
 
   it.each([
     ['  百度页面摘要  \n使用 browser_action / Playwright；失败后改用 WebFetch。', '百度页面摘要'],
-    ['打开百度首页并浏览其中两个页面然后整理成可直接阅读的简短中文摘要\n用 WebFetch 抓取。', '打开百度首页并浏览其中两个页面然后整理成可直接阅…'],
+    ['打开百度首页并浏览其中两个页面然后整理成可直接阅读的简短中文摘要\n用 WebFetch 抓取。', '打开百度首页并浏览其中两个页面然后整理成可直接…'],
   ])('uses a short first-line name in a failed wake note: %s', async (title, shortName) => {
     // The process-wide completion registry retains consumed dedupe keys between cases.
     const agentId = `agent-long-title-${title.length}`;

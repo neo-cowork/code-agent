@@ -43,6 +43,14 @@ import { readMemoryFile } from '../../../src/host/lightMemory/lightMemoryIpc';
 class FakeMemoryDb {
   records: MemoryRecord[] = [];
 
+  findMemoryByEntryId(entryId: string): MemoryRecord | null {
+    return this.records.find((record) => (record.metadata as { memoryEntry?: { id?: string } } | null)?.memoryEntry?.id === entryId) ?? null;
+  }
+
+  listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+    return this.records.filter((record) => (record.metadata as Record<string, unknown> | null)?.injectionFeedback !== undefined);
+  }
+
   listMemories(): MemoryRecord[] {
     return this.records;
   }

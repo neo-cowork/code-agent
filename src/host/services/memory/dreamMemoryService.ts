@@ -80,6 +80,8 @@ export interface DreamRunReport {
 }
 
 export interface DreamMemoryDatabase extends TranscriptHistoryDatabase {
+  findMemoryByEntryId(entryId: string): MemoryRecord | null;
+  listMemoriesWithInjectionFeedback(): MemoryRecord[];
   listSessions(limit?: number, offset?: number, includeArchived?: boolean): SessionLike[];
   getRecentMessages(sessionId: string, count: number): Message[];
   listMemories(options?: {
