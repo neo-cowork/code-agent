@@ -8,7 +8,7 @@ import { redactCredentialText } from '@shared/security/secretPatterns';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { PermissionRequestReason } from '@shared/contract';
 import type { RmCommandTargets } from '@shared/rmCommandTargets';
-import { parseRmTargets } from '@shared/rmCommandTargets';
+import { isDeleteShellCommand, parseRmTargets } from '@shared/rmCommandTargets';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
@@ -59,7 +59,7 @@ function isDeletionRequest(request: PermissionRequest): boolean {
   const flags = request.details.commandSecurityFlags ?? [];
   return request.type === 'file_delete'
     || flags.some((flag) => /delete|sudo_rm/u.test(flag))
-    || /\brm\s+-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b/u.test(request.details.command ?? '');
+    || isDeleteShellCommand(request.details.command ?? '');
 }
 
 /**
@@ -242,8 +242,12 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target, p) : p.targetFallback);
   }
   if (request.boundary?.id === 'file.external_write') {
-    return p.consequenceOutside
-      .replace('{target}', writeTarget ?? p.targetFallback)
+    const outsideTarget = humanTarget && humanTarget !== redactCredentialText(target ?? '')
+      ? humanTarget
+      : (target ? compactFileTarget(target, p) : p.targetFallback);
+    const template = request.details.targetKind === 'absent' ? p.consequenceOutsideNew : p.consequenceOutside;
+    return template
+      .replace('{target}', outsideTarget)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.details.connectorAccess?.access === 'write' || request.riskClass === 'external'

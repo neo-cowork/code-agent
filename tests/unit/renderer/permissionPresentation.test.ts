@@ -385,7 +385,7 @@ describe('device / special path copy', () => {
       boundary: { id: 'file.external_write' },
     };
     expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt（工作区外）？');
-    expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
+    expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 notes.txt（约 1 个文件），可能覆盖现有内容。');
   });
 
   it('still titles an ordinary file named null by basename', () => {
@@ -622,9 +622,32 @@ describe('new files, target display and file-count grammar', () => {
     expect(permissionConsequence({ ...write, reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny }, zh)).toBe(decisionCardZh.decisionCard.permission.consequenceUncertainWriteTarget);
     expect(permissionConsequence({ ...write, details: { path: '/dev/null', targetKind: 'device' } }, zh)).toContain('设备文件 /dev/null');
   });
-  it('outside-workspace write keeps the full target location and singular grammar', () => {
-    const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/shared/contract-notes.md', targetKind: 'absent' } }, en);
-    expect(result).toBe('Writes /shared/contract-notes.md outside the workspace (1 file) and may overwrite existing content.');
+  it('outside-workspace new file avoids overwrite wording and absolute paths while keeping singular grammar', () => {
+    const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/Users/alice/export/contract-notes.md', targetKind: 'absent' } }, en);
+    expect(result).toBe('Creates contract-notes.md outside the workspace (1 file).');
+    expect(result).not.toContain('overwrite');
+    expect(result).not.toContain('/Users/');
+    const zhResult = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/Users/alice/export/contract-notes.md', targetKind: 'absent' } }, zh);
+    expect(zhResult).toBe('将在工作区外新建 contract-notes.md（约 1 个文件）。');
+    expect(zhResult).not.toContain('覆盖');
+    expect(zhResult).not.toContain('/Users/');
+  });
+  it('outside-workspace existing file keeps overwrite warning without leaking absolute path', () => {
+    const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/Users/alice/export/contract-notes.md', targetKind: 'regular' } }, en);
+    expect(result).toBe('Writes contract-notes.md outside the workspace (1 file) and may overwrite existing content.');
+    expect(result).not.toContain('/Users/');
+  });
+  it('plain rm / rm -v / rmdir / unlink chained commands show a delete consequence line while read-only commands do not', () => {
+    const rmChained: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'rm -v a.md && rmdir -v temp' } };
+    expect(permissionConsequence(rmChained, zh)).toBe('将永久删除 a.md（约 2 个文件），不进回收站。');
+    expect(permissionConsequence(rmChained, en)).toBe('Permanently deletes a.md (2 files) without using Trash.');
+    expect(isSafeDefaultDeny(rmChained)).toBe(true);
+
+    const unlinkCmd: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'unlink old.txt' } };
+    expect(permissionConsequence(unlinkCmd, en)).toBe('Permanently deletes old.txt (1 file) without using Trash.');
+
+    const readOnlyEcho: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'echo rm -v a.md && ls temp' } };
+    expect(permissionConsequence(readOnlyEcho, en)).toBeUndefined();
   });
   it.each([0, 1, 2, 312])('English deletion count %i uses singular only for one', (count) => {
     const result = permissionConsequence({ ...write, type: 'file_delete', details: { path: '/workspace/old-notes.txt', affectedFileCount: count } }, en);
