@@ -10,15 +10,12 @@ import { getLocale } from '../platform/appPaths';
 // ============================================================================
 
 import type { ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
-import { permissionRequestTypeForLevel } from './permissionRequestType';
-import { buildTerminalApprovalPreview } from './modules/terminal/terminalApprovalPreview';
 import * as nodePath from 'path';
 import * as nodeOs from 'node:os';
 import * as nodeFs from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { AgentFailureCode, type ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
-import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import {
   createHostReason,
   hostReasonModelText,
@@ -101,7 +98,7 @@ import { appendUserEditedArgsNote } from './userEditedArgsNote';
 import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, omitMailBodyFromDiagnostics, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
-import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { isUnattendedRoleOwnMemoryWrite, ROLE_OWN_MEMORY_UNATTENDED_REASON } from './roleOwnMemoryAllow';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
 import { getSandboxManager } from '../sandbox';
@@ -112,7 +109,7 @@ import {
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { skillBoundaryAllowsTool } from './skillBoundaryScope';
-import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
+import { sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
 import { observeInToolApproval } from './inToolApprovalObserve';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
@@ -121,9 +118,13 @@ import { recordCachedToolReplay } from './cachedToolReplay';
 import { createToolExecutionLedger } from './toolExecutionLedger';
 import { classifyToolReplaySafety } from './toolReplaySafety';
 import { type ExecutionTopology } from '../permissions';
-import { boundaryIdForRequestType } from './permissionBoundaryMapping';
-import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
-import { eventReplyPermissionRequest } from './eventReplySession';
+import { findConnectorTokenWrite } from './connectorTokenWrite';
+import {
+  buildPermissionRequest,
+  fileWriteReasonCode,
+  getFileBoundaryId,
+  type PermissionRequestBuilderContext,
+} from './permissionRequestBuilder';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
@@ -2951,6 +2952,14 @@ export class ToolExecutor {
     }
   }
 
+  private get permissionRequestBuilderContext(): PermissionRequestBuilderContext {
+    return {
+      runContext: this.runContext,
+      executionCwd: this.executionCwd,
+      runtimeWorkspace: this.runtimeWorkspace,
+    };
+  }
+
   private buildPermissionRequest(
     tool: ToolDefinition,
     params: Record<string, unknown>,
@@ -2958,177 +2967,14 @@ export class ToolExecutor {
     commandRiskOverride?: ValidationResult['riskLevel'] | 'unknown',
     sessionId?: string,
   ): PermissionRequestData {
-    const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
-      const workspaceScope = this.runContext?.workspaceScope;
-      if (!workspaceScope) return {};
-      const candidate = typeof rawPath === 'string' && rawPath.trim()
-        ? (nodePath.isAbsolute(rawPath)
-          ? nodePath.resolve(rawPath)
-          : nodePath.resolve(this.executionCwd, rawPath))
-        : this.executionCwd;
-      const match = resolveWorkspacePath(workspaceScope, candidate, 'read');
-      if (!match) return { workspaceScopeVersion: workspaceScope.version };
-      return {
-        projectId: workspaceScope.projectId,
-        sourceId: match.root.sourceId,
-        sourceRole: match.root.role,
-        sourceAccess: match.root.access,
-        relativePathWithinSource: match.relativePath,
-        workspaceScopeVersion: workspaceScope.version,
-      };
-    };
-    switch (tool.name) {
-      case 'bash':
-      case 'Bash':
-        return {
-          type: isDangerousCommand(params.command as string)
-            ? 'dangerous_command'
-            : 'command',
-          tool: tool.name,
-          details: {
-            command: params.command,
-            commandRiskLevel: commandRiskOverride ?? commandValidation?.riskLevel,
-            commandSecurityFlags: commandValidation?.securityFlags,
-            ...sourceAttribution(params.working_directory),
-          },
-          reason: commandValidation?.reason ?? 'Execute shell command',
-          reasonCode: PermissionRequestReason.ShellHighRisk,
-          boundary: {
-            id: 'command.shell',
-            reason: '本次命令会在当前工作区的 shell 环境执行。',
-          },
-        };
-
-      case 'read_file':
-      case 'Read':
-        return {
-          type: 'file_read',
-          tool: tool.name,
-          details: { path: params.file_path, ...sourceAttribution(params.file_path) },
-          boundary: {
-            id: this.getFileBoundaryId(params.file_path, false),
-            reason: '读取文件内容用于完成当前任务。',
-          },
-        };
-
-      case 'write_file':
-      case 'Write':
-        return {
-          type: 'file_write',
-          tool: tool.name,
-          details: {
-            path: params.file_path,
-            contentLength: (params.content as string)?.length || 0,
-            ...sourceAttribution(params.file_path),
-          },
-          reasonCode: this.fileWriteReasonCode(params.file_path),
-          boundary: {
-            id: this.getFileBoundaryId(params.file_path, true),
-            reason: '写入文件内容会修改目标路径。',
-          },
-        };
-
-      case 'append_file':
-      case 'Append':
-        return {
-          type: 'file_write',
-          tool: tool.name,
-          details: {
-            path: params.file_path,
-            contentLength: (params.content as string)?.length || 0,
-            final: params.final === true,
-            ...sourceAttribution(params.file_path),
-          },
-          reasonCode: this.fileWriteReasonCode(params.file_path),
-          boundary: {
-            id: this.getFileBoundaryId(params.file_path, true),
-            reason: '追加内容会修改目标路径。',
-          },
-        };
-
-      case 'edit_file':
-      case 'Edit': {
-        // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一后聚合取文；
-        // legacy 平铺形状输出不变。
-        const editText = aggregateEditArgsText(params);
-        return {
-          type: 'file_edit',
-          tool: tool.name,
-          details: {
-            path: params.file_path,
-            oldString: editText.oldText || undefined,
-            newString: editText.newText || undefined,
-            ...sourceAttribution(params.file_path),
-          },
-          reasonCode: this.fileWriteReasonCode(params.file_path),
-          boundary: {
-            id: this.getFileBoundaryId(params.file_path, true),
-            reason: '编辑操作会修改目标文件内容。',
-          },
-        };
-      }
-
-      case 'web_fetch':
-      case 'WebFetch':
-      case 'web_search':
-      case 'WebSearch':
-        return {
-          type: 'network',
-          tool: tool.name,
-          details: { url: params.url, query: params.query },
-          reasonCode: PermissionRequestReason.NetworkEgress,
-          boundary: {
-            id: 'network.web_request',
-            reason: '本次工具会访问外部网络资源。',
-          },
-        };
-
-      case 'mcp':
-      case 'MCPUnified':
-      case 'mcp_read_resource':
-        return {
-          type: 'network',
-          tool: tool.name,
-          details: {
-            server: params.server,
-            tool: params.tool,
-            toolName: params.tool,
-            uri: params.uri,
-          },
-          reason: `调用 MCP 服务器 ${params.server}`,
-          reasonCode: PermissionRequestReason.McpTool,
-          boundary: {
-            id: 'mcp.server_tool',
-            reason: `调用 MCP 服务器 ${params.server}`,
-          },
-        };
-
-      default: {
-        // 连接器写回与 http_request 令牌写共用 connector.external_write 边界（构造见 connectorTokenWrite.ts）。
-        const connectorRequest = connectorWritePermissionRequest(tool, params);
-        if (connectorRequest) return connectorRequest;
-        // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的目的地与回复正文（构造见 eventReplySession.ts）。
-        const eventReplyRequest = eventReplyPermissionRequest(tool, params, sessionId);
-        if (eventReplyRequest) return eventReplyRequest;
-        // Map permission level to permission request type
-        const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
-        return {
-          type: requestType,
-          tool: tool.name,
-          details: {
-            ...params,
-            ...(tool.name === 'terminal_write' && typeof params.input === 'string'
-              ? { preview: buildTerminalApprovalPreview(params.input) }
-              : {}),
-          },
-          reasonCode: PermissionRequestReason.Unknown,
-          boundary: {
-            id: boundaryIdForRequestType(requestType),
-            reason: '根据工具权限级别推断的数据边界。',
-          },
-        };
-      }
-    }
+    return buildPermissionRequest(
+      this.permissionRequestBuilderContext,
+      tool,
+      params,
+      commandValidation,
+      commandRiskOverride,
+      sessionId,
+    );
   }
 
   /**
@@ -3136,28 +2982,11 @@ export class ToolExecutor {
    * 工作区内写入返回 undefined（boundary 文案已足够，避免误标“工作区外”）。
    */
   private fileWriteReasonCode(rawPath: unknown): PermissionRequestReason | undefined {
-    return this.getFileBoundaryId(rawPath, true) === 'file.external_write'
-      ? PermissionRequestReason.FileWriteOutsideWorkspace
-      : undefined;
+    return fileWriteReasonCode(this.permissionRequestBuilderContext, rawPath);
   }
 
   private getFileBoundaryId(rawPath: unknown, isWrite: boolean): PermissionBoundaryId {
-    const filePath = typeof rawPath === 'string' ? rawPath : '';
-    if (!filePath) return isWrite ? 'file.project_write' : 'file.project_read';
-
-    const workspace = this.runtimeWorkspace;
-    const resolvedPath = nodePath.isAbsolute(filePath)
-      ? nodePath.resolve(filePath)
-      : nodePath.resolve(this.executionCwd, filePath);
-    const match = this.runContext?.workspaceScope
-      ? resolveWorkspacePath(this.runContext.workspaceScope, resolvedPath, isWrite ? 'read_write' : 'read')
-      : undefined;
-    const inWorkspace = this.runContext
-      ? Boolean(match)
-      : isRunPathInsideWorkspace(resolvedPath, workspace);
-
-    if (inWorkspace) return isWrite ? 'file.project_write' : 'file.project_read';
-    return isWrite ? 'file.external_write' : 'file.external_read';
+    return getFileBoundaryId(this.permissionRequestBuilderContext, rawPath, isWrite);
   }
 
   private get executionCwd(): string {
