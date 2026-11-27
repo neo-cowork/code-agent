@@ -23,6 +23,8 @@ const cases: TemplateCase[] = [
   { key: 'channelReplyTool', stored: 'channel_reply', zh: '通道回复', en: 'Channel reply' },
   { key: 'channelChatRule', params: { account: 'a1', chat: 'c1' }, stored: 'channel message · account a1 · chat c1', zh: '通道消息 · 账号 a1 · 会话 c1', en: 'Channel message · account a1 · chat c1' },
   { key: 'channelAnyChatRule', params: { account: 'a1' }, stored: 'channel message · account a1 · any chat', zh: '通道消息 · 账号 a1 · 任意会话', en: 'Channel message · account a1 · any chat' },
+  { key: 'channelChatRuleWithoutAccount', params: { chat: 'Weekly reports' }, stored: 'channel message · chat Weekly reports', zh: '通道消息 · 会话 Weekly reports', en: 'Channel message · chat Weekly reports' },
+  { key: 'channelAnyChatRuleWithoutAccount', stored: 'channel message · any chat', zh: '通道消息 · 任意会话', en: 'Channel message · any chat' },
   { key: 'mailRule', params: { account: '163', mailbox: 'INBOX' }, stored: 'mail message · account 163 · mailbox INBOX', zh: '邮件 · 账号 163 · 收件箱 INBOX', en: 'Mail · account 163 · inbox INBOX' },
   { key: 'webhookRule', stored: 'webhook delivery · per-job hook URL', zh: 'Webhook 投递 · 此自动化的专用链接', en: "Webhook delivery · this automation's dedicated link" },
   { key: 'missingDecisions', stored: 'run result carried no eventDecisions field', zh: '运行结果里没有逐事件判断', en: 'The run did not report a decision for each event' },
@@ -57,6 +59,21 @@ describe('cron event decision text table', () => {
     expect(localizeDecisionText(built, 'en')).toBe(en);
   });
 
+  it('omits the channel account when the display name is missing or blank', () => {
+    const schedule = { type: 'event', source: 'channel', accountId: '00000000-0000-4000-8000-000000000001', eventName: 'message' } as const;
+    const anyChat = describeEventScheduleRule(schedule);
+    const specificChat = describeEventScheduleRule({ ...schedule, chatId: 'c1' }, { accountName: '  ', chatName: 'Weekly reports' });
+    expect(anyChat).toBe('channel message · any chat');
+    expect(specificChat).toBe('channel message · chat Weekly reports');
+    expect(localizeDecisionText(anyChat, 'zh')).toBe('通道消息 · 任意会话');
+    expect(localizeDecisionText(specificChat, 'en')).toBe('Channel message · chat Weekly reports');
+  });
+
+  it('preserves the Mail.app account name as configured', () => {
+    const rule = describeEventScheduleRule({ type: 'event', source: 'connector', connector: 'mail', accountId: 'Work Mail', eventName: 'message' });
+    expect(rule).toBe('mail message · account Work Mail · mailbox INBOX');
+  });
+
   it('leaves model-stated reasons untouched in both languages', () => {
     const modelReason = '客户说下周再联系，不需要现在回复';
     expect(localizeDecisionText(modelReason, 'zh')).toBe(modelReason);
@@ -70,8 +87,8 @@ describe('cron event decision text table', () => {
   });
 
   it('keeps every host-stored template byte-identical to the pre-localization strings', () => {
-    expect(describeEventScheduleRule({ type: 'event', source: 'channel', accountId: 'a1', chatId: 'c1', eventName: 'message' })).toBe('channel message · account a1 · chat c1');
-    expect(describeEventScheduleRule({ type: 'event', source: 'channel', accountId: 'a1', eventName: 'message' })).toBe('channel message · account a1 · any chat');
+    expect(describeEventScheduleRule({ type: 'event', source: 'channel', accountId: 'a1', chatId: 'c1', eventName: 'message' }, { accountName: 'Feishu A' })).toBe('channel message · account Feishu A · chat c1');
+    expect(describeEventScheduleRule({ type: 'event', source: 'channel', accountId: 'a1', eventName: 'message' }, { accountName: 'Feishu A' })).toBe('channel message · account Feishu A · any chat');
     expect(describeEventScheduleRule({ type: 'event', source: 'connector', connector: 'mail', accountId: '163', mailbox: 'INBOX', eventName: 'message' })).toBe('mail message · account 163 · mailbox INBOX');
     expect(describeEventScheduleRule({ type: 'event', source: 'webhook', eventName: 'message' })).toBe('webhook delivery · per-job hook URL');
 
