@@ -601,13 +601,21 @@ describe('deletion consequence names every target of a multi-target rm', () => {
   });
 
   it.each([
-    ['rm a.log'],
-    ['rm -v ./a.log'],
-    ['rm *.log'],
+    ['rm a.log', '将永久删除 a.log（约 1 个文件），不进回收站。', 'Permanently deletes a.log (1 file) without using Trash.'],
+    ['rm -v ./a.log', '将永久删除 ./a.log（约 1 个文件），不进回收站。', 'Permanently deletes ./a.log (1 file) without using Trash.'],
+    ['rm *.log', '将永久删除 *.log（多个文件），不进回收站。', 'Permanently deletes *.log (multiple files) without using Trash.'],
+  ])('没有删除旗标的 %s 仍会永久删除：写出删除后果行并点名目标（zh + en）', (command, zhCopy, enCopy) => {
+    const request: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command } };
+    expect(permissionConsequence(request, zh)).toBe(zhCopy);
+    expect(permissionConsequence(request, en, 'en')).toBe(enCopy);
+  });
+
+  it.each([
     ['git rm a.log b.log'],
     ['docker rm web-1 web-2'],
     ['ls a.log b.log'],
-  ])('没有删除旗标的 %s 与 main 一致：不写后果行', (command) => {
+    ['cat a.log'],
+  ])('非 shell 文件删除或只读命令 %s：不写后果行', (command) => {
     const request: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command } };
     expect(permissionConsequence(request, zh)).toBeUndefined();
     expect(permissionConsequence(request, en, 'en')).toBeUndefined();
@@ -729,17 +737,21 @@ describe('new files, target display and file-count grammar', () => {
     const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: '/shared/contract-notes.md', targetKind: 'regular' } }, en);
     expect(result).toBe('Writes /shared/contract-notes.md outside the workspace (1 file) and may overwrite existing content.');
   });
-  it('plain rm / rm -v / rmdir / unlink chained commands show a delete consequence line while read-only commands do not', () => {
+  it('plain rm / rm -v / rmdir / unlink chained commands show a delete consequence line naming every target without counting empty dirs as files, while read-only commands do not', () => {
     const rmChained: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'rm -v a.md && rmdir -v temp' } };
-    expect(permissionConsequence(rmChained, zh)).toBe('将永久删除 a.md（约 2 个文件），不进回收站。');
-    expect(permissionConsequence(rmChained, en)).toBe('Permanently deletes a.md (2 files) without using Trash.');
+    expect(permissionConsequence(rmChained, zh)).toBe('将永久删除 a.md、temp（约 1 个文件），不进回收站。');
+    expect(permissionConsequence(rmChained, en, 'en')).toBe('Permanently deletes a.md, temp (1 file) without using Trash.');
     expect(isSafeDefaultDeny(rmChained)).toBe(true);
 
+    const rmdirOnly: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'rmdir -v temp' } };
+    expect(permissionConsequence(rmdirOnly, zh)).toBe('将永久删除 temp，不进回收站。');
+    expect(permissionConsequence(rmdirOnly, en, 'en')).toBe('Permanently deletes temp without using Trash.');
+
     const unlinkCmd: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'unlink old.txt' } };
-    expect(permissionConsequence(unlinkCmd, en)).toBe('Permanently deletes old.txt (1 file) without using Trash.');
+    expect(permissionConsequence(unlinkCmd, en, 'en')).toBe('Permanently deletes old.txt (1 file) without using Trash.');
 
     const readOnlyEcho: PermissionRequest = { ...baseRequest, tool: 'Bash', type: 'command', details: { command: 'echo rm -v a.md && ls temp' } };
-    expect(permissionConsequence(readOnlyEcho, en)).toBeUndefined();
+    expect(permissionConsequence(readOnlyEcho, en, 'en')).toBeUndefined();
   });
   it.each([0, 1, 2, 312])('English deletion count %i uses singular only for one', (count) => {
     const result = permissionConsequence({ ...write, type: 'file_delete', details: { path: '/workspace/old-notes.txt', affectedFileCount: count } }, en);

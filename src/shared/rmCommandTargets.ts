@@ -19,6 +19,11 @@ export interface RmCommandTargets {
   exact: boolean;
   /** 命令带 -r/-R/--recursive。递归删目录时目标数≠文件数，上层不得拿目标数当文件数。 */
   recursive: boolean;
+  /**
+   * 其中由 `rmdir` 指定的空目录目标数（仅在 > 0 时写入）。
+   * `rmdir` 只移除空目录、不删任何文件：点名清单照列该目录，上层算文件数时扣除。
+   */
+  emptyDirTargets?: number;
 }
 
 // 通配与展开字符：目标命中任意一个就算不出确切清单。`$` 覆盖变量展开，反引号覆盖命令替换。
@@ -150,10 +155,16 @@ function parseSegment(segment: CommandSegment, result: RmCommandTargets): void {
   if (tokens.length === 0) return;
   // 只有段首的 rm/rmdir/unlink（含 sudo）才可能解析出确切目标。
   const leading = tokens[0] === 'sudo' ? 1 : 0;
-  if (DELETE_COMMANDS.has(tokens[leading] ?? '')) {
+  const head = tokens[leading] ?? '';
+  if (DELETE_COMMANDS.has(head)) {
     // 管道喂进来的删除操作数可能来自上游输出；命令替换里的目标同样数不清。
     if (segment.fedByPipe || segment.text.includes('$(')) result.exact = false;
+    const before = result.targets.length;
     consumeRmArgs(tokens.slice(leading + 1), result, true);
+    const added = result.targets.length - before;
+    if (head === 'rmdir' && added > 0) {
+      result.emptyDirTargets = (result.emptyDirTargets ?? 0) + added;
+    }
     return;
   }
   const rmIndex = tokens.findIndex((token) => DELETE_COMMANDS.has(token));
