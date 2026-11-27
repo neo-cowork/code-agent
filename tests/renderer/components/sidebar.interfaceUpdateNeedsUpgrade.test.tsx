@@ -57,7 +57,7 @@ function bundleStatus(
       currentShellVersion: CURRENT,
       outcome: 'skipped',
       reason: 'shell-too-old',
-      manifest: { version: '0.35.0', contentHash: 'h', minShellVersion: '0.35.0' },
+      manifest: { version: '0.35.0', contentHash: 'h', minShellVersion: '0.35.0', requiredShellCapabilitiesCount: 0 },
       ...(attempt.reason === 'missing-shell-capability' ? { missingShellCapabilities: [CAPABILITY_ID] } : {}),
       ...attempt,
     },
