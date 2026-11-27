@@ -295,7 +295,7 @@ export class TaskManager extends EventEmitter {
         source.attachments,
         {
           ...runOptions,
-          mode: runOptions.mode ?? 'normal',
+          mode: options?.mode ?? 'normal',
           runId,
           resumeExistingDurableRun: true,
           disableAutoAgent: true,
