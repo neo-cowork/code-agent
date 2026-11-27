@@ -215,6 +215,18 @@ describe('extensionless file targets recovered by a delegate_task prompt', () =>
     expect(run([grep, delegate('Read src/main.ts')], [task()])).toBe('completed-with-warnings');
   });
 
+  it('a directory path arg is not recovered by a bare mention of its name', () => {
+    const listDirectory = { name: 'ListDirectory', arguments: { path: '/ws/my-app' }, success: false };
+    expect(run([listDirectory, delegate('Summarize my-app')], [task()])).toBe('completed-with-warnings');
+    const grep = { name: 'Grep', arguments: { pattern: 'foo(', path: 'src' }, success: false };
+    expect(run([grep, delegate('Search src for foo')], [task()])).toBe('completed-with-warnings');
+  });
+
+  it('a file path arg on a file-path tool is still recovered', () => {
+    const analyze = { name: 'image_analyze', arguments: { path: '封面' }, success: false };
+    expect(run([analyze, delegate('分析 封面')], [task()])).toBe('completed');
+  });
+
   it('two failed files need both names in the prompt', () => {
     const calls = [failedRead({ file_path: 'Makefile' }), failedRead({ file_path: 'a.pdf' })];
     expect(run([...calls, delegate('Read Makefile')], [task()])).toBe('completed-with-warnings');

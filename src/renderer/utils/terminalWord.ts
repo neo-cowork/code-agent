@@ -25,10 +25,17 @@ export type DelegationLedgerTask = {
   progress?: { lastToolFailure?: unknown; failedToolCalls?: number };
 };
 
-const PATH_ARG_KEY = /^(file_?path|path)$/i;
+const FILE_PATH_ARG_KEY = /^file_?path$/i;
+const AMBIGUOUS_PATH_ARG_KEY = /^path$/i;
 const TARGET_ARG_KEY = /^(file_?path|path|url|pattern)$/i;
 
-function targetTokens(args: unknown): { targets: Set<string>; pathTargets: Set<string> } {
+// A bare `path` argument is a file only for a few tools (image_analyze takes a single-image `path`,
+// Read-style external calls pass `path`); every other current schema uses `path` for a directory
+// (Glob/Grep/ListDirectory/request_directory/git_worktree), so extensionless names like `src`/`docs`
+// must not become file targets for unlisted tools — the extension requirement stays for them.
+const FILE_PATH_TOOLS = new Set(['Read', 'image_analyze']);
+
+function targetTokens(args: unknown, stepName?: string): { targets: Set<string>; pathTargets: Set<string> } {
   const targets = new Set<string>();
   const pathTargets = new Set<string>();
   const add = (raw: string): string | null => {
@@ -49,7 +56,10 @@ function targetTokens(args: unknown): { targets: Set<string>; pathTargets: Set<s
     if (typeof value === 'string') {
       if (TARGET_ARG_KEY.test(key)) {
         const target = add(value);
-        if (target !== null && PATH_ARG_KEY.test(key)) pathTargets.add(target);
+        if (target !== null && (FILE_PATH_ARG_KEY.test(key)
+          || (AMBIGUOUS_PATH_ARG_KEY.test(key) && stepName !== undefined && FILE_PATH_TOOLS.has(stepName)))) {
+          pathTargets.add(target);
+        }
       }
       if (key === 'command') {
         // Keep quoted paths with spaces; also inspect filenames inside quoted scripts.
@@ -150,7 +160,7 @@ export function classifyToolSteps(
   let failed = 0;
   for (let index = steps.length - 1; index >= 0; index--) {
     const step = steps[index];
-    const { targets, pathTargets } = targetTokens(step.arguments);
+    const { targets, pathTargets } = targetTokens(step.arguments, step.name);
     if (step.success !== false) {
       const delegated = completedDelegationPrompt(step, tasks);
       if (delegated) delegatedPrompts.push(delegated);
