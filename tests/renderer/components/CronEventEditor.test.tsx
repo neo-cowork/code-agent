@@ -707,4 +707,20 @@ describe('② 列表/详情（formatScheduleSummary 档）', () => {
     const anyChat = makeEventJob({ schedule: { type: 'event', source: 'channel', accountId: 'a1', eventName: 'message' } });
     expect(formatScheduleSummary(anyChat, 'en', { accountName: 'A1' })).toBe('Channel message · A1 · any chat');
   });
+
+  it('formatScheduleSummary 的邮件档：中文界面把系统邮箱说成中文，自建文件夹和英文界面保持原名', () => {
+    const mailJob = (mailbox?: string) => makeEventJob({
+      schedule: {
+        type: 'event', source: 'connector', connector: 'mail', accountId: '163', eventName: 'message',
+        ...(mailbox ? { mailbox } : {}),
+      },
+    });
+    expect(formatScheduleSummary(mailJob('Junk'), 'zh')).toBe('邮件消息 · 163 · 垃圾邮件');
+    expect(formatScheduleSummary(mailJob('Deleted Messages'), 'zh')).toBe('邮件消息 · 163 · 已删除');
+    expect(formatScheduleSummary(mailJob(), 'zh')).toBe('邮件消息 · 163 · 收件箱');
+    expect(formatScheduleSummary(mailJob('Receipts'), 'zh')).toBe('邮件消息 · 163 · Receipts');
+    expect(formatScheduleSummary(mailJob('广告邮件'), 'zh')).toBe('邮件消息 · 163 · 广告邮件');
+    expect(formatScheduleSummary(mailJob('Junk'), 'en')).toBe('Mail message · 163 · Junk');
+    expect(formatScheduleSummary(mailJob(), 'en')).toBe('Mail message · 163 · INBOX');
+  });
 });
