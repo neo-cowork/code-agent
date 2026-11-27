@@ -18,7 +18,7 @@ export function useEnvTargetLabel(block: Pick<EnvBlock, 'target'> | undefined): 
  * 本会话停在等环境授权上的那一步（env_blocked 停车，envBlocked.toolCallId）与人话授权目标。
  * 只有这一步的工具行改说「等你允许…」，其余行不受影响。
  */
-export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string } | undefined {
+export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string; login: boolean } | undefined {
   const block = useSessionStore(useShallow((state) => {
     const session = sessionId ? state.sessions?.find((candidate) => candidate.id === sessionId) : undefined;
     const resume = session?.durableResume;
@@ -35,12 +35,12 @@ export function useEnvParkedStep(sessionId: string | null | undefined): { toolCa
     return { class: notice.class, target: notice.target.id, toolCallId: notice.parkedToolCallId };
   }));
   const target = useEnvTargetLabel(block);
-  return block && target ? { toolCallId: block.toolCallId, target } : undefined;
+  return block && target ? { toolCallId: block.toolCallId, target, login: block.class === 'login_expired' } : undefined;
 }
 
-export function useEnvParkedTarget(sessionId: string | null | undefined, toolCallId: string): string | undefined {
+export function useEnvParkedTarget(sessionId: string | null | undefined, toolCallId: string): { target: string; login: boolean } | undefined {
   const step = useEnvParkedStep(sessionId);
-  return step?.toolCallId === toolCallId ? step.target : undefined;
+  return step?.toolCallId === toolCallId ? { target: step.target, login: step.login } : undefined;
 }
 
 /**

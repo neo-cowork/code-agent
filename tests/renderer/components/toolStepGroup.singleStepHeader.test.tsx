@@ -96,4 +96,14 @@ describe('single-step tool row: one sentence, connector once, one terminal', () 
     expect(buildToolStatusLineCopy({ status: 'interrupted', toolCall }, t).line).toBe('已中断 · 日历 · 查询日程');
     expect(buildToolStatusLineCopy({ status: 'interrupted', toolCall, envWaitingTarget: '日历' }, t).line).toBe('等你允许日历 · 查询日程');
   });
+
+  it('login_expired parked step says sign in (zh + en), never "allow"', () => {
+    const toolCall = { name: 'calendar', arguments: { action: 'list_events' }, shortDescription: 'Use calendar' };
+    const zh = buildToolStatusLineCopy({ status: 'interrupted', toolCall, envWaitingTarget: 'notes', envWaitingLogin: true }, languages.zh).line;
+    const en = buildToolStatusLineCopy({ status: 'interrupted', toolCall, envWaitingTarget: 'notes', envWaitingLogin: true }, languages.en).line;
+    expect(zh).toContain('等你重新登录「notes」');
+    expect(zh).not.toContain('允许');
+    expect(en).toContain('Waiting for you to sign in to notes');
+    expect(en).not.toContain('allow');
+  });
 });

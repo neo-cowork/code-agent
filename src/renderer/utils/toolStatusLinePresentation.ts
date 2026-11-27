@@ -45,6 +45,8 @@ export interface ToolStatusLineInput {
    * 终态说在等什么，连接器名只在这里出现一次，动作不再带连接器前缀。
    */
   envWaitingTarget?: string;
+  /** 停车原因是登录过期（login_expired）：终态说「等你重新登录」，不说「允许」。 */
+  envWaitingLogin?: boolean;
 }
 
 export interface ToolStatusLineCopy {
@@ -118,12 +120,17 @@ function failedTerminalWord(t: Translations): string {
   return t.outcomeWords['failed-tool'].badge.label;
 }
 
+export function envWaitingStepText(t: Translations, target: string, login?: boolean): string {
+  const s = t.durableStopped;
+  return (login ? s.loginWaitingStep : s.envWaitingStep).replace('{target}', target);
+}
+
 export function buildToolStatusLineCopy(
   input: ToolStatusLineInput,
   t: Translations,
 ): ToolStatusLineCopy {
   if (input.status === 'interrupted' && input.envWaitingTarget) {
-    const terminal = t.durableStopped.envWaitingStep.replace('{target}', input.envWaitingTarget);
+    const terminal = envWaitingStepText(t, input.envWaitingTarget, input.envWaitingLogin);
     const action = humanizeInterruptedToolAction(input.toolCall, t, { connectorPrefixRendered: true });
     return { terminalKey: 'env-waiting', terminal, action, line: `${terminal} · ${action}` };
   }
