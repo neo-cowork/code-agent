@@ -8,6 +8,9 @@ const PROMPT = '用 curl 依次抓取 https://example.com、https://example.org�
 const SECOND_MESSAGE = '刚才抓到的第一个页面标题是什么？一句话回答';
 const TURN_TIMEOUT_MS = 300_000;
 const STOP_SETTLE_TIMEOUT_MS = 120_000;
+/** 助手消息正文（TraceNodeRenderer 里 node.content 的容器）；不含「正在组织回答…」占位、路由条等非正文。 */
+const ASSISTANT_BODY = '[data-trace-turn-id] [data-trace-node-type="assistant_text"] .select-text';
+const OUTPUT_PREFIX_CHARS = 40;
 
 /** /api/events 抓的原始 SSE 里属于某个会话的事件（data 行 JSON）。 */
 function sessionEvents(sseFile: string, sessionId: string): Array<Record<string, unknown>> {
@@ -43,11 +46,15 @@ export const f09: FlowDef = {
         await waitFor('助手有可见正文', async () => {
           const card = env.page.getByTestId('permission-card').first();
           if (await card.isVisible().catch(() => false)) await approveCard(env.page);
-          const nodes = env.page.locator('[data-trace-turn-id] [data-trace-node-type="assistant_text"]');
-          for (const node of await nodes.all()) {
-            if (!await node.isVisible()) continue;
-            const text = (await node.innerText()).trim();
-            if (text) { env.scratch.visibleOutput = text; return true; }
+          for (const body of await env.page.locator(ASSISTANT_BODY).all()) {
+            if (!await body.isVisible()) continue;
+            // 只取正文：去掉生成中才有的 sr-only「正在生成」；按 hasText 的口径压空白，取前缀（流式还会往后长）
+            const text = await body.evaluate((el) => {
+              const clone = el.cloneNode(true) as Element;
+              clone.querySelectorAll('.sr-only').forEach((n) => n.remove());
+              return (clone.textContent ?? '').replace(/\s+/g, ' ').trim();
+            });
+            if (text) { env.scratch.visibleOutput = text.slice(0, OUTPUT_PREFIX_CHARS); return true; }
           }
           return false;
         }, 60_000);
@@ -106,7 +113,7 @@ export const f09: FlowDef = {
         // 等消息列表重新渲染，并核对停止前实际看到的助手正文仍在。
         const output = env.scratch.visibleOutput;
         if (typeof output !== 'string' || !output) throw new Error('未记录停止前的助手正文');
-        await env.page.locator('[data-trace-turn-id] [data-trace-node-type="assistant_text"]')
+        await env.page.locator(ASSISTANT_BODY)
           .filter({ hasText: output }).first().waitFor({ state: 'visible', timeout: 20_000 });
         // 输入框恢复可发送 + 第二条消息正常回复
         const box = env.page.getByTestId('chat-composer-textarea');
