@@ -19,7 +19,7 @@ function resolveLoginTargetName(
   if (!targetId) return '';
   if (Object.hasOwn(targets, targetId)) return targets[targetId];
   const cli = CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === targetId);
-  if (cli) return language === 'en' ? cli.displayNameEn : cli.displayName;
+  if (cli) return (language === 'en' ? cli.displayNameEn : undefined) ?? cli.displayName;
   return SAFE_CONNECTOR_ID.test(targetId) ? targetId : '';
 }
 
