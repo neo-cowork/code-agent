@@ -21,7 +21,6 @@ import {
   buildProviderInfoFromSettings,
   getProviderIconPresets,
   getProviderRuntimeModels,
-  hasConfiguredRuntimeModels,
   isDynamicCustomProviderId,
   normalizeProviderIcon,
   resolveProviderProtocol,
@@ -860,7 +859,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       title={modelText.title}
       description={modelText.description}
     >
-      {(!appSettings || hasConfiguredRuntimeModels(appSettings)) && <WebModeBanner />}
+      <WebModeBanner />
 
       {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
       <TaskStrategySettingsPanel
