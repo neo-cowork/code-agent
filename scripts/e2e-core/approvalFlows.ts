@@ -50,6 +50,7 @@ export const f05: FlowDef = {
       run: async (env) => {
         await approveCard(env.page);
         const onSecondCard = async (page: typeof env.page) => {
+          if (!(await expandCard(page))) return;
           if ((await cardPreview(env)) === env.scratch.preview) throw new Error('同一条命令点了允许后又问了第二次');
           await approveCard(page);
         };
