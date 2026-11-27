@@ -91,7 +91,13 @@ function draftFrames(): string[] {
 }
 
 async function postRun(title: string, history: Message[] = []) {
-  const infraSession: Session = { id: SESSION_ID, title, createdAt: 1, updatedAt: 1 };
+  const infraSession: Session = {
+    id: SESSION_ID,
+    title,
+    modelConfig: { provider: 'xiaomi', model: 'test-model' },
+    createdAt: 1,
+    updatedAt: 1,
+  };
   let storedSession = { ...infraSession };
   const messages = [...history];
   const titlesAtInsert: string[] = [];
