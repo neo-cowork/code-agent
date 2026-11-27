@@ -51,6 +51,7 @@ import {
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
 import { runMaxModeInference } from './inferenceMaxMode';
 import { isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
+import { settleOfflineInference } from '../envBlockedTurn';
 import { settleQuotaWaitInference } from './quotaWaitTurn';
 import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
@@ -930,6 +931,15 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     }
 
     if (settleQuotaWaitInference(error, { runId: ctx.runtime.runId, markCancelled: () => ctx.runtime.control.markCancelled() })) return { type: 'text', content: '' };
+
+    if (requestConfigForRetry && await settleOfflineInference(error, {
+      config: requestConfigForRetry, runId: ctx.runtime.runId, sessionId: ctx.runtime.sessionId,
+      shouldStop: () => ctx.runtime.control.isCancelled || ctx.runtime.control.isInterrupted || ctx.runtime.turn.needsReinference,
+      markCancelled: () => ctx.runtime.control.markCancelled(), onEvent: ctx.runtime.onEvent,
+    })) {
+      langfuse.endGeneration(llmCallId, { status: 'offline' });
+      return { type: 'text', content: '' };
+    }
 
     emitModelFallbackNoticeFromResponse(ctx, getModelFallbackFromError(error)); if (handleImagePayloadExceededError({ ctx, error, llmCallId, langfuse })) return { type: 'text', content: '' };
     logger.error('[AgentLoop] Model inference error:', error);

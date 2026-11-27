@@ -148,3 +148,27 @@ describe('EnvAssistCard', () => {
   });
 });
 
+
+describe('offline environment card', () => {
+  it.each([['zh', zh], ['en', en]] as const)('offers just one manual recheck after the deadline (%s)', async (language, locale) => {
+    mocks.language = language;
+    const offline: EnvAssistNotice = {
+      id: 'run|offline|network', sessionId: 'session', runId: 'run', class: 'offline', phase: 'fixing',
+      sentenceKey: 'env.offline.waiting', resume: { mode: 'auto', deadlineAt: Date.now() + 100_000 }, updatedAt: 1,
+    };
+    const view = render(<EnvAssistCard notice={offline} />);
+    expect(screen.getByText(locale.env.offline.waiting)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+
+    const expired = { ...offline, resume: { ...offline.resume, deadlineAt: Date.now() - 1 } };
+    view.rerender(<EnvAssistCard notice={expired} />);
+    expect(await screen.findByText(locale.env.offline.timedOut)).toBeTruthy();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    mocks.invoke.mockResolvedValueOnce({ status: 'checked', notice: { ...expired, phase: 'resolved', updatedAt: 2 } });
+    fireEvent.click(screen.getByRole('button', { name: locale.env.offline.continue }));
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('domain:envAssist', 'recheckOffline', { noticeId: offline.id });
+    expect(await screen.findByText(locale.env.offline.resolved)).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+});

@@ -3,8 +3,12 @@ import type { RunRegistry } from '../runtime/runRegistry';
 import { NativeRecoveryHost, isNativeRecoveryDescriptor, type NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
 import { settleModelOpsForManualContinue } from '../runtime/recoveredWaitingRun';
 import { createApplicationNativeRecoveryPorts } from './nativeRecoveryHost';
+import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
+import { createLogger } from '../services/infra/logger';
 import type { TaskManager } from '../task';
 import { ToolExecutor } from '../tools/toolExecutor';
+
+const logger = createLogger('EnvBlockedContinuation');
 
 /** Reuse native recovery's evidence lookup, replay classification and write interruption. */
 export async function continueEnvBlockedRun(input: {
@@ -71,4 +75,14 @@ export async function continueEnvBlockedRun(input: {
   };
   const result = await new NativeRecoveryHost(registry, recoveryPorts).createHandler().recover(plan, Date.now());
   if (result.status !== 'recovered') throw new Error(`Environment continuation stopped: ${result.reason}`);
+  if (envBlocked.class === 'offline' && registry.getDurableEnvelope(runId)?.envBlocked?.class !== 'offline') {
+    try {
+      const messages = await input.getMessages(parked.sessionId);
+      const notice = messages.findLast(({ metadata }) => metadata?.envAssist?.runId === runId
+        && metadata.envAssist.class === 'offline')?.metadata?.envAssist;
+      if (notice) await resolveEnvAssistNotice(notice);
+    } catch {
+      logger.warn('Could not resolve offline notice', { runId });
+    }
+  }
 }

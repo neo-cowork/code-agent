@@ -227,11 +227,11 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
         if (session) {
           // 用户回到会话 = 环境恢复等待的武装时机（ADR-090 §7：重启后不在启动时武装）。
           // 函数自吞错误，这里的失败绝不拖垮会话加载。
-          armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'GET /sessions/:id');
           const sessionPayload: DurableRestoredSessionPayload = await withDurableSessionReplayPayload(
             session,
             deps.getDurableRunReadService?.(),
           );
+          armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), 'GET /sessions/:id', sessionPayload.messages);
           // 与桌面 IPC 的 agentAppService.loadSession 对齐：进行中的流式快照随 load 返回，
           // renderer 切会话重水化时靠它把 partial 内容合回消息流（F4）。
           const { loadStreamSnapshot } = await import('../../host/session/streamSnapshot');

@@ -32,6 +32,7 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
+import { isNativeRecoveryDescriptor } from '../runtime/nativeRecoveryHost';
 import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
@@ -277,6 +278,12 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
+      const checkpoint = this.runRegistry.getDurableCheckpointState(runId);
+      if (isNativeRecoveryDescriptor(checkpoint) && checkpoint.envResumePending?.class === 'offline') {
+        // Native recovery has revalidated this directory. Keep the same cwd while
+        // the live orchestrator re-evaluates the session's current authority.
+        wrapper.orchestrator.setWorkingDirectory(checkpoint.workspace.cwd, { syncWorkspaceServices: false });
+      }
       await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,
