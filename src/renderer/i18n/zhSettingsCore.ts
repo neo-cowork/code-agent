@@ -117,7 +117,7 @@ export const zhSettingsCore = {
       pluginMarketplace: '插件市场',
       pluginVisibility: '插件可见性',
       pluginPermissions: '插件权限',
-      marketplaceSource: 'Marketplace 源',
+      marketplaceSource: '插件市场源',
       hookConfig: 'Hook 配置',
       mcpServers: 'MCP 服务器',
       mcpOAuth: 'MCP OAuth',
