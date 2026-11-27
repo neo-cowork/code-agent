@@ -3,7 +3,7 @@
 // Junk …）说成中文，服务商中文名和用户自建文件夹原样；英文界面全部原样。
 // 选项的 value 始终是连接器给的原名——保存下去的绑定不能被显示名改掉。
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { CronMailEventFields } from '../../../src/renderer/components/features/cron/CronMailEventFields';
