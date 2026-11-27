@@ -3,7 +3,7 @@ import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolL
 import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
-import { formatFilePath, isDangerousCommand } from './utils';
+import { formatFilePath, isDangerousCommand, type ApprovalPathContext } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { PermissionRequestReason } from '@shared/contract';
@@ -205,14 +205,19 @@ const DELETE_NAMED_TARGET_LIMIT = 3;
  * 超出的写「等 N 个」；清单不确切（混了通配符/变量/管道）时一个名字都不写——点名
  * 其中一个会被读成「只删这一个」。单目标与解析不出目标的命令返回 undefined，走原路径。
  */
-function multiTargetDeletionConsequence(request: PermissionRequest, parsed: RmCommandTargets, t: Translations): string | undefined {
+function multiTargetDeletionConsequence(
+  request: PermissionRequest,
+  parsed: RmCommandTargets,
+  t: Translations,
+  pathContext?: ApprovalPathContext,
+): string | undefined {
   const total = parsed.targets.length;
   if (total <= 1) return undefined;
   const p = t.decisionCard.permission;
   if (!parsed.exact) return p.consequenceDeleteUnnamed;
   const names = parsed.targets
     .slice(0, DELETE_NAMED_TARGET_LIMIT)
-    .map((target) => formatFilePath(redactCredentialText(target)))
+    .map((target) => formatFilePath(redactCredentialText(target), pathContext))
     .join(p.consequenceDeleteNameJoiner);
   const named = total > DELETE_NAMED_TARGET_LIMIT
     ? p.consequenceDeleteNamesMore
@@ -225,7 +230,12 @@ function multiTargetDeletionConsequence(request: PermissionRequest, parsed: RmCo
     .replace('{count}', deletionCountText(request, parsed, t));
 }
 
-export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
+export function permissionConsequence(
+  request: PermissionRequest,
+  t: Translations,
+  language: 'zh' | 'en' = 'zh',
+  pathContext?: ApprovalPathContext,
+): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
@@ -240,16 +250,18 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   const target = request.details.affectedPath
     || fileTarget(request)
     || parsedRmTargets.targets[0];
-  const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
+  const redactedTarget = target ? redactCredentialText(target) : undefined;
+  const safeTarget = redactedTarget ? formatFilePath(redactedTarget, pathContext) : undefined;
   // 写入类后果句里的上传 / 临时目录路径用位置词显示（含 .. 的路径原样）；删除后果句保持原口径。
-  const humanTarget = target ? humanizeToolPath(redactCredentialText(target), language, request.details.pathDisplay) : undefined;
-  const writeTarget = humanTarget && safeTarget && humanTarget !== redactCredentialText(target ?? '') ? humanTarget : safeTarget;
+  const humanTarget = redactedTarget ? humanizeToolPath(redactedTarget, language, request.details.pathDisplay) : undefined;
+  const isHumanized = Boolean(humanTarget && redactedTarget && humanTarget !== redactedTarget);
+  const writeTarget = isHumanized ? humanTarget : safeTarget;
   const deletion = isDeletionRequest(request);
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
   if (deletion) {
-    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
+    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t, pathContext);
     if (multiTarget) return multiTarget;
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
@@ -288,8 +300,11 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   if (request.type === 'file_write' || request.type === 'file_edit') {
     if (request.details.targetKind === 'absent') return undefined;
+    const compactWriteTarget = isHumanized
+      ? humanTarget
+      : (redactedTarget ? formatFilePath(redactedTarget, pathContext, 60) : undefined);
     return p.consequenceWrite
-      .replace('{target}', writeTarget ?? p.targetFallback)
+      .replace('{target}', compactWriteTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'command' || request.type === 'dangerous_command') {
@@ -301,7 +316,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     // 不带 -rf 的多目标 rm（模型最常发的 `rm a.log b.log c.log`）宿主不打删除旗标，
     // isDeletionRequest 认不出；放在高危/凭据/Git 远端三条之后，确保组合命令
     // （如 `git push && rm a b`）不顶掉原有风险警告。
-    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t);
+    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t, pathContext);
     if (multiTarget) return multiTarget;
     // 其余命令（含宿主标 unknown 的——那只表示「不在已知安全名单里」，不是风险结论）不套泛泛的警告。
   }

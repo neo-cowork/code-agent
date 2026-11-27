@@ -54,15 +54,23 @@ describe('formatPathForDisplay', () => {
     expect(formatPathForDisplay('/Users/alice/Shared/a.txt')).toBe('~/Shared/a.txt');
   });
 
-  it('keepLocation：工作区外只折家目录，保留完整位置；超长中段省略', () => {
-    const keep = { workspaceRoot: root, keepLocation: true };
+  it('keepLocation：审批面仅按宿主真实 homeDir 折 ~，他人账户/未知家目录/系统路径均保留完整位置', () => {
+    const keep = { workspaceRoot: root, homeDir: '/Users/alice', keepLocation: true };
     expect(formatPathForDisplay('/etc/ssh/sshd_config', keep)).toBe('/etc/ssh/sshd_config');
     expect(formatPathForDisplay('/private/etc/sudoers.d/x', keep)).toBe('/private/etc/sudoers.d/x');
+    expect(formatPathForDisplay('/Users/Shared/drop/.ssh/authorized_keys', keep)).toBe('/Users/Shared/drop/.ssh/authorized_keys');
+    expect(formatPathForDisplay('/Volumes/Backup/Documents/report.docx', keep)).toBe('/Volumes/Backup/Documents/report.docx');
+    expect(formatPathForDisplay('/tmp/evil/Documents/report.docx', keep)).toBe('/tmp/evil/Documents/report.docx');
     expect(formatPathForDisplay('/Users/alice/Documents/a.txt', keep)).toBe('~/Documents/a.txt');
+    expect(formatPathForDisplay('/Users/bob/.ssh/authorized_keys', keep)).toBe('/Users/bob/.ssh/authorized_keys');
+    expect(formatPathForDisplay('/Users/alice2/Documents/a.txt', keep)).toBe('/Users/alice2/Documents/a.txt');
+    expect(formatPathForDisplay('/Users/alice/Documents/a.txt', { workspaceRoot: root, keepLocation: true })).toBe('/Users/alice/Documents/a.txt');
     expect(formatPathForDisplay(`${root}/src/a.ts`, keep)).toBe('./src/a.ts');
-    expect(formatPathForDisplay('/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z.txt', { ...keep, maxLength: 20 })).toBe('/a/…/y/z.txt');
+    expect(formatPathForDisplay('/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z.txt', { ...keep, maxLength: 20 })).toBe('/a/b/…/y/z.txt');
     expect(formatPathForDisplay('/etc/ssh/sshd_config', { ...keep, maxLength: 60 })).toBe('/etc/ssh/sshd_config');
     expect(formatPathForDisplay('/var/folders/ab/../../etc/passwd', keep)).toBe('/var/folders/ab/../../etc/passwd');
+    expect(formatPathForDisplay('/Users/bob/up/../../etc/passwd', keep)).toBe('/Users/bob/up/../../etc/passwd');
+    expect(formatPathForDisplay('/Users/alice/up/../../etc/passwd', keep)).toBe('~/up/../../etc/passwd');
   });
 
   it('单段与空串原样', () => {

@@ -29,26 +29,44 @@ function trimTrailingSeparators(path: string): string {
 }
 
 /**
- * keepLocation：审批类界面用。工作区外的路径保留完整位置，只折家目录前缀（系统路径没有账户名，
- * 缩成 parent/file 会让用户看不出它在系统目录）；给了 maxLength 且超长时，中段省略、保留前两段与后两段。
+ * 只对宿主提供的真实家目录前缀折成 `~`（审批面用，绝不凭路径形状猜，也绝不把他人账户折成 `~`）。
+ * 真实家目录未知时原样返回。
+ */
+function foldExactHomePrefix(path: string, homeDir?: string | null): string {
+  const root = homeDir ? trimTrailingSeparators(homeDir.trim()) : '';
+  if (!root || root === '/' || root === '\\' || /^[A-Za-z]:$/.test(root)) return path;
+  if (path === root || path === `${root}/` || path === `${root}\\`) return '~';
+  if (path.startsWith(`${root}/`)) return `~/${path.slice(root.length + 1)}`;
+  if (path.startsWith(`${root}\\`)) return `~\\${path.slice(root.length + 1)}`;
+  return path;
+}
+
+/**
+ * keepLocation：审批类界面用。工作区外的路径保留完整位置，只对宿主真实 homeDir 折成 `~`（未知时不折）；
+ * 给了 maxLength 且超长时，中段省略、保留根前缀（绝对路径保留两段实目录，如 `/Users/Shared`、`/var/folders`）与后两段。
  */
 function abbreviateMiddle(path: string, maxLength: number): string {
   if (path.length <= maxLength) return path;
   const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
   const parts = path.split(sep);
-  if (parts.length <= 4) return path;
-  return `${parts.slice(0, 2).join(sep)}${sep}…${sep}${parts.slice(-2).join(sep)}`;
+  const leadCount = parts[0] === '' ? 3 : 2;
+  if (parts.length <= leadCount + 2) return path;
+  return `${parts.slice(0, leadCount).join(sep)}${sep}…${sep}${parts.slice(-2).join(sep)}`;
 }
 
 export function formatPathForDisplay(
   path: string,
-  options: { workspaceRoot?: string | null; keepLocation?: boolean; maxLength?: number } = {},
+  options: { workspaceRoot?: string | null; keepLocation?: boolean; homeDir?: string | null; maxLength?: number } = {},
 ): string {
   const raw = (path ?? '').trim();
   if (!raw) return '';
 
   // 含 `..` 的路径不缩短：审批卡上缩成「上级/文件名」会把穿越藏起来，只折家目录前缀。
-  if (raw.split(/[/\\]+/).includes('..')) return foldHomePrefixForDisplay(raw);
+  if (raw.split(/[/\\]+/).includes('..')) {
+    return options.keepLocation
+      ? foldExactHomePrefix(raw, options.homeDir)
+      : foldHomePrefixForDisplay(raw);
+  }
 
   const root = options.workspaceRoot ? trimTrailingSeparators(options.workspaceRoot.trim()) : '';
   if (root && root !== '/' && root !== '\\') {
@@ -64,8 +82,12 @@ export function formatPathForDisplay(
   // 已是相对路径或 ~ 开头的写法（模型传的 src/utils/format.ts、~/Documents/x）原样显示，不再缩。
   if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(raw)) return raw;
 
+  if (options.keepLocation) {
+    const folded = foldExactHomePrefix(raw, options.homeDir);
+    return options.maxLength ? abbreviateMiddle(folded, options.maxLength) : folded;
+  }
+
   const folded = foldHomePrefixForDisplay(raw);
-  if (options.keepLocation) return options.maxLength ? abbreviateMiddle(folded, options.maxLength) : folded;
   if (folded !== raw) return folded;
 
   const segments = raw.split(/[/\\]+/).filter(Boolean);

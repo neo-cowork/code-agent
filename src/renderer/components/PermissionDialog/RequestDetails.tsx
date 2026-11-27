@@ -5,7 +5,6 @@
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
-import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
@@ -16,10 +15,12 @@ import { Button } from '../primitives/Button';
 import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
 import { describeApproval } from './describeApproval';
+import { formatFilePath, resolveApprovalWorkspaceRoot, type ApprovalPathContext } from './utils';
 import { describeRoleSettingChange } from './roleSettingRows';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
@@ -29,6 +30,7 @@ import { interpolatePlural } from '../../i18n/interpolate';
 
 interface RequestDetailsProps {
   hideConsequence?: boolean;
+  pathContext?: ApprovalPathContext;
   request: PermissionRequest;
 }
 
@@ -101,13 +103,25 @@ function sandboxStatusCopy(
   return labels.sandboxDegraded;
 }
 
-export function RequestDetails({ request, hideConsequence = false }: RequestDetailsProps) {
+export function RequestDetails({ request, hideConsequence = false, pathContext }: RequestDetailsProps) {
   const { language, t } = useI18n();
-  const developerMode = useAppStore().developerMode === true;
+  const appStore = useAppStore();
+  const developerMode = appStore.developerMode === true;
+  const currentSessionId = useSessionStore((state) => state?.currentSessionId);
+  const sessions = useSessionStore((state) => state?.sessions);
+  const resolvedPathContext: ApprovalPathContext = pathContext ?? {
+    workspaceRoot: resolveApprovalWorkspaceRoot({
+      requestSessionId: request.sessionId,
+      currentSessionId,
+      sessions,
+      appWorkingDirectory: appStore.workingDirectory,
+    }),
+    homeDir: appStore.hostHomeDir ?? null,
+  };
   const { type, details } = request;
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
-  const { kind, consequence, dedicatedBrowserCard } = describeApproval(request, t, language);
+  const { kind, consequence, dedicatedBrowserCard } = describeApproval(request, t, language, resolvedPathContext);
 
   const browser = details.browserSessionGrant;
   if (browser && dedicatedBrowserCard) {
@@ -197,7 +211,15 @@ export function RequestDetails({ request, hideConsequence = false }: RequestDeta
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath pathDisplay={details.pathDisplay} />}
+      {filePath && type !== 'directory_access' && (
+        <DetailItem
+          label={labels.detailFile}
+          value={filePath}
+          isPath
+          pathDisplay={details.pathDisplay}
+          pathContext={resolvedPathContext}
+        />
+      )}
 
       {/* 命令 */}
       {details.command && (
@@ -435,6 +457,7 @@ interface DetailItemProps {
   value: string;
   isPath?: boolean;
   pathDisplay?: NonNullable<PermissionRequest['details']['pathDisplay']>;
+  pathContext?: ApprovalPathContext;
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
@@ -482,9 +505,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
-const APPROVAL_PATH_MAX_LENGTH = 60;
-
-function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
+function DetailItem({ label, value, isPath, pathDisplay, pathContext, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
   const { t, language } = useI18n();
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -493,11 +514,10 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
   const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
-  const workspaceRoot = useAppStore().workingDirectory;
-  // 审批卡：工作区内 ./相对；工作区外保留完整位置（只折家目录），超长中段省略；title 放完整值。
+  // 审批卡：工作区内 ./相对；宿主真实家目录下 ~/…（未知时不折）；其余完整绝对路径，可见文字与 title 保持同口径。
   const isPlainPath = isPath && humanPath === visibleValue;
-  const fullPathText = isPlainPath ? formatPathForDisplay(visibleValue, { workspaceRoot, keepLocation: true }) : humanPath;
-  const rawDisplayValue = isPlainPath ? formatPathForDisplay(visibleValue, { workspaceRoot, keepLocation: true, maxLength: APPROVAL_PATH_MAX_LENGTH }) : humanPath;
+  const fullPathText = isPlainPath ? formatFilePath(visibleValue, pathContext) : humanPath;
+  const rawDisplayValue = fullPathText;
 
   const lines = rawDisplayValue.split('\n');
   const shouldFold = Boolean(
