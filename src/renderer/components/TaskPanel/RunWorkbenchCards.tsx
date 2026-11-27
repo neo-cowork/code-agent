@@ -416,6 +416,7 @@ const TaskRecordRow = ({
   const currentActionCopy = rail.currentAction
     ?? (rail.currentActionCategory ? t.taskPanel.taskBlockedReason[rail.currentActionCategory] : null);
   const detailCopy = currentActionCopy ? `${detailLabel}：${currentActionCopy}` : null;
+  const [rawErrorOpen, setRawErrorOpen] = useState(false);
 
   return (
     <div
@@ -461,6 +462,36 @@ const TaskRecordRow = ({
           当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
       {rail.mode !== 'checklist' && detailCopy && (
         <div className="mt-1 line-clamp-3 text-[11px] text-zinc-500" title={humanizeInternalText(detailCopy, language).text}><HumanizedText text={detailCopy} /></div>
+      )}
+
+      {/* 后台任务失败：原因下面给一句下一步；原始报错默认不渲染，点开才出现 */}
+      {rail.mode !== 'checklist' && task.failureCategory && (
+        <div className="mt-1 text-[11px] text-zinc-400" data-testid="task-record-next-step">
+          {t.backgroundPanel.failureNextStepLine.replace('{step}', t.backgroundPanel.failureNextStep[task.failureCategory])}
+        </div>
+      )}
+      {rail.mode !== 'checklist' && task.failureDetail && (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-1 mt-0.5 !rounded !px-1 !py-0.5 text-[11px]"
+            aria-expanded={rawErrorOpen}
+            data-testid="task-record-raw-error-toggle"
+            onClick={() => setRawErrorOpen((open) => !open)}
+          >
+            {rawErrorOpen ? t.rendererHumanPipe.toolDetails.hideRawError : t.rendererHumanPipe.toolDetails.viewRawError}
+          </Button>
+          {rawErrorOpen && (
+            <pre
+              className="mt-1 max-h-48 select-text overflow-auto whitespace-pre-wrap break-words rounded-md border border-white/[0.07] bg-white/[0.03] p-2 text-[11px] text-zinc-300"
+              data-testid="task-record-raw-error"
+            >
+              {task.failureDetail}
+            </pre>
+          )}
+        </>
       )}
 
       {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (
