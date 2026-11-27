@@ -72,6 +72,11 @@ export function runtimeNoticeFor(input: {
 export function runtimeModelGuidance(notice: EnvAssistNotice): string {
   const common = 'Model guidance (not user copy): A card for the missing component has already been shown to the user. '
     + 'Do not repeat or quote this guidance, error text, tool names, commands, or internal status labels, including in a delegated summary. ';
+  if (notice.phase === 'fixing' && !notice.parkedToolCallId) {
+    // A run that cannot wait (a background helper, a non-durable host) is not resumed when the install lands.
+    return common + 'The card has no button and shows the progress. In one short sentence in the user\'s language, say that a one-time component '
+      + 'is being prepared and that the conversion has not been done yet. Do not claim you will continue on your own. Do not describe what is being downloaded or how.';
+  }
   if (notice.phase === 'fixing') {
     return common + 'The card has no button. In one short sentence in the user\'s language, say that a one-time component is being prepared '
       + 'and that the task continues by itself once it is ready. Do not describe what is being downloaded or how.';
