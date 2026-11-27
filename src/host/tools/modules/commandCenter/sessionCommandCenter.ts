@@ -1,4 +1,5 @@
 import { buildDelegatedTaskPrompt, delegatedPlanText, isDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../../../shared/telemetryRecovery';
 import type {
   CanUseToolFn,
   ToolContext,
@@ -179,7 +180,12 @@ export async function executeDelegateTask(
   if (ctx.sourceMessageId) {
     try {
       const source = (await getSessionManager().getMessages(session)).find((message) => message.id === ctx.sourceMessageId);
-      if (source?.role === 'user' && !source.isMeta && source.visibility !== 'rewound') originalRequest = source.content;
+      if (source?.role === 'user' && !source.isMeta && source.visibility !== 'rewound') {
+        // 库内还原消息整段以恢复提示开头：剥掉后才算 <original_user_request> 的用户原话，
+        // 只剩提示残留时当没有原文（不以免责声明充数）。
+        const cleanedSource = stripTelemetryRecoveryNoticeOrResidue(source.content);
+        if (cleanedSource.trim()) originalRequest = cleanedSource;
+      }
     } catch (error) {
       ctx.logger.warn('Delegation original request lookup failed', { reason: 'source-request-unavailable', error: String(error) });
     }
