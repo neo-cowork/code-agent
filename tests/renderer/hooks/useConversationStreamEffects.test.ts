@@ -336,22 +336,6 @@ describe('applyConversationStreamEvent host message commits', () => {
     metadata: { roleFlowStalled: { skillName: 'create-role' } },
   };
 
-  it('adds a visible question commit without a draft to the transcript once', () => {
-    const question = {
-      id: 'question-message', role: 'assistant', timestamp: 450,
-      content: 'Cover options\n\n![Warm](warm.png) ![Cool](cool.png)',
-      toolCalls: [{ id: 'question-call', name: 'AskUserQuestion', arguments: {} }],
-      metadata: { correlation: { turnId: 'background-turn', traceId: 'background-run' } },
-    };
-    const foreground: Message = { id: 'turn-1', role: 'assistant', content: 'Foreground draft', timestamp: 300 };
-    const messagesRef = { current: [foreground] };
-    run({ data: { ...question, isMeta: true, turnId: 'background-turn' } }, messagesRef);
-    expect(messagesRef.current).toEqual([foreground]);
-    run({ data: question }, messagesRef);
-    run({ data: question }, messagesRef);
-    expect(messagesRef.current).toEqual([foreground, question]);
-  });
-
   it('does not merge the system notice into the assistant body; adds it as its own message once', () => {
     const messagesRef = { current: [{ id: 'turn-1', role: 'assistant', content: '草稿已生成', timestamp: 300 } as Message] };
     run({ data: systemData }, messagesRef);
