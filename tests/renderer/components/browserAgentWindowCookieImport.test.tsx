@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { ConfirmPromptHost } from '../../../src/renderer/components/ConfirmPromptHost';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/BrowserAgentWindow';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -166,17 +167,17 @@ describe('BrowserAgentWindow Cookie 导入入口（P1）', () => {
     expect(importBrowserProfileCookiesToPersonal).not.toHaveBeenCalled();
   });
 
-  it('does not import when 导入全部 is cancelled in window.confirm', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    render(<BrowserAgentWindow />);
+  it('does not import when Import all is cancelled in the confirmation dialog', async () => {
+    render(<><BrowserAgentWindow /><ConfirmPromptHost /></>);
     fireEvent.click(screen.getByTestId('browser-agent-window-more'));
     fireEvent.click(screen.getByTestId('browser-agent-window-import-cookies'));
     await waitFor(() => expect(screen.getByTestId('browser-agent-window-import-cookies-dialog')).toBeTruthy());
 
     fireEvent.click(screen.getByTestId('browser-cookie-import-all'));
-    expect(confirmSpy).toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog', { name: '导入全部 Cookie' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导入全部 Cookie' })).toBeNull());
     expect(importBrowserProfileCookiesToPersonal).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it('Chrome 锁库失败展示人话提示', async () => {
