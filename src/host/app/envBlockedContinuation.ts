@@ -3,8 +3,12 @@ import type { RunRegistry } from '../runtime/runRegistry';
 import { NativeRecoveryHost, isNativeRecoveryDescriptor, type NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
 import { settleModelOpsForManualContinue } from '../runtime/recoveredWaitingRun';
 import { createApplicationNativeRecoveryPorts } from './nativeRecoveryHost';
+import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
+import { createLogger } from '../services/infra/logger';
 import type { TaskManager } from '../task';
 import { ToolExecutor } from '../tools/toolExecutor';
+
+const logger = createLogger('EnvBlockedContinuation');
 
 /** Reuse native recovery's evidence lookup, replay classification and write interruption. */
 export async function continueEnvBlockedRun(input: {
@@ -13,6 +17,7 @@ export async function continueEnvBlockedRun(input: {
   tasks: Pick<TaskManager, 'resumeExistingDurableRun'>;
   getMessages: (sessionId: string) => Promise<Message[]>;
   ports?: NativeRecoveryHostPorts;
+  onResumeStarted?: () => void;
 }): Promise<void> {
   const { registry, runId } = input;
   const parked = registry.getDurableEnvelope(runId);
@@ -66,7 +71,23 @@ export async function continueEnvBlockedRun(input: {
       const source = messages.find((message) => message.id === descriptor.sourceMessageId && message.role === 'user');
       if (!source) throw new Error('Environment continuation source message is unavailable');
       await input.tasks.resumeExistingDurableRun(plan.envelope.sessionId, runId, messages,
-        { mode: 'normal', disableAutoAgent: true }, source.metadata, source.id);
+        {
+          mode: 'normal',
+          disableAutoAgent: true,
+          ...(envBlocked.class === 'offline' ? {
+            recoveredWorkingDirectory: operation.descriptor.workspace.cwd,
+            onRecoveredRunStart: async () => {
+              try {
+                const notice = messages.findLast(({ metadata }) => metadata?.envAssist?.runId === runId
+                  && metadata.envAssist.class === 'offline')?.metadata?.envAssist;
+                if (notice) await resolveEnvAssistNotice(notice);
+              } catch {
+                logger.warn('Could not resolve offline notice', { runId });
+              }
+              input.onResumeStarted?.();
+            },
+          } : {}),
+        }, source.metadata, source.id);
     },
   };
   const result = await new NativeRecoveryHost(registry, recoveryPorts).createHandler().recover(plan, Date.now());
