@@ -6,6 +6,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getMemoryDir, getMemoryIndexPath } from './indexLoader';
+import { listRecentConversationLines } from './recentConversations';
 import type {
   MemoryEntryScope,
   MemoryEntryStatus,
@@ -471,15 +472,8 @@ export async function getLightMemoryStats(): Promise<LightMemoryStats> {
     // No stats yet
   }
 
-  // Load recent conversations
-  const recentConversations: string[] = [];
-  try {
-    const content = await fs.readFile(path.join(getMemoryDir(), 'recent-conversations.md'), 'utf-8');
-    const lines = content.split('\n').filter(l => l.startsWith('- **'));
-    recentConversations.push(...lines);
-  } catch {
-    // No conversations yet
-  }
+  // Load recent conversations through the writer's cleaning pipeline
+  const recentConversations = await listRecentConversationLines();
 
   return {
     totalFiles: files.length,
