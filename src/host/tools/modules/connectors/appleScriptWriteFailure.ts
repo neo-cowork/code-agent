@@ -80,3 +80,13 @@ export function appleScriptWriteFailureCode(error: unknown): { code?: 'not_autho
   if (killed === true || (typeof signal === 'string' && signal !== '')) return {};
   return typeof stderr === 'string' && isAppleEventsDenied(stderr) ? { code: 'not_authorized' } : {};
 }
+
+export function connectorNotFoundCode(error: unknown): 'not_found' | undefined {
+  if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'not_found') {
+    return 'not_found';
+  }
+  if (error instanceof Error && /no reminder list named/i.test(error.message)) {
+    return 'not_found';
+  }
+  return undefined;
+}

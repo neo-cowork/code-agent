@@ -20,6 +20,7 @@ import {
   describeAppleScriptFailure,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
+import { connectorNotFoundCode } from './appleScriptWriteFailure';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeStatusDetail, formatConnectorStatus, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
@@ -204,12 +205,13 @@ async function executeReminders(
       detail: appleScriptFailureLogDetail(error),
     });
     const displayMessage = failure.code === 'timeout' ? failure.message : catalog.appleScriptFailure[failure.code];
+    const notFoundCode = !osascriptFailure ? connectorNotFoundCode(error) : undefined;
     const result: ToolResult<string> = {
       ok: false,
       error: osascriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
-      code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
+      code: osascriptFailure ? failure.code : (notFoundCode ?? 'CONNECTOR_FAILED'),
       ...(locale === 'en' && failure.code !== 'not_authorized' ? { userMessage: displayMessage } : {}),
     };
     if (result.code === 'not_authorized') {
