@@ -31,6 +31,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('EnvAssistCard', () => {
+  it.each([['zh', '已按你刚才的确认保存草稿。'], ['en', 'Saved the draft as you confirmed a moment ago.']])('shows the reused-confirmation line in plain words (%s)', (language, line) => {
+    mocks.language = language;
+    const reused: EnvAssistNotice = { ...notice, id: 'run|parked_reuse|c', target: { id: 'mail', labelKey: 'env.target.mail' }, phase: 'resolved', sentenceKey: 'env.reused.mail', action: undefined };
+    const { container } = render(<EnvAssistCard notice={reused} />);
+    expect(container.textContent).toBe(line);
+    expect(container.textContent).not.toMatch(/mail_draft|env\.|run\|/);
+  });
+
   it.each(['zh', 'en'])('renders one sentence and one button without diagnostics even in developer mode (%s)', async (language) => {
     mocks.language = language;
     useAppStore.setState({ developerMode: true });

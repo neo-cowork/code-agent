@@ -38,7 +38,8 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
   // Resolve only our own copy catalogue. Arbitrary host strings/params never become visible copy.
   const target = notice.target?.id as keyof typeof t.env.sentence;
   const known = Object.hasOwn(t.env.sentence, target);
-  const sentence = notice.phase === 'resolved'
+  const sentence = notice.phase === 'resolved' && notice.sentenceKey === 'env.reused.mail' ? t.env.reused
+    : notice.phase === 'resolved'
     ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
     : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
   // 停车等授权的那一轮：允许后同一任务自动续做，卡上一并说清（输入框上方不再另起一行重复）。

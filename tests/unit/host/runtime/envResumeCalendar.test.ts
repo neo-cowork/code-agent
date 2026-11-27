@@ -74,6 +74,7 @@ async function settled(f: NonNullable<typeof fixture>) {
   const stopped = () => warn.mock.calls.some(([message, data]) => message === 'Environment auto-continue stopped'
     && (data as { reason?: string } | undefined)?.reason !== 'timeout');
   await vi.waitFor(() => expect(f.counts().resumes > 0 || stopped()).toBe(true), { timeout: 5000 });
+  await f.resumeIdle();
 }
 
 async function parkedCalendar(plannedFolder?: string) {
