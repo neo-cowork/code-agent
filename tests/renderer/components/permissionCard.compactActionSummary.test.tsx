@@ -114,6 +114,17 @@ const feishuWriteWithArgsPreview: PermissionRequest = {
   timestamp: 5,
 };
 
+// 停车的事件回复：宿主把 replyText 写进 argsPreview（多段时以「 · 」拼接），正文里的逗号不是分段。
+const parkedEventReplyWithFreeText: PermissionRequest = {
+  id: 'perm-parked-event-reply',
+  sessionId: 'session-current',
+  tool: 'reply_to_event',
+  type: 'network',
+  details: {},
+  argsPreview: 'Sure, see you at 10am tomorrow',
+  timestamp: 8,
+};
+
 const unknownNetworkFallback: PermissionRequest = {
   id: 'perm-unknown-network',
   sessionId: 'session-current',
@@ -168,6 +179,12 @@ describe('compact approval bar action+object one-liner', () => {
       request: feishuWriteWithArgsPreview,
       zhExpected: '允许对「周会同步」执行这项操作？',
       enExpected: 'Allow this operation on “周会同步”?',
+    },
+    {
+      name: 'parked event reply keeps the commas of its free-text argsPreview',
+      request: parkedEventReplyWithFreeText,
+      zhExpected: '允许对「Sure, see you at 10am tomorrow」执行这项操作？',
+      enExpected: 'Allow this operation on “Sure, see you at 10am tomorrow”?',
     },
   ])('$name produces specific one-liner in permissionSummary and describeApproval (zh & en)', ({ request, zhExpected, enExpected }) => {
     expect(permissionSummary(request, zh, 'zh')).toBe(zhExpected);

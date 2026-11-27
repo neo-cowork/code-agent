@@ -162,8 +162,9 @@ function extractSafeObject(request: PermissionRequest): string | undefined {
   const fromDetails = extractSafeObjectFromRecord(request.details as Record<string, unknown> | undefined);
   if (fromDetails) return fromDetails;
   if (typeof request.argsPreview === 'string' && request.argsPreview.trim().length > 0) {
+    // 宿主按「 · 」拼接参数预览各段；段内的逗号、分号是正文本身，切开会把半句话当成对象。
     const firstSegment = request.argsPreview
-      .split(/[·|\n;,]/u)
+      .split(' · ')
       .map((seg) => seg.trim())
       .find(Boolean);
     if (firstSegment) {
