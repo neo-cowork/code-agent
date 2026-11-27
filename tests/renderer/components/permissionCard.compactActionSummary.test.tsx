@@ -2,7 +2,8 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import type { PermissionRequest } from '../../../src/shared/contract';
+import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract';
+import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { permissionSummary } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
@@ -48,13 +49,25 @@ const mailDraftWithSubject: PermissionRequest = {
   details: {
     to: ['alice@example.com'],
     subject: '本周进度同步',
-    content: '附件是本周进度',
   },
   rawArgs: {
     to: ['alice@example.com'],
     subject: '本周进度同步',
     content: '附件是本周进度',
   },
+  timestamp: 1,
+};
+
+const mailDraftContractRequest: ContractPermissionRequest = {
+  id: 'perm-mail-draft-subject',
+  sessionId: 'session-current',
+  tool: 'mail_draft',
+  type: 'command',
+  details: {
+    to: ['alice@example.com'],
+    subject: '本周进度同步',
+    content: '附件是本周进度',
+  } as ContractPermissionRequest['details'],
   timestamp: 1,
 };
 
@@ -195,7 +208,7 @@ describe('compact approval bar action+object one-liner', () => {
     i18nState.language = 'zh';
     const { rerender } = render(
       <PermissionCard
-        requestOverride={mailDraftWithSubject}
+        requestOverride={mailDraftContractRequest}
         sessionIdOverride="session-current"
         remainingCount={2}
       />,
@@ -210,7 +223,7 @@ describe('compact approval bar action+object one-liner', () => {
     i18nState.language = 'en';
     rerender(
       <PermissionCard
-        requestOverride={mailDraftWithSubject}
+        requestOverride={mailDraftContractRequest}
         sessionIdOverride="session-current"
         remainingCount={2}
       />,

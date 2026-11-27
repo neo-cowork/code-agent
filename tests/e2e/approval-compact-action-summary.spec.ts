@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { expect, test, type APIRequestContext, type Page } from './fixtures/axeTest';
-import type { AgentEvent } from '../../src/shared/contract';
+import type { AgentEvent, PermissionRequest } from '../../src/shared/contract';
 
 // N-FIX-APPROVAL-BAR-COLLAPSED-HIDES-ACTION-REDO：
 // 多步任务排队 3 项审批（mail_draft + reminders_create + calendar_create_event），
@@ -136,7 +136,7 @@ for (const language of ['zh', 'en'] as const) {
             to: ['alice@example.com'],
             subject: '本周进度同步',
             content: '附件是本周进度',
-          },
+          } as PermissionRequest['details'],
           timestamp: now,
         },
       },
@@ -164,7 +164,7 @@ for (const language of ['zh', 'en'] as const) {
           details: {
             to: ['bob@example.com'],
             subject: '产品评审纪要',
-          },
+          } as PermissionRequest['details'],
           timestamp: now + 2,
         },
       },
