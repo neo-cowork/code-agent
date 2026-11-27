@@ -155,3 +155,62 @@ describe('failed foreground read recovered by a background delegate_task', () =>
     expect(run([delegate('Read a.pdf'), failedRead], [task()])).toBe('completed-with-warnings');
   });
 });
+
+describe('extensionless file targets recovered by a delegate_task prompt', () => {
+  type LedgerTask = NonNullable<Parameters<typeof buildRunUiState>[0]['backgroundTasks']>[number];
+  const delegate = (prompt: string, id = 'deleg-1') => ({ id, name: 'delegate_task', arguments: { title: 'read', prompt }, success: true });
+  const task = (over: Partial<LedgerTask> = {}): LedgerTask => ({ toolCallId: 'deleg-1', status: 'completed', ...over });
+  const run = (calls: Array<{ id?: string; name: string; arguments: Record<string, unknown>; success: boolean }>, tasks: LedgerTask[]) => {
+    const projection: TraceProjection = {
+      sessionId: 's', activeTurnIndex: 0,
+      turns: [{
+        turnId: 't', turnNumber: 1, startTime: 1, status: 'completed',
+        nodes: calls.map((call, index) => ({
+          id: `n-${index}`, type: 'tool_call', content: '', timestamp: 1 + index,
+          toolCall: { id: call.id ?? `c-${index}`, name: call.name, args: call.arguments, success: call.success, result: 'done' },
+        })),
+      }],
+    };
+    return resolveRunTerminalKey(buildRunUiState({ projection, sessionId: 's', sessionStatus: 'idle', backgroundTasks: tasks }));
+  };
+  const failedRead = (args: Record<string, unknown>) => ({ name: 'Read', arguments: args, success: false });
+
+  it('completed delegation naming Makefile recovers a failed file_path read', () => {
+    expect(run([failedRead({ file_path: 'Makefile' }), delegate('Read Makefile and summarize it')], [task()])).toBe('completed');
+  });
+
+  it('completed delegation naming LICENSE recovers a failed path read', () => {
+    expect(run([failedRead({ path: 'LICENSE' }), delegate('Read LICENSE and summarize it')], [task()])).toBe('completed');
+  });
+
+  it.each(['running', 'failed', 'cancelled'])('%s delegation keeps the warning', (status) => {
+    expect(run([failedRead({ file_path: 'Makefile' }), delegate('Read Makefile')], [task({ status: status as LedgerTask['status'] })])).toBe('completed-with-warnings');
+  });
+
+  it('failed WebFetch URLs are never file targets, even when the prompt names a URL segment', () => {
+    const statusFetch = { name: 'WebFetch', arguments: { url: 'https://example.com/status' }, success: false };
+    expect(run([statusFetch, delegate('Check the status of the build')], [task()])).toBe('completed-with-warnings');
+    const makeFetch = { name: 'WebFetch', arguments: { url: 'https://example.com/Makefile' }, success: false };
+    expect(run([makeFetch, delegate('Read Makefile and summarize it')], [task()])).toBe('completed-with-warnings');
+  });
+
+  it('look-alike file names in the prompt do not recover Makefile', () => {
+    expect(run([failedRead({ file_path: 'Makefile' }), delegate('Read Makefile.bak')], [task()])).toBe('completed-with-warnings');
+    expect(run([failedRead({ file_path: 'Makefile' }), delegate('Read MyMakefile')], [task()])).toBe('completed-with-warnings');
+  });
+
+  it('a Search pattern naming Makefile is not a file target', () => {
+    const search = { name: 'Search', arguments: { pattern: 'Makefile' }, success: false };
+    expect(run([search, delegate('Read Makefile')], [task()])).toBe('completed-with-warnings');
+  });
+
+  it('the same extensionless name in a different directory is not recovered', () => {
+    expect(run([failedRead({ file_path: 'src/a/Makefile' }), delegate('Read src/b/Makefile')], [task()])).toBe('completed-with-warnings');
+  });
+
+  it('two failed files need both names in the prompt', () => {
+    const calls = [failedRead({ file_path: 'Makefile' }), failedRead({ file_path: 'a.pdf' })];
+    expect(run([...calls, delegate('Read Makefile')], [task()])).toBe('completed-with-warnings');
+    expect(run([...calls, delegate('Read Makefile and a.pdf')], [task()])).toBe('completed');
+  });
+});
