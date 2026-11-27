@@ -17,6 +17,7 @@ export async function continueEnvBlockedRun(input: {
   tasks: Pick<TaskManager, 'resumeExistingDurableRun'>;
   getMessages: (sessionId: string) => Promise<Message[]>;
   ports?: NativeRecoveryHostPorts;
+  onResumeStarted?: () => void;
 }): Promise<void> {
   const { registry, runId } = input;
   const parked = registry.getDurableEnvelope(runId);
@@ -73,20 +74,22 @@ export async function continueEnvBlockedRun(input: {
         {
           mode: 'normal',
           disableAutoAgent: true,
-          ...(envBlocked.class === 'offline' ? { recoveredWorkingDirectory: operation.descriptor.workspace.cwd } : {}),
+          ...(envBlocked.class === 'offline' ? {
+            recoveredWorkingDirectory: operation.descriptor.workspace.cwd,
+            onRecoveredRunStart: async () => {
+              try {
+                const notice = messages.findLast(({ metadata }) => metadata?.envAssist?.runId === runId
+                  && metadata.envAssist.class === 'offline')?.metadata?.envAssist;
+                if (notice) await resolveEnvAssistNotice(notice);
+              } catch {
+                logger.warn('Could not resolve offline notice', { runId });
+              }
+              input.onResumeStarted?.();
+            },
+          } : {}),
         }, source.metadata, source.id);
     },
   };
   const result = await new NativeRecoveryHost(registry, recoveryPorts).createHandler().recover(plan, Date.now());
   if (result.status !== 'recovered') throw new Error(`Environment continuation stopped: ${result.reason}`);
-  if (envBlocked.class === 'offline' && registry.getDurableEnvelope(runId)?.envBlocked?.class !== 'offline') {
-    try {
-      const messages = await input.getMessages(parked.sessionId);
-      const notice = messages.findLast(({ metadata }) => metadata?.envAssist?.runId === runId
-        && metadata.envAssist.class === 'offline')?.metadata?.envAssist;
-      if (notice) await resolveEnvAssistNotice(notice);
-    } catch {
-      logger.warn('Could not resolve offline notice', { runId });
-    }
-  }
 }

@@ -266,7 +266,10 @@ export class TaskManager extends EventEmitter {
     sessionId: string,
     runId: string,
     messages: Message[],
-    options?: AgentRunOptions & { recoveredWorkingDirectory?: string },
+    options?: AgentRunOptions & {
+      recoveredWorkingDirectory?: string;
+      onRecoveredRunStart?: () => Promise<void>;
+    },
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
   ): Promise<void> {
@@ -284,12 +287,13 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
-      const { recoveredWorkingDirectory, ...runOptions } = options ?? {};
+      const { recoveredWorkingDirectory, onRecoveredRunStart, ...runOptions } = options ?? {};
       if (recoveredWorkingDirectory) {
         // Native recovery has revalidated this directory. Keep the same cwd while
         // the live orchestrator re-evaluates the session's current authority.
         wrapper.orchestrator.setWorkingDirectory(recoveredWorkingDirectory, { syncWorkspaceServices: false });
       }
+      await onRecoveredRunStart?.();
       await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,

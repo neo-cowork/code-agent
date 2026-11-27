@@ -8,7 +8,7 @@ import type { RunRegistry } from './runRegistry';
 
 type EnvResumeProbe = () => Promise<'green' | 'red' | 'unavailable'>;
 type Block = NonNullable<RunEnvelope['envBlocked']>;
-type Continuer = (input: { sessionId: string; runId: string }) => Promise<unknown>;
+type Continuer = (input: { sessionId: string; runId: string; onResumeStarted?: () => void }) => Promise<unknown>;
 export type EnvResumeProbeFactory = (block: Block) => EnvResumeProbe;
 const logger = createLogger('EnvResumeWaiter');
 let continuer: Continuer | null = null;
@@ -89,9 +89,17 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
 export async function recheckOfflineRun(sessionId: string, runId: string, registry: RunRegistry): Promise<boolean> {
   const run = registry.findRecoveredWaitingRun({ sessionId });
   const block = run?.runId === runId ? registry.getDurableEnvelope(runId)?.envBlocked : undefined;
-  if (!continuer || block?.class !== 'offline' || Date.now() < block.deadlineAt || !await probeOfflineNetwork(block)) return false;
-  await continuer({ sessionId, runId });
-  return true;
+  const resume = continuer;
+  if (!resume || block?.class !== 'offline' || Date.now() < block.deadlineAt || !await probeOfflineNetwork(block)) return false;
+  const started = Promise.withResolvers<boolean>();
+  void resume({ sessionId, runId, onResumeStarted: () => started.resolve(true) }).then(
+    () => started.resolve(true),
+    (error: unknown) => {
+      logger.warn('Offline continuation failed', { runId, sessionId, error });
+      started.reject(error);
+    },
+  );
+  return started.promise;
 }
 
 /** Session-return arming needs only the recovered-run lookup of the full registry. */
