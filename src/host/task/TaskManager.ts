@@ -51,6 +51,7 @@ import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
 import { describeFailedCommand, getTaskDeliveryFailure } from './taskDeliveryVerdict';
 import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
+import { recoverDelegatedUserRuleContext } from '../services/commandCenter/sessionCommandTaskRestartRecovery';
 import {
   DEFAULT_CONFIG,
   SESSION_STOP_REQUESTED_EVENT,
@@ -357,8 +358,7 @@ export class TaskManager extends EventEmitter {
     const orchestrator = this.createOrchestrator(sessionId, taskId);
     const { getBackgroundTaskSessionContext } = await import('./backgroundTaskSessionContext');
     const session = await getBackgroundTaskSessionContext(sessionId);
-    const delegatedContext = options?.delegatedUserRuleContext
-      ?? (await import('../services/commandCenter/sessionCommandTaskRestartRecovery')).recoverDelegatedUserRuleContext(sessionId, taskId);
+    const delegatedContext = options?.delegatedUserRuleContext ?? recoverDelegatedUserRuleContext(sessionId, taskId);
 
     // workspaceScope 仍可缺省：无项目后台 run 可以继续执行读任务，但不会获得写边界。
     if (workspaceScope) orchestrator.setWorkspaceScopeAuthority(workspaceScope);
