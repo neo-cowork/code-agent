@@ -3,6 +3,11 @@
 // ============================================================================
 
 import { memoryInjectionPauses, resumeMemoryInjection } from '../memory/memoryUsageEviction';
+import {
+  clearMemoryInjectionFlag,
+  flagMemoryInjection,
+  memoryUserFlagCounts,
+} from '../memory/memoryInjectionFeedback';
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
@@ -560,7 +565,8 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
 
 /**
  * 面板要看得到「为什么这条不再自动带上」：只给 active 条目标注（其余本来就不注入）。
- * 标注失败只 warn，不能连累列表本身（否则会退回不带数据库条目的列表）。
+ * 同一趟顺带标注 userFlagCount（被标记过 N 次，撤销不清零）。标注失败只 warn，
+ * 不能连累列表本身（否则会退回不带数据库条目的列表）。
  */
 function annotateInjectionPauses(result: MemoryEntryListResult, db: ReturnType<typeof getDatabase>): void {
   try {
@@ -571,6 +577,17 @@ function annotateInjectionPauses(result: MemoryEntryListResult, db: ReturnType<t
     }
   } catch (error) {
     logger.warn('Memory injection pause annotation skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  try {
+    const flagCounts = memoryUserFlagCounts(db);
+    for (const entry of result.entries) {
+      const count = flagCounts.get(entry.id);
+      if (count) entry.userFlagCount = count;
+    }
+  } catch (error) {
+    logger.warn('Memory user flag count annotation skipped', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -603,6 +620,23 @@ async function handleMemoryEntryUpdate(payload: MemoryEntryUpdateRequest): Promi
 async function handleMemoryEntryResumeInjection(payload: { entryId?: string }): Promise<{ resumed: boolean }> {
   if (!payload?.entryId) throw new Error('memory entry resume requires entryId');
   return { resumed: resumeMemoryInjection(getDatabase(), payload.entryId) };
+}
+
+/** 回复下方记忆来源行「不对 / 过时了」（N-MEM-SOURCE-WRONG-FEEDBACK）：落 metadata、停自动注入。 */
+async function handleMemoryEntryFlagInjection(
+  payload: { entryId?: string; flag?: string },
+): Promise<{ flagged: boolean }> {
+  if (!payload?.entryId) throw new Error('memory entry flag requires entryId');
+  if (payload.flag !== 'wrong' && payload.flag !== 'outdated') {
+    throw new Error('memory entry flag requires wrong or outdated');
+  }
+  return { flagged: await flagMemoryInjection(getDatabase(), payload.entryId, payload.flag) };
+}
+
+/** 撤销负反馈：只清 metadata 标记（count 保留），不记使用、不动 access_count。 */
+async function handleMemoryEntryClearInjectionFlag(payload: { entryId?: string }): Promise<{ cleared: boolean }> {
+  if (!payload?.entryId) throw new Error('memory entry clear flag requires entryId');
+  return { cleared: clearMemoryInjectionFlag(getDatabase(), payload.entryId) };
 }
 
 async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promise<Awaited<ReturnType<typeof deleteMemoryEntry>>> {
@@ -940,6 +974,8 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryEntryDelete: (_ctx, payload) => handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest),
     memoryEntryJournal: (_ctx, payload) => handleMemoryEntryJournal(payload as MemoryChangeJournalRequest),
     memoryEntryResumeInjection: (_ctx, payload) => handleMemoryEntryResumeInjection(payload as { entryId?: string }),
+    memoryEntryFlagInjection: (_ctx, payload) => handleMemoryEntryFlagInjection(payload as { entryId?: string; flag?: string }),
+    memoryEntryClearInjectionFlag: (_ctx, payload) => handleMemoryEntryClearInjectionFlag(payload as { entryId?: string }),
     memoryEntryBatchReview: (_ctx, payload) => handleMemoryEntryBatchReview(payload as MemoryEntryBatchReviewRequest),
     memoryPack: (_ctx, payload) => handleMemoryPack(payload as MemoryPackRequest),
     memoryExportV2: () => handleMemoryExportV2(),
@@ -1042,6 +1078,12 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryEntryResumeInjection':
           data = await handleMemoryEntryResumeInjection(request as { entryId?: string });
+          break;
+        case 'memoryEntryFlagInjection':
+          data = await handleMemoryEntryFlagInjection(request as { entryId?: string; flag?: string });
+          break;
+        case 'memoryEntryClearInjectionFlag':
+          data = await handleMemoryEntryClearInjectionFlag(request as { entryId?: string });
           break;
         case 'memoryEntryDelete':
           data = await handleMemoryEntryDelete(request as unknown as MemoryEntryDeleteRequest);
