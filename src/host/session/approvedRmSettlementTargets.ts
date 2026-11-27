@@ -15,6 +15,7 @@ export function recordApprovedRmSettlementTargets(
   const runs = targetsBySession.get(sessionId) ?? new Map<string | undefined, Set<string>>();
   const targets = runs.get(runId) ?? new Set<string>();
   const otherRunTargetCount = [...runs.values()].reduce((total, runTargets) => total + runTargets.size, 0) - targets.size;
+  const trackedBefore = targets.size;
   for (const path of paths) {
     if (otherRunTargetCount + targets.size >= BACKGROUND_TASK_MAX_LEFTOVER_PATHS) break;
     try {
@@ -23,7 +24,8 @@ export function recordApprovedRmSettlementTargets(
       // Only track files whose presence at approval time is known.
     }
   }
-  if (targets.size === 0) return;
+  // Nothing new (no file left, already tracked, or at the cap): an already tracked run keeps its record.
+  if (targets.size === trackedBefore) return;
   runs.set(runId, targets);
   targetsBySession.set(sessionId, runs);
   logger.info('Approved rm settlement targets recorded', { sessionId, runId, targetCount: targets.size, source });
