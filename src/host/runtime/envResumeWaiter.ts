@@ -91,15 +91,13 @@ export async function recheckOfflineRun(sessionId: string, runId: string, regist
   const block = run?.runId === runId ? registry.getDurableEnvelope(runId)?.envBlocked : undefined;
   const resume = continuer;
   if (!resume || block?.class !== 'offline' || Date.now() < block.deadlineAt || !await probeOfflineNetwork(block)) return false;
-  const started = Promise.withResolvers<boolean>();
-  void resume({ sessionId, runId, onResumeStarted: () => started.resolve(true) }).then(
-    () => started.resolve(true),
-    (error: unknown) => {
+  return new Promise<boolean>((resolve, reject) => {
+    const onResumeStarted = () => resolve(true);
+    void resume({ sessionId, runId, onResumeStarted }).then(onResumeStarted, (error: unknown) => {
       logger.warn('Offline continuation failed', { runId, sessionId, error });
-      started.reject(error);
-    },
-  );
-  return started.promise;
+      reject(error);
+    });
+  });
 }
 
 /** Session-return arming needs only the recovered-run lookup of the full registry. */
