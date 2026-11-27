@@ -3,21 +3,23 @@
 //
 // Neo 自己装运行时（今天只有 LibreOffice）时聊天里的那一张卡：一个 (run, 目标) 一张、原地更新——
 //   fixing + 百分比 → resolved；装失败 → needs_user，只留一个「重试安装」按钮（recheck）。
+//   只有「下载源都不通」这一种失败会自己重试：按固定间隔只读探测下载源，通了就走与按钮同一条重试路径（卡说的「连上网后我会重试」）。
 // 安装状态（getLibreOfficeState）是唯一事实源：卡上的相位和百分比都从它读出来，这里不弹任何系统框。
 // 进度发布器独立于 env-resume 等待者：停不了车的 run（子代理、非持久宿主）同样要看得到进度。
 // ============================================================================
 
 import type { Message } from '../../../shared/contract';
 import type { EnvAssistNotice } from '../../../shared/contract/envAssist';
-import { ENV_RESUME_RUNTIME_STALL_MS, ENV_RUNTIME_PROGRESS_INTERVAL_MS } from '../../../shared/constants/envResume';
+import { ENV_RESUME_RUNTIME_STALL_MS, ENV_RUNTIME_OFFLINE_RECHECK_INTERVAL_MS, ENV_RUNTIME_PROGRESS_INTERVAL_MS } from '../../../shared/constants/envResume';
 import { peekEnvBlockedNote } from '../../agent/runtime/envBlockedTurn';
 import { emitExternalAgentEvent } from '../../services/agentEngine/agentEngineEventSink';
 import { getSessionManager } from '../../services/infra/sessionManager';
 import { createLogger } from '../../services/infra/logger';
-import { ensureLibreOffice } from '../../runtime/libreOffice/ensure';
+import { ensureLibreOffice, libreOfficeSourcesReachable } from '../../runtime/libreOffice/ensure';
 import { getLibreOfficeState } from '../../runtime/libreOffice/state';
 import type { LibreOfficeState } from '../../runtime/libreOffice/types';
-import type { EnvResumeProbe } from '../../runtime/envResumeWaiter';
+import { armEnvResumeOnSessionReturn, type EnvResumeProbe } from '../../runtime/envResumeWaiter';
+import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { queueNoticeWrite } from './noticeWriteQueue';
 
 const RUNTIME_TARGET = 'libreoffice';
@@ -141,6 +143,7 @@ async function writeRuntimeNotice(next: EnvAssistNotice, options: { retry?: bool
     await manager.addMessageToSession(next.sessionId, { ...persisted, metadata: { ...persisted.metadata, envAssist: next } });
     emitExternalAgentEvent(next.sessionId, { type: 'env_assist_notice', data: next });
   });
+  watchOfflineRuntimeCard(next);
 }
 
 interface Follower { notice: EnvAssistNotice; changedAt: number }
@@ -226,10 +229,74 @@ export function followRuntimeInstall(notice: EnvAssistNotice): void {
   }
 }
 
+/** The one failure Neo retries by itself: both download sources were unreachable. Checksum / other failures and a stall keep the button only. */
+function isOfflineCard(notice: EnvAssistNotice | undefined): boolean {
+  return notice?.class === 'runtime_missing' && notice.phase === 'needs_user'
+    && notice.sentenceKey === `env.sentence.${notice.target?.id ?? RUNTIME_TARGET}Offline`;
+}
+
+const offlineCards = new Map<string, EnvAssistNotice>();
+let offlineTimer: ReturnType<typeof setTimeout> | undefined;
+let offlineCheck: Promise<void> | undefined;
+
+function armOfflineRecheck(): void {
+  if (offlineTimer !== undefined || offlineCards.size === 0) return;
+  offlineTimer = setTimeout(() => { offlineTimer = undefined; void recheckOffline('interval'); }, ENV_RUNTIME_OFFLINE_RECHECK_INTERVAL_MS);
+  offlineTimer.unref?.();
+}
+
+/** An "offline" card is kept in mind: the sources are re-probed on a bounded interval and the install retried once one answers. */
+export function watchOfflineRuntimeCard(notice: EnvAssistNotice): void {
+  if (!isOfflineCard(notice)) return;
+  offlineCards.set(notice.id, notice);
+  armOfflineRecheck();
+}
+
+async function persistedCard(notice: EnvAssistNotice): Promise<EnvAssistNotice | undefined> {
+  const messages = await getSessionManager().getMessages(notice.sessionId);
+  return messages.find((message: Message) => message.id === `env-assist:${notice.id}`)?.metadata?.envAssist;
+}
+
+/**
+ * One read-only probe of the download sources at a time. When one answers, every card that still says "offline" takes
+ * the same path as its retry button, and a parked run's waiter (stopped when the install failed) is armed again so the
+ * run continues once the install lands. A card that no longer says "offline" (clicked, resolved, gone) is dropped.
+ */
+function recheckOffline(reason: string): Promise<void> {
+  offlineCheck ??= (async () => {
+    try {
+      const watched: EnvAssistNotice[] = [];
+      for (const [id, notice] of [...offlineCards]) {
+        const current = await persistedCard(notice);
+        if (current && isOfflineCard(current)) watched.push(current);
+        else offlineCards.delete(id);
+      }
+      if (watched.length === 0 || process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL === '1') return;
+      const state = getLibreOfficeState();
+      // An install already running or done (another card's button) only needs these cards brought along; otherwise ask the sources.
+      const otherwiseUnderway = state.phase === 'installing' || state.phase === 'installed';
+      const offlineOrForgotten = state.phase === 'missing' || (state.phase === 'failed' && state.error?.code === 'LIBREOFFICE_RUNTIME_OFFLINE');
+      if (!otherwiseUnderway && !(offlineOrForgotten && await libreOfficeSourcesReachable())) return;
+      for (const notice of watched) {
+        logger.info('LibreOffice download sources answer again; retrying the install', { reason, noticeId: notice.id });
+        await retryRuntimeInstall(notice, 'back_online');
+        armEnvResumeOnSessionReturn(notice.sessionId, getApplicationRunRegistry(), 'env_assist_runtime_back_online');
+      }
+    } catch (error) {
+      logger.warn('Offline runtime card recheck failed', { reason: 'recheck_failed', error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      offlineCheck = undefined;
+      armOfflineRecheck();
+    }
+  })();
+  return offlineCheck;
+}
+
 /** The card's "Retry install" click: start the install again, put the card back to "preparing", follow it. */
-export async function retryRuntimeInstall(notice: EnvAssistNotice): Promise<EnvAssistNotice> {
+export async function retryRuntimeInstall(notice: EnvAssistNotice, reason = 'retry_clicked'): Promise<EnvAssistNotice> {
+  offlineCards.delete(notice.id);
   kickRequested = true;
-  kickInstall('retry_clicked');
+  kickInstall(reason);
   // The new attempt registers before ensureLibreOffice returns, so the card reads "preparing" again at once.
   const next = runtimeNoticeFor({
     sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
@@ -303,6 +370,8 @@ async function refollow(scope: { runId: string; sessionId: string }): Promise<vo
 
 /** A card re-mounted (page reload) asks for its current copy; passively sync and re-follow a card that still says "preparing". */
 export async function recheckRuntimeNotice(notice: EnvAssistNotice): Promise<EnvAssistNotice> {
+  // An "offline" card asks right away (the window came back online / into focus); the probe is read-only and runs on its own.
+  if (isOfflineCard(notice)) { watchOfflineRuntimeCard(notice); void recheckOffline('card_recheck'); return notice; }
   if (notice.phase !== 'fixing') return notice;
   const next = runtimeNoticeFor({
     sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,

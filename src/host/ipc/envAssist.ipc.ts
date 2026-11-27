@@ -164,7 +164,8 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const parsed = EnvAssistSchemas.recheck.safeParse(payload);
     if (!parsed.success) return { status: 'rejected' };
     const notice = await deps.findNotice(parsed.data.noticeId);
-    // A runtime card only asks for its current copy: no pane, nothing to probe, no install started by a page refresh.
+    // A runtime card asks for its current copy (no pane). The one exception is a card saying the download servers were
+    // unreachable: its mount / focus / back-online asks the host to probe them (read-only) and retry once one answers.
     if (notice && isRuntimeNotice(notice)) return { status: 'checked', notice: await recheckRuntimeNotice(notice) };
     // Already resolved elsewhere (another card, the reminder switch, System Settings): give the card its done copy.
     if (notice?.phase === 'resolved') return { status: 'checked', outcome: { status: 'granted' }, notice };

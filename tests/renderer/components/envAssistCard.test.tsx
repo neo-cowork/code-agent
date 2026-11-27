@@ -190,5 +190,29 @@ describe('EnvAssistCard', () => {
     expect(screen.queryByRole('button')).toBeNull();
     useSessionStore.setState({ sessions: [] });
   });
+  it('an offline runtime card asks the host again on mount, when the computer comes back online and on focus; a stalled one does not', async () => {
+    mocks.invoke.mockImplementation(async (_domain, action) => (action === 'getAvailability' ? { available: false } : { status: 'checked' }));
+    const offline: EnvAssistNotice = {
+      id: 'run|runtime_missing|libreoffice', sessionId: 'session', runId: 'run', class: 'runtime_missing',
+      target: { id: 'libreoffice', labelKey: 'env.target.libreoffice' }, phase: 'needs_user', sentenceKey: 'env.sentence.libreofficeOffline',
+      action: { kind: 'recheck', labelKey: 'env.retry.libreoffice' }, resume: { mode: 'auto' }, parkedToolCallId: 'call-1', updatedAt: 1,
+    };
+    const { unmount } = render(<EnvAssistCard notice={offline} />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: offline.id }));
+    mocks.invoke.mockClear();
+    window.dispatchEvent(new Event('online'));
+    expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: offline.id });
+    mocks.invoke.mockClear();
+    window.dispatchEvent(new Event('focus'));
+    expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: offline.id });
+    unmount();
+
+    // Only the offline failure is retried by itself: a stalled download keeps the button only.
+    mocks.invoke.mockClear();
+    render(<EnvAssistCard notice={{ ...offline, id: 'run2|runtime_missing|libreoffice', sentenceKey: 'env.sentence.libreofficeStalled' }} />);
+    await screen.findByRole('button');
+    window.dispatchEvent(new Event('online'));
+    expect(mocks.invoke).not.toHaveBeenCalledWith('domain:envAssist', 'recheck', expect.anything());
+  });
 });
 

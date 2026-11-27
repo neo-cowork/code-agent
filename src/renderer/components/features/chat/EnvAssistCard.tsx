@@ -39,8 +39,12 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
   // A runtime card still "preparing" passively re-syncs on mount/focus so a reload or tab return cannot leave it stale.
   // The host persists + broadcasts the updated notice; this card only re-reads through the store.
   const canShowButton = (isRuntime || available) && notice.phase === 'needs_user' && Boolean(notice.action);
+  // A runtime card that says the download servers were unreachable also asks again when the computer comes back online:
+  // the host probes them (read-only) and retries the install once one answers — what that card promises.
+  const offlineRuntime = isRuntime && notice.phase === 'needs_user'
+    && notice.sentenceKey === `env.sentence.${notice.target?.id ?? ''}Offline`;
   const shouldRecheck = isRuntime
-    ? notice.phase === 'fixing'
+    ? notice.phase === 'fixing' || offlineRuntime
     : (available && notice.phase === 'needs_user' && Boolean(notice.action));
   useEffect(() => {
     if (!shouldRecheck) return;
@@ -52,8 +56,12 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
     };
     recheck();
     window.addEventListener('focus', recheck);
-    return () => window.removeEventListener('focus', recheck);
-  }, [shouldRecheck, notice.id]);
+    if (offlineRuntime) window.addEventListener('online', recheck);
+    return () => {
+      window.removeEventListener('focus', recheck);
+      window.removeEventListener('online', recheck);
+    };
+  }, [shouldRecheck, offlineRuntime, notice.id]);
   // Resolve only our own copy catalogue. Arbitrary host strings/params never become visible copy.
   const rawSentence = notice.phase === 'resolved'
     ? lookupKey(t.env.done, notice.doneKey, 'env.done.')

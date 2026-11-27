@@ -27,11 +27,14 @@ const world = vi.hoisted(() => ({
 vi.mock('../../../../src/host/runtime/libreOffice/ensure', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../src/host/runtime/libreOffice/ensure')>();
   const fakeImage = Buffer.from('fake LibreOffice disk image (hermetic test)');
+  const probe: NonNullable<EnsureLibreOfficeOptions['probe']> = async (url) => { world.probes++; return { url, ok: world.online, ttfbMs: world.online ? 5 : 3000 }; };
   return {
     ...actual,
+    // The back-online check runs the real function over the same injected reachability.
+    libreOfficeSourcesReachable: (options: Parameters<typeof actual.libreOfficeSourcesReachable>[0] = {}) => actual.libreOfficeSourcesReachable({ probe, ...options }),
     // The production hook calls ensureLibreOffice() with no options: merge the injectable ones in and run the real installer.
     ensureLibreOffice: (options: EnsureLibreOfficeOptions = {}) => actual.ensureLibreOffice({
-      probe: async (url) => { world.probes++; return { url, ok: world.online, ttfbMs: world.online ? 5 : 3000 }; },
+      probe,
       download: async (_url, destination, totalBytes, onProgress) => {
         world.downloads++;
         world.report = (transferred) => onProgress(transferred, totalBytes);
@@ -454,10 +457,13 @@ describe('④ offline: the card asks with one retry button; Retry install restar
     expect(await call('act', { noticeId: failed.id, actionKind: 'open_settings_pane', payload: { pane: 'automation' } })).toMatchObject({ data: { status: 'rejected' } });
     expect(world.probes).toBe(probesBefore);
     expect(world.downloads).toBe(0);
-    // The passive re-read a card does on mount/focus never starts anything.
+    // The re-read a card does on mount/focus/back-online only probes the sources (read-only) while they stay unreachable:
+    // no download, the card keeps asking.
     expect(await call('recheck', { noticeId: failed.id })).toMatchObject({ data: { status: 'checked', notice: { phase: 'needs_user' } } });
-    expect(world.probes).toBe(probesBefore);
+    await settleUntil(() => world.probes >= probesBefore + 2);
+    await settleUntil(() => logsOf('Offline runtime card recheck').length === 0 && world.probes === probesBefore + 2);
     expect(world.downloads).toBe(0);
+    expect(cards()[0]).toMatchObject({ phase: 'needs_user', sentenceKey: 'env.sentence.libreofficeOffline' });
 
     world.online = true;
     const retry = await call('act', { noticeId: failed.id, actionKind: 'recheck' });
@@ -474,6 +480,36 @@ describe('④ offline: the card asks with one retry button; Retry install restar
     expect(durableStatus()).toBe('completed');
     // A replayed click after the card resolved is refused: it is no longer asking.
     expect(await call('act', { noticeId: failed.id, actionKind: 'recheck' })).toMatchObject({ data: { status: 'rejected' } });
+  });
+});
+
+describe('④b back online: the offline card retries by itself, as it says', () => {
+  it('probe fails → needs_user(offline); sources answer again → the card asks (online/focus) → same id fixing → resolved, the parked run finishes, no button pressed', async () => {
+    const f = await setup();
+    world.online = false; world.hold = false;
+    await f.park();
+    await settleUntil(() => cards()[0]?.phase === 'needs_user'
+      && logsOf('Environment auto-continue stopped').some((line) => line.includes('"runtime_install_failed"')));
+    expect(cards()[0]).toMatchObject({ phase: 'needs_user', sentenceKey: 'env.sentence.libreofficeOffline' });
+    expect(world.downloads).toBe(0);
+
+    world.online = true;
+    const call = envAssistRoutes(() => cards() as unknown as EnvAssistNotice[]);
+    // What the card does on the browser's `online` event / window focus — no act, no button.
+    expect(await call('recheck', { noticeId: cards()[0]!.id })).toMatchObject({ data: { status: 'checked' } });
+    await settleUntil(() => resumedTurns === 1 && durableStatus() === 'completed');
+    const history = liveCards();
+    out('CARD_HISTORY_BACK_ONLINE', history);
+    out('LOGS_BACK_ONLINE', logsOf('answer again').concat(logsOf('auto-continue armed')));
+    const phases = history.map((card) => card.phase);
+    expect(phases.indexOf('needs_user')).toBeGreaterThanOrEqual(0);
+    expect(phases.lastIndexOf('fixing')).toBeGreaterThan(phases.indexOf('needs_user'));
+    expect(history.at(-1)?.phase).toBe('resolved');
+    expect(new Set(history.map((card) => card.id)).size).toBe(1);
+    expect(logsOf('answer again').length).toBe(1);
+    expect(logsOf('Environment auto-continue armed on session return').some((line) => line.includes('env_assist_runtime_back_online'))).toBe(true);
+    expect(world.downloads).toBe(1);
+    expect(pdfText()).toContain('%PDF-1.4');
   });
 });
 

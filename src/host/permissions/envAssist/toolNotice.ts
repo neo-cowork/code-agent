@@ -9,7 +9,7 @@ import { classifyEnvBlocker, cuaFailureText } from './classify';
 import { readCuaHelperPermissionState } from './cua/helperPermissionState';
 import { canOpenEnvSettings } from './settingsPane';
 import { canRequestEnvGrant } from './shellBridge/client';
-import { followRuntimeInstall, holdForRuntimeInstall, isRuntimeNotice, runtimeBlockerFor, runtimeModelGuidance, runtimeNoticeFor } from './runtimeNotice';
+import { followRuntimeInstall, holdForRuntimeInstall, isRuntimeNotice, watchOfflineRuntimeCard, runtimeBlockerFor, runtimeModelGuidance, runtimeNoticeFor } from './runtimeNotice';
 import { queueNoticeWrite } from './noticeWriteQueue';
 
 /** Both production tool executors pass here before observing or returning a failed result. */
@@ -87,6 +87,7 @@ export async function publishEnvAssistToolNotice(input: {
     if (!persisted) input.onEvent({ type: 'message', data: message });
   });
   // The install runs on its own; the card keeps up with it even for a run that cannot wait for it.
+  if (runtime) watchOfflineRuntimeCard(notice);
   if (notice.phase === 'fixing') {
     followRuntimeInstall(notice);
     if (runtime && !input.parkedToolCallId) {
