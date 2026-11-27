@@ -151,3 +151,66 @@ describe('whisper 模型：状态和真实转写读同一个目录', () => {
     }, { timeout: 5000 });
   });
 });
+
+describe('录音程序：状态和真实录音用同一个查找', () => {
+  it.each([
+    '/opt/homebrew/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/usr/bin/ffmpeg',
+    '/opt/homebrew/bin/rec',
+    '/usr/local/bin/rec',
+    '/usr/bin/rec',
+  ])('装在常见目录 %s、不在 PATH 里：状态就绪', (program) => {
+    systemPrograms.add(program);
+
+    expect(prerequisites.getAudioCapturePrerequisites('microphone').recorder.microphone).toBe('ready');
+    const status = capture.getAudioCaptureStatus();
+    expect(status.soxAvailable).toBe(true);
+    expect(status.missingPrerequisites).not.toContain('recorder_missing');
+  });
+
+  it('只在 PATH 里、不在常见目录：状态就绪，开始录音起的就是这个 ffmpeg', async () => {
+    installProgram('ffmpeg');
+
+    expect(prerequisites.getAudioCapturePrerequisites('microphone').recorder.microphone).toBe('ready');
+    await capture.startDesktopAudioCapture(undefined, 'microphone');
+
+    expect(capture.getAudioCaptureStatus().capturing).toBe(true);
+    await vi.waitFor(() => {
+      expect(programCalls('ffmpeg').at(-1)).toMatch(/^-f avfoundation -i :0 .* pipe:1$/);
+    }, { timeout: 5000 });
+  });
+
+  it('ffmpeg 和 rec 都没有：状态报缺录音组件，开始录音也起不来', async () => {
+    expect(prerequisites.getAudioCapturePrerequisites('microphone').recorder.microphone).toBe('missing');
+    expect(capture.getAudioCaptureStatus().missingPrerequisites).toContain('recorder_missing');
+
+    await capture.startDesktopAudioCapture(undefined, 'microphone');
+
+    expect(capture.getAudioCaptureStatus().capturing).toBe(false);
+  });
+
+  it('只有 rec：状态就绪，开始录音起的是 rec', async () => {
+    installProgram('rec');
+
+    expect(prerequisites.getAudioCapturePrerequisites('microphone').recorder.microphone).toBe('ready');
+    await capture.startDesktopAudioCapture(undefined, 'microphone');
+
+    expect(capture.getAudioCaptureStatus().capturing).toBe(true);
+    await vi.waitFor(() => {
+      expect(programCalls('rec')).toEqual([expect.stringMatching(/^-q -t raw -r 16000 -c 1 /)]);
+    }, { timeout: 5000 });
+  });
+
+  it('ffmpeg 和 rec 都有：录音用 ffmpeg，不起 rec', async () => {
+    installProgram('ffmpeg');
+    installProgram('rec');
+
+    await capture.startDesktopAudioCapture(undefined, 'microphone');
+
+    await vi.waitFor(() => {
+      expect(programCalls('ffmpeg').at(-1)).toMatch(/^-f avfoundation -i :0 /);
+    }, { timeout: 5000 });
+    expect(programCalls('rec')).toEqual([]);
+  });
+});
