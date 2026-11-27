@@ -17,7 +17,8 @@ export async function probeOfflineNetwork(
     { point: 'neutral', url: endpoints?.[1] || OFFLINE_NEUTRAL_PROBE_ENDPOINT },
   ].map(async ({ point, url }) => {
     try {
-      const agent = getHttpsAgent(url, block.provider);
+      // Use the model route's proxy decision for both destinations.
+      const agent = getHttpsAgent(block.endpoint, block.provider);
       const { status } = await axios.head(url, {
         httpAgent: agent, httpsAgent: agent, proxy: false, maxRedirects: 0,
         validateStatus: () => true, signal: AbortSignal.timeout(OFFLINE_PROBE_TIMEOUT_MS),
