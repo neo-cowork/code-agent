@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type { TaskBlockedCategory } from './contract/planning';
+import { hasInsufficientBalanceSignal } from './utils/providerError';
 
 /** 展示用文本上限：一行提示的量级，超出说明模型在贴日志 */
 const MAX_DISPLAY_LENGTH = 160;
@@ -93,6 +94,48 @@ export function describeTaskBlockedReason(raw: string): TaskBlockedReasonDescrip
     reason: looksMachineGenerated(normalized) ? '' : truncate(normalized),
     category,
   };
+}
+
+/** `[文字](链接)` 只留文字；裸链接连同紧贴它的短标签（「充值地址：」「Recharge at:」）一起去掉 */
+const MARKDOWN_LINK_PATTERN = /\[([^\]\n]*)\]\([^)\s]*\)/g;
+const URL_WITH_LABEL_PATTERN = /(?:[^\s。！？.!?；;，,：:][^。！？.!?；;，,：:\n]{0,23}[:：]\s*)?<?(?:https?:\/\/|www\.)[^\s<>"'）)】」，。；！？]+>?/gi;
+/** 行首的标题/列表/引用记号 */
+const LINE_MARKER_PATTERN = /^[ \t]*(?:#{1,6}[ \t]*|[-*+][ \t]+|\d+[.)][ \t]+|>[ \t]*)+/gm;
+const FIRST_SENTENCE_PATTERN = /^.*?(?:[。！？!?]+|\.(?=\s|$))/;
+const HAN_PATTERN = /\p{Script=Han}/u;
+
+function stripMarkdownAndUrls(raw: string): string {
+  return raw
+    .replace(MARKDOWN_LINK_PATTERN, '$1')
+    .replace(URL_WITH_LABEL_PATTERN, '')
+    .replace(/[（(【[]\s*[）)】\]]/g, '')
+    .replace(/\*\*|__|`/g, '')
+    .replace(LINE_MARKER_PATTERN, '')
+    .replace(/\*(?=\S)([^*\n]+?)\*/g, '$1');
+}
+
+function firstSentence(text: string): string {
+  const line = text.split('\n').map((item) => item.trim()).find(Boolean) ?? '';
+  return (FIRST_SENTENCE_PATTERN.exec(line)?.[0] ?? line).replace(/[:：]\s*$/, '').trim();
+}
+
+interface BackgroundFailureDescription extends TaskBlockedReasonDescription {
+  /** 原始报错全文；与 reason 相同时不给（没有更多可看的） */
+  detail?: string;
+}
+
+/**
+ * 后台任务失败行用的一句话原因：去掉 markdown 记号与链接，只留第一句，
+ * 文字与界面语言不符（中文界面里的纯英文、英文界面里的中文）时给空串，
+ * 由 UI 用 category 文案兜底。原文放在 detail，展开后才显示。
+ */
+export function describeBackgroundFailure(raw: string, language: 'zh' | 'en'): BackgroundFailureDescription {
+  const trimmed = raw.trim();
+  const described = describeTaskBlockedReason(firstSentence(stripMarkdownAndUrls(trimmed)));
+  const matchesLanguage = HAN_PATTERN.test(described.reason) === (language === 'zh');
+  const reason = matchesLanguage ? described.reason : '';
+  const category = hasInsufficientBalanceSignal(trimmed) ? 'model' : describeTaskBlockedReason(trimmed).category;
+  return { reason, category, ...(trimmed && trimmed !== reason ? { detail: trimmed } : {}) };
 }
 
 /**
