@@ -4,8 +4,6 @@ import { extractApprovedRmTargets } from '../../shell/sandboxEscalation';
 import { isBashToolName } from '../../toolNames';
 import { recordApprovedRmSettlementTargets } from '../../../session/approvedRmSettlementTargets';
 
-/** The parent's call that a background task took over: that task does the deleting. */
-const HANDED_OFF_TO_BACKGROUND = 'HANDED_OFF_TO_BACKGROUND';
 /** rm's own options never change which paths it names, and the approval parser admits only -f/-v. */
 const RM_OPTION_WORDS = /(^|[\s;&|(])((?:\/usr)?(?:\/bin\/)?rm)((?:[ \t]+-[A-Za-z]+)+)(?=[ \t])/g;
 
@@ -13,7 +11,8 @@ const RM_OPTION_WORDS = /(^|[\s;&|(])((?:\/usr)?(?:\/bin\/)?rm)((?:[ \t]+-[A-Za-
  * Called when a tool call of the run ends. A Bash rm whose literal file operands are still on disk
  * did not delete them, whatever the run reports later: refused before any approval, denied, blocked
  * by the sandbox, or failed behind a trailing `; echo "exit=$?"`. Those files join the run's
- * settlement record, so the settle-time check judges the task by what is on disk.
+ * settlement record, so the settle-time check judges the task by what is on disk. A call handed to a
+ * background task never ends here: it is sealed as a tool message without a tool_call_end.
  */
 export function recordUnfinishedRmSettlementTargets(
   sessionId: string,
@@ -22,7 +21,6 @@ export function recordUnfinishedRmSettlementTargets(
   result: ToolResult,
   runCwd: string,
 ): void {
-  if (result.metadata?.code === HANDED_OFF_TO_BACKGROUND) return;
   const isCall = (candidate: ToolCall) => candidate.id === result.toolCallId;
   const call = history.findLast((message) => message.toolCalls?.some(isCall))?.toolCalls?.find(isCall);
   const command = call?.arguments.command;

@@ -299,8 +299,12 @@ describe('a web run moved to background whose rm ended with the file still on di
     await rm(outside, { recursive: true, force: true });
   });
 
-  /** The loop records the rm call, reports its result, then ends after the session went to background. */
-  async function runWeb(result: Omit<ToolResult, 'toolCallId'>, beforeEnd?: () => Promise<void>) {
+  /**
+   * The loop records the rm call, reports its result, then ends after the session went to background.
+   * `sealed`: the call is handed to a background task the way sealBouncedToolCalls does it, with the
+   * result in a tool message and no tool_call_end.
+   */
+  async function runWeb(result: Omit<ToolResult, 'toolCallId'>, beforeEnd?: () => Promise<void>, sealed = false) {
     const backgrounded = Promise.withResolvers<void>();
     const call: ToolCall = { id: RM_CALL_ID, name: 'Bash', arguments: { command: `rm -rfv ${file}; echo "exit=$?"` } };
     vi.mocked(createAgentLoop).mockImplementation((_config, onEvent, messages) => ({
@@ -308,7 +312,15 @@ describe('a web run moved to background whose rm ended with the file still on di
         const assistant: Message = { id: randomUUID(), role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [call] };
         messages?.push(assistant);
         onEvent({ type: 'message', data: assistant });
-        onEvent({ type: 'tool_call_end', data: { toolCallId: RM_CALL_ID, ...result } });
+        if (sealed) {
+          const tool: Message = {
+            id: randomUUID(), role: 'tool', content: '', timestamp: Date.now(), toolResults: [{ toolCallId: RM_CALL_ID, ...result }],
+          };
+          messages?.push(tool);
+          onEvent({ type: 'message', data: tool });
+        } else {
+          onEvent({ type: 'tool_call_end', data: { toolCallId: RM_CALL_ID, ...result } });
+        }
         await backgrounded.promise;
         await beforeEnd?.();
       },
@@ -381,8 +393,9 @@ describe('a web run moved to background whose rm ended with the file still on di
     const row = await runWeb({
       success: false,
       error: 'HANDED_OFF_TO_BACKGROUND',
+      duration: 0,
       metadata: { skipped: true, bounced: true, code: 'HANDED_OFF_TO_BACKGROUND' },
-    });
+    }, undefined, true);
     expect(existsSync(file)).toBe(true);
     expect(row?.status).toBe('completed');
     expect(row?.leftoverPaths).toBeUndefined();
