@@ -12,6 +12,7 @@ import { TraceNodeRenderer } from '../../../src/renderer/components/features/cha
 import { filterSystemTags } from '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts';
 import { formatBlockDetail } from '../../../src/renderer/components/features/sidebar/sessionReplayFormatters';
 import { SidebarMessageHitList } from '../../../src/renderer/components/features/sidebar/SidebarMessageHitList';
+import { getTraceNodeSearchText } from '../../../src/renderer/utils/sessionSearchJump';
 
 const ENVELOPE =
   '<command-message>Loading skill: frontend-slides</command-message><command-name>frontend-slides</command-name><command-content-hash>f7a817c25c8a55b7</command-content-hash>';
@@ -190,6 +191,16 @@ describe.each([
             matchCount: 1,
             relevance: 1,
           },
+          {
+            sessionId: 'session-skill-envelope',
+            messageId: 'hit-2',
+            snippet: '…<command-name>frontend-slides</command-name><command-content-hash>f7a817c25c8a55b7</command-content-hash>',
+            messagePositionLabel: '#3',
+            role: 'user',
+            timestamp: 2_500,
+            matchCount: 1,
+            relevance: 1,
+          },
         ]}
         onSelectHit={vi.fn()}
       />,
@@ -201,9 +212,34 @@ describe.each([
   });
 });
 
-describe('filterSystemTags fallback stripper', () => {
-  it('strips <command-content-hash> alongside <command-message> and <command-name>', () => {
+describe('filterSystemTags fallback stripper and in-session search text', () => {
+  it('strips <command-content-hash> alongside <command-message> and <command-name> and scopes search suppression to skill/user nodes', () => {
     expect(filterSystemTags(ENVELOPE)).toBe('');
     expect(filterSystemTags(`Hello\n${ENVELOPE}\nWorld`)).toBe('Hello\n\nWorld');
+    expect(
+      getTraceNodeSearchText({
+        id: 'sys-skill',
+        type: 'system',
+        subtype: 'skill_status',
+        content: ENVELOPE,
+        timestamp: 1_000,
+      }),
+    ).toBe('');
+    expect(
+      getTraceNodeSearchText({
+        id: 'user-skill',
+        type: 'user',
+        content: ENVELOPE,
+        timestamp: 1_000,
+      }),
+    ).toBe('');
+    expect(
+      getTraceNodeSearchText({
+        id: 'assistant-doc',
+        type: 'assistant_text',
+        content: `Example: ${ENVELOPE}`,
+        timestamp: 1_000,
+      }),
+    ).toContain('Example:');
   });
 });

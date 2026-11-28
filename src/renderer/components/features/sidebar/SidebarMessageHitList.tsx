@@ -45,7 +45,7 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
         const displaySnippet = hit.role === 'user'
           ? (isSkillStatusMessage({ role: 'user', content: hit.snippet })
             ? (formatSkillStatusText(hit.snippet, t, language) ?? filterSystemTags(hit.snippet))
-            : formatEditRoleUserPrompt(hit.snippet, t.roleEditReceipt.userPrompt, roleLabels))
+            : filterSystemTags(formatEditRoleUserPrompt(hit.snippet, t.roleEditReceipt.userPrompt, roleLabels)))
           : hit.snippet;
         return (
         <button

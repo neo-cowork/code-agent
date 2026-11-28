@@ -339,7 +339,7 @@ const CrossSessionResultRow: React.FC<{
   const cleanSnippet = item.role === 'user'
     ? (isSkillStatusMessage({ role: 'user', content: strippedSnippet })
       ? (formatSkillStatusText(strippedSnippet, t, language) ?? filterSystemTags(strippedSnippet))
-      : formatEditRoleUserPrompt(strippedSnippet, t.roleEditReceipt.userPrompt, roleLabels))
+      : filterSystemTags(formatEditRoleUserPrompt(strippedSnippet, t.roleEditReceipt.userPrompt, roleLabels)))
     : strippedSnippet;
 
   return (
