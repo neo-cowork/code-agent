@@ -13,6 +13,7 @@ import { SidebarProjectGroup } from '../../../src/renderer/components/features/s
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { groupByWorkspace } from '../../../src/renderer/utils/workspaceGrouping';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
 
 const dialogMocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -193,6 +194,7 @@ describe('SidebarProjectGroup new session directory', () => {
     workingDirectory: taskDirectory,
     projectId: 'p1',
     metadata: { projectPinned: true },
+    modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
     messageCount: 2,
     turnCount: 1,
   } as SessionWithMeta;
