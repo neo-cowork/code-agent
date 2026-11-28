@@ -8,9 +8,10 @@ import { AppWindow, broadcastToRenderer } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
 import { isRoleWakeRunActive } from '../services/roleAssets/wakeRunGuard';
-import { BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
+import { BACKGROUND_NOTIFICATION_TIMEOUTS, BACKGROUND_TASK_CANCELLED, BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../shared/constants';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
 import { buildSessionTitle, isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
+import { hasPendingSessionTitle, waitForPendingSessionTitle } from './pendingSessionTitle';
 
 const logger = createLogger('BackgroundTaskManager');
 const UNNAMED_SESSION_TITLE = '未命名会话';
@@ -207,6 +208,23 @@ class BackgroundTaskManager extends EventEmitter {
    */
   private async refreshLiveTitle(sessionId: string, task: BackgroundSessionInfo): Promise<boolean> {
     try {
+      if (hasPendingSessionTitle(sessionId)) {
+        const waitResult = await waitForPendingSessionTitle(sessionId, BACKGROUND_NOTIFICATION_TIMEOUTS.TITLE_WAIT_MS);
+        if (this.backgroundSessions.get(sessionId) !== task) return false;
+        if (waitResult.status === 'timeout') {
+          logger.warn('Pending session title wait timed out before notification', {
+            reason: 'title_wait_timeout',
+            sessionId,
+            waitedMs: waitResult.waitedMs,
+            timeoutMs: BACKGROUND_NOTIFICATION_TIMEOUTS.TITLE_WAIT_MS,
+          });
+        } else if (waitResult.status === 'settled') {
+          logger.info('Waited for pending session title before notification', {
+            sessionId,
+            waitedMs: waitResult.waitedMs,
+          });
+        }
+      }
       const sessionManager = getSessionManager();
       const session = await sessionManager.getSession(sessionId);
       if (this.backgroundSessions.get(sessionId) !== task) return false;
