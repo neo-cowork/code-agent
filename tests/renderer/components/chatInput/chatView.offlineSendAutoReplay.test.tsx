@@ -4,21 +4,21 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
-import { ChatView } from '../../../src/renderer/components/ChatView';
-import { ProjectComposer } from '../../../src/renderer/components/features/projectSpace/ProjectComposer';
-import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { useAuthStore } from '../../../src/renderer/stores/authStore';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { useServerConnectionStore } from '../../../src/renderer/stores/serverConnectionStore';
-import { useTaskStore } from '../../../src/renderer/stores/taskStore';
-import { clearFailedSend, mergeFailedSendOutbox } from '../../../src/renderer/stores/failedSendOutbox';
+import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../../src/renderer/api/httpTransport';
+import { ChatView } from '../../../../src/renderer/components/ChatView';
+import { ProjectComposer } from '../../../../src/renderer/components/features/projectSpace/ProjectComposer';
+import { useAppStore } from '../../../../src/renderer/stores/appStore';
+import { useAuthStore } from '../../../../src/renderer/stores/authStore';
+import { useSessionStore } from '../../../../src/renderer/stores/sessionStore';
+import { useServerConnectionStore } from '../../../../src/renderer/stores/serverConnectionStore';
+import { useTaskStore } from '../../../../src/renderer/stores/taskStore';
+import { clearFailedSend, mergeFailedSendOutbox } from '../../../../src/renderer/stores/failedSendOutbox';
 import {
   clearComposerDraftRoundtrip,
   composerDraftStorageKey,
   readComposerDraft,
-} from '../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
-import { readOfflinePendingSend } from '../../../src/renderer/components/features/chat/ChatInput/offlinePendingSendStore';
+} from '../../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
+import { readOfflinePendingSend } from '../../../../src/renderer/components/features/chat/ChatInput/offlinePendingSendStore';
 
 vi.mock('react-virtuoso', async () => {
   const ReactModule = await import('react');
