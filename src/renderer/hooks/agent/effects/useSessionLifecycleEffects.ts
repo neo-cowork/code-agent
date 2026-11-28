@@ -9,6 +9,7 @@ import {
 } from '@shared/utils/agentErrorClassification';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
+import { usePendingStopStore } from '../../../stores/pendingStopStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
@@ -247,6 +248,7 @@ export const useSessionLifecycleEffects = ({
           clearSessionProcessing();
           if (eventSessionId) {
             if (event.type === 'agent_cancelled' && !waitingForNetwork) {
+              usePendingStopStore.getState().clear(eventSessionId);
               markRuntimeSessionCancelled(eventSessionId);
             } else {
               clearRuntimeSessionState(eventSessionId);

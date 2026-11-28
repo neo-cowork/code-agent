@@ -1,5 +1,5 @@
 import type { AppSettings, ModelProvider } from '@shared/contract';
-import { getRuntimeModelLabel, type RuntimeModelOption } from '@shared/modelRuntime';
+import { getRuntimeModelLabel, isDynamicCustomProviderId, type RuntimeModelOption } from '@shared/modelRuntime';
 import { getModelDisplayLabel, getProviderDisplayName } from '@shared/constants';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import { languages, type Language } from '../../i18n';
@@ -11,9 +11,10 @@ function shownModelLabel(modelId: string, language: Language): string {
 }
 
 function providerName(provider: string, settings: AppSettings | null | undefined, language: Language): string {
+  const fallback = isDynamicCustomProviderId(provider) ? undefined : getProviderDisplayName('custom');
   return resolveProviderLabel(provider,
     settings?.models?.providers?.[provider as ModelProvider]?.displayName
-      || getProviderDisplayName(provider) || getProviderDisplayName('custom'), language);
+      || getProviderDisplayName(provider) || fallback, language);
 }
 
 export function formatModelSwitcherLabel(

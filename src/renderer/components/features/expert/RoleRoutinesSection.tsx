@@ -12,6 +12,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
+import { mailboxDisplayName } from '../../../utils/mailboxDisplayName';
 import { isUnattendedBudgetUsedUpError } from '@shared/i18n/unattendedBudgetUsedUp';
 import { isCronExecutionPermissionDenialError } from '../chat/cronRunSessionStatus';
 import { getRoleWakeJobLabel } from '../cron/builtinJobDisplay';
@@ -36,7 +37,7 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: RoleDetail
   if (schedule.type === 'event') {
     // connector 源（mail）没有 chatId，绑定信息是账号 + 邮箱；webhook 源的绑定是 hook URL。
     const binding = schedule.source === 'connector'
-      ? `${schedule.accountId}${schedule.mailbox ? ` · ${schedule.mailbox}` : ''}`
+      ? `${schedule.accountId}${schedule.mailbox ? ` · ${mailboxDisplayName(schedule.mailbox, lang)}` : ''}`
       : schedule.source === 'channel'
         ? `${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`
         : 'Webhook';

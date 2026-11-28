@@ -336,7 +336,7 @@ export const cronCenterZh = {
     eventMailAccountPlaceholder: '选择 Mail 里的一个账号',
     eventMailAccountUnavailable: '之前绑定的邮件账号“{value}”已不在列表里。原配置已保留，重新选择后再保存。',
     eventMailboxLabel: '监听邮箱',
-    eventMailboxDefaultLabel: 'INBOX（收件箱，默认）',
+    eventMailboxDefaultLabel: '收件箱（默认）',
     eventMailNoAccounts: '已连接 Mail，但没有找到可用的邮件账户。',
     eventMailUnavailableNotEnabled: '还没有启用邮件连接器。先去设置里启用 Mail 连接器，再回来选择账号。',
     eventMailUnavailableNotAuthorized: '邮件连接器还没有通过授权。去设置里点「检查/授权」，允许访问「邮件」后再回来。',

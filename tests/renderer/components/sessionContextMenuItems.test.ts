@@ -143,9 +143,9 @@ describe('buildSessionContextMenuItems', () => {
 
   it('非管理员时 Replay 项禁用且文案降级', () => {
     const items = buildSessionContextMenuItems(makeSession(), makeDeps({ canOpenSessionReplay: false }));
-    const replay = items.find((item) => item.label === 'Replay 仅管理员可用');
+    const replay = items.find((item) => item.label === '回放过程（仅管理员可用）');
     expect(replay?.disabled).toBe(true);
-    expect(items.some((item) => item.label === '打开 Replay')).toBe(false);
+    expect(items.some((item) => item.label === '回放过程')).toBe(false);
   });
 
   it('管理员时 Replay 项启用且触发 handleOpenSessionReplay', async () => {
@@ -155,7 +155,7 @@ describe('buildSessionContextMenuItems', () => {
       session,
       makeDeps({ canOpenSessionReplay: true, handleOpenSessionReplay }),
     );
-    const replay = items.find((item) => item.label === '打开 Replay');
+    const replay = items.find((item) => item.label === '回放过程');
     expect(replay?.disabled).toBe(false);
     await replay?.onClick();
     expect(handleOpenSessionReplay).toHaveBeenCalledWith(session);

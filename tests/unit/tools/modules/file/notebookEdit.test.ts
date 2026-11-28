@@ -181,4 +181,40 @@ describe('notebookEditModule evidence metadata', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('MISSING_AGENT_IDENTITY');
   });
+
+  it.each([
+    ['png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d])],
+    ['pdf', Buffer.from('%PDF-1.7 binary junk', 'latin1')],
+    ['zip', Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00])],
+  ])('refuses a %s binary renamed to .ipynb with BINARY_FILE_NOT_TEXT and leaves bytes untouched', async (name, magic) => {
+    const file = path.join(tmpDir, `${name}-renamed.ipynb`);
+    await fs.writeFile(file, magic);
+
+    const handler = await notebookEditModule.createHandler();
+    const result = await handler.execute(
+      { notebook_path: file, new_source: 'x = 1' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+      expect(result.code).not.toBe('PARSE_ERROR');
+      expect(result.code).not.toBe('INVALID_NOTEBOOK');
+    }
+    expect(await fs.readFile(file)).toEqual(magic);
+  });
+
+  it('still returns ENOENT for a missing .ipynb', async () => {
+    const file = path.join(tmpDir, 'does-not-exist.ipynb');
+    const handler = await notebookEditModule.createHandler();
+    const result = await handler.execute(
+      { notebook_path: file, new_source: 'x = 1' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('ENOENT');
+  });
 });

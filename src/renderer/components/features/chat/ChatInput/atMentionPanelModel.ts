@@ -9,6 +9,7 @@
 // 序列上循环。组件只负责渲染与副作用，分组/过滤规则全部落在这里便于测试。
 
 import type { LibraryItem, LibraryItemKind } from '@shared/contract/library';
+import type { Message } from '@shared/contract/message';
 import type { ProjectArtifact, ProjectArtifactKind } from '@shared/contract/project';
 import type { Session } from '@shared/contract/session';
 import type { Translations } from '../../../../i18n';
@@ -34,6 +35,9 @@ export interface AtMentionFileRow {
   /** 所在目录（第二行灰字）；根目录文件为空串不渲染第二行 */
   dir: string;
   isDirectory: boolean;
+  /** 会话附件行（本会话上传过的文件）：第二行由 popover 渲染 i18n 提示，dir 恒空——
+   *  内部落盘目录（<data>/uploads/<uuid>/）绝不怼到用户面前。 */
+  source?: 'attachment';
 }
 
 export interface AtMentionLibraryRow {
@@ -163,6 +167,48 @@ export function buildFileRows(
       dir: deriveDisplayDir(file.path, file.name, baseDir),
       isDirectory: file.isDirectory,
     }));
+}
+
+/** 附件 path 必须是绝对路径（POSIX '/' 或 Windows 'C:\'/'C:/'）：选中后 readFile 按绝对路径读盘，
+ *  相对 path 的脏数据不进候选。 */
+const ABSOLUTE_FILE_PATH_RE = /^(\/|[A-Za-z]:[\\/])/;
+
+/**
+ * FB-3095：@ 面板的文件组原来只列工作目录（listFiles），用户在本会话上传过的附件
+ * （落盘在 <data>/uploads/<uuid>/，不在工作目录里）永远搜不到。这里把当前会话
+ * role==='user' 消息里带绝对 path、非 folder 的附件并进已建好的工作区文件行。规则：
+ * - query 含 '/'（在浏览子目录）时不掺附件，只列目录内容；
+ * - 文件名过滤与工作区文件同一口径（query 最后一段子串、大小写不敏感、空 query 跳过点开头条目）；
+ * - 附件行在前（新上传在前），之后是工作区行；同名只留一行——工作区文件赢，
+ *   同名附件重复上传取最新一条；总长仍封顶 limit；
+ * - 附件行 dir 恒空 + source='attachment'，内部上传目录不外露。
+ */
+export function mergeSessionAttachmentRows(
+  messages: readonly Message[],
+  workspaceRows: AtMentionFileRow[],
+  query: string,
+  limit = AT_MENTION_GROUP_LIMIT,
+): AtMentionFileRow[] {
+  if (query.includes('/')) return workspaceRows;
+
+  const normalized = query.slice(query.lastIndexOf('/') + 1).trim().toLowerCase();
+  const taken = new Set(workspaceRows.map((row) => row.name));
+  const attachmentRows: AtMentionFileRow[] = [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role !== 'user' || !message.attachments?.length) continue;
+    for (let j = message.attachments.length - 1; j >= 0; j -= 1) {
+      const attachment = message.attachments[j];
+      const path = attachment.path;
+      if (attachment.category === 'folder' || typeof path !== 'string' || !ABSOLUTE_FILE_PATH_RE.test(path)) continue;
+      const name = attachment.name || path.split(/[\\/]/).pop() || '';
+      if (!name || taken.has(name)) continue;
+      if (normalized ? !name.toLowerCase().includes(normalized) : name.startsWith('.')) continue;
+      taken.add(name);
+      attachmentRows.push({ kind: 'file', path, name, dir: '', isDirectory: false, source: 'attachment' });
+    }
+  }
+  return [...attachmentRows, ...workspaceRows].slice(0, limit);
 }
 
 type SessionMatch = Session & { messageCount?: number };

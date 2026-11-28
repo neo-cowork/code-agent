@@ -9,9 +9,10 @@ import type {
   TaskStrategyProfileId,
 } from '@shared/contract';
 import { PROVIDER_MODELS } from '@shared/constants';
-import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
+import { buildRuntimeModelOptions, isDynamicCustomProviderId, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import type { Language } from '../../../../i18n';
 import { isWebMode } from '../../../../utils/platform';
 import { modelKeyOptionLabel } from './modelKeyOptionLabel';
 import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
@@ -35,8 +36,16 @@ function parseOptionValue(value: string): { provider: ModelProvider; model: stri
   return { provider: provider as ModelProvider, model };
 }
 
-function modelLabel(provider: string, model: string): string {
-  return `${provider}/${model}`;
+function modelLabel(
+  provider: ModelProvider,
+  model: string,
+  displayName: string | undefined,
+  language: Language,
+): string {
+  const prefix = isDynamicCustomProviderId(provider)
+    ? resolveProviderLabel(provider, displayName, language)
+    : provider;
+  return `${prefix}/${model}`;
 }
 
 // 记忆整理模型 Select 的「跟随快速模型」哨兵值：选中即清除 routing.memory 覆盖。
@@ -117,7 +126,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
       options.push({
         provider: defaultModel.provider,
         model: defaultModel.model,
-        label: modelLabel(defaultModel.provider, defaultModel.model),
+        label: modelLabel(defaultModel.provider, defaultModel.model, provider?.displayName, language),
         providerLabel: provider?.displayName
           || options.find((option) => option.provider === defaultModel.provider)?.providerLabel
           || defaultModel.provider,
@@ -125,7 +134,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
       });
     }
     return options;
-  }, [defaultModel.provider, defaultModel.model, runtimeModelOptions, providerConfigs]);
+  }, [defaultModel.provider, defaultModel.model, language, runtimeModelOptions, providerConfigs]);
 
   // 按 Provider 分组（optgroup）：避免所有已配模型平铺成一长串，effort 噪音靠分组收敛。
   const groupedOptions = useMemo(() => {
@@ -232,7 +241,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                   title={webNote}
                   className="w-full"
                 >
-                  {unavailable ? <option value={value}>{optionLabel(slot.provider, slot.model, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
+                  {unavailable ? <option value={value}>{optionLabel(slot.provider, slot.model, modelLabel(slot.provider, slot.model, providerConfigs[slot.provider]?.displayName, language))}{strategyText.unavailableSuffix}</option> : null}
                   {groupedOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (
@@ -274,7 +283,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
             <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
             {memoryRoute && memoryRouteUnavailable ? (
               <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
-                {optionLabel(memoryRoute.provider, memoryRoute.model, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
+                {optionLabel(memoryRoute.provider, memoryRoute.model, modelLabel(memoryRoute.provider, memoryRoute.model, providerConfigs[memoryRoute.provider]?.displayName, language))}{strategyText.unavailableSuffix}
               </option>
             ) : null}
             {groupedOptions.map((group) => (

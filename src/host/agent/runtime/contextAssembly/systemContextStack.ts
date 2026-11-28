@@ -1,5 +1,6 @@
 // ContextAssembly - Persistent system context stack and context event ledger.
 import type { Message } from '../../../../shared/contract';
+import { ASK_USER_QUESTION_TOOL_NAMES } from '../../../../shared/constants/tools';
 import type {
   ContextEventRecord,
   ContextInjectionSource,
@@ -40,6 +41,8 @@ type ContextInjectionMessage = Message & {
 };
 
 const bufferedInjectionSources = new WeakMap<object, Set<ContextInjectionSource>>();
+const visibleQuestionCallIds = new WeakMap<ContextAssemblyCtx['runtime'], Set<string>>();
+const questionToolNames = new Set<string>(ASK_USER_QUESTION_TOOL_NAMES);
 
 function markMessagePersistedByContextAssembly(message: Message): void {
   Object.defineProperty(message, CONTEXT_ASSEMBLY_PERSISTED_MESSAGE, {
@@ -261,14 +264,21 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
     message.metadata = { ...message.metadata, stoppedByStepLimit: true };
   }
   message.metadata = attachMessageCorrelation(ctx.runtime, message.metadata);
-  // meta run 里给模型的内部消息一律藏起来；唯一例外是失败的命令（COMMAND_FAILED）：
-  // 用户要能在对话里看到哪条命令失败了。结果消息这里直接不打标，发起它的助手消息在落库后补露。
-  const failedCommandCallIds = ctx.runtime.historyVisibility === 'meta' && message.role === 'tool'
+  const isMetaRun = ctx.runtime.historyVisibility === 'meta';
+  const questionCalls = isMetaRun && message.role === 'assistant' && !message.isMeta
+    ? message.toolCalls?.filter((call) => questionToolNames.has(call.name))
+    : undefined;
+  let questionIds = visibleQuestionCallIds.get(ctx.runtime);
+  const answersVisibleQuestion = isMetaRun && message.role === 'tool'
+    && message.toolResults?.some((result) => questionIds?.has(result.toolCallId));
+  // Show the question prelude before dispatch can open its card. Keep failed-command
+  // results visible too, with their assistant call revealed separately after persistence.
+  const failedCommandCallIds = isMetaRun && message.role === 'tool'
     ? (message.toolResults ?? [])
       .filter((result) => !result.success && result.metadata?.code === 'COMMAND_FAILED')
       .map((result) => result.toolCallId)
     : [];
-  if (ctx.runtime.historyVisibility === 'meta' && failedCommandCallIds.length === 0) {
+  if (isMetaRun && !questionCalls?.length && !answersVisibleQuestion && failedCommandCallIds.length === 0) {
     message.isMeta = true;
   }
 
@@ -382,6 +392,13 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
 
   if (persisted) {
     markMessagePersistedByContextAssembly(message);
+    if (questionCalls?.length) {
+      if (!questionIds) {
+        questionIds = new Set();
+        visibleQuestionCallIds.set(ctx.runtime, questionIds);
+      }
+      for (const call of questionCalls) questionIds.add(call.id);
+    }
     if (
       ctx.runtime.sessionId
       && message.role === 'assistant'

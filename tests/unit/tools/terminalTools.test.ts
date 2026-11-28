@@ -257,6 +257,18 @@ describe('terminal_write through ToolExecutor and the protocol registry', () => 
     expect(result.success).toBe(false);
     expect(written).toEqual([]);
   });
+
+  it('requires a fresh confirmation before typing a plain single-file rm', async () => {
+    const { result, requestPermission } = await execute(allowOnce, 'rm /Users/u/old-notes.txt');
+
+    expect(requestPermission).toHaveBeenCalledTimes(2);
+    expect(requestPermission.mock.calls[1][0]).toMatchObject({
+      type: 'dangerous_command',
+      details: { grantEligible: false },
+    });
+    expect(result.success).toBe(false);
+    expect(written).toEqual([]);
+  });
 });
 
 describe('terminal_write visibility (红线：注入对用户可见)', () => {

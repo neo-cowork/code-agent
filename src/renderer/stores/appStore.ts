@@ -230,6 +230,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Initial Workspace State
   workingDirectory: null,
+  hostHomeDir: null,
 
   // Initial Context Health State
   contextHealth: null,

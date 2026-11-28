@@ -17,6 +17,8 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
+import { formatSkillStatusText, isSkillStatusMessage } from './MessageBubble/SkillStatusMessage';
+import { filterSystemTags } from './MessageBubble/messageContentParts';
 
 export interface SearchMatch {
   turnIndex: number;
@@ -335,7 +337,9 @@ const CrossSessionResultRow: React.FC<{
   // Strip markdown bold markers from snippet for display
   const strippedSnippet = item.snippet.replace(/\*\*/g, '');
   const cleanSnippet = item.role === 'user'
-    ? formatEditRoleUserPrompt(strippedSnippet, t.roleEditReceipt.userPrompt, roleLabels)
+    ? (isSkillStatusMessage({ role: 'user', content: strippedSnippet })
+      ? (formatSkillStatusText(strippedSnippet, t, language) ?? filterSystemTags(strippedSnippet))
+      : filterSystemTags(formatEditRoleUserPrompt(strippedSnippet, t.roleEditReceipt.userPrompt, roleLabels)))
     : strippedSnippet;
 
   return (

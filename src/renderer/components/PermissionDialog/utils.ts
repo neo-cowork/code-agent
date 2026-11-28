@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { Translations } from '../../hooks/useI18n';
 import type { PermissionType, PermissionConfig } from './types';
+import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 
 /** 卡片类型标题的唯一出口：全部走 i18n，utils 里不留任何语言字面量；未登记类型落中性标题。 */
 export function getPermissionTitle(type: PermissionType, p: Translations['decisionCard']['permission']): string {
@@ -155,18 +156,44 @@ export function isDangerousCommand(command?: string): boolean {
   return DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-// 格式化文件路径（缩短显示）
-export function formatFilePath(path: string, maxLength = 60): string {
-  if (path.length <= maxLength) return path;
+export interface ApprovalPathContext {
+  workspaceRoot?: string | null;
+  homeDir?: string | null;
+}
 
-  const parts = path.split('/');
-  if (parts.length <= 3) return path;
+/**
+ * 审批卡的 `./` 相对路径只允许相对「该请求所属会话」自己的工作目录，绝不借用当前 UI 恰好打开的
+ * 其他会话目录。会话不在列表里时，仅当请求明确归属当前会话才回落到 appStore.workingDirectory；
+ * 归属未知或属于别的会话时返回 null（不做相对化）。
+ */
+export function resolveApprovalWorkspaceRoot(params: {
+  requestSessionId?: string | null;
+  sourceSessionId?: string | null;
+  currentSessionId?: string | null;
+  sessions?: ReadonlyArray<{ id: string; workingDirectory?: string | null }>;
+  appWorkingDirectory?: string | null;
+}): string | null {
+  const ownSessionId = params.requestSessionId ?? params.sourceSessionId ?? null;
+  if (!ownSessionId) return null;
+  const matched = params.sessions?.find((session) => session.id === ownSessionId);
+  if (matched) return matched.workingDirectory ?? null;
+  if (params.currentSessionId && ownSessionId === params.currentSessionId) {
+    return params.appWorkingDirectory ?? null;
+  }
+  return null;
+}
 
-  // 保留前两部分和最后两部分
-  const start = parts.slice(0, 2).join('/');
-  const end = parts.slice(-2).join('/');
-
-  return `${start}/.../${end}`;
+/**
+ * 审批面路径的唯一格式化出口（文件行、后果句、文件夹授权、沙盒被拦路径共用同一口径）：
+ * 工作区内 → ./相对；宿主真实家目录下 → ~/…（未知时不折）；其余 → 完整绝对路径（永不缩成 parent/file）。
+ */
+export function formatFilePath(path: string, context: ApprovalPathContext = {}, maxLength?: number): string {
+  return formatPathForDisplay(path, {
+    workspaceRoot: context.workspaceRoot,
+    homeDir: context.homeDir,
+    keepLocation: true,
+    maxLength,
+  });
 }
 
 // 解析命令获取基础命令名

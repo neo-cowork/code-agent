@@ -315,13 +315,13 @@ describe('Sidebar review actions', () => {
     const html = renderSidebarWithContextMenu();
 
     expect(menuState.items.some((item) => item.label === '加入 Review')).toBe(false);
-    expect(menuState.items.some((item) => item.label === '打开 Replay')).toBe(false);
-    const replayAction = menuState.items.find((item) => item.label === 'Replay 仅管理员可用');
+    expect(menuState.items.some((item) => item.label === '回放过程')).toBe(false);
+    const replayAction = menuState.items.find((item) => item.label === '回放过程（仅管理员可用）');
     expect(replayAction).toBeTruthy();
     expect(replayAction?.disabled).toBe(true);
     // D-9: 非管理员不再渲染行内 Replay 按钮（之前是 disabled 仍可见）。
-    expect(html).not.toContain('打开 Reviewable Session Replay');
-    expect(html).not.toContain('Replay 仅管理员可用：Reviewable Session');
+    expect(html).not.toContain('回放 Reviewable Session 的过程');
+    expect(html).not.toContain('回放过程（仅管理员可用）：Reviewable Session');
     expect(menuState.items.some((item) => item.label === '导出 JSON')).toBe(false);
   });
 
@@ -350,11 +350,11 @@ describe('Sidebar review actions', () => {
 
     const html = renderSidebarWithContextMenu();
 
-    const replayAction = menuState.items.find((item) => item.label === '打开 Replay');
+    const replayAction = menuState.items.find((item) => item.label === '回放过程');
     expect(replayAction).toBeTruthy();
     expect(replayAction?.disabled).not.toBe(true);
     // 2026-07-29：行内 hover Replay 图标已撤（hover 只留归档），Replay 入口保留在右键菜单。
-    expect(html).not.toContain('aria-label="打开 Reviewable Session Replay"');
+    expect(html).not.toContain('aria-label="回放 Reviewable Session 的过程"');
 
     await replayAction?.onClick();
 
