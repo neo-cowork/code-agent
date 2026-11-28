@@ -73,6 +73,31 @@ beforeEach(() => {
 });
 
 describe('inferenceViaAiSdk system prompt wiring', () => {
+  it('guides the affected model on literal think tags in history without changing user bytes', async () => {
+    const literal = { role: 'user', content: 'What does </think> mean?' } as const;
+    const followUp = { role: 'user', content: 'Give me a short example.' } as const;
+    const config = { ...CONFIG, provider: 'xiaomi', model: 'neohorse-1.5-flash-preview' } as const;
+
+    await inferenceViaAiSdk([literal, followUp], [], config);
+
+    const call = vi.mocked(generateText).mock.calls[0][0] as CapturedAiSdkCall;
+    expect(call.instructions).toEqual([
+      { role: 'system', content: expect.stringContaining('closing thinking tag') },
+    ]);
+    expect(call.messages).toEqual([literal, followUp]);
+    expect(literal.content).toBe('What does </think> mean?');
+  });
+
+  it('adds no think guidance for another model or a request without literal tags', async () => {
+    const config = { ...CONFIG, provider: 'xiaomi', model: 'neohorse-1.5-flash-preview' } as const;
+    await inferenceViaAiSdk([{ role: 'user', content: 'What does </think> mean?' }], [], CONFIG);
+    await inferenceViaAiSdk([{ role: 'user', content: 'What does the closing thinking tag mean?' }], [], config);
+
+    for (const [options] of vi.mocked(generateText).mock.calls) {
+      expect((options as CapturedAiSdkCall).instructions).toBeUndefined();
+    }
+  });
+
   it('非流式 generateText：system 走顶层 option，messages 不再含 system role', async () => {
     await inferenceViaAiSdk([
       { role: 'system', content: 'root system prompt' },

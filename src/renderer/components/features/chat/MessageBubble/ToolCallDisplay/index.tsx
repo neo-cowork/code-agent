@@ -618,16 +618,18 @@ const WorkflowStageError: React.FC<{ error: string }> = ({ error }) => {
     <div className="ml-9 break-words text-badge-danger">
       <div>{humanError?.summary ?? copy.errorSummary}</div>
       <div className="text-[10px] text-badge-danger/70">{humanError?.detail ?? copy.errorDetail}</div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-        className="mt-0.5 text-[10px] text-zinc-500 hover:text-zinc-300"
+        className="mt-0.5 h-auto px-1 py-0.5 text-[10px] font-normal text-zinc-300 hover:text-zinc-100"
       >
         {expanded ? t.systemError.hideDetails : copy.viewRawError}
-      </button>
+      </Button>
       {expanded && (
-        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-[10px] text-zinc-500">
+        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-700/60 bg-surface p-2 text-[10px] text-zinc-200">
           {error}
         </pre>
       )}

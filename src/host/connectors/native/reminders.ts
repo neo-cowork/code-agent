@@ -151,8 +151,11 @@ function resolveReminderListName(requestedName: string, availableLists: string[]
   if (caseInsensitiveMatches.length === 1) return caseInsensitiveMatches[0];
 
   const availableText = availableLists.length > 0 ? availableLists.join(', ') : '(none)';
-  throw new Error(
-    `No reminder list named "${requestedName}". Available lists: ${availableText}. Omit list to use the default list.`,
+  throw Object.assign(
+    new Error(
+      `No reminder list named "${requestedName}". Available lists: ${availableText}. Omit list to use the default list.`,
+    ),
+    { code: 'not_found' as const },
   );
 }
 
