@@ -1,6 +1,7 @@
 // N-FIX-CRON-SPAWN-LAUNCH-APPROVAL-NOT-IN-INBOX-CORE ③：重启后的团队启动审批。
 // cron / heartbeat 的运行不跨重启续跑，它留下的 launch 行在启动 hydrate 时直接拒掉；
-// 交互会话的 launch 行照旧载回 pending。
+// 交互 / channel 会话的 launch 行照旧载回 pending，但载回的行没有等待者：收件箱不列、
+// 应答不投递（不回一个什么都没发生的 success），run 用同一 id 重新发起后才重新可答。
 //
 // 行由生产入口写入真 SQLite（getSwarmLaunchApprovalGate().requestApproval），「重启」=
 // vi.resetModules() 换一套全新的模块实例（新 gate、新权限档管理器，内存状态全丢），
@@ -100,7 +101,7 @@ describe('team-launch approvals at boot (real SQLite, production hydrate entry)'
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('cron and heartbeat rows are rejected at boot; interactive and channel rows stay pending', async () => {
+  it('cron and heartbeat rows are rejected at boot; interactive and channel rows stay pending but are not offered until the run asks again', async () => {
     createSession('sess-cron', 'cron');
     createSession('sess-heartbeat', 'heartbeat');
     createSession('sess-channel', 'channel');
@@ -128,13 +129,48 @@ describe('team-launch approvals at boot (real SQLite, production hydrate entry)'
       expect(row?.status, sessionId).toBe('pending');
       expect(row?.feedback ?? null, sessionId).toBeNull();
     }
-    // 新进程的 gate 只载回没被作废的两条；收件箱同样只剩它们。
+    // 新进程的 gate 只载回没被作废的两条。
     expect(counts.launch).toBe(2);
-    expect(getSwarmLaunchApprovalGate().getPendingRequests().map((request) => request.sessionId).sort())
+    const gate = getSwarmLaunchApprovalGate();
+    expect(gate.getPendingRequests().map((request) => request.sessionId).sort())
       .toEqual(['sess-channel', 'sess-interactive']);
-    expect(new SessionAutomationService().listParkedApprovals()
-      .filter((item) => item.kind === 'launch').map((item) => item.sessionId).sort())
-      .toEqual(['sess-channel', 'sess-interactive']);
+
+    // 载回的行没有等待者：不进收件箱（点了也启动不了任何成员）。
+    const inbox = () => new SessionAutomationService().listParkedApprovals().filter((item) => item.kind === 'launch');
+    expect(inbox()).toEqual([]);
+
+    // 旧页面快照里若还留着这一行，应答也不投递：不回 success，行原样留着等 run 恢复。
+    const { installPermissionResponseHandler } = await import('../../../src/web/webPermissionResponseHandler');
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const deliver = installPermissionResponseHandler({
+      handlers: new Map(),
+      pendingDevPermissions: new Map(),
+      getCurrentSessionId: () => null,
+      logger,
+    });
+    const interactiveId = ids.get('sess-interactive')!;
+    const stale = await deliver(interactiveId, 'allow', 'sess-interactive');
+    expect(stale).toMatchObject({ success: false, error: { code: 'LAUNCH_APPROVAL_NO_WAITER' } });
+    expect(rowById(interactiveId)?.status).toBe('pending');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Team launch approval response not delivered: no run is waiting on it (web)',
+      expect.objectContaining({ requestId: interactiveId, sessionId: 'sess-interactive' }),
+    );
+
+    // run 恢复后用同一 id 重新发起（durable 重试的做法）：行重新进收件箱，批准真的唤醒等待者。
+    const { AppWindow } = await import('../../../src/host/platform');
+    vi.spyOn(AppWindow, 'getAllWindows').mockReturnValue([{} as never]);
+    const resumed = gate.requestApproval({
+      requestId: interactiveId,
+      scope: { sessionId: 'sess-interactive', runId: 'run-sess-interactive', treeId: 'tree-sess-interactive' },
+      tasks: [{ id: 'writer', role: 'coder', task: 'write the weekly report', tools: ['Write'], writeAccess: true }],
+    });
+    expect(inbox().map((item) => item.id)).toEqual([interactiveId]);
+    const delivered = await deliver(interactiveId, 'allow', 'sess-interactive');
+    expect(delivered).toMatchObject({ success: true, data: { decision: 'approved' } });
+    await expect(resumed).resolves.toMatchObject({ approved: true });
+    expect(rowById(interactiveId)?.status).toBe('approved');
+    expect(inbox()).toEqual([]);
   }, RESTART_TEST_TIMEOUT_MS);
 
   it('a second boot leaves the already rejected cron row untouched', async () => {

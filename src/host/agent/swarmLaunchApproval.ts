@@ -7,6 +7,9 @@
 // 无人值守会话（cron/heartbeat/channel）例外：没有人盯着会话卡，等待必须有出口——
 // 停车进待过目收件箱 + 发需要授权通知，cron/heartbeat 30 分钟、channel 24h 无人应答自动拒，
 // run 照常收尾。交互会话不设计时器。
+// 计时器与等待者都只活在发起审批的这个进程里：重启后被 attachPersistence 载回的行没有
+// 等待者也没有计时器（hasLiveWaiter=false），收件箱不列、应答不投递，等 durable 恢复
+// 用同一 id 重新发起后才重新可答（cron/heartbeat 的行启动时已直接作废，见 hydrate）。
 // ============================================================================
 
 import { AppWindow } from '../platform';
@@ -434,6 +437,14 @@ export class SwarmLaunchApprovalGate {
 
   getPendingResolverCount(): number {
     return this.pendingResolvers.size;
+  }
+
+  /**
+   * 这条审批此刻是否还有人在等结果。重启后载回的 pending 行为 false：对它 approve/reject
+   * 只会改状态、唤不醒任何人，所以收件箱和应答投递都以它为准，不把死行当成可处理的待办。
+   */
+  hasLiveWaiter(requestId: string): boolean {
+    return this.pendingResolvers.has(requestId);
   }
 
   getRequest(requestId: string, expectedScope?: SwarmRunRef): SwarmLaunchRequest | undefined {

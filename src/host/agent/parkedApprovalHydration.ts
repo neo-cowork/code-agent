@@ -209,7 +209,8 @@ export function hydrateApprovalGatesAtBoot(
 /**
  * cron / heartbeat 的运行不跨重启续跑：它留下的团队启动审批再也没有等待者，载回内存只会
  * 在收件箱里变成一张点了也没人接的卡。启动时直接拒掉（与同来源的工具审批同一原因码）；
- * 其余来源的 launch 行不动，交给 gate 的 attachPersistence 照旧载回 pending。
+ * 其余来源的 launch 行不动，交给 gate 的 attachPersistence 照旧载回 pending——载回的行
+ * 没有等待者，收件箱不列、应答不投递，直到 durable 恢复用同一 id 重新发起。
  */
 function voidUnattendedLaunchApprovals(
   repo: PendingApprovalRepository,

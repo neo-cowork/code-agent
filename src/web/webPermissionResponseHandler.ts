@@ -117,6 +117,22 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
             },
           };
         }
+        if (!launchGate.hasLiveWaiter(requestId)) {
+          // 重启后载回的行：没有人在等这个答案，改了状态也启动不了任何成员。原样留着，
+          // 等 run 恢复后用同一 id 重新发起；绝不回一个什么都没发生的 success。
+          logger.warn('Team launch approval response not delivered: no run is waiting on it (web)', {
+            requestId,
+            response,
+            sessionId: targetSessionId,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'LAUNCH_APPROVAL_NO_WAITER',
+              message: `Team launch approval ${requestId} has no run waiting on it (session=${targetSessionId})`,
+            },
+          };
+        }
         const approved = isApprovePermissionResponse(response);
         const scope = { sessionId: launchRequest.sessionId, runId: launchRequest.runId };
         const settled = approved

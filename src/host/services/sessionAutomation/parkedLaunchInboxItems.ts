@@ -5,6 +5,7 @@ import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shar
 import type { SwarmLaunchRequest } from '../../../shared/contract/swarm';
 import { LAUNCH_APPROVAL_TOOL } from '../../../shared/constants/pendingApproval';
 import type { PendingApprovalRepository } from '../core/repositories/PendingApprovalRepository';
+import { getSwarmLaunchApprovalGate } from '../../agent/swarmLaunchApproval';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('ParkedLaunchInboxItems');
@@ -16,15 +17,19 @@ type SessionPresentation = (
 ) => Partial<ParkedApprovalInboxItem>;
 
 /**
- * Pending launch rows only: a settled or restart-voided launch has nothing left to decide,
- * so it never shows up here. `presentSession` is the same helper tool rows use.
+ * Pending launch rows that someone is still waiting on. A settled or restart-voided launch has
+ * nothing left to decide; a row reloaded after a restart has no waiter until the run asks again
+ * under the same id, and a click on it would change the row without starting anybody, so it is
+ * not offered either. `presentSession` is the same helper tool rows use.
  */
 export function listPendingLaunchInboxItems(
   repo: PendingApprovalRepository,
   presentSession: SessionPresentation,
 ): ParkedApprovalInboxItem[] {
   const items: ParkedApprovalInboxItem[] = [];
+  const gate = getSwarmLaunchApprovalGate();
   for (const row of repo.listByKindAndStatus('launch', 'pending')) {
+    if (!gate.hasLiveWaiter(row.id)) continue;
     let payload: Partial<SwarmLaunchRequest> = {};
     try {
       payload = (JSON.parse(row.payloadJson) ?? {}) as Partial<SwarmLaunchRequest>;
