@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -239,8 +239,8 @@ describe('unattended team-launch approval (real SQLite, production entries)', ()
   });
 
   describe('② expiry and notification', () => {
-    let notify: ReturnType<typeof vi.spyOn<typeof notificationService, 'notifyNeedsInput'>>;
-    let retract: ReturnType<typeof vi.spyOn<typeof notificationService, 'retractNeedsInput'>>;
+    let notify: MockInstance<typeof notificationService.notifyNeedsInput>;
+    let retract: MockInstance<typeof notificationService.retractNeedsInput>;
 
     beforeEach(() => {
       vi.useFakeTimers();
