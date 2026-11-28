@@ -55,7 +55,7 @@ describe('GeneralSettings management helpers', () => {
       statusLabel: '谨慎使用',
       exposureLabel: '可能扩张',
     });
-    expect(rows[2].warning).toContain('grandfathering');
+    expect(rows[2].warning).toBe('打开后子 Agent 可能不经你确认就修改文件或运行命令，只建议排查问题时短暂使用。');
   });
 
   it('summarizes deny, ask, and allow rule counts', () => {
@@ -68,7 +68,7 @@ describe('GeneralSettings management helpers', () => {
       askCount: 1,
       allowCount: 2,
       totalCount: 5,
-      highestPriority: 'Deny',
+      highestPriority: '禁止',
     });
   });
 
@@ -79,7 +79,7 @@ describe('GeneralSettings management helpers', () => {
       allowRules: 'Read(*)',
     })).toMatchObject({
       totalCount: 1,
-      highestPriority: 'Allow',
+      highestPriority: '直接允许',
     });
   });
 
@@ -92,7 +92,7 @@ describe('GeneralSettings management helpers', () => {
       denyCount: 0,
       allowCount: 1,
       totalCount: 1,
-      highestPriority: 'Allow',
+      highestPriority: '直接允许',
     });
   });
 
@@ -106,7 +106,7 @@ describe('GeneralSettings management helpers', () => {
       askCount: 1,
       allowCount: 0,
       totalCount: 2,
-      highestPriority: 'Deny',
+      highestPriority: '禁止',
     });
   });
 });

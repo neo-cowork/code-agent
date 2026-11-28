@@ -234,6 +234,30 @@ export function isDynamicCustomProviderId(providerId: string): boolean {
   return /^custom-[a-z0-9][a-z0-9-]*$/i.test(providerId);
 }
 
+export function formatDynamicCustomProviderFallback(providerId: string): string {
+  return providerId
+    .replace(/^custom-/i, '')
+    .split('-')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join(' ');
+}
+
+export function resolveProviderDisplayName(
+  providerId: string,
+  displayName: string | undefined,
+  fallback: string = providerId,
+): string {
+  if (isDynamicCustomProviderId(providerId)) {
+    const trimmed = displayName?.trim();
+    if (trimmed && trimmed.toLowerCase() !== providerId.trim().toLowerCase()) {
+      return trimmed;
+    }
+    return formatDynamicCustomProviderFallback(providerId);
+  }
+  return displayName || fallback;
+}
+
 export function resolveRuntimeProviderBillingMode(
   providerId: ModelProvider,
   providerConfig?: Partial<ModelProviderSettings> | null,
@@ -622,7 +646,7 @@ export function buildProviderInfoFromSettings(
 
   return {
     id: providerId,
-    name: providerConfig.displayName || providerId,
+    name: resolveProviderDisplayName(providerId, providerConfig.displayName),
     description: providerConfig.baseUrl
       ? `${protocol === 'claude' ? 'Claude-compatible' : 'OpenAI-compatible'} · ${providerConfig.baseUrl}`
       : `${protocol === 'claude' ? 'Claude-compatible' : 'OpenAI-compatible'} custom provider`,
@@ -738,7 +762,11 @@ export function buildRuntimeModelOptions(
     const canUseInclusionFallback = providerId !== 'local' && includedDisabledProviders.has(providerId);
     if (settings && missingRuntimeAvailability && !canUseInclusionFallback) return;
 
-    const providerLabel = providerConfig?.displayName || getProviderDisplayName(providerId) || provider.name;
+    const providerLabel = resolveProviderDisplayName(
+      providerId,
+      providerConfig?.displayName,
+      getProviderDisplayName(providerId) || provider.name,
+    );
     const protocol = resolveProviderProtocol(providerId, providerConfig);
     const runtimeModels = getProviderRuntimeModels(provider, providerConfig);
     const localDiscoveredModelIds = providerId === 'local'

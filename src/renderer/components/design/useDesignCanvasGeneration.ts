@@ -54,6 +54,7 @@ import {
   type CanvasOpSpec,
   type PixelSize,
 } from './designNarration';
+import { requestConfirm } from '../../services/confirmPrompt';
 
 async function ensureDir(dirPath: string): Promise<void> {
   try {
@@ -734,7 +735,12 @@ export function useDesignCanvasGeneration(): {
     // 成本闸（T2）：视频按秒计费贵，付费前 confirm 显示预估 ¥ + 时长。
     const durationSec = clampVideoDuration(model, form.videoDurationSec);
     const estCny = estimateVideoCostCny(model.id, durationSec);
-    if (!window.confirm(`${t.design.videoCostConfirm}（${formatCny(estCny)} / ${durationSec}s）`)) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.paidGeneration,
+      message: `${t.design.videoCostConfirm}（${formatCny(estCny)} / ${durationSec}s）`,
+      confirmText: t.confirmPrompts.continue,
+      variant: 'warning',
+    })) return;
 
     const assetRel = `${DESIGN_WORKSPACE.CANVAS_ASSETS_DIR}/vid-${Date.now()}.mp4`;
     const assetAbs = `${runDir}/${assetRel}`;

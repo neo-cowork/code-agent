@@ -571,4 +571,6 @@ export interface AppSettings {
      */
     neoHostedEnabled?: boolean;
   };
+  /** 宿主真实家目录（只读运行时注入，不落盘；审批面仅对真实家目录折 `~`）。 */
+  hostHomeDir?: string;
 }

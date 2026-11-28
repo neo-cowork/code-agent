@@ -103,6 +103,7 @@ import { useChatInputSubmit } from './useChatInputSubmit';
 import { useQuestionCardPlaceholder } from './questionCardAnswer';
 import { readComposerRoundtripText, useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
+import { PendingStopNotice } from './PendingStopNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraftRequest } from './useScheduleDraftRequest';
 import { useScheduleDraft } from './useScheduleDraft';
@@ -1522,6 +1523,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
+        <PendingStopNotice sessionId={currentSessionId} onRetryStop={onStop} />
         {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}

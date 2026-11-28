@@ -99,6 +99,10 @@ export interface TaskRecord {
   outputRefs?: TaskRecordOutputRef[];
   /** 终态失败（后台任务 failed/expired/orphaned）：status 仍为 blocked，面板标签显示「失败」 */
   failed?: boolean;
+  /** 后台任务失败原因的类别；渲染层据此给出「下一步」一句 */
+  failureCategory?: TaskBlockedCategory;
+  /** 失败的原始报错全文；行上默认不显示，点开「查看原始报错」才渲染 */
+  failureDetail?: string;
 }
 
 export interface TaskRecordOutputRef {
