@@ -34,6 +34,9 @@ import { PendingApprovalRepository } from '../../../src/host/services/core/repos
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import type { Session } from '../../../src/shared/contract';
 
+// 「重启」要把宿主模块图整套重新装载一遍（每次十几秒，机器忙时更久），默认 30 秒不够稳。
+const RESTART_TEST_TIMEOUT_MS = 120_000;
+
 describe('team-launch approvals at boot (real SQLite, production hydrate entry)', () => {
   let tmpDir: string;
   let db: BetterSqlite3.Database;
@@ -132,7 +135,7 @@ describe('team-launch approvals at boot (real SQLite, production hydrate entry)'
     expect(new SessionAutomationService().listParkedApprovals()
       .filter((item) => item.kind === 'launch').map((item) => item.sessionId).sort())
       .toEqual(['sess-channel', 'sess-interactive']);
-  });
+  }, RESTART_TEST_TIMEOUT_MS);
 
   it('a second boot leaves the already rejected cron row untouched', async () => {
     createSession('sess-cron', 'cron');
@@ -148,5 +151,5 @@ describe('team-launch approvals at boot (real SQLite, production hydrate entry)'
 
     expect(rowById(ids.get('sess-cron')!)).toEqual(afterFirst);
     expect(afterFirst).toMatchObject({ status: 'rejected', resolvedAt: 10_000 });
-  });
+  }, RESTART_TEST_TIMEOUT_MS);
 });
