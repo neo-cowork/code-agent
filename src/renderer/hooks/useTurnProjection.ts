@@ -15,7 +15,7 @@ import type { NeoWorkCardDetail } from '@shared/contract/tag';
 import type { TraceProjection, TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { SwarmLaunchRequest } from '@shared/contract/swarm';
 import type { TurnArtifactOwnershipItem } from '@shared/contract/turnTimeline';
-import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
+import { isSkillStatusMessage } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import { isGoalNoticeContent } from '../components/features/chat/goalNotice';
 import { isModelFallbackNoticeContent } from '../components/features/chat/fallbackNotice';
 import { isContextCompressionSignalContent } from '../components/features/chat/contextCompressionSignal';
@@ -226,7 +226,7 @@ export function projectTurns(
   const lastFailureId = messages.findLast(msg => msg.role === 'assistant' && msg.metadata?.agentError)?.id ?? null;
 
   for (const msg of messages) {
-    if (msg.source === 'skill' && isSkillStatusContent(msg.content)) {
+    if (isSkillStatusMessage(msg)) {
       const node: TraceNode = {
         id: msg.id,
         type: 'system',

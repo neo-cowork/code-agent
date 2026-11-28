@@ -23,6 +23,7 @@ import type {
 } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatPathForDisplay } from '../../../../utils/formatPathForDisplay';
 import { localizeSettingsTerms } from '../../../../i18n/settingsVocabulary';
 import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
@@ -315,7 +316,7 @@ export const AgentEngineListSection: React.FC = () => {
                     {row.binaryPath ? (
                       <div className="flex gap-1.5">
                         <dt className="shrink-0 text-zinc-500">{section.binaryPathLabel}</dt>
-                        <dd className="truncate font-mono text-zinc-400" title={row.binaryPath}>{row.binaryPath}</dd>
+                        <dd className="truncate font-mono text-zinc-400" title={formatPathForDisplay(row.binaryPath)}>{formatPathForDisplay(row.binaryPath)}</dd>
                       </div>
                     ) : null}
                     {row.defaultModelHint ? (

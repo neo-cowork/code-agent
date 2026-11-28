@@ -1,3 +1,4 @@
+import { normalizeStandaloneMessagePayload } from '../../../../src/renderer/hooks/agent/effects/streamEventNormalizers';
 // Evidence class: hermetic-protocol (SQLite durable kernel + production engine/resolver/mail_draft tool/continuation/IPC; fake Mail connector + fake TCC bridge).
 // N-ENV-ASSIST-S3-RESUME-REST2: a refused Mail draft parks the run; after the grant the host records a plain
 // "not run" result for the parked call and resumes the same run; the model saves the draft exactly once.
@@ -9,7 +10,14 @@ vi.unmock('better-sqlite3');
 import type { Message } from '../../../../src/shared/contract';
 import type { PassiveBridge } from '../../../../src/host/permissions/envAssist/probes/types';
 
-const store = vi.hoisted(() => ({ bridge: null as PassiveBridge | null, db: {} as Record<string, unknown> }));
+const store = vi.hoisted(() => ({ bridge: null as PassiveBridge | null, db: {} as Record<string, unknown>, classifierFails: false }));
+vi.mock('../../../../src/host/tools/toolPermissionClassification', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/tools/toolPermissionClassification')>();
+  return { ...actual, resolveToolPermissionClassification: async (...args: Parameters<typeof actual.resolveToolPermissionClassification>) => {
+    if (store.classifierFails) throw new Error('fixture classifier failure');
+    return actual.resolveToolPermissionClassification(...args);
+  } };
+});
 vi.mock('../../../../src/host/services/core/databaseService', () => ({ getDatabase: () => store.db }));
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
@@ -17,7 +25,8 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
     addMessageToSession: async () => undefined,
   }),
 }));
-vi.mock('../../../../src/host/services/agentEngine/agentEngineEventSink', () => ({ emitExternalAgentEvent: () => undefined }));
+const emitted = vi.hoisted(() => [] as Array<{ type: string; data?: unknown }>);
+vi.mock('../../../../src/host/services/agentEngine/agentEngineEventSink', () => ({ emitExternalAgentEvent: (_session: string, event: { type: string; data?: unknown }) => { emitted.push(event); } }));
 vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn(async () => true) }));
 // Only the bridge handle is faked; with no bridge the real resolver runs so its degrade log is the evidence.
 vi.mock('../../../../src/host/permissions/envAssist/shellBridge/client', async (importOriginal) => {
@@ -31,9 +40,9 @@ vi.mock('../../../../src/host/services/infra/logger', async (importOriginal) => 
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), error: vi.fn(), warn }),
 }));
 
-import { harness, databasePorts } from './envResumeHarness';
+import { harness, databasePorts, MAIL_DRAFT_ARGS } from './envResumeHarness';
 import { registerEnvResumeContinuer } from '../../../../src/host/runtime/envResumeWaiter';
-import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_TIMEOUT_MS } from '../../../../src/shared/constants/envResume';
+import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_TIMEOUT_MS, PARKED_CALL_APPROVAL_TTL_MS } from '../../../../src/shared/constants/envResume';
 import { envResumeProbeFactory } from '../../../../src/host/ipc/envAssist.ipc';
 
 const asked: string[] = [];
@@ -47,7 +56,7 @@ let fixture: Awaited<ReturnType<typeof harness>> | undefined;
 let workspace = '';
 afterEach(() => {
   fixture?.close(); fixture = undefined; registerEnvResumeContinuer(null); vi.useRealTimers(); vi.restoreAllMocks();
-  warn.mockClear(); store.bridge = null; asked.length = 0;
+  warn.mockClear(); store.classifierFails = false; store.bridge = null; asked.length = 0; emitted.length = 0;
   if (workspace) rmSync(workspace, { recursive: true, force: true });
 });
 
@@ -62,6 +71,7 @@ async function settled(f: NonNullable<typeof fixture>) {
   const stopped = () => warn.mock.calls.some(([message, data]) => message === 'Environment auto-continue stopped'
     && (data as { reason?: string } | undefined)?.reason !== 'timeout');
   await vi.waitFor(() => expect(f.counts().resumes > 0 || stopped()).toBe(true), { timeout: 5000 });
+  await f.resumeIdle();
 }
 const toolTexts = (f: NonNullable<typeof fixture>) => f.messages().filter((m) => m.role === 'tool').flatMap((m) => m.toolResults ?? []);
 
@@ -108,19 +118,91 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
     expect((await f.repository.get('env-run'))?.status).toBe('completed');
   });
 
-  it('⑤ counts the approval prompts the user sees for the one draft (the harness executor approves every prompt and records it)', async () => {
+  async function resumed(setup?: (f: NonNullable<typeof fixture>) => void, manual = false) {
     const f = await parkedMail();
-    f.wire(async () => 'green');
+    setup?.(f);
+    f.wire(async () => manual ? 'red' : 'green');
     await f.park();
-    f.green();
-    await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    if (manual) {
+      // The probe stays red past the auto-continue window and the credential's lifetime; the user comes back and presses Continue.
+      await vi.advanceTimersByTimeAsync(PARKED_CALL_APPROVAL_TTL_MS + 1);
+      f.green();
+      await f.continueRun();
+    } else {
+      f.green();
+      await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    }
     await settled(f);
+    return f;
+  }
+
+  it('⑤ the user sees exactly one approval card for the one draft: the parked call\'s confirmation is used once by the resumed identical call', async () => {
+    const f = await resumed();
     const reissued = toolTexts(f).find((r) => r.toolCallId === 'env-call-2');
     process.stdout.write(`APPROVAL_PROMPTS reissued=${JSON.stringify(reissued)}\n`);
     expect(reissued?.success).toBe(true);
     process.stdout.write(`APPROVAL_CARDS ${JSON.stringify(f.approvalCards())}\n`);
-    // No automatic reuse exists for a one-time allow (allow_run/allow_24h are explicit user tiers): the user sees two cards for the one draft.
+    expect(f.approvalCards()).toEqual(['mail_draft']);
+    expect(f.mailSaved()).toEqual({ attempts: 2, saved: 1 });
+    const notice = emitted.find((e) => e.type === 'env_assist_notice')?.data as { sentenceKey: string; phase: string };
+    process.stdout.write(`REUSE_NOTICE ${JSON.stringify(notice)}\n`);
+    expect(notice).toMatchObject({ sentenceKey: 'env.reused.mail', phase: 'resolved' });
+    const message = emitted.find((e) => e.type === 'message')?.data;
+    expect(normalizeStandaloneMessagePayload(message)).not.toBeNull();
+  });
+
+  it('a changed recipient / subject / body asks again (2 cards)', async () => {
+    for (const change of [{ to: ['b@example.com'] }, { subject: 'Rollback plan!' }, { content: 'Steps to roll back' }, { attachments: ['/tmp/meeting.txt'] }]) {
+      const f = await resumed((x) => { x.reissue.args = { ...MAIL_DRAFT_ARGS, ...change }; });
+      expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+      expect(emitted.filter((e) => e.type === 'env_assist_notice')).toHaveLength(0);
+      f.close(); fixture = undefined; registerEnvResumeContinuer(null); emitted.length = 0;
+    }
+  });
+
+  it('the credential is gone after the resumed call used it: a third identical call asks (2 cards)', async () => {
+    const f = await resumed((x) => { x.reissue.twice = true; });
     expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+  });
+
+  it('a different run does not match (2 cards)', async () => {
+    const f = await resumed((x) => { x.reissue.runId = 'other-run'; });
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+  });
+
+  it('a skill-preapproved parked call cannot create a reusable card approval', async () => {
+    const f = await resumed((x) => { x.reissue.preapproveInitial = true; });
+    expect(f.approvalCards()).toEqual(['mail_draft']);
+  });
+
+  it('mail_send never reuses the draft approval (2 cards)', async () => {
+    const f = await resumed((x) => { x.reissue.tool = 'mail_send'; });
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_send']);
+  });
+
+  it('a classifier failure cannot consume the parked approval (2 cards)', async () => {
+    const f = await parkedMail();
+    // The probe stays red until the classifier fault is armed, so no resume can race ahead of it.
+    let granted = false;
+    f.wire(async () => granted ? 'green' : 'red');
+    await f.park();
+    store.classifierFails = true;
+    f.green(); granted = true;
+    await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    await settled(f);
+    // settled() returns when the resume starts; the second card is emitted a tick later.
+    await vi.waitFor(() => expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']), { timeout: 5000 });
+  });
+
+  it('a forced approval gate still asks again (2 cards)', async () => {
+    const f = await resumed((x) => { x.reissue.force = true; });
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+  });
+
+  it('an expired credential (10 minutes after the confirmation) asks again (2 cards)', async () => {
+    const f = await resumed(undefined, true);
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+    expect(f.mailSaved().saved).toBe(1);
   });
 });
 

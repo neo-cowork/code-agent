@@ -2,6 +2,7 @@
 // Config Service - Manage application settings
 // ============================================================================
 
+import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
@@ -623,6 +624,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
+    settings.hostHomeDir = os.homedir();
     return settings;
   }
 
@@ -657,6 +659,8 @@ export class ConfigService implements IReadConfigService {
   }
 
   async updateSettings(updates: Partial<AppSettings>): Promise<void> {
+    // hostHomeDir 是只读运行时注入字段，绝不落盘
+    if ('hostHomeDir' in updates) delete updates.hostHomeDir;
     // SECURITY: Prevent enabling devModeAutoApprove outside an explicit dev slot.
     if (updates.permissions?.devModeAutoApprove !== undefined) {
       if (!isDevSlotRuntime() && updates.permissions.devModeAutoApprove) {

@@ -3,7 +3,7 @@ import { IPC_DOMAINS } from '../domains';
 import { channelSchema } from './core';
 
 const EnvAssistRequest = z.object({
-  action: z.enum(['act', 'enableSettingGrant', 'getAvailability', 'recheck', 'recheckSettingGrant']),
+  action: z.enum(['act', 'enableSettingGrant', 'getAvailability', 'recheck', 'recheckOffline', 'recheckSettingGrant']),
   payload: z.unknown().optional(),
 });
 

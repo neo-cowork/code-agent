@@ -177,7 +177,9 @@ describe('buildLedgerTaskRecords', () => {
     const [record] = buildLedgerTaskRecords([task], 'session-1', language);
     expect(record.resumeHint).toBe(reason);
     expect(record.outputRefs).toEqual([expect.objectContaining({ id: 'log', label: t.taskStatusPanels.runWorkbench.viewLog })]);
-    expect(JSON.stringify(record)).not.toMatch(/Process exited|退出码|copy\.log/);
+    // 原文只留在点开才渲染的 failureDetail；默认可见的字段一个都不带
+    expect(record.failureDetail).toBe(raw);
+    expect(JSON.stringify({ ...record, failureDetail: undefined })).not.toMatch(/Process exited|退出码|copy\.log/);
   });
 
   it('projects only current-session agent engine ledger status and output refs for TaskPanel', () => {
@@ -264,9 +266,12 @@ describe('buildLedgerTaskRecords', () => {
       '12s',
     ]);
 
+    // 中文界面里的英文原因不上行：类别文案兜底，原文留给「查看原始报错」
     expect(tasks[2]).toMatchObject({
       status: 'blocked',
-      resumeHint: 'Codex CLI exited with code 1',
+      resumeHint: undefined,
+      resumeHintCategory: 'unknown',
+      failureDetail: 'Codex CLI exited with code 1',
     });
     expect(tasks[3]).toMatchObject({
       status: 'cancelled',
@@ -514,8 +519,9 @@ describe('buildLedgerTaskRecords — 失败原因语义化清洗（FB-746）', (
     expect(records[0].status).toBe('blocked');
     expect(records[0].resumeHint).toBeUndefined();
     expect(records[0].resumeHintCategory).toBe('unknown');
-    // 行数据任何字段都不携带报错原文
-    expect(JSON.stringify(records[0])).not.toContain('Cannot read properties');
+    // 默认可见的字段都不携带报错原文；原文只在点开才渲染的 failureDetail 里
+    expect(records[0].failureDetail).toBe("TypeError: Cannot read properties of undefined (reading 'x')");
+    expect(JSON.stringify({ ...records[0], failureDetail: undefined })).not.toContain('Cannot read properties');
   });
 
   it('机内租约文案同样清洗为空 + 类别兜底', () => {
@@ -530,7 +536,8 @@ describe('buildLedgerTaskRecords — 失败原因语义化清洗（FB-746）', (
     ], 'session-1', 'zh');
     expect(record.resumeHint).toBeUndefined();
     expect(record.resumeHintCategory).toBe('unknown');
-    expect(JSON.stringify(record)).not.toContain('owner lease');
+    expect(record.failureDetail).toBe('Durable Run run-77 has no live owner lease');
+    expect(JSON.stringify({ ...record, failureDetail: undefined })).not.toContain('owner lease');
   });
 
   it('人话失败原因原样保留，不误伤', () => {

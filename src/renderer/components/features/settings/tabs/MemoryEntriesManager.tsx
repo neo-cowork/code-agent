@@ -11,23 +11,26 @@ import {
   Search,
   XCircle,
 } from 'lucide-react';
-import { IPC_CHANNELS } from '@shared/ipc';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type {
   MemoryChangeJournalResult,
   MemoryChangeJournalRow,
   MemoryEntry,
   MemoryEntryBatchReviewResult,
-  MemoryEntryCreateRequest,
   MemoryEntryCreateResult,
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntrySourceOfTruth,
   MemoryEntryStatus,
-  MemoryEntryUpdateRequest,
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
-import { findSourceSessionRef, formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
+import {
+  findSourceSessionRef,
+  formatBatchReviewSkippedDetail,
+  injectionPausedBadgeLabel,
+  injectionPausedReasonLabel,
+  visibleCandidateEntryIds,
+} from './MemoryEntriesManager.helpers';
 import { journalRestoreRequest } from './memoryJournalSnapshot';
 import { MemoryEntryHistoryList } from './MemoryEntryHistoryList';
 import { MemoryEntryAddForm } from './MemoryEntryAddForm';
@@ -37,7 +40,7 @@ import { languages, type Language } from '../../../../i18n';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
-import { isWebMode } from '../../../../utils/platform';
+import { invokeMemoryEntryCommand } from '../../../../services/invokeMemoryEntryCommand';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
@@ -51,20 +54,6 @@ type EntryStatusFilter = MemoryEntryStatus | 'all';
 type EntryKindFilter = MemoryEntryKind | 'all';
 type EntrySourceFilter = MemoryEntrySourceOfTruth | 'all';
 type MemorySettingsText = typeof zh.settings.memory;
-
-type MemoryEntryCommand =
-  | { action: 'memoryEntries' }
-  | ({ action: 'memoryEntryCreate' } & MemoryEntryCreateRequest)
-  | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
-  | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' }
-  | { action: 'memoryEntryJournal'; entryId: string; limit?: number }
-  | { action: 'memoryEntryResumeInjection'; entryId: string };
-
-interface MemoryEntryCommandResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
 
 interface MemoryEntryDraft {
   title: string;
@@ -182,7 +171,7 @@ export function buildMemoryEntryRows({
       replacementHint: entry.status === 'candidate' && entry.supersedes
         ? adoptManualReplacement(titlesByFile.get(entry.supersedes) || entry.supersedes)
         : undefined,
-      ...(entry.injectionPaused ? { pausedLabel: labels.entries.injectionPaused.badge } : {}),
+      ...(entry.injectionPaused ? { pausedLabel: injectionPausedBadgeLabel(entry.injectionPaused, labels.entries.injectionPaused) } : {}),
       ...(entry.lastChange && isBackgroundMemoryActor(entry.lastChange.actor)
         ? { backgroundWriteLabel: labels.entries.backgroundWriteBadge }
         : {}),
@@ -191,32 +180,6 @@ export function buildMemoryEntryRows({
       updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now, labels.relativeDate, locale),
       selected: entry.id === selectedEntryId,
     }));
-}
-
-function isCommandResponse<T>(value: unknown): value is MemoryEntryCommandResponse<T> {
-  return Boolean(value && typeof value === 'object' && 'success' in value);
-}
-
-async function invokeMemoryEntryCommand<T>(request: MemoryEntryCommand): Promise<MemoryEntryCommandResponse<T>> {
-  const commandResult = ipcService.isAvailable()
-    ? await ipcService.invoke(IPC_CHANNELS.MEMORY, request) as unknown
-    : undefined;
-  if (commandResult !== undefined) {
-    if (!isCommandResponse<T>(commandResult)) {
-      return { success: true, data: commandResult as T };
-    }
-    if (commandResult.success || !isWebMode()) return commandResult;
-  }
-
-  try {
-    const data = await ipcService.invokeDomain<T>(IPC_DOMAINS.MEMORY, request.action, request);
-    return { success: true, data };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
 }
 
 function createDraft(entry: MemoryEntry): MemoryEntryDraft {
@@ -411,14 +374,20 @@ export const MemoryEntriesManager: React.FC<{
     }
   };
 
+  // 「恢复自动带上」按暂停原因分流（N-MEM-SOURCE-WRONG-FEEDBACK）：user_* 是用户负反馈，
+  // 撤销只清 metadata 标记（不记使用、不动 access_count）；用量原因照旧记一次使用。
   const resumeInjection = async () => {
     if (!selectedEntry) return;
+    const flagged = selectedEntry.injectionPaused?.reason === 'user_wrong'
+      || selectedEntry.injectionPaused?.reason === 'user_outdated';
     setBusy('save');
-    const response = await invokeMemoryEntryCommand<{ resumed: boolean }>({
-      action: 'memoryEntryResumeInjection',
-      entryId: selectedEntry.id,
-    });
-    if (response.success && response.data?.resumed) {
+    const response = await invokeMemoryEntryCommand<{ cleared?: boolean; resumed?: boolean }>(
+      flagged
+        ? { action: 'memoryEntryClearInjectionFlag', entryId: selectedEntry.id }
+        : { action: 'memoryEntryResumeInjection', entryId: selectedEntry.id },
+    );
+    const restored = response.success && Boolean(flagged ? response.data?.cleared : response.data?.resumed);
+    if (restored) {
       setMessage({ type: 'success', text: memoryText.entries.injectionPaused.resumeSuccess });
       await loadEntries();
       await onChanged?.();
@@ -779,10 +748,8 @@ export const MemoryEntriesManager: React.FC<{
                 {selectedEntry.injectionPaused && (
                   <div className="rounded border border-zinc-700 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300" data-testid="memory-entry-paused-notice">
                     <div>
-                      {(selectedEntry.injectionPaused.reason === 'never_used'
-                        ? memoryText.entries.injectionPaused.neverUsed
-                        : memoryText.entries.injectionPaused.staleUsed
-                      ).replace('{date}', new Date(selectedEntry.injectionPaused.since).toLocaleDateString(localeForLanguage(language)))}
+                      {injectionPausedReasonLabel(selectedEntry.injectionPaused, memoryText.entries.injectionPaused)
+                        .replace('{date}', new Date(selectedEntry.injectionPaused.since).toLocaleDateString(localeForLanguage(language)))}
                     </div>
                     <button
                       type="button"
@@ -793,6 +760,11 @@ export const MemoryEntriesManager: React.FC<{
                       <RotateCcw className="h-3.5 w-3.5" />
                       {memoryText.entries.injectionPaused.resume}
                     </button>
+                  </div>
+                )}
+                {(selectedEntry.userFlagCount ?? 0) > 0 && (
+                  <div className="text-xs text-zinc-500" data-testid="memory-entry-flag-count">
+                    {memoryText.entries.injectionPaused.flagCount.replace('{count}', String(selectedEntry.userFlagCount))}
                   </div>
                 )}
 

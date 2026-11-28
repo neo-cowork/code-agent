@@ -20,6 +20,7 @@ import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } 
 import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
 import { cronEditorChromeZh } from '../../../i18n/cronEditorChrome';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { mailboxDisplayName } from '../../../utils/mailboxDisplayName';
 import { readWakeSkipFromResult } from '@shared/cronRunLedger';
 import { getBuiltinJobDisplay, roleWakeActionLabel } from './builtinJobDisplay';
 
@@ -618,7 +619,7 @@ export function formatScheduleSummary(
       // connector 源（mail）：账号是 Mail 账号名、绑定粒度是邮箱，不查通道目录。
       if (job.schedule.source === 'connector') {
         const mailLabel = lang === 'en' ? 'Mail message' : '邮件消息';
-        const mailbox = job.schedule.mailbox ?? CRON_EVENT_TRIGGER.DEFAULT_MAILBOX;
+        const mailbox = mailboxDisplayName(job.schedule.mailbox ?? CRON_EVENT_TRIGGER.DEFAULT_MAILBOX, lang);
         return `${mailLabel} · ${job.schedule.accountId} · ${mailbox}`;
       }
       // 显示名优先（通道目录里的账号名/群名），目录没有或还没加载完才回落 id；

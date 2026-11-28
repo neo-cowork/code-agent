@@ -333,6 +333,38 @@ describe('CronRunSessionStatusBar（组件）', () => {
     expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你确认：运行命令');
   });
 
+  // N-FIX-CRON-SPAWN-LAUNCH-APPROVAL-NOT-IN-INBOX-CORE：团队启动审批也是这次运行在等的那一步。
+  // 状态行用会话卡同一个标题，不落到泛称「操作 / Action」，批准走同一条应答 IPC。
+  it.each([
+    ['zh', '等你确认：启动团队'],
+    ['en', 'Needs your approval: Start team'],
+  ] as const)('等批准（团队启动审批，%s）：状态行写明在等什么，批准回传 launch id', async (language, expected) => {
+    useAppStore.setState({ language });
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    listParkedApprovalsMock.mockResolvedValue([{
+      id: 'launch-req',
+      kind: 'launch',
+      sessionId: 'session-1',
+      tool: 'spawn_agent',
+      requestedAt: Date.now() - 5_000,
+      status: 'pending',
+      launchMemberCount: 1,
+    }]);
+    invokeMock.mockResolvedValue({ requestId: 'launch-req', sessionId: 'session-1', source: 'team-launch-approval' });
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('awaiting');
+    const text = screen.getByTestId('cron-run-status-text').textContent ?? '';
+    expect(text).toBe(expected);
+    expect(text).not.toMatch(/spawn_agent/);
+    fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'launch-req', 'allow', 'session-1',
+    ));
+    expect(toastInfoMock).not.toHaveBeenCalled();
+  });
+
   // review r6：AGENT_PERMISSION_RESPONSE 的注册类型是 Promise<void>，但真实写点各不相同
   // （agent.ipc.ts legacy handler 回 {outcome}；web HTTP 桥送达解包、未送达透传
   // {success:false,error} 信封）。每个真实形状一测，stale 分支不许恒为假。

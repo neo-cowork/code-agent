@@ -20,3 +20,6 @@ export const OUTBOUND_APPROVAL_DEGRADE = {
     feedback: OUTBOUND_APPROVAL_DEGRADE_FEEDBACK.denied,
   },
 } as const;
+
+/** The tool call parked behind a team-launch approval (pending_approvals kind='launch'). */
+export const LAUNCH_APPROVAL_TOOL = 'spawn_agent';

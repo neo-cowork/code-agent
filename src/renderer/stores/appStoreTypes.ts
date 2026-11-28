@@ -307,6 +307,8 @@ export interface AppState {
 
   // Workspace State
   workingDirectory: string | null;
+  /** 宿主真实家目录（由 settings:get 启动载荷注入；审批面仅对该前缀折 `~`，未知时不折）。 */
+  hostHomeDir: string | null;
 
   // Context Health State (上下文健康度)
   contextHealth: ContextHealthState | null;

@@ -130,7 +130,9 @@ beforeEach(async () => {
   state.db = new Database(':memory:');
   state.db.pragma('foreign_keys = ON');
   applySchema(state.db, logger);
-  state.source = new EventEmitter();
+  state.source = Object.assign(new EventEmitter(), {
+    getAccount: (id: string) => id === 'feishu-test' ? { name: 'Feishu A' } : undefined,
+  });
   state.spawn.mockReset();
   state.spawn.mockImplementation((command: string) => {
     expect(command).toContain('lark-cli im +messages-reply');
@@ -163,10 +165,7 @@ beforeEach(async () => {
       expect(prompt).toContain('RR51-PING 群监听测试');
       expect(prompt).toContain(MESSAGE_ID);
       const sessionId = service.getJobExecutions(job.id)[0].sessionId!;
-      // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：签名扩到 5 参（store 缺省 + 群名提示）。
-      // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：签名扩到 5 参（store 缺省 + 群名/账号名提示；"
-      // 该 harness 的通道是假 EventEmitter，账号名解析 fail-open 回落 accountId 本身）。
-      expect(enterObserve).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), sessionId, expect.any(String), undefined, { chatName: undefined, accountName: 'feishu-test' });
+      expect(enterObserve).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), sessionId, expect.any(String), undefined, { chatName: undefined, accountName: 'Feishu A' });
       proof(`[PATH] executeCronAgentAction -> enterObserveModeForCronRun session=${sessionId} mode=${job.actionMode}`);
       messages.push({ role: 'user', content: prompt });
       const result = await executor.execute('Bash', { command: COMMAND }, {
@@ -271,6 +270,7 @@ describe('Feishu listen_message through production cron observe gate', () => {
     expect(localizedReason).toContain('飞书 回复消息');
     expect(localizedReason).toBe('仅观察模式：已拦下「飞书 回复消息」，没有真的发出去');
     expect(action.reason).toBe('outbound action 飞书 回复消息 intercepted in observe mode');
+    expect(action.matchedRule).toBe('channel message · account Feishu A · chat oc_rr51');
   });
 
   it('auto: the same listener/message asks ToolExecutor approval, sends zero before grant, no would_act action', async () => {

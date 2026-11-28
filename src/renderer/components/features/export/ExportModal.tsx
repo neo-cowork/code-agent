@@ -1,5 +1,6 @@
 import { useI18n } from '../../../hooks/useI18n';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
+import { isSkillStatusMessage } from '../chat/MessageBubble/SkillStatusMessage';
 // ============================================================================
 // ExportModal - 会话导出模态框
 // 支持导出为 Markdown 和 JSON 格式
@@ -73,7 +74,7 @@ function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlyS
 
 export function exportToMarkdown(title: string, messages: Message[], language: Language): string {
   const header = `# ${title}\n\n导出时间：${formatDateTime(new Date(), language)}\n\n---\n\n`;
-  const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
+  const safeMessages = sanitizeMessagesForBrowserComputerExport(messages).filter((msg) => !isSkillStatusMessage(msg));
   const surfaceToolCallIds = new Set<string>();
   for (const message of safeMessages) {
     for (const call of message.toolCalls || []) {
@@ -99,7 +100,7 @@ export function exportToMarkdown(title: string, messages: Message[], language: L
 }
 
 export function exportToJson(title: string, messages: Message[]): string {
-  const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
+  const safeMessages = sanitizeMessagesForBrowserComputerExport(messages).filter((msg) => !isSkillStatusMessage(msg));
   const surfaceExecution = collectSurfaceExecutionExportProjection(safeMessages);
   const exportData = {
     title,

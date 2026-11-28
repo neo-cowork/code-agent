@@ -73,7 +73,7 @@ import {
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ModelKeyGuide } from './ModelKeyGuide';
-import { isStagedApiKeyUnsaved, ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { hasSavedProviderKey, isStagedApiKeyUnsaved, ProviderSettingsHeader } from './ProviderSettingsHeader';
 import { ProviderSaveBar } from './ProviderSaveBar';
 import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
@@ -236,12 +236,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
   const hasStoredApiKey = Boolean(currentProviderConfig?.apiKey || currentProviderConfig?.apiKeyConfigured);
   const hasApiKey = !needsApiKey || hasInputApiKey || hasStoredApiKey;
 
-  // Master-Detail：按「是否已配置 Key」给左侧列表分组（local 等无需 Key 的视为已配置）
-  const providerHasKey = useCallback((providerId: ModelProvider) => {
-    if (!providerRequiresApiKey(providerId)) return true;
-    const providerConfig = providerConfigs[providerId];
-    return Boolean(providerConfig?.apiKeyConfigured || providerConfig?.apiKey);
-  }, [providerConfigs]);
+  // Master-Detail：按「是否已配置 Key」给左侧列表分组（local 等无需 Key 的视为已配置）；
+  // 以最后一次 host settings get 为准——粘贴未保存的草稿不算「已有 Key」。
+  const providerHasKey = useCallback(
+    (providerId: ModelProvider) => hasSavedProviderKey(providerId, appSettings?.models.providers),
+    [appSettings],
+  );
+  const keySaved = providerHasKey(config.provider);
   const configuredRows = useMemo(
     () => orderedProviderRows.filter((row) => providerHasKey(row.id)),
     [orderedProviderRows, providerHasKey],
@@ -249,6 +250,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
   const unconfiguredRows = useMemo(
     () => orderedProviderRows.filter((row) => !providerHasKey(row.id)),
     [orderedProviderRows, providerHasKey],
+  );
+  // 已粘贴未保存草稿的 provider：未配置组行尾改显「密钥尚未保存」
+  const unsavedKeyProviderIds = useMemo(
+    () => new Set(unconfiguredRows.filter((row) => isStagedApiKeyUnsaved(providerConfigs[row.id], true, false)).map((row) => row.id)),
+    [unconfiguredRows, providerConfigs],
   );
 
   const patchCurrentProviderConfig = useCallback((patch: Partial<ModelProviderSettings>) => {
@@ -859,7 +865,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       title={modelText.title}
       description={modelText.description}
     >
-      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <WebModeBanner />
 
       {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
@@ -891,10 +896,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           </Button>
         }
       >
+      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}
           unconfiguredRows={unconfiguredRows}
+          unsavedKeyProviderIds={unsavedKeyProviderIds}
           keylessReachability={keylessReachability}
           selectedProviderId={config.provider}
           defaultProviderId={defaultSelection.provider}
@@ -921,7 +928,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
               <ProviderSettingsHeader
                 title={providerTitle} providerConfig={currentProviderConfig}
                 protocol={effectiveProtocol} baseUrl={effectiveBaseUrl}
-                needsApiKey={needsApiKey} hasApiKey={hasApiKey}
+                needsApiKey={needsApiKey} hasApiKey={hasApiKey} keySaved={keySaved}
                 onEnabledChange={(enabled) => { markDirty(); patchCurrentProviderConfig({ enabled }); }}
               />
 
@@ -1009,7 +1016,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       {!isAddingProvider && (
         <ProviderSaveBar
           dirty={providerFormDirty}
-          apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, hasApiKey)}
+          apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, keySaved)}
           saving={isSaving}
           disabled={isWebMode()}
           disabledTitle={webNote}

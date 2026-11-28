@@ -19,6 +19,7 @@ import type { LocalSkillLibrary, SkillCategory } from '@shared/contract/skillRep
 import { SKILL_CATEGORIES } from '@shared/constants/skillCatalog';
 import { Button, Input, Toggle } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
+import { foldHomePrefixForDisplay } from '../../../../utils/formatPathForDisplay';
 import { useI18n } from '../../../../hooks/useI18n';
 import { translateCatalogText } from '../../../../utils/catalogText';
 import { zh } from '../../../../i18n/zh';
@@ -359,10 +360,10 @@ const SkillRow: React.FC<SkillRowProps> = ({
           <div className="mt-2 text-xs text-badge-warning">
             <p>{labels.officialConflictBadge}</p>
             {skill.officialConflict.blockedSkills.map((blocked) => {
-              const filePath = blockedSkillFilePath(blocked.basePath);
+              const skillFile = foldHomePrefixForDisplay(blockedSkillFilePath(blocked.basePath));
               return (
-                <p key={`${blocked.source}:${blocked.basePath}`} className="break-all" title={filePath}>
-                  {blockedSourceLabel(blocked.source, labels)} {filePath}
+                <p key={`${blocked.source}:${blocked.basePath}`} className="break-all" title={skillFile}>
+                  {blockedSourceLabel(blocked.source, labels)} {skillFile}
                 </p>
               );
             })}

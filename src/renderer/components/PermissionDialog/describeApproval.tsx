@@ -13,7 +13,7 @@ import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
-import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
+import { formatFilePath, getPermissionConfig, getPermissionTitle, type ApprovalPathContext } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
 import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
@@ -121,14 +121,18 @@ function classify(request: PermissionRequest, t: Translations): ApprovalKind {
   }
 }
 
-function folderConsequence(request: PermissionRequest, p: Translations['decisionCard']['permission']): string {
+function folderConsequence(
+  request: PermissionRequest,
+  p: Translations['decisionCard']['permission'],
+  pathContext?: ApprovalPathContext,
+): string {
   const access = request.details.requestedAccess ?? request.details.access;
   const copy = access === 'read_write'
     ? p.consequenceFolderReadWrite
     : access === 'read_only'
       ? p.consequenceFolderReadOnly
       : p.consequenceFolderUnknown;
-  const target = formatFilePath(redactCredentialText(request.details.path ?? ''));
+  const target = formatFilePath(redactCredentialText(request.details.path ?? ''), pathContext);
   return copy.replace('{target}', target);
 }
 
@@ -207,8 +211,9 @@ export function describeApproval(
   request: PermissionRequest,
   t: Translations,
   language: Language,
+  pathContext?: ApprovalPathContext,
 ): ApprovalDescription {
-  const described = describeKind(request, t, language);
+  const described = describeKind(request, t, language, pathContext);
   const grant = request.details.browserSessionGrant;
   // 站点已解析的授权卡（按站点问句）保持专属文案；站点未解析的网页导航只说「访问这个网址」，
   // 不再借专属卡的「无法确认当前网站」。
@@ -222,6 +227,7 @@ function describeKind(
   request: PermissionRequest,
   t: Translations,
   language: Language,
+  pathContext?: ApprovalPathContext,
 ): Omit<ApprovalDescription, 'dedicatedBrowserCard'> {
   const kind = classify(request, t);
   const p = t.decisionCard.permission;
@@ -253,7 +259,7 @@ function describeKind(
         question: connector
           ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
           : permissionSummary(request, t, language),
-        consequence: permissionConsequence(request, t, language),
+        consequence: permissionConsequence(request, t, language, pathContext),
         icon,
       };
     }
@@ -262,7 +268,7 @@ function describeKind(
         kind,
         title: p.titleFolderAccess,
         question: p.questionFolderAccess,
-        consequence: reasonLine(folderConsequence(request, p)),
+        consequence: reasonLine(folderConsequence(request, p, pathContext)),
         icon,
       };
     case 'web_open':

@@ -49,11 +49,11 @@ const messages = {
 
 const modeLabels = {
   zh: {
-    default: '请求批准', readOnly: '只读', acceptEdits: '替我审批', bypassPermissions: '完全访问权限',
+    default: '每次先问我', readOnly: '只读', acceptEdits: '替我审批', bypassPermissions: '完全访问权限',
     dontAsk: '不再询问', plan: '计划', delegate: '委派',
   },
   en: {
-    default: 'Request approval', readOnly: 'Read only', acceptEdits: 'Approve for me', bypassPermissions: 'Full access',
+    default: 'Ask every time', readOnly: 'Read only', acceptEdits: 'Approve for me', bypassPermissions: 'Full access',
     dontAsk: "Don't ask", plan: 'Plan', delegate: 'Delegate',
   },
 } as const satisfies Record<Language, Record<string, string>>;

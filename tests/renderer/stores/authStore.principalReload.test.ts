@@ -90,3 +90,78 @@ describe('authStore auth 事件 → 会话重载的主体判定', () => {
     expect(mockReload).toHaveBeenLastCalledWith({ principalChanged: false });
   });
 });
+
+describe('authStore 冷启动首次 getStatus 主体判定', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listeners.clear();
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      hasResolvedStatus: false,
+    });
+  });
+
+  it('(a) 冷启动首次 getStatus 返回 u1 时以 principalChanged:false 静默刷新', async () => {
+    (globalThis as Record<string, unknown>).window = {
+      domainAPI: {
+        invoke: vi.fn(async (_domain: string, action: string) => {
+          if (action === 'getStatus') {
+            return { success: true, data: { user: makeUser('u1') } };
+          }
+          return { success: true, data: null };
+        }),
+      },
+    };
+
+    await initializeAuthStore();
+    await flushMicrotasks();
+    expect(mockReload).toHaveBeenLastCalledWith({ principalChanged: false });
+  });
+
+  it('(b) 冷启动首次 getStatus 返回 u1 后，再收到 signed_in u2 按主体变化处理', async () => {
+    (globalThis as Record<string, unknown>).window = {
+      domainAPI: {
+        invoke: vi.fn(async (_domain: string, action: string) => {
+          if (action === 'getStatus') {
+            return { success: true, data: { user: makeUser('u1') } };
+          }
+          return { success: true, data: null };
+        }),
+      },
+    };
+
+    await initializeAuthStore();
+    await flushMicrotasks();
+    expect(mockReload).toHaveBeenLastCalledWith({ principalChanged: false });
+
+    const authHandler = listeners.get(IPC_CHANNELS.AUTH_EVENT);
+    expect(authHandler).toBeDefined();
+    authHandler!({ type: 'signed_in', user: makeUser('u2') });
+    await flushMicrotasks();
+    expect(mockReload).toHaveBeenLastCalledWith({ principalChanged: true });
+  });
+
+  it('(c) 冷启动首次 getStatus 返回无用户，随后 signed_in u1 按主体变化处理', async () => {
+    (globalThis as Record<string, unknown>).window = {
+      domainAPI: {
+        invoke: vi.fn(async (_domain: string, action: string) => {
+          if (action === 'getStatus') {
+            return { success: true, data: { user: null } };
+          }
+          return { success: true, data: null };
+        }),
+      },
+    };
+
+    await initializeAuthStore();
+    await flushMicrotasks();
+    expect(mockReload).not.toHaveBeenCalled();
+
+    const authHandler = listeners.get(IPC_CHANNELS.AUTH_EVENT);
+    expect(authHandler).toBeDefined();
+    authHandler!({ type: 'signed_in', user: makeUser('u1') });
+    await flushMicrotasks();
+    expect(mockReload).toHaveBeenLastCalledWith({ principalChanged: true });
+  });
+});

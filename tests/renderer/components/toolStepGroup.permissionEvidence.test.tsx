@@ -5,8 +5,10 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 
 const state = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
   resolved: [] as PermissionRequest[],
   pending: null as PermissionRequest | null,
   sendPrompt: vi.fn(async () => undefined),
@@ -14,7 +16,13 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return {
+    useI18n: () => ({
+      t: state.language === 'en' ? en : zh,
+      language: state.language,
+    }),
+  };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (value: Record<string, unknown>) => unknown) => selector({
@@ -67,6 +75,7 @@ function resolved(decision: PermissionRequest['decision'], linked = true): Permi
 
 afterEach(() => {
   cleanup();
+  state.language = 'zh';
   state.resolved = [];
   state.pending = null;
   state.sendPrompt.mockClear();
@@ -168,6 +177,120 @@ describe('ToolStepGroup resolved permission evidence', () => {
       expect(rows[1]).not.toContain('共');
       expect(rows[1]).not.toContain('你已允许');
       expect(rows[2]).toContain('共 2 次');
+    });
+  });
+
+  describe('用户拒绝后的下一步指引（N-FIX-FIX-PERM-DENY-ENGLISH-COPY-FU2）', () => {
+    const deniedWriteNode: TraceNode = {
+      id: 'node-write-denied',
+      type: 'tool_call',
+      content: '',
+      timestamp: 1,
+      toolCall: {
+        id: 'call-write-denied',
+        name: 'Write',
+        args: { file_path: '/outside/summary.md', content: 'notes' },
+        result: 'Permission denied by user.',
+        success: false,
+      },
+    };
+    const deniedWriteReq = (decision: PermissionRequest['decision']): PermissionRequest => ({
+      id: `perm-write-${decision}`,
+      sessionId: 'session-1',
+      parentToolUseId: 'call-write-denied',
+      tool: 'Write',
+      type: 'file_write',
+      details: { path: '/outside/summary.md' } as PermissionRequest['details'],
+      timestamp: 1,
+      resolved: true,
+      decision,
+    });
+
+    it('zh 拒绝态：组头原因行和权限决策详情均包含下一步指引，且拒绝短语只出现一次', () => {
+      state.language = 'zh';
+      state.resolved = [deniedWriteReq('deny')];
+      render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const header = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(header).toContain(zh.outcomeWords['failed-approval-denied'].timeline.reason);
+      expect(header.match(/审批被拒绝/g)).toHaveLength(1);
+      expect(header).toContain(zh.decisionCard.permission.deniedNextStep);
+
+      const details = screen.getByTestId('permission-decision-details').textContent ?? '';
+      expect(details).toContain('未获批准 · 审批被拒绝');
+      expect(details).toContain(zh.decisionCard.permission.deniedNextStep);
+    });
+
+    it('en 拒绝态：组头原因行和权限决策详情均为纯英文且包含下一步指引', () => {
+      state.language = 'en';
+      state.resolved = [deniedWriteReq('deny')];
+      render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const header = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(header).toContain(en.outcomeWords['failed-approval-denied'].timeline.reason);
+      expect(header.match(/The approval was denied/g)).toHaveLength(1);
+      expect(header).toContain(en.decisionCard.permission.deniedNextStep);
+      expect(header).not.toMatch(/[\u4e00-\u9fff]/);
+
+      const details = screen.getByTestId('permission-decision-details').textContent ?? '';
+      expect(details).toContain('Not approved · The approval was denied');
+      expect(details).toContain(en.decisionCard.permission.deniedNextStep);
+      expect(details).not.toMatch(/[\u4e00-\u9fff]/);
+    });
+
+    it('超时态不附带拒绝下一步指引，并保留重试按钮与原超时文案（zh / en）', () => {
+      state.language = 'zh';
+      state.resolved = [deniedWriteReq('timeout')];
+      const { unmount } = render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const zhHeader = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(zhHeader).toContain(zh.outcomeWords['failed-timeout'].timeline.reason);
+      expect(zhHeader).not.toContain(zh.decisionCard.permission.deniedNextStep);
+      const zhEvidence = screen.getByTestId('permission-decision-evidence').textContent ?? '';
+      expect(zhEvidence).toContain('已中断 · 等待回答或权限确认超时');
+      expect(zhEvidence).not.toContain(zh.decisionCard.permission.deniedNextStep);
+      fireEvent.click(screen.getByRole('button', { name: zh.decisionCard.permission.retry }));
+      expect(state.sendPrompt).toHaveBeenCalledWith(zh.decisionCard.permission.retryPrompt);
+      unmount();
+
+      state.language = 'en';
+      state.sendPrompt.mockClear();
+      render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const enHeader = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(enHeader).toContain(en.outcomeWords['failed-timeout'].timeline.reason);
+      expect(enHeader).not.toContain(en.decisionCard.permission.deniedNextStep);
+      const enEvidence = screen.getByTestId('permission-decision-evidence').textContent ?? '';
+      expect(enEvidence).toContain('Interrupted · Waiting for an answer or permission timed out');
+      expect(enEvidence).not.toContain(en.decisionCard.permission.deniedNextStep);
+      fireEvent.click(screen.getByRole('button', { name: en.decisionCard.permission.retry }));
+      expect(state.sendPrompt).toHaveBeenCalledWith(en.decisionCard.permission.retryPrompt);
+    });
+
+    it('永久拒绝（decision=never）不承诺审批卡会重新出现（zh / en）', () => {
+      state.language = 'zh';
+      state.resolved = [deniedWriteReq('never')];
+      const { unmount } = render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const zhHeader = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(zhHeader).toContain(zh.outcomeWords['failed-approval-denied'].timeline.reason);
+      expect(zhHeader).not.toContain(zh.decisionCard.permission.deniedNextStep);
+      const zhDetails = screen.getByTestId('permission-decision-details').textContent ?? '';
+      expect(zhDetails).toContain('未获批准 · 审批被拒绝');
+      expect(zhDetails).not.toContain(zh.decisionCard.permission.deniedNextStep);
+      expect(screen.queryByTestId('permission-decision-denied-next-step')).toBeNull();
+      unmount();
+
+      state.language = 'en';
+      render(<ToolStepGroup nodes={[deniedWriteNode]} sessionId="session-1" />);
+
+      const enHeader = screen.getByRole('button', { expanded: false }).textContent ?? '';
+      expect(enHeader).toContain(en.outcomeWords['failed-approval-denied'].timeline.reason);
+      expect(enHeader).not.toContain(en.decisionCard.permission.deniedNextStep);
+      const enDetails = screen.getByTestId('permission-decision-details').textContent ?? '';
+      expect(enDetails).toContain('Not approved · The approval was denied');
+      expect(enDetails).not.toContain(en.decisionCard.permission.deniedNextStep);
+      expect(screen.queryByTestId('permission-decision-denied-next-step')).toBeNull();
     });
   });
 });

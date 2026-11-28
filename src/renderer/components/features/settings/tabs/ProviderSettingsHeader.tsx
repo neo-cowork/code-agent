@@ -1,30 +1,33 @@
 import React from 'react';
-import type { ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
+import type { ModelProvider, ModelProviderProtocol, ModelProviderSettings } from '@shared/contract';
 import { isProviderImageIcon, normalizeProviderIcon } from '@shared/modelRuntime';
 import { Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useProviderIconImageSource } from '../../../../utils/providerIconAssets';
-import { getProtocolLabel } from './ModelSettings.helpers';
+import { getProtocolLabel, providerRequiresApiKey, type ProviderConfigMap } from './ModelSettings.helpers';
+
+/** 「已保存 key」唯一判据：最后一次 host settings get 的 apiKeyConfigured（secure storage / 账户 / 环境），无需 key 的 provider 恒为 true。 */
+export function hasSavedProviderKey(providerId: ModelProvider, savedProviders: ProviderConfigMap | undefined): boolean {
+  return !providerRequiresApiKey(providerId) || savedProviders?.[providerId]?.apiKeyConfigured === true;
+}
 
 /** Same branch as the header key label: a pasted key that is not saved, account, or environment. */
 export function isStagedApiKeyUnsaved(
   providerConfig: Pick<ModelProviderSettings, 'apiKey' | 'apiKeySource'> | undefined,
   needsApiKey: boolean,
-  hasApiKey: boolean,
+  keySaved: boolean,
 ): boolean {
-  if (!needsApiKey || !hasApiKey) return false;
-  const source = providerConfig?.apiKeySource;
-  if (source === 'saved' || source === 'account' || source === 'environment') return false;
-  return Boolean(providerConfig?.apiKey);
+  return needsApiKey && !keySaved && Boolean(providerConfig?.apiKey?.trim());
 }
 
-export function ProviderSettingsHeader({ title, providerConfig, protocol, baseUrl, needsApiKey, hasApiKey, onEnabledChange }: {
+export function ProviderSettingsHeader({ title, providerConfig, protocol, baseUrl, needsApiKey, hasApiKey, keySaved, onEnabledChange }: {
   title: string;
   providerConfig?: ModelProviderSettings;
   protocol: ModelProviderProtocol;
   baseUrl: string;
   needsApiKey: boolean;
   hasApiKey: boolean;
+  keySaved: boolean;
   onEnabledChange: (enabled: boolean) => void;
 }) {
   const { t } = useI18n();
@@ -33,7 +36,7 @@ export function ProviderSettingsHeader({ title, providerConfig, protocol, baseUr
   const image = isProviderImageIcon(icon);
   const imageSource = useProviderIconImageSource(icon);
   const source = providerConfig?.apiKeySource;
-  const stagedApiKeyUnsaved = isStagedApiKeyUnsaved(providerConfig, needsApiKey, hasApiKey);
+  const stagedApiKeyUnsaved = isStagedApiKeyUnsaved(providerConfig, needsApiKey, keySaved);
   const keyLabel = !needsApiKey ? text.noApiKey : !hasApiKey ? text.waitingApiKey
     : source === 'saved' ? text.apiKeySaved : source === 'account' ? text.apiKeyAccount
       : source === 'environment' ? text.apiKeyEnvironment

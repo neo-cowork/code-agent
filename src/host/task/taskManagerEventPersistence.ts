@@ -4,6 +4,8 @@
 
 import type { AgentEvent, Message, MessageSnapshotData, ToolCall } from '../../shared/contract';
 import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
+import type { RunContext } from '../runtime/runContext';
+import { recordUnfinishedRmSettlementTargets } from '../tools/modules/shell/unfinishedRmSettlementTargets';
 import { createLogger } from '../services/infra/logger';
 import { buildApprovalNotification } from '../services/infra/approvalNotification';
 import {
@@ -37,6 +39,8 @@ export interface TaskManagerEventPersistenceDeps {
   messageDeltaAccumulator: MessageDeltaAccumulator;
   isPrimaryRunActive?: () => boolean;
   primaryRunId?: string;
+  /** Live run lookup: a delete record is keyed by the run id its settlement reads (primary run or task id). */
+  getRunContext?: (runId: string) => RunContext | undefined;
 }
 
 /**
@@ -133,6 +137,9 @@ export async function persistTaskManagerEvent(
         if (idx !== -1) {
           turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
         }
+        const runId = eventKey === sessionId ? deps.primaryRunId : eventKey;
+        const run = runId ? deps.getRunContext?.(runId) : undefined;
+        if (run) recordUnfinishedRmSettlementTargets(sessionId, run.runId, [turnState], event.data, run.cwd);
         await sessionManager.updateMessage(turnState.messageId, {
           toolCalls: [...turnState.toolCalls],
         });

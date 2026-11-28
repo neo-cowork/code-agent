@@ -9,8 +9,9 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useI18n } from '../../../../hooks/useI18n';
+import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { getVisualModelLabel } from '../../../../utils/visualModelLabel';
+import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
 import { Check } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -36,6 +37,7 @@ import {
   updateDesignSettings,
   type CustomImageModelMeta,
 } from '../../../design/designFiles';
+import { requestConfirm } from '../../../../services/confirmPrompt';
 
 export interface BuiltinRow {
   id: string;
@@ -83,11 +85,14 @@ export const BuiltinModelList: React.FC<{
   groupName?: string;
   onSelect?: (id: string) => void;
   onConfigure: (provider: string) => void;
+  language?: Language;
   // 只读模式（如生音乐段）：仅展示，不渲染默认选择 radio。
   readOnly?: boolean;
-}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => {
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, language, readOnly = false }) => {
   // 内置模型名按 id 走语言包（FB-1292）；用户自定义的模型名原样显示
   const modelLabels = useI18n().t.visualModelLabels;
+  const storeLanguage = useAppStore((state) => state.language);
+  const effectiveLanguage = language ?? storeLanguage;
   return (
   <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-0.5">
@@ -127,7 +132,7 @@ export const BuiltinModelList: React.FC<{
               <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{getVisualModelLabel(m, modelLabels)}</span>
               {m.source === 'bridged' && m.sourceLabel && (
                 <span className="inline-flex shrink-0 items-center rounded-full bg-zinc-700/40 px-2 py-0.5 text-[11px] font-medium text-zinc-400">
-                  {bridgedFromBadge.replace('{name}', m.sourceLabel)}
+                  {bridgedFromBadge.replace('{name}', resolveProviderLabel(m.provider, m.sourceLabel, effectiveLanguage))}
                 </span>
               )}
               {isSelected && (
@@ -178,6 +183,7 @@ interface CustomEndpointManagerProps {
 }
 
 const CustomEndpointManager: React.FC<CustomEndpointManagerProps> = ({ strings: s, list, save, remove, onChange }) => {
+  const { t } = useI18n();
   const [models, setModels] = useState<CustomImageModelMeta[]>([]);
   const [mode, setMode] = useState<'list' | 'form'>('list');
   const [form, setForm] = useState<CustomModelFormState>(emptyCustomModelForm);
@@ -188,11 +194,16 @@ const CustomEndpointManager: React.FC<CustomEndpointManagerProps> = ({ strings: 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!window.confirm(s.deleteConfirm)) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.deleteCustomModel,
+      message: s.deleteConfirm,
+      confirmText: t.common.delete,
+      variant: 'danger',
+    })) return;
     await remove(id);
     await refresh();
     onChange?.();
-  }, [remove, refresh, onChange, s.deleteConfirm]);
+  }, [remove, refresh, onChange, s.deleteConfirm, t.confirmPrompts.deleteCustomModel, t.common.delete]);
 
   const handleSave = useCallback(async () => {
     if (!form.label.trim()) { setError(s.nameRequired); return; }
@@ -279,7 +290,7 @@ const RegionLockStrictToggle: React.FC<{
 };
 
 export const VisualModelsSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const s = t.settings.visualModels;
   const cm = t.design.customModel;
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -367,6 +378,7 @@ export const VisualModelsSettings: React.FC = () => {
           groupName="design-image-model"
           onSelect={(id) => saveDefaults(id, defaultVideoModelId)}
           onConfigure={handleConfigure}
+          language={language}
         />
         <CustomEndpointManager
           strings={cm}
@@ -402,6 +414,7 @@ export const VisualModelsSettings: React.FC = () => {
           groupName="design-video-model"
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
           onConfigure={handleConfigure}
+          language={language}
         />
         <p className="rounded-lg border border-badge-warning/20 bg-amber-500/5 px-3 py-2 text-[11px] text-badge-warning/90">
           {s.videoPendingNote}
@@ -436,6 +449,7 @@ export const VisualModelsSettings: React.FC = () => {
           manageButton={cm.manage}
           configureButton={s.configureButton}
           onConfigure={handleConfigure}
+          language={language}
           readOnly
         />
       </section>

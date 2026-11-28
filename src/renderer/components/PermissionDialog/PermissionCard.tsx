@@ -37,6 +37,7 @@ import {
 } from './WritebackFields';
 import { defaultPermissionViewMode, isDangerousRequestShape, isHighRiskCommandRequest, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
+import { resolveApprovalWorkspaceRoot, type ApprovalPathContext } from './utils';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
@@ -165,8 +166,11 @@ export function PermissionCard({
     setPendingPermissionRequest,
     dismissPermissionRequest,
     recordPermissionDecision,
+    workingDirectory,
+    hostHomeDir,
   } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessions = useSessionStore((state) => state?.sessions);
   const { checkMemory, saveMemory } = usePermissionStore();
   const processedRequestRef = useRef<string | null>(null);
   // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
@@ -449,8 +453,18 @@ export function PermissionCard({
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
 
-  const sandboxPath = sandboxEscalation ? sandboxEscalationDeniedPath(request) : undefined;
-  const described = describeApproval(request, t, language);
+  const pathContext: ApprovalPathContext = {
+    workspaceRoot: resolveApprovalWorkspaceRoot({
+      requestSessionId: request.sessionId,
+      sourceSessionId,
+      currentSessionId,
+      sessions,
+      appWorkingDirectory: workingDirectory,
+    }),
+    homeDir: hostHomeDir ?? null,
+  };
+  const sandboxPath = sandboxEscalation ? sandboxEscalationDeniedPath(request, pathContext) : undefined;
+  const described = describeApproval(request, t, language, pathContext);
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
@@ -705,7 +719,7 @@ export function PermissionCard({
             </p>
           ) : null}
           {(request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write') && <p className="text-xs text-zinc-400">{p.workspaceOutside}</p>}
-          <RequestDetails request={request} hideConsequence={Boolean(faceConsequence)} />
+          <RequestDetails request={request} hideConsequence={Boolean(faceConsequence)} pathContext={pathContext} />
           {quietFace && <div className="space-y-2" data-testid="permission-secondary-choices">
             {options.filter((option) => option.id === 'run' || option.id === '24h').map((option) => (
               <Button key={option.id} size="sm" variant="ghost"
