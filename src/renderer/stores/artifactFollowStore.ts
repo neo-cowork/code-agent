@@ -14,6 +14,7 @@ interface ArtifactFollowState {
   pausedSessionIds: Set<string>;
   start: (input: Omit<ArtifactFollowEntry, 'phase' | 'startedAt'> & { startedAt?: number }) => void;
   complete: (sessionId: string, path: string, completedAt?: number) => void;
+  drop: (sessionId: string, path: string) => void;
   clearAttention: (sessionId: string, path: string) => void;
   setSessionPaused: (sessionId: string, paused: boolean) => void;
   reset: () => void;
@@ -51,6 +52,13 @@ export const useArtifactFollowStore = create<ArtifactFollowState>((set) => ({
         [key]: { ...existing, phase: 'complete', completedAt },
       },
     };
+  }),
+  drop: (sessionId, path) => set((state) => {
+    const key = artifactFollowKey(sessionId, path);
+    if (!(key in state.entries)) return state;
+    const entries = { ...state.entries };
+    delete entries[key];
+    return { entries };
   }),
   clearAttention: (sessionId, path) => set((state) => {
     const key = artifactFollowKey(sessionId, path);

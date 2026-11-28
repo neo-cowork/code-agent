@@ -609,7 +609,7 @@ export const PreviewPanel: React.FC = () => {
       void refreshFileMetadata(filePath);
     } catch (err) {
       logger.error('Failed to load file', err);
-      const { message, detail } = toPreviewErrorState(err, pv.loadFileFailedNamed.replace('{name}', basename(filePath)));
+      const { message, detail } = toPreviewErrorState(err, pv.loadFileFailedNamed.replace('{name}', basename(filePath)), pv.fileNotFoundNamed.replace('{name}', basename(filePath)));
       setErrorState(message, detail);
     } finally {
       setIsLoading(false);

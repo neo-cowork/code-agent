@@ -29,11 +29,11 @@ afterEach(() => {
 describe('PreviewPanel failed load names the file', () => {
   it('error panel includes the failed file basename, also after Retry; tab unchanged', async () => {
     render(<PreviewPanel />);
-    const err = await screen.findByText(/加载文件失败/);
+    const err = await screen.findByText(/还没有生成/);
     expect(err.textContent).toContain('dogfood-3752-并行检查.txt');
     const tabId = useAppStore.getState().activePreviewTabId;
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    await waitFor(() => expect(screen.getByText(/加载文件失败/).textContent).toContain('dogfood-3752-并行检查.txt'));
+    await waitFor(() => expect(screen.getByText(/还没有生成/).textContent).toContain('dogfood-3752-并行检查.txt'));
     const s = useAppStore.getState();
     expect(s.previewTabs).toHaveLength(1);
     expect(s.activePreviewTabId).toBe(tabId);
