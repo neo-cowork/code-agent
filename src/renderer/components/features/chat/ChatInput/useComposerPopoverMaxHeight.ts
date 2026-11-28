@@ -20,7 +20,7 @@
 
 import { useLayoutEffect, useState, type RefObject } from 'react';
 
-export const COMPOSER_POPOVER_BOUNDARY_ATTR = 'data-composer-popover-boundary';
+const COMPOSER_POPOVER_BOUNDARY_ATTR = 'data-composer-popover-boundary';
 
 // popover 底边与 anchor 顶之间已有 mb-1(4px)，这里再留 4px 边界呼吸量，合计 8px。
 const COMPOSER_POPOVER_GAP_PX = 8;
