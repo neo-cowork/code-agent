@@ -399,6 +399,43 @@ describe('PreviewPanel 长图导出 (host Downloads + toast + logClientError)', 
     });
   });
 
+  it('捕获期间更新 HTML 替换 iframe，立即给出 preview-changed 提示并恢复导出', async () => {
+    const tab = loadedTab();
+    useAppStore.setState({ previewTabs: [tab], activePreviewTabId: tab.id });
+
+    const { container } = render(
+      <>
+        <PreviewPanel />
+        <ToastContainer />
+      </>,
+    );
+    const iframe = container.querySelector('iframe')!;
+    const revision = iframe.dataset.previewRevision;
+    const postMessageSpy = vi.spyOn(iframe.contentWindow!, 'postMessage');
+
+    openMoreActionsAndClickExport();
+    await waitFor(() => expect(getScreenshotPostMessages(postMessageSpy)).toHaveLength(1));
+
+    await act(async () => {
+      useAppStore.getState().markPreviewTabLoaded(tab.id, '<main>已更新的库存表</main>');
+    });
+    expect(iframe.isConnected).toBe(false);
+    const replacement = container.querySelector('iframe')!;
+    expect(replacement.dataset.previewRevision).not.toBe(revision);
+
+    expect(await screen.findByText('生成时预览内容变了，请再导出一次')).toBeTruthy();
+    expect(screen.queryByText('正在生成长图…')).toBeNull();
+    expect(getLogClientErrorPayloads()).toEqual([
+      expect.objectContaining({
+        context: 'PreviewExport',
+        message: 'Long screenshot not saved: reason=preview-changed file=coffee-inventory.html',
+      }),
+    ]);
+    expect(getSaveBinaryCalls()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '导出长图' }).disabled).toBe(false);
+  });
+
   it('saveBinaryToDownloads 返回 success:false 给出磁盘保存提示、保持预览并写 reason=save-failed 日志', async () => {
     setupDefaultDomainMock({
       saveBinaryToDownloads: async () => ({

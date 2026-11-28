@@ -100,12 +100,17 @@ export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<st
     const cleanup = () => {
       window.clearTimeout(timeout);
       window.removeEventListener('message', handleMessage);
-      iframe.removeEventListener('load', handleLoad);
+      iframe.removeEventListener('load', rejectPreviewChanged);
+      observer.disconnect();
     };
-    const handleLoad = () => {
+    const rejectPreviewChanged = () => {
       cleanup();
       reject(new PreviewCaptureError('preview-changed', 'Preview changed'));
     };
+    // Refresh can replace the iframe (or its parent) without firing load on the old iframe.
+    const observer = new MutationObserver(() => {
+      if (!iframe.isConnected) rejectPreviewChanged();
+    });
     const handleMessage = (event: MessageEvent<unknown>) => {
       const data = readFrameMessage(event, iframe.contentWindow);
       if (!iframe.isConnected || data?.type !== 'neo-preview-screenshot-done'
@@ -141,11 +146,16 @@ export async function capturePreviewFrame(iframe: HTMLIFrameElement): Promise<st
       }
     };
     const timeout = window.setTimeout(() => {
+      if (!iframe.isConnected) {
+        rejectPreviewChanged();
+        return;
+      }
       cleanup();
       reject(new PreviewCaptureError('timeout', 'Screenshot response timed out'));
     }, ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS.RESPONSE);
+    observer.observe(iframe.ownerDocument, { childList: true, subtree: true });
     window.addEventListener('message', handleMessage);
-    iframe.addEventListener('load', handleLoad);
+    iframe.addEventListener('load', rejectPreviewChanged);
     try {
       frame.postMessage({ type: 'neo-preview-screenshot', id, source }, '*');
     } catch (error) {
