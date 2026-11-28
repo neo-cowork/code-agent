@@ -200,7 +200,7 @@ export function useOfflinePendingSend(params: UseOfflinePendingSendParams): Offl
 
     // 1. 先按 clientMessageId 对账已恢复的会话历史（Codex PR #49105 规则）：
     //    若已落库且非失败气泡，绝不重发，清记录、清草稿、清输入框。
-    if (!sessionless) {
+    if (!sessionless && Array.isArray(sessionMessages)) {
       const alreadyInHistory = sessionMessages.some(
         (message) => message.id === pendingRecord.clientMessageId && message.metadata?.sendFailed !== true,
       );

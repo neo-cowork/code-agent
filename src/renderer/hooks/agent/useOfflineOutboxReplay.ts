@@ -38,7 +38,7 @@ export function useOfflineOutboxReplay(params: {
 
   useEffect(() => {
     if (!currentSessionId || effectiveIsProcessing || isHydratingSession || isLoading) return;
-    if (!hasRegisteredSender) return;
+    if (!hasRegisteredSender || !Array.isArray(messages) || messages.length === 0) return;
 
     const pendingError = messages.find((message) => {
       if (message.role !== 'assistant') return false;

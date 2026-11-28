@@ -20,7 +20,7 @@ const NETWORK_TYPE_ERROR_RE = /failed to fetch|load failed|networkerror|fetch fa
 export function isOfflineTransportError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const record = error as { code?: unknown; status?: unknown; message?: unknown };
-  if (typeof record.status === 'number' && record.status > 0) return false;
+  if (typeof record.status === 'number') return false;
   if (record.code === 'NETWORK_ERROR') return true;
   if (error instanceof Error) {
     const msg = error.message.trim();
@@ -101,7 +101,7 @@ function outboxKey(sessionId: string, clientMessageId: string): string {
   return `${sessionId}:${clientMessageId}`;
 }
 
-export function noteOfflineOutboxFailureRevision(
+function noteOfflineOutboxFailureRevision(
   sessionId: string,
   clientMessageId: string,
   revision: number,
