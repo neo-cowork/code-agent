@@ -90,6 +90,7 @@ const EN_BANNED: Array<[string, RegExp]> = [
 interface HostState {
   settings: OpenchronicleSettings;
   status: OpenchronicleStatus;
+  activityContext: unknown;
   setEnabledResult: { ok: boolean; error?: string };
   statusAfterSetEnabled?: OpenchronicleStatus;
 }
@@ -175,7 +176,7 @@ async function fakeInvokeDomain(domain: string, action: string, payload?: unknow
   }
   if (domain === IPC_DOMAINS.ACTIVITY) {
     if (action === 'listProviders') return providerList(host.status);
-    if (action === 'getCurrentContext') return HOST_ACTIVITY_CONTEXT;
+    if (action === 'getCurrentContext') return host.activityContext;
   }
   if (domain === IPC_DOMAINS.ENV_ASSIST && action === 'recheckSettingGrant') return { on: false };
   if (domain === IPC_DOMAINS.SETTINGS && action === 'get') return {};
@@ -222,13 +223,13 @@ function bannedHits(strings: string[], banned: Array<[string, RegExp]>): string[
   return banned.flatMap(([word, re]) => strings.filter((text) => re.test(text)).map((text) => `${word}: ${text}`));
 }
 
-async function renderPage(lang: Lang) {
+async function renderPage(lang: Lang, previewText: string = COPY[lang].nothingYet) {
   useAppStore.setState({ language: lang, cloudUIStrings: null });
   const view = render(<ScreenMemorySettings />);
   // 等状态回来（OpenchronicleSettings 的 getStatus）+ 预览读完（getCurrentContext）
   await waitFor(() => {
     expect(calls.some(([domain, action]) => domain === IPC_DOMAINS.OPENCHRONICLE && action === 'getStatus')).toBe(true);
-    expect(view.container.textContent).toContain(COPY[lang].nothingYet);
+    expect(view.container.textContent).toContain(previewText);
   });
   await waitFor(() => expect(screen.getByRole('switch', { name: COPY[lang].toggle })).toBeTruthy());
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -242,6 +243,7 @@ beforeEach(() => {
   host = {
     settings: { ...DEFAULT_OPENCHRONICLE_SETTINGS },
     status: notInstalledStatus(),
+    activityContext: HOST_ACTIVITY_CONTEXT,
     setEnabledResult: { ok: true },
   };
   vi.spyOn(ipcService, 'invokeDomain').mockImplementation(fakeInvokeDomain as typeof ipcService.invokeDomain);
@@ -290,6 +292,25 @@ describe('① Screen Memory page speaks plain words (real ScreenMemorySettings, 
     if (lang === 'en' && !tauri) {
       expect(pageStrings(container, { skipTextareaValues: true }).filter((text) => /[一-鿿]/.test(text))).toEqual([]);
     }
+  });
+});
+
+describe('① preview with recorded content', () => {
+  it('en names the source in English and shows no Chinese outside the editable lists', async () => {
+    host.status = installedStatus();
+    host.settings = { ...DEFAULT_OPENCHRONICLE_SETTINGS, enabled: true };
+    host.activityContext = {
+      ...HOST_ACTIVITY_CONTEXT,
+      sources: [
+        { source: 'openchronicle', status: 'available', confidence: 0.72, privacy: 'redacted', generatedAtMs: NOW, maxChars: 3000, text: 'Editing the weekly report in Word', evidenceRefs: [] },
+        ...HOST_ACTIVITY_CONTEXT.sources.slice(1),
+      ],
+    };
+    const { container } = await renderPage('en', 'Automatic: Editing the weekly report in Word');
+
+    const strings = pageStrings(container, { skipTextareaValues: true });
+    expect(strings.filter((text) => /[一-鿿]/.test(text))).toEqual([]);
+    expect(bannedHits(strings, EN_BANNED)).toEqual([]);
   });
 });
 

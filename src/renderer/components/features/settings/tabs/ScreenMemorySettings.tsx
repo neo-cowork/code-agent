@@ -305,7 +305,7 @@ export const ScreenMemorySettings: React.FC = () => {
     try {
       const [providerResult, contextResult] = await Promise.all([
         ipcService.invokeDomain<ActivityProviderListResult>(IPC_DOMAINS.ACTIVITY, 'listProviders'),
-        getCurrentActivityContext(),
+        getCurrentActivityContext(screenMemoryText.activityContext.sourceLabels),
       ]);
       setProviders(providerResult.providers);
       // 没有任何可参考内容时，服务层给的是它自己的占位句，界面换成语言包里的说法。
@@ -328,7 +328,7 @@ export const ScreenMemorySettings: React.FC = () => {
     } finally {
       setContextLoading(false);
     }
-  }, [emptyActivityContext, screenMemoryText.activityContext.error.agentInjectionUnavailable, screenMemoryText.activityContext.error.recentContextUnavailable, screenMemoryText.activityContext.nothingYet.agentInjectionPreview, screenMemoryText.activityContext.nothingYet.recentContextSummary]);
+  }, [emptyActivityContext, screenMemoryText.activityContext.error.agentInjectionUnavailable, screenMemoryText.activityContext.error.recentContextUnavailable, screenMemoryText.activityContext.nothingYet.agentInjectionPreview, screenMemoryText.activityContext.nothingYet.recentContextSummary, screenMemoryText.activityContext.sourceLabels]);
 
   useEffect(() => {
     if (!web) {
