@@ -4,6 +4,7 @@ import { inabilityGatePrompt } from './backgroundWakeMessage';
 import type { Message, ToolCall } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../../shared/telemetryRecovery';
 import { resolveAgent } from '../agentRegistry';
 import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import { buildDelegatedTaskPrompt } from '../../services/commandCenter/delegationGuidance';
@@ -117,7 +118,9 @@ function verbatimUserRequest(ctx: RuntimeContext): string {
     message.role === 'user' && !message.isMeta && message.visibility !== 'rewound'
   ));
   const raw = ctx.turn?.runUserPrompt || latest?.content || '';
-  return extractUserRequest(raw).trim();
+  // 交接标题与委派 prompt 是原文出口：还原消息先剥恢复提示/残留，否则后台任务的
+  // 名字和 <original_user_request> 会以免责声明当用户请求。
+  return stripTelemetryRecoveryNoticeOrResidue(extractUserRequest(raw)).trim();
 }
 
 function latestUserMessageId(ctx: RuntimeContext): string | undefined {

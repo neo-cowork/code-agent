@@ -49,9 +49,9 @@ export function truncateToolOutput(output: string, maxLength = 1000): string {
   return output;
 }
 
-export function isDangerousCommand(command: string): boolean {
+export function isDangerousCommand(command: string, singleFileDelete = false): boolean {
   const dangerousPatterns = [
-    /rm\s+(-r|-rf|-f)?\s*[/~]/,
+    singleFileDelete ? /rm\s+(-r|-rf|-f)\s*[/~]/ : /rm\s+(-r|-rf|-f)?\s*[/~]/,
     /rm\s+-rf?\s+\*/,
     />\s*\/dev\/sd/,
     /mkfs/,

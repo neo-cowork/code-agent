@@ -6,6 +6,7 @@ import { RunSessionConflictError } from '../../runtime/runRegistry';
 import { UNATTENDED_APPROVAL_TIMEOUT } from '../../agent/unattendedApprovalTerminal';
 import { randomUUID } from 'node:crypto';
 import { approvalTaskTitle } from './parkedApprovalTaskTitle';
+import { listPendingLaunchInboxItems } from './parkedLaunchInboxItems';
 import type BetterSqlite3 from 'better-sqlite3';
 import type {
   Message,
@@ -603,7 +604,7 @@ export class SessionAutomationService {
         ...(row.status !== 'orphaned' && payload.writeGrantFolder ? { writeGrantFolder: payload.writeGrantFolder } : {}),
         sensitiveStep: payload.sensitiveStep,
       };
-    }), ...voided];
+    }), ...listPendingLaunchInboxItems(repo, resolveApprovalSessionPresentation), ...voided];
   }
 
   getRoleWakeRun(sessionId: string): RoleWakeRunStatus | null {

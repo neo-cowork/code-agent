@@ -29,6 +29,24 @@ function readSnapshot(value: unknown): RoleSettingSnapshot | undefined {
   };
 }
 
+function normalizeFiveFields(cadence: string): string[] {
+  const fields = cadence.trim().split(/\s+/);
+  return fields.length === 6 && fields[0] === '0' ? fields.slice(1) : fields;
+}
+
+/** `m h * * *`（或秒位为 0 的 6 段形态）→ 零填充 `HH:MM`；其它形态返回 null。 */
+function parseDailyClock(cadence: string): string | null {
+  const fields = normalizeFiveFields(cadence);
+  if (fields.length !== 5) return null;
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
+  if (dayOfMonth !== '*' || month !== '*' || dayOfWeek !== '*') return null;
+  if (!/^\d{1,2}$/.test(minute) || !/^\d{1,2}$/.test(hour)) return null;
+  const m = Number(minute);
+  const h = Number(hour);
+  if (m > 59 || h > 23) return null;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 export function describeRoleSettingChange(
   details: Record<string, unknown>,
   t: Translations,
@@ -48,11 +66,18 @@ export function describeRoleSettingChange(
   );
   // cadence 是 croner 6 段表达式（含秒位）；humanize 只认 5 段。
   const cadenceLabel = (cadence: string): string => {
-    const fields = cadence.trim().split(/\s+/);
-    const five = fields.length === 6 && fields[0] === '0' ? fields.slice(1).join(' ') : cadence;
-    return formatCronExpressionLabel(five, undefined, language);
+    const fields = normalizeFiveFields(cadence);
+    return formatCronExpressionLabel(fields.length === 5 ? fields.join(' ') : cadence, undefined, language);
   };
-  const frequency = (s: RoleSettingSnapshot): string => `${levelLabel(s.level)}${s.cadence ? p.roleSettingCadenceWrap.replace('{cadence}', () => cadenceLabel(s.cadence as string)) : ''}`;
+  const frequency = (s: RoleSettingSnapshot): string => {
+    const base = levelLabel(s.level);
+    if (!s.cadence) return base;
+    if (s.level === 'daily') {
+      const clock = parseDailyClock(s.cadence);
+      if (clock) return `${base}${p.roleSettingDailyAtWrap.replace('{time}', () => clock)}`;
+    }
+    return `${base}${p.roleSettingCadenceWrap.replace('{cadence}', () => cadenceLabel(s.cadence as string))}`;
+  };
   const quiet = (s: RoleSettingSnapshot): string => (
     s.quietHours ? p.roleSettingQuietRange.replace('{start}', s.quietHours.start).replace('{end}', s.quietHours.end) : p.roleSettingNotSet
   );

@@ -23,7 +23,7 @@ export const ARTIFACT_REPAIR_MAX_ATTEMPTS = 4;
  */
 export const ARTIFACT_REPAIR_PROGRESS_MARKER = '次修复';
 export function formatArtifactRepairProgress(attempts: number): string {
-  return `artifact 验收失败，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} ${ARTIFACT_REPAIR_PROGRESS_MARKER}...`;
+  return `产物检查没通过，正在准备第 ${attempts}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} ${ARTIFACT_REPAIR_PROGRESS_MARKER}…`;
 }
 
 // ============================================================

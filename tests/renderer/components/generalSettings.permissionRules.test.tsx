@@ -172,7 +172,7 @@ describe('GeneralSettings permission rule editor', () => {
       permissions: { allow: ['Bash(npm test)'] },
     });
     expect(success).toHaveBeenCalledWith(
-      `allow${zh.settings.general.permissions.ruleSavedPrefix}1${zh.settings.general.permissions.ruleSavedSuffix}`,
+      `直接允许${zh.settings.general.permissions.ruleSavedPrefix}1${zh.settings.general.permissions.ruleSavedSuffix}`,
     );
   });
 });
