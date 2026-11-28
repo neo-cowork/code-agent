@@ -13,6 +13,7 @@ import { SidebarProjectGroup } from '../../../src/renderer/components/features/s
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { groupByWorkspace } from '../../../src/renderer/utils/workspaceGrouping';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
 
 const dialogMocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -184,6 +185,7 @@ describe('SidebarProjectGroup ⋯ 菜单 + 新建（2026-07-28 重构）', () =>
 describe('SidebarProjectGroup new session directory', () => {
   const projectRoot = '/workspace/proj';
   const taskDirectory = '/workspace/任务_1124_x';
+  const userFolderDirectory = '/workspace/weekly-notes';
   const taskSession = {
     id: 'task',
     title: 'Summarize notes',
@@ -191,6 +193,8 @@ describe('SidebarProjectGroup new session directory', () => {
     updatedAt: 300,
     workingDirectory: taskDirectory,
     projectId: 'p1',
+    metadata: { projectPinned: true },
+    modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
     messageCount: 2,
     turnCount: 1,
   } as SessionWithMeta;
@@ -243,11 +247,11 @@ describe('SidebarProjectGroup new session directory', () => {
   });
 
   it('uses the group path for the new session button on a folder group without a project', () => {
-    const [group] = groupByWorkspace([{ ...taskSession, projectId: undefined }], 'Quick chat', 'Project');
+    const [group] = groupByWorkspace([{ ...taskSession, projectId: undefined, workingDirectory: userFolderDirectory }], 'Quick chat', 'Project');
     const { getByRole, props } = renderGroup({ group, projectMetaById: {} });
 
-    fireEvent.click(getByRole('button', { name: '在 任务_1124_x 新建会话' }));
-    expect(props.handleNewWorkspaceChat).toHaveBeenCalledWith(expect.anything(), group.key, taskDirectory, undefined);
+    fireEvent.click(getByRole('button', { name: '在 weekly-notes 新建会话' }));
+    expect(props.handleNewWorkspaceChat).toHaveBeenCalledWith(expect.anything(), group.key, userFolderDirectory, undefined);
   });
 
   it('keeps the project id and leaves the directory unset when the project has no folder', () => {

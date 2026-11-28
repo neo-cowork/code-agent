@@ -4,9 +4,11 @@
 // Sessions with a persisted projectId are bucketed by that Project. Sessions
 // without project metadata fall back to full workingDirectory path so same-name
 // folders under different parents stay separate. A separate uncategorized
-// bucket collects sessions that have no project/workspace context.
+// bucket collects sessions that have no project/workspace context, plus chats
+// living in a Neo-made task folder that are not pinned to a project (owner
+// decision B: such a folder is the chat's file home, not a sidebar group).
 
-import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
+import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import type { SessionWithMeta } from '../stores/sessionStore';
 
 // Key used for sessions with no workingDirectory; reserved so it can't
@@ -18,13 +20,15 @@ export interface WorkspaceGroup {
    *  groups use the full workspace path, and the fallback bucket uses
    *  UNCATEGORIZED_WORKSPACE_KEY. */
   key: string;
-  /** Display name — project groups use their primary workspace basename until
-   *  Project metadata loads; the fallback bucket uses the caller-supplied
+  /** Display name — project groups use their newest listed workspace basename
+   *  until Project metadata loads; the fallback bucket uses the caller-supplied
    *  uncategorizedName (i18n, 禁硬编码). */
   name: string;
-  /** Primary workspace path, usually the most recently active session's path. */
+  /** Primary workspace path, usually the most recently active session's path
+   *  (may be a Neo-made task folder, which `paths` leaves out). */
   path?: string;
-  /** All workspace paths represented by the group, newest activity first. */
+  /** Workspace paths listed for the group (hover tip, drawer), newest activity
+   *  first. Neo-made task folders are left out. */
   paths: string[];
   /** Project id for this group, when known. */
   projectId?: string;
@@ -39,6 +43,28 @@ export interface WorkspaceGroup {
 interface SidebarGroupKeySource {
   projectId?: string | null;
   workingDirectory?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+// Same shape as the host's PLANNED_FOLDER_NAME_PATTERN in
+// src/host/config/sessionWorkDirectory.ts (任务_MMDD_… / Task_MMDD_…).
+const TASK_FOLDER_NAME_PATTERN = /^(任务|Task)_\d{4}_/;
+// The host plans those folders directly under its default work root
+// (getDefaultWorkDirectory in src/host/config/configPaths.ts: ~/Neo, ~/Neo-<slot>,
+// or <dataDir>-work). The renderer does not know the exact root, so it checks the
+// parent's name; a folder the user named like that elsewhere keeps its group.
+const WORK_ROOT_NAME_PATTERN = /^Neo(-.+)?$|-work$/;
+
+function isTaskFolderPath(path: string): boolean {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  const lastSegment = segments[segments.length - 1];
+  const parentSegment = segments[segments.length - 2];
+  return Boolean(
+    lastSegment
+    && parentSegment
+    && TASK_FOLDER_NAME_PATTERN.test(lastSegment)
+    && WORK_ROOT_NAME_PATTERN.test(parentSegment),
+  );
 }
 
 function basenameOf(path: string): string {
@@ -67,11 +93,18 @@ function getSessionProjectId(session: SidebarGroupKeySource): string | undefined
 
 export function getSidebarGroupKeyForSession(session: SidebarGroupKeySource): string {
   const projectId = getSessionProjectId(session);
+  const path = session.workingDirectory?.trim();
+  // An explicitly chosen project (e.g. a chat created inside a space) keeps its group even
+  // when Neo planned a task folder for the chat.
+  if (projectId && session.metadata?.[SESSION_PROJECT_PINNED_METADATA_KEY] === true) {
+    return projectGroupKey(projectId);
+  }
+  if (path && isTaskFolderPath(path)) {
+    return UNCATEGORIZED_WORKSPACE_KEY;
+  }
   if (projectId) {
     return projectGroupKey(projectId);
   }
-
-  const path = session.workingDirectory?.trim();
   return path || UNCATEGORIZED_WORKSPACE_KEY;
 }
 
@@ -113,9 +146,11 @@ function getGroupPaths(sessions: SessionWithMeta[]): string[] {
  *
  * - Project groups are keyed by persisted projectId.
  * - Sessions without project metadata fall back to full workingDirectory path.
+ * - Unpinned chats in a Neo-made task folder join the uncategorized bucket.
  * - The uncategorized bucket (if non-empty) is always appended at the end; its
  *   display name comes from the caller (i18n), not hardcoded here.
- * - `projectFallbackName` covers the rare group with no primary path at all
+ * - `projectFallbackName` covers the rare group with no listed path at all, e.g. a
+ *   folderless space whose chats live in task folders, until Project metadata loads
  *   (i18n, 禁硬编码 — 复用侧栏「项目」section 标题词条即可)。
  */
 export function groupByWorkspace(
@@ -147,8 +182,11 @@ export function groupByWorkspace(
       (max, s) => Math.max(max, s.updatedAt || 0),
       0,
     );
-    const paths = getGroupPaths(sortedSessions);
-    const primaryPath = paths[0];
+    const sessionPaths = getGroupPaths(sortedSessions);
+    // A Neo-made task folder is a chat's file home, not where its group lives (each chat in a
+    // folderless space gets one), so it neither names the group nor is listed as its path.
+    const paths = sessionPaths.filter((path) => !isTaskFolderPath(path));
+    const primaryPath = sessionPaths[0];
 
     if (key === UNCATEGORIZED_WORKSPACE_KEY) {
       uncategorized = {
@@ -163,7 +201,7 @@ export function groupByWorkspace(
     } else {
       categorized.push({
         key,
-        name: primaryPath ? basenameOf(primaryPath) : projectFallbackName,
+        name: paths[0] ? basenameOf(paths[0]) : projectFallbackName,
         path: primaryPath,
         paths,
         isUncategorized: false,
