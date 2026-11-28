@@ -47,7 +47,7 @@ describe('GeneralSettings permission mode confirmation', () => {
     fireEvent.click(switchButtonFor('完全访问权限'));
 
     expect(screen.getByRole('dialog').textContent).toContain(
-      '权限检查已跳过。Agent 可以直接执行文件写入、命令执行等操作，请只在可信隔离环境中使用。',
+      '已跳过所有确认：Neo 会直接修改或删除文件、运行命令、联网，包括工作文件夹以外的文件。用完请切回「每次先问我」。',
     );
     expect(invoke).not.toHaveBeenCalled();
 
