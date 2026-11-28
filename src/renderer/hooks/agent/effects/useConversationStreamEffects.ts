@@ -554,6 +554,7 @@ export function applyConversationStreamEvent(
               role: 'user',
               content: userMessage.content,
               timestamp: userMessage.timestamp ?? now(),
+              ...(userMessage.source ? { source: userMessage.source } : {}),
               ...(userMessage.attachments ? { attachments: userMessage.attachments } : {}),
               ...(userMessage.metadata ? { metadata: userMessage.metadata } : {}),
             });

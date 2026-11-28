@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { ConfirmPromptHost } from '../../../src/renderer/components/ConfirmPromptHost';
 import React from 'react';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -208,8 +209,7 @@ describe('CronCenterPanel visible-list detail invariant (FB-1428)', () => {
   });
 
   it('deleting the only matching task clears detail without jumping to hidden tasks, and clearing search restores default selection', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<CronCenterPanel onClose={() => undefined} />);
+    render(<><CronCenterPanel onClose={() => undefined} /><ConfirmPromptHost /></>);
 
     await screen.findByTestId('cron-job-detail');
     await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
@@ -230,6 +230,8 @@ describe('CronCenterPanel visible-list detail invariant (FB-1428)', () => {
       fireEvent.click(within(matchedDetail).getByRole('button', { name: '删除' }));
     });
 
+    const dialog = await screen.findByRole('dialog', { name: '删除定时任务' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(cronClient.deleteJob).toHaveBeenCalledWith('job-water'));
     await waitFor(() => expect(useCronStore.getState().isLoading).toBe(false));
 

@@ -1,5 +1,7 @@
 import { resolveSkillName } from '@shared/resolveSkillName';
+import type { Message } from '@shared/contract';
 import { useI18n } from '../../../../hooks/useI18n';
+import type { Language, Translations } from '../../../../i18n';
 // ============================================================================
 // SkillStatusMessage - Display Skill activation status
 // ============================================================================
@@ -28,6 +30,19 @@ function parseSkillContent(content: string): { message: string | null; name: str
   };
 }
 
+export function formatSkillStatusText(
+  content: string,
+  t: Pick<Translations, 'toolStepHumanize'>,
+  language: Language,
+): string | null {
+  const { message, name } = parseSkillContent(content);
+  if (!message) {
+    return null;
+  }
+  const skillName = resolveSkillName(name ?? undefined, language, '');
+  return skillName ? t.toolStepHumanize.skill.replace('{skill}', skillName) : t.toolStepHumanize.skillFallback;
+}
+
 /**
  * SkillStatusMessage Component
  *
@@ -36,20 +51,15 @@ function parseSkillContent(content: string): { message: string | null; name: str
  */
 export const SkillStatusMessage: React.FC<SkillStatusMessageProps> = ({ content }) => {
   const { t, language } = useI18n();
-  const { message, name } = parseSkillContent(content);
+  const tooltip = formatSkillStatusText(content, t, language);
 
   // If no valid message format, don't render anything
-  if (!message) {
+  if (!tooltip) {
     return null;
   }
 
-  // 灰色脚注样式，对照 Codex 的 "Using xxx skill" 一行提示
-  // 鼠标悬停时通过 title 暴露原始 message（含 skill 描述）
-  const skillName = resolveSkillName(name ?? undefined, language, '');
-  const tooltip = skillName ? t.toolStepHumanize.skill.replace('{skill}', skillName) : t.toolStepHumanize.skillFallback;
-
   return (
-    <div className="skill-status px-1 py-1 text-xs text-zinc-500 flex items-center gap-1.5" title={tooltip ?? undefined}>
+    <div className="skill-status px-1 py-1 text-xs text-zinc-500 flex items-center gap-1.5" title={tooltip}>
       <Lightbulb className="w-3 h-3 text-zinc-500 flex-shrink-0" />
       <span className="truncate">
         {tooltip}
@@ -63,4 +73,20 @@ export const SkillStatusMessage: React.FC<SkillStatusMessageProps> = ({ content 
  */
 export function isSkillStatusContent(content: string): boolean {
   return content.includes('<command-message>') && content.includes('<command-name>');
+}
+
+/**
+ * Check if a message row represents a host skill activation status envelope.
+ */
+export function isSkillStatusMessage(
+  message: Pick<Message, 'role' | 'content'> & Partial<Pick<Message, 'source' | 'metadata'>>,
+): boolean {
+  if (message.role !== 'user' || typeof message.content !== 'string' || !isSkillStatusContent(message.content)) {
+    return false;
+  }
+  return (
+    message.source === 'skill' ||
+    message.metadata?.skill?.phase === 'status' ||
+    message.content.startsWith('<command-message>')
+  );
 }
