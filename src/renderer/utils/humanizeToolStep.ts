@@ -1,4 +1,5 @@
 import { EXCEL_READ_ACTIONS, EXCEL_WRITE_ACTIONS } from '@shared/constants/excelActions';
+import { ASK_USER_QUESTION_TOOL_NAMES } from '@shared/constants/tools';
 import { describeHelperOutcomes, type HelperOutcome } from './helperOutcomeCopy';
 import { resolveSkillName } from '@shared/resolveSkillName';
 import { catalogConnectorToolPhrase } from '@shared/utils/catalogConnectorToolLabel';
@@ -147,7 +148,7 @@ const SKILL_TOOLS = new Set(['skill', 'Skill']);
 const SCREENSHOT_TOOLS = new Set(['screenshot']);
 const COMPUTER_TOOLS = new Set(['computer_use']);
 const BROWSER_TOOLS = new Set(['browser_action']);
-const ASK_USER_TOOLS = new Set(['AskUserQuestion']);
+const ASK_USER_TOOLS = new Set<string>(ASK_USER_QUESTION_TOOL_NAMES);
 const MEMORY_STORE_TOOLS = new Set(['memory_store']);
 const MEMORY_SEARCH_TOOLS = new Set(['memory_search']);
 // ToolSearch：工具目录检索，对用户零意义的纯内部动作，不进主流聚合行
