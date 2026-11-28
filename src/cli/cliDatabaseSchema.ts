@@ -18,6 +18,7 @@ export function migrateCliSessionsTable(db: CliDb): void {
 
   const migrations = [
     { column: 'status', sql: "ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'idle'" },
+    { column: 'is_deleted', sql: 'ALTER TABLE sessions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0' },
     { column: 'workspace', sql: 'ALTER TABLE sessions ADD COLUMN workspace TEXT' },
     { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
     { column: 'master_task_id', sql: 'ALTER TABLE sessions ADD COLUMN master_task_id TEXT' },

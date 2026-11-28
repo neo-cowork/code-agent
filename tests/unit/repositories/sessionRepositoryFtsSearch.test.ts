@@ -56,6 +56,8 @@ import {
   runTranscriptFtsSearch,
 } from '../../../src/host/services/core/repositories/sessionRepositoryFtsSearch';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { TranscriptHistoryService } from '../../../src/host/services/history/transcriptHistoryService';
 
 const TOOL_CALLS_JSON = JSON.stringify([
   {
@@ -169,6 +171,79 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe('liveSessionsOnly through SessionRepository', () => {
+  let rig: Rig;
+  let repo: SessionRepository;
+
+  beforeEach(() => {
+    rig = createRig();
+    const { db } = rig;
+    repo = new SessionRepository(db);
+    for (const id of ['live', 'deleted', 'archived']) seedSession(db, id);
+    seedMessage(db, 'live', 'live-hit', 'needle 验收', 1);
+    for (const id of ['deleted', 'archived']) {
+      for (let i = 0; i < 3; i += 1) seedMessage(db, id, `${id}-${i}`, 'needle 验收', i + 2);
+    }
+    repo.deleteSession('deleted');
+    repo.archiveSession('archived');
+  });
+
+  afterEach(() => rig.db.close());
+
+  it.each(['message FTS', 'short-query LIKE', 'degraded LIKE', 'transcript FTS'] as const)(
+    '%s filters deleted and archived rows before LIMIT and restores unarchived hits',
+    (path) => {
+      if (path === 'degraded LIKE') markFtsTableRepairFailed('session_messages_fts');
+      const search = (includeRewound: boolean, liveSessionsOnly?: boolean, limit = 1) => {
+        const options = { limit, includeRewound, liveSessionsOnly };
+        return path === 'transcript FTS'
+          ? repo.searchTranscriptFts('needle', options)
+          : repo.searchSessionMessagesFts(path === 'short-query LIKE' ? '验收' : 'needle', {
+            ...options,
+            shortQueryFallback: path === 'short-query LIKE',
+          });
+      };
+
+      for (const includeRewound of [false, true]) {
+        expect(search(includeRewound).map(({ sessionId }) => sessionId)).not.toContain('live');
+        expect(search(includeRewound, true).map(({ messageId }) => messageId)).toEqual(['live-hit']);
+        expect(search(includeRewound, true, 10).map(({ messageId }) => messageId)).toEqual(['live-hit']);
+      }
+
+      repo.unarchiveSession('archived');
+      expect(search(false, true, 10).map(({ messageId }) => messageId).sort()).toEqual([
+        'archived-0', 'archived-1', 'archived-2', 'live-hit',
+      ]);
+    },
+  );
+
+  it('guards direct transcript lookup by message ID and restores access after unarchiving', () => {
+    const options = { liveSessionsOnly: true };
+    expect(repo.getTranscriptAround('deleted-0', options)).toBeNull();
+    expect(repo.getTranscriptAround('archived-0', options)).toBeNull();
+    expect(repo.getTranscriptAround('live-hit', options)?.sessionId).toBe('live');
+    repo.unarchiveSession('archived');
+    expect(repo.getTranscriptAround('archived-0', options)?.sessionId).toBe('archived');
+  });
+
+  it('reserves the transcript verification limit for hits that can be read around', async () => {
+    for (const sessionId of ['deleted', 'archived']) {
+      for (let i = 3; i < 6; i += 1) {
+        seedMessage(rig.db, sessionId, `${sessionId}-${i}`, 'needle 验收', i + 2);
+      }
+    }
+    const options = { limit: 10 };
+    const service = new TranscriptHistoryService(repo);
+
+    expect(repo.searchTranscriptFts('needle', options)).toHaveLength(10);
+    const hits = await service.search('needle', options);
+    expect(hits.map(({ messageId }) => messageId)).toEqual(['live-hit']);
+    await expect(service.around(hits[0].messageId)).resolves.toMatchObject({
+      messages: [{ message: { id: 'live-hit', content: 'needle 验收' }, matched: true }],
+    });
+  });
 });
 
 describe('runSessionMessagesFtsSearch — FTS path', () => {

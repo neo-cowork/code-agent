@@ -310,7 +310,7 @@ describe('runDreamMemoryConsolidation', () => {
     });
 
     expect(db.searchTranscriptFts).toHaveBeenCalled();
-    expect(db.getTranscriptAround).toHaveBeenCalledWith('msg-user', { before: 3, after: 3 });
+    expect(db.getTranscriptAround).toHaveBeenCalledWith('msg-user', { before: 3, after: 3, liveSessionsOnly: true });
     expect(report.verified).toHaveLength(1);
     expect(report.written).toHaveLength(1);
     expect(memoryIO.writeEntry).toHaveBeenCalledWith(expect.objectContaining({

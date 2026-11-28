@@ -149,6 +149,28 @@ describe('CLIDatabaseService/core DatabaseService message parity', () => {
     expectRichProjection(cliDb.getTranscriptAround(richMessage.id)?.messages.find(({ matched }) => matched)?.message);
   });
 
+  it('filters archived and soft-deleted sessions from both searches and direct transcript lookup', () => {
+    cliDb.addMessage(session.id, richMessage);
+    const options = { liveSessionsOnly: true };
+    const query = 'Visible answer';
+    const searchHits = () => [
+      cliDb.searchSessionMessagesFts(query, options).map(({ messageId }) => messageId),
+      cliDb.searchTranscriptFts(query, options).map(({ messageId }) => messageId),
+    ];
+
+    expect(searchHits()).toEqual([[richMessage.id], [richMessage.id]]);
+    cliDb.updateSession(session.id, { status: 'archived' });
+    expect(searchHits()).toEqual([[], []]);
+    expect(cliDb.getTranscriptAround(richMessage.id, options)).toBeNull();
+    cliDb.updateSession(session.id, { status: 'idle' });
+    expect(searchHits()).toEqual([[richMessage.id], [richMessage.id]]);
+    expect(cliDb.getTranscriptAround(richMessage.id, options)?.sessionId).toBe(session.id);
+
+    cliDb.getDb()!.prepare('UPDATE sessions SET is_deleted = 1 WHERE id = ?').run(session.id);
+    expect(searchHits()).toEqual([[], []]);
+    expect(cliDb.getTranscriptAround(richMessage.id, options)).toBeNull();
+  });
+
   it('兼容历史仅含 7 个基础字段的 attachments JSON', () => {
     const legacyAttachment = {
       id: 'legacy-1',

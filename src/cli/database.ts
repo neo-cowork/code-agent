@@ -31,6 +31,7 @@ import { migrateCliSessionsTable, createCliTables, createCliIndexes } from './cl
 import { visibleHistoryMessageWhere } from './cliDatabaseSql';
 import { applyConversationBranchSchema } from '../host/services/core/database/schemaConversationBranch';
 import { SessionRepository } from '../host/services/core/repositories/SessionRepository';
+import { liveSessionWhere } from '../host/services/core/repositories/sessionRepositoryFtsSearch';
 import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
 import { ConversationBranchRepository } from '../host/services/core/repositories/ConversationBranchRepository';
 
@@ -800,7 +801,7 @@ export class CLIDatabaseService {
    */
   searchSessionMessagesFts(
     query: string,
-    options: { limit?: number; sessionId?: string } = {},
+    options: { limit?: number; sessionId?: string; liveSessionsOnly?: boolean } = {},
   ): Array<{
     messageId: string;
     sessionId: string;
@@ -832,6 +833,7 @@ export class CLIDatabaseService {
           FROM session_messages_fts f
           JOIN messages m ON m.id = f.message_id
           WHERE f.content MATCH ? ${whereSession}
+            ${options.liveSessionsOnly ? `AND ${liveSessionWhere('m.session_id')}` : ''}
             AND ${visibleHistoryMessageWhere('m')}
           ORDER BY rank, f.timestamp DESC
           LIMIT ?
@@ -865,6 +867,7 @@ export class CLIDatabaseService {
       toolName?: string;
       timeAfter?: number;
       timeBefore?: number;
+      liveSessionsOnly?: boolean;
     } = {},
   ): Array<{
     messageId: string;
@@ -905,6 +908,7 @@ export class CLIDatabaseService {
       conditions.push('f.timestamp <= ?');
       params.push(options.timeBefore);
     }
+    if (options.liveSessionsOnly) conditions.push(liveSessionWhere('f.session_id'));
     params.push(limit);
 
     const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
@@ -938,7 +942,7 @@ export class CLIDatabaseService {
    */
   getTranscriptAround(
     messageId: string,
-    options: { before?: number; after?: number } = {},
+    options: { before?: number; after?: number; liveSessionsOnly?: boolean } = {},
   ): { sessionId: string; messages: Array<{ message: Message; matched: boolean }> } | null {
     if (!this.db) return null;
     const clampWindow = (value: number | undefined, fallback: number): number => {
@@ -949,7 +953,7 @@ export class CLIDatabaseService {
     const after = clampWindow(options.after, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
 
     const anchor = this.db
-      .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')
+      .prepare(`SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ? ${options.liveSessionsOnly ? `AND ${liveSessionWhere('session_id')}` : ''}`)
       .get(messageId) as { rid: number; session_id: string; timestamp: number } | undefined;
     if (!anchor) return null;
 

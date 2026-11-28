@@ -47,8 +47,9 @@ describe('TranscriptHistoryService', () => {
       sessionId: 'sess-1',
       kinds: ['user_text'],
       limit: 3,
+      liveSessionsOnly: true,
     });
-    expect(getTranscriptAround).toHaveBeenCalledWith('msg-1', { before: 2, after: 2 });
+    expect(getTranscriptAround).toHaveBeenCalledWith('msg-1', { before: 2, after: 2, liveSessionsOnly: true });
     expect(hits).toHaveLength(1);
     expect(around?.messages[0]?.message.content).toContain('memory 是缓存');
   });

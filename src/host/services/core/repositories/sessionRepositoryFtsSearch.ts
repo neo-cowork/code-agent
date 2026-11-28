@@ -1,5 +1,5 @@
 // ============================================================================
-// SessionRepository FTS 搜索 — 从 SessionRepository.ts 拆出（零行为改动）
+// SessionRepository FTS 搜索
 // session_messages_fts / transcript_fts 查询；类方法委托，传入 db。
 // ============================================================================
 
@@ -50,6 +50,8 @@ export interface SessionMessagesFtsSearchOptions {
   /** 按消息 role 过滤 */
   role?: string;
   includeRewound?: boolean;
+  /** Exclude deleted and archived sessions without an owner predicate. */
+  liveSessionsOnly?: boolean;
   /** limit 硬上限覆盖（默认 SESSION_SEARCH.FTS_QUERY_LIMIT_CAP，面向 agent 记忆侧） */
   limitCap?: number;
   /**
@@ -62,7 +64,7 @@ export interface SessionMessagesFtsSearchOptions {
   /**
    * 只召回「活跃会话」的消息：未删除、未归档、归属匹配 userId（null = 未登录/无主）。
    * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
-   * 不传 = 不过滤（agent 记忆侧语义不变）。
+   * 不传则不限制归属或项目。
    */
   activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
 }
@@ -88,6 +90,10 @@ function normalizeFtsQuery(raw: string): string {
     return raw;
   }
   return '"' + raw.replace(/"/g, '""') + '"';
+}
+
+export function liveSessionWhere(sessionColumn: string): string {
+  return `${sessionColumn} IN (SELECT s.id FROM sessions s WHERE s.is_deleted = 0 AND COALESCE(s.status, '') != 'archived')`;
 }
 
 /** activeSessionScope → SQL 条件（sessionColumn 为 FTS/messages 上的会话列）。 */
@@ -116,7 +122,7 @@ function pushActiveSessionScope(
  * 默认分支 JOIN messages 做可见性过滤，会话列用 m.session_id。
  */
 function buildSessionMessagesFtsFilter(
-  options: SessionMessagesFtsCountOptions,
+  options: SessionMessagesFtsCountOptions & Pick<SessionMessagesFtsSearchOptions, 'liveSessionsOnly'>,
 ): { clause: string; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -134,6 +140,7 @@ function buildSessionMessagesFtsFilter(
     params.push(options.role);
   }
   pushActiveSessionScope(conditions, params, sessionColumn, options.activeSessionScope);
+  if (options.liveSessionsOnly) conditions.push(liveSessionWhere(sessionColumn));
 
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
@@ -144,7 +151,7 @@ function buildSessionMessagesFtsFilter(
  * 与 session_messages_fts 触发器的排除口径（is_meta / 循环噪音）保持一致。
  */
 function buildShortQueryFilter(
-  options: SessionMessagesFtsSearchOptions | SessionMessagesFtsCountOptions
+  options: SessionMessagesFtsCountOptions & Pick<SessionMessagesFtsSearchOptions, 'liveSessionsOnly'>,
 ): { clause: string; params: unknown[] } {
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -160,6 +167,7 @@ function buildShortQueryFilter(
     params.push(options.role);
   }
   pushActiveSessionScope(conditions, params, 'm.session_id', options.activeSessionScope);
+  if (options.liveSessionsOnly) conditions.push(liveSessionWhere('m.session_id'));
   return { clause: conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '', params };
 }
 
@@ -388,6 +396,7 @@ export function runTranscriptFtsSearch(db: BetterSqlite3.Database,
     timeAfter?: number;
     timeBefore?: number;
     includeRewound?: boolean;
+    liveSessionsOnly?: boolean;
   } = {}
 ): Array<{
   messageId: string;
@@ -427,6 +436,7 @@ export function runTranscriptFtsSearch(db: BetterSqlite3.Database,
     conditions.push('f.timestamp <= ?');
     params.push(options.timeBefore);
   }
+  if (options.liveSessionsOnly) conditions.push(liveSessionWhere('f.session_id'));
   params.push(limit);
 
   const extra = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
