@@ -12,6 +12,9 @@
 // 由 IPC 层惰性注入 SessionSearchFtsSource；短查询（低于 trigram 最小长度）、
 // caseSensitive / useRegex、或 DB 未就绪时回落内存 LRU 搜索（原行为）。
 // 短查询（低于 trigram 最小长度，如中文 2 字词）由数据源内部走全库 LIKE 兜底。
+// caseSensitive / useRegex 回落内存分支时还会补读 role:'tool' 工具输出行（缓存
+// 回填只收 user/assistant/system），使这两类请求与 FTS 主路径对只存在于工具
+// 输出里的词返回一致命中。
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
@@ -420,6 +423,9 @@ function compareSearchResults(
 /**
  * 是否可走 FTS 主路径：数据源就绪 + 查询达到 trigram 最小长度 +
  * 未请求内存-only 能力（caseSensitive / useRegex）。
+ * 因 caseSensitive / useRegex 回落到内存分支时，若 DB 就绪（ftsSource 有
+ * getMessages）还会补读 tool 输出行参与匹配（见 getToolOutputMessages）
+ * ——工具输出不再只被 FTS 主路径覆盖。
  */
 function canUseFtsSource(
   query: string,
@@ -485,6 +491,53 @@ function getOrHydrateSearchSession(
   } catch (error) {
     logger.warn('Failed to hydrate session from DB for FTS search', { sessionId, error });
     return undefined;
+  }
+}
+
+/**
+ * 内存回落分支的工具输出行：两处缓存回填（isCacheableMessage / isCacheableSearchMessage）
+ * 只收 user/assistant/system，LRU 缓存里没有 role:'tool' 行，但 DB 里有。仅在请求了
+ * 内存-only 能力（caseSensitive / useRegex）时补读 tool 行（不在缓存里的），让这两类
+ * 请求与 FTS 主路径对同一个词返回一致的工具输出命中。形状与 FTS 工具命中相同：
+ * content 经 extractToolOutputText 剥掉 JSON 外壳。
+ *
+ * 只对 caseSensitive / useRegex 开闸：其余内存回落（结构降级 / DB 未就绪）保持零额外
+ * DB 读——「缓存命中不再读库」由 sessionSearch.ipc.test.ts 的回填测试钉住。
+ * 读取失败放行为空数组（记 warn，带 sessionId），绝不抛。
+ */
+function getToolOutputMessages(
+  sessionId: string,
+  cachedMessages: CachedMessage[],
+  ftsSource: SessionSearchFtsSource | undefined,
+  options: SearchOptions
+): SearchResultMessage[] {
+  if (!options.caseSensitive && !options.useRegex) {
+    return [];
+  }
+  if (
+    !ftsSource ||
+    !ftsSource.isReady ||
+    // 结构接口由 IPC 层惰性注入，运行时可能拿到只实现旧接口的 DatabaseService
+    // 子集（CLI / web 等形态）。缺 getMessages 时跳过补读，不能让搜索直接抛。
+    typeof ftsSource.getMessages !== 'function'
+  ) {
+    return [];
+  }
+
+  const cachedIds = new Set(cachedMessages.map((message) => message.id));
+  try {
+    return ftsSource
+      .getMessages(sessionId, SESSION_SEARCH.HYDRATE_MESSAGE_LIMIT)
+      .filter((message) => message.role === 'tool' && !cachedIds.has(message.id))
+      .map((message) => ({
+        id: message.id,
+        role: 'tool' as const,
+        content: extractToolOutputText(message.content),
+        timestamp: message.timestamp,
+      }));
+  } catch (error) {
+    logger.warn('Failed to read tool output rows for memory search fallback', { sessionId, error });
+    return [];
   }
 }
 
@@ -683,10 +736,23 @@ export function searchSessions(
     if (!session) continue;
     const turnNumbers = inferConversationTurnNumbers(session.messages);
 
-    // Search messages
-    for (let i = 0; i < session.messages.length; i++) {
-      const message = session.messages[i];
+    // 缓存里的 user/assistant/system 行 + DB 就绪时补读的 tool 行（缓存回填不收 tool）。
+    // tool 行不在缓存里，与 FTS 工具命中同形：messageIndex = -1、turnNumber = undefined。
+    const candidates: Array<{
+      message: SearchResultMessage;
+      messageIndex: number;
+      turnNumber?: number;
+    }> = session.messages.map((message, i) => ({
+      message,
+      messageIndex: i,
+      turnNumber: turnNumbers[i],
+    }));
+    for (const message of getToolOutputMessages(sessionId, session.messages, ftsSource, options)) {
+      candidates.push({ message, messageIndex: -1, turnNumber: undefined });
+    }
 
+    // Search messages
+    for (const { message, messageIndex, turnNumber } of candidates) {
       // Apply filters
       if (role && message.role !== role) continue;
       if (!passesDateFilter(message, options)) continue;
@@ -714,8 +780,8 @@ export function searchSessions(
       allResults.push({
         sessionId,
         message,
-        messageIndex: i,
-        turnNumber: turnNumbers[i],
+        messageIndex,
+        turnNumber,
         matches,
         relevance,
         snippet,

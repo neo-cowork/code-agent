@@ -174,6 +174,90 @@ describe('tie-break', () => {
   });
 });
 
+// caseSensitive / useRegex 回落内存分支：缓存回填只收 user/assistant/system，
+// 但 DB 就绪时从同一回填窗口补读 role:'tool' 行，命中与默认 FTS 调用一致
+//（sessionId / messageId / role / turnNumber / messageIndex）。IPC 只转发
+// caseSensitive（无 useRegex 字段），useRegex 用例走公开的 searchSessions 入口。
+describe('caseSensitive / useRegex memory fallback also finds tool-only words', () => {
+  // 与 IPC 注入的同一形状数据源（真 better-sqlite3；getMessages 返回含 tool 行的原始行）
+  const dbSource = (): SessionSearchFtsSource => holder.database as unknown as SessionSearchFtsSource;
+  // 默认 FTS 调用触发真实回填（getOrHydrateSearchSession 只收 user/assistant/system）
+  const hydratedCache = (): SessionLocalCache => {
+    const cache = new SessionLocalCache();
+    searchSessions(TOKEN, {}, cache, dbSource());
+    return cache;
+  };
+
+  it('caseSensitive:true finds the tool-only word with the same hit as the default FTS call (IPC entry)', async () => {
+    const fts = await performCrossSessionSearch(TOKEN, {});
+    expect(fts.results).toHaveLength(1);
+    const ftsHit = fts.results[0];
+    expect(ftsHit).toMatchObject({ sessionId: 's1', messageId: 's1-t', role: 'tool', messageIndex: -1 });
+    expect(ftsHit.turnNumber).toBeUndefined();
+
+    const memory = await performCrossSessionSearch(TOKEN, { sessionIds: ['s1'], caseSensitive: true });
+    expect(memory.results).toHaveLength(1);
+    expect(memory.results[0]).toMatchObject({
+      sessionId: ftsHit.sessionId,
+      messageId: ftsHit.messageId,
+      role: 'tool',
+      messageIndex: ftsHit.messageIndex,
+      matchOffset: ftsHit.matchOffset,
+    });
+    expect(memory.results[0].turnNumber).toBe(ftsHit.turnNumber);
+    expect(memory.results[0].snippet).toContain(TOKEN);
+    expect(memory.results[0].snippet).not.toContain('{"');
+  });
+
+  it('useRegex:true finds the tool-only word with the same hit as the default FTS call (searchSessions entry)', () => {
+    const fts = searchSessions(TOKEN, {}, new SessionLocalCache(), dbSource());
+    expect(fts.results).toHaveLength(1);
+    const ftsHit = fts.results[0];
+
+    const memory = searchSessions(TOKEN, { useRegex: true }, hydratedCache(), dbSource());
+    expect(memory.results).toHaveLength(1);
+    expect(memory.results[0].sessionId).toBe(ftsHit.sessionId);
+    expect(memory.results[0].message.id).toBe(ftsHit.message.id);
+    expect(memory.results[0].message.role).toBe('tool');
+    expect(memory.results[0].messageIndex).toBe(ftsHit.messageIndex);
+    expect(memory.results[0].turnNumber).toBe(ftsHit.turnNumber);
+    expect(memory.results[0].message.content).toBe(ftsHit.message.content);
+  });
+
+  it('useRegex pattern semantics are evaluated on the extracted tool output text', () => {
+    const memory = searchSessions('ZK-\\d{4}-QUARTZ', { useRegex: true }, hydratedCache(), dbSource());
+    expect(memory.results.map((x) => x.message.id)).toEqual(['s1-t']);
+    expect(memory.results[0].message.role).toBe('tool');
+    expect(memory.results[0].messageIndex).toBe(-1);
+    expect(memory.results[0].turnNumber).toBeUndefined();
+    expect(memory.results[0].snippet).toContain(TOKEN);
+  });
+
+  it('caseSensitive:true does not hit when the case does not match', async () => {
+    const memory = await performCrossSessionSearch(TOKEN.toLowerCase(), { sessionIds: ['s1'], caseSensitive: true });
+    expect(memory.results).toEqual([]);
+    expect(memory.totalMatches).toBe(0);
+  });
+
+  it('useRegex:true does not hit when the pattern does not match', () => {
+    const memory = searchSessions('ZK-\\d{5}-QUARTZ', { useRegex: true }, hydratedCache(), dbSource());
+    expect(memory.results).toEqual([]);
+    expect(memory.totalMatches).toBe(0);
+  });
+
+  // FB-1998 复查钉：JSON 外壳字段名（content / role / toolCallId / "output" / {"）
+  // 在内存分支不得造成假命中——tool 行参与匹配的是 extractToolOutputText 剥壳后的
+  // 输出文字，不是原始 JSON 串；摘要同样不含 {"。
+  it('JSON-shell field names do not falsely hit on the memory branch', async () => {
+    for (const needle of ['content', 'role', 'toolCallId', '"output"', '\\{"']) {
+      const cs = await performCrossSessionSearch(needle, { sessionIds: ['s1'], caseSensitive: true });
+      expect(cs.results, `caseSensitive ${needle}`).toEqual([]);
+      const rx = searchSessions(needle, { useRegex: true }, hydratedCache(), dbSource());
+      expect(rx.results, `useRegex ${needle}`).toEqual([]);
+    }
+  });
+});
+
 // 旧组队配方行：用户消息以「【组队 · 配方名】」开头（气泡已剥掉前缀，legacyTeamRecipeDisplay.ts）。
 // IPC 结果的 snippet / matchOffset 由 session.ipc.ts 从搜索结果映射而来，必须同样只含用户原话。
 describe('legacy team-recipe prefix on user rows', () => {

@@ -48,6 +48,7 @@ import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleBasicSummary } from './RoleBasicSummary';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
+import { RoleSkillsEditor } from './RoleSkillsEditor';
 import { RoleModelTab } from './RoleModelTab';
 import { RoleSecurityTab } from './RoleSecurityTab';
 import { RolePersonalizationTab } from './RolePersonalizationTab';
@@ -177,38 +178,6 @@ const RecommendedConnectors: React.FC<{ connectors?: RoleRecommendedConnector[] 
       </ul>
     </SettingsSection>
   );
-};
-
-/** 技能页只管 技能/工具/迭代上限；模型档位与指定模型搬去模型页，保存时原样带回不丢。 */
-const SkillsEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => {
-  const { t } = useI18n();
-  const text = t.expert.roleDetail;
-  const skillsText = t.expert.roleSkills;
-  const [draft, setDraft] = useState(() => ({ skills: equipment.skills, tools: equipment.tools, maxIterations: equipment.maxIterations }));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const unknownTools = [...new Set(equipment.tools.filter((tool) => !equipment.availableTools.includes(tool)))];
-  const toggle = (key: "skills" | "tools", value: string) => setDraft((current) => ({ ...current, [key]: current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value] }));
-  const save = async () => {
-    setBusy(true); setError(null);
-    try { await updateRoleEquipment(roleId, { ...draft, model: equipment.model, modelOverride: equipment.modelOverride ?? null }); onSaved(); }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(false); }
-  };
-  return <SettingsSection title={skillsText.title} description={skillsText.description}>
-    <div data-testid="role-equipment-editor" className="space-y-4">
-      <label className="block space-y-1 text-xs text-zinc-400"><span>{text.maxIterations}</span><input data-testid="role-equipment-max-iterations" type="number" min={1} max={200} value={draft.maxIterations} onChange={(event) => setDraft({ ...draft, maxIterations: Math.max(1, Math.min(200, Number(event.target.value) || 1)) })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label>
-      <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.skills}</legend><div className="grid max-h-40 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableSkills.map((skill) => <label key={skill} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.skills.includes(skill)} onChange={() => toggle("skills", skill)} />{skill}</label>)}</div></fieldset>
-      <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.tools}</legend><div className="grid max-h-48 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableTools.map((tool) => <label key={tool} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.tools.includes(tool)} onChange={() => toggle("tools", tool)} />{tool}</label>)}</div></fieldset>
-      {unknownTools.length > 0 && <ul data-testid="role-unknown-tools" className="space-y-1 text-xs text-badge-warning">
-        {unknownTools.map((tool) => <li key={tool} className="flex items-center gap-2">
-          <span>{tool}</span><Badge>{skillsText.toolNeedsCheck}</Badge>
-        </li>)}
-      </ul>}
-      <button /* ds-allow:button: 技能表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50">{busy ? skillsText.saving : skillsText.save}</button>
-      {error ? <div className="text-xs text-badge-danger">{error}</div> : null}
-    </div>
-  </SettingsSection>;
 };
 
 /** 模型页保存时把技能页那几项原样带回，避免改模型把技能勾选冲掉。 */
@@ -909,7 +878,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
       {detail ? (
         <>
           {tab === 'basic' ? <RoleBasicTab summary={<RoleBasicSummary detail={detail} />} action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{expertText.visual.builtinNotice}</p> : null} /> : null}
-          {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /><RecommendedConnectors connectors={detail.recommendedConnectors} /></RoleEquipmentTab> : null}
+          {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><RoleSkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /><RecommendedConnectors connectors={detail.recommendedConnectors} /></RoleEquipmentTab> : null}
           {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'security' && detail.equipment ? <SecurityEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'personalization' ? <RolePersonalizationTab key={roleId} roleId={roleId} personalization={detail.personalization} onSaved={loadDetail} identityEditor={<DefinitionEditor roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} />} /> : null}

@@ -54,14 +54,14 @@ describe('RolePackShelf 名字列表的分隔符', () => {
     useAppStore.setState({ language: 'en' });
     const lines = shelfLines();
     expect(lines).toContain('Skills: seo-audit, cohort-analysis, funnel-review');
-    expect(lines).toContain('Tools: Read, Write, Glob');
+    expect(lines).toContain('Tools: Read and find files, Write and edit files');
     expect(lines.filter((line) => line.includes('、'))).toEqual([]);
   });
 
   it('中文界面仍用顿号', () => {
     const lines = shelfLines();
     expect(lines.some((line) => line.endsWith('seo-audit、cohort-analysis、funnel-review'))).toBe(true);
-    expect(lines.some((line) => line.endsWith('Read、Write、Glob'))).toBe(true);
+    expect(lines.some((line) => line.endsWith('读取和查找文件、写入和编辑文件'))).toBe(true);
   });
 
   it('缺技能提示里的技能名也跟随界面语言', () => {
