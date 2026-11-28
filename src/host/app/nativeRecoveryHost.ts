@@ -20,7 +20,6 @@ import {
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { ToolDefinition, ToolReplaySafety, ToolResult } from '../../shared/contract';
 import { getRunInterruptCause } from '../../shared/contract/durableRun';
-import { ToolExecutor } from '../tools/toolExecutor';
 import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
 import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
@@ -33,6 +32,7 @@ import { INTERRUPTED_TOOL_CALL_PLACEHOLDER } from '../agent/runtime/cancelledToo
 import {
   buildRecoveredToolMessage,
   dispatchLedgerToolApproval,
+  executeRecoveredLedgerTool,
   persistedToolCall,
   rejectLedgerToolApproval,
   toolResultEvidence as ledgerToolResultEvidence,
@@ -73,6 +73,7 @@ interface ApplicationNativeRecoveryDependencies {
     name: string;
     arguments: Record<string, unknown>;
     sessionId: string;
+    runId?: string;
     sourceMessageId: string;
     toolCallId: string;
     workingDirectory: string;
@@ -86,6 +87,7 @@ interface ApplicationNativeRecoveryDependencies {
 
 const MODEL_RECOVERY_MESSAGE_LIMIT = 500;
 const PERSISTED_STREAM_INTERRUPTION_MARKER = /\[\s*(?:连接中断|生成中断)\s*[—-]\s*部分回答已保留\s*\]/u;
+
 const logger = createLogger('NativeRecoveryHost');
 
 function recoveryAutoResumeCount(input: NativeRecoveryOperationInput): number {
@@ -249,19 +251,7 @@ export function createApplicationNativeRecoveryPorts(
     tasks: overrides.tasks ?? getTaskManager(),
     now: overrides.now ?? Date.now,
     resolveToolDefinition: overrides.resolveToolDefinition ?? getToolDefinitionWithCloudMeta,
-    executeTool: overrides.executeTool ?? (async (input) => {
-      const executor = new ToolExecutor({
-        requestPermission: async () => true,
-        workingDirectory: input.workingDirectory,
-        ledgerOrigin: 'desktop',
-      });
-      return executor.execute(input.name, input.arguments, {
-        sessionId: input.sessionId,
-        sourceMessageId: input.sourceMessageId,
-        currentToolCallId: input.toolCallId,
-        turnId: input.toolCallId,
-      });
-    }),
+    executeTool: overrides.executeTool ?? executeRecoveredLedgerTool,
     persistToolMessage: overrides.persistToolMessage ?? (async (sessionId, message) => {
       getDatabase().addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });
     }),
@@ -531,6 +521,7 @@ export function createApplicationNativeRecoveryPorts(
           name: persisted.toolCall.name,
           arguments: persisted.toolCall.arguments,
           sessionId: input.plan.envelope.sessionId,
+          runId: input.plan.envelope.runId,
           sourceMessageId: input.descriptor.sourceMessageId,
           toolCallId: persisted.toolCall.id,
           workingDirectory: input.descriptor.workspace.cwd,
@@ -635,6 +626,7 @@ export function createApplicationNativeRecoveryPorts(
             messages,
             toolCallId: persisted.toolCall.id,
             sessionId: input.plan.envelope.sessionId,
+            runId: input.plan.envelope.runId,
             sourceMessageId: input.descriptor.sourceMessageId,
             workingDirectory: input.descriptor.workspace.cwd,
           },

@@ -58,6 +58,8 @@ import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 import { composeTaskResultForModel } from './taskResultHandback';
 import { appendBashStep, bashStepFromProgress, withToolCallOutcome } from '../../agent/bashStepOutcome';
 
+import { resolveRunUserRuleContext, type RunUserRuleContext } from '../../permissions/runPolicySnapshot';
+
 const logger = createLogger('SessionCommandCenter');
 
 type SessionCommandTaskStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
@@ -193,6 +195,7 @@ export class SessionCommandCenter {
   private readonly persistMemberInput: NonNullable<SessionCommandCenterDependencies['persistMemberInput']>;
   private readonly wakeForegroundBrain: NonNullable<SessionCommandCenterDependencies['wakeForegroundBrain']>;
   private readonly slotLedgerOptions: NonNullable<SessionCommandCenterDependencies['slotLedgerOptions']>;
+  private readonly userRuleContexts = new WeakMap<SessionCommandTask, RunUserRuleContext>();
   private readonly slotRecoveryLocale?: SessionCommandCenterDependencies['slotRecoveryLocale'];
   private readonly stopAgentEventObservation?: () => void;
   private readonly onTaskEvent = (event: TaskManagerEvent): void => {
@@ -232,6 +235,7 @@ export class SessionCommandCenter {
   }
 
   async spawn(input: SpawnSessionTaskInput, priority = false): Promise<SpawnSessionTaskResult> {
+    const delegatedUserRuleContext = resolveRunUserRuleContext(input.sessionId, input.parentRunId);
     const ledger = this.ledger(input.sessionId);
     const id = taskId();
     const admission = ledger.admit({
@@ -283,6 +287,7 @@ export class SessionCommandCenter {
       parentTurnId: input.parentTurnId,
       toolCallId: input.toolCallId,
     };
+    this.userRuleContexts.set(task, delegatedUserRuleContext);
     this.tasks(input.sessionId).set(id, task);
     backgroundChildAdmitted(task);
     this.projectTask(task);
@@ -528,7 +533,9 @@ export class SessionCommandCenter {
     task.status = 'running';
     task.updatedAt = Date.now();
     this.projectTask(task);
-    markSessionCommandTaskRunning(task);
+    const delegatedUserRuleContext = this.userRuleContexts.get(task) ?? {};
+    this.userRuleContexts.set(task, { roleId: delegatedUserRuleContext.roleId });
+    markSessionCommandTaskRunning({ ...task, permissionRoleId: delegatedUserRuleContext.roleId });
     const failLaunch = (error: unknown): void => {
       void this.settle(task, 'failed', error instanceof Error ? error.message : String(error));
     };
@@ -542,6 +549,7 @@ export class SessionCommandCenter {
           ...task.options,
           mode: task.options?.mode ?? 'normal',
           runRegistration: 'auxiliary',
+          delegatedUserRuleContext,
           runId: task.id,
           parentRunId: task.parentRunId,
         },
@@ -879,6 +887,7 @@ export class SessionCommandCenter {
     this.approvalWaitStartedAtByTask.delete(task.id);
     this.lastUrlByTask.delete(task.id);
     this.stepCapHitTasks.delete(task.id);
+    this.userRuleContexts.set(task, { roleId: this.userRuleContexts.get(task)?.roleId });
     task.status = status;
     task.detail = detail;
     task.summary = compactSummary(
@@ -1016,6 +1025,7 @@ export class SessionCommandCenter {
           retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
+          permissionRoleId: this.userRuleContexts.get(task)?.roleId,
           ...(TERMINAL.has(task.status) && task.detail
             ? { resultMarkdown: composeSessionCommandTaskDisplayText(task.detail) }
             : {}),

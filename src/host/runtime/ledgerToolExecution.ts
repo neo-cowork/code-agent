@@ -14,11 +14,37 @@ import type { Message, ToolResult } from '../../shared/contract';
 import { serializeToolResultsForModel } from '../tools/toolResultMessageContent';
 import type { ToolExecutionResult } from '../tools/types';
 
+export async function executeRecoveredLedgerTool(
+  input: Parameters<LedgerToolExecutionPorts['executeTool']>[0],
+): Promise<ToolExecutionResult> {
+  const { ToolExecutor } = await import('../tools/toolExecutor');
+  const executor = new ToolExecutor({
+    // The recovery caller has already fenced the exact approved call.
+    requestPermission: async () => true,
+    workingDirectory: input.workingDirectory,
+    ledgerOrigin: 'desktop',
+  });
+  const execute = () => executor.execute(input.name, input.arguments, {
+    sessionId: input.sessionId,
+    runId: input.runId,
+    sourceMessageId: input.sourceMessageId,
+    currentToolCallId: input.toolCallId,
+    turnId: input.toolCallId,
+  });
+  if (!input.runId) return execute();
+  const { recoverDelegatedUserRuleContext } = await import('../services/commandCenter/sessionCommandTaskMarker');
+  const context = recoverDelegatedUserRuleContext(input.sessionId, input.runId);
+  if (!context) return execute();
+  const { withRecoveredRunUserRuleContext } = await import('../permissions/runPolicySnapshot');
+  return withRecoveredRunUserRuleContext(input.sessionId, input.runId, context, execute);
+}
+
 export interface LedgerToolExecutionPorts {
   executeTool(input: {
     name: string;
     arguments: Record<string, unknown>;
     sessionId: string;
+    runId?: string;
     sourceMessageId: string;
     toolCallId: string;
     workingDirectory: string;
@@ -79,6 +105,7 @@ export async function dispatchLedgerToolApproval(
     messages: Message[];
     toolCallId: string;
     sessionId: string;
+    runId?: string;
     sourceMessageId?: string;
     workingDirectory: string;
   },
@@ -91,6 +118,7 @@ export async function dispatchLedgerToolApproval(
     name: persisted.toolCall.name,
     arguments: persisted.toolCall.arguments,
     sessionId: input.sessionId,
+    ...(input.runId ? { runId: input.runId } : {}),
     sourceMessageId: input.sourceMessageId ?? persisted.assistantMessage.id,
     toolCallId: persisted.toolCall.id,
     workingDirectory: input.workingDirectory,
@@ -128,6 +156,8 @@ export async function rejectLedgerToolApproval(
     toolCallId: string;
     sessionId: string;
     reason: string;
+    /** 「交回我亲手做」点了「我做完了」：同样不执行，但不是失败——reason 作为成功形结果的 output 落账。 */
+    doneByUser?: boolean;
   },
 ): Promise<LedgerToolApprovalRejection> {
   const persisted = persistedToolCall(input.messages, input.toolCallId);
@@ -137,12 +167,9 @@ export async function rejectLedgerToolApproval(
   const message = buildRecoveredToolMessage({
     assistantMessage: persisted.assistantMessage,
     toolCallId: persisted.toolCall.id,
-    result: {
-      toolCallId: persisted.toolCall.id,
-      success: false,
-      error: input.reason,
-      duration: 0,
-    },
+    result: input.doneByUser
+      ? { toolCallId: persisted.toolCall.id, success: true, output: input.reason, duration: 0 }
+      : { toolCallId: persisted.toolCall.id, success: false, error: input.reason, duration: 0 },
     now: ports.now(),
     kind: 'denied',
   });

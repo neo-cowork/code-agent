@@ -10,7 +10,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Message } from '../../../shared/contract';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
-import { getUserConfigDir } from '../../config/configPaths';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -23,11 +22,11 @@ import type { SessionTaskResultStatusWordLocale } from '../../../shared/constant
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
 import { clampTaskResultCardSummary } from './taskResultHandback';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
+import { sessionCommandMarkerDir, sessionCommandMarkerPath } from './sessionCommandTaskMarker';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
 const SESSION_COMMAND_TASK_INTERRUPTED_REASON = 'session_command_task_interrupted_by_restart';
-const MARKER_DIR = 'session-command-running';
 
 interface RunningMarker {
   taskId: string;
@@ -36,6 +35,7 @@ interface RunningMarker {
   shortName: string;
   createdAt: number;
   startedAt: number;
+  permissionRoleId?: string;
   /**
    * settle 已落终态、但「[任务结果]」投影还在会话不可读重试中（登录恢复窗口）：
    * 这份终态快照让重启恢复按真实结局补投，而不是把已完成任务当中断改写成 failed
@@ -53,14 +53,6 @@ interface RunningMarker {
 
 type ResultStatus = 'completed' | 'failed' | 'cancelled';
 
-function markerDir(): string {
-  return path.join(getUserConfigDir(), MARKER_DIR);
-}
-
-function markerPath(taskId: string): string {
-  return path.join(markerDir(), `${encodeURIComponent(taskId)}.json`);
-}
-
 /** 任务进入 running 时调用；写失败只 warn，不影响任务本身。 */
 export function markSessionCommandTaskRunning(task: {
   id: string;
@@ -68,9 +60,10 @@ export function markSessionCommandTaskRunning(task: {
   title: string;
   shortName: string;
   createdAt: number;
+  permissionRoleId?: string;
 }): void {
   try {
-    fs.mkdirSync(markerDir(), { recursive: true });
+    fs.mkdirSync(sessionCommandMarkerDir(), { recursive: true });
     const marker: RunningMarker = {
       taskId: task.id,
       sessionId: task.sessionId,
@@ -78,8 +71,9 @@ export function markSessionCommandTaskRunning(task: {
       shortName: task.shortName,
       createdAt: task.createdAt,
       startedAt: Date.now(),
+      permissionRoleId: task.permissionRoleId,
     };
-    fs.writeFileSync(markerPath(task.id), JSON.stringify(marker));
+    fs.writeFileSync(sessionCommandMarkerPath(task.id), JSON.stringify(marker));
   } catch (error) {
     logger.warn('Failed to write running marker; a restart mid-task will not be reported', {
       taskId: task.id,
@@ -90,7 +84,7 @@ export function markSessionCommandTaskRunning(task: {
 
 export function clearSessionCommandTaskMarker(taskId: string): void {
   try {
-    fs.rmSync(markerPath(taskId), { force: true });
+    fs.rmSync(sessionCommandMarkerPath(taskId), { force: true });
   } catch (error) {
     logger.warn('Failed to remove running marker', {
       taskId,
@@ -116,7 +110,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
   detail?: string;
 }): void {
   try {
-    fs.mkdirSync(markerDir(), { recursive: true });
+    fs.mkdirSync(sessionCommandMarkerDir(), { recursive: true });
     let base: RunningMarker = {
       taskId: task.id,
       sessionId: task.sessionId,
@@ -126,7 +120,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
       startedAt: task.createdAt,
     };
     try {
-      const existing = JSON.parse(fs.readFileSync(markerPath(task.id), 'utf8')) as RunningMarker;
+      const existing = JSON.parse(fs.readFileSync(sessionCommandMarkerPath(task.id), 'utf8')) as RunningMarker;
       if (existing?.taskId === task.id) base = existing;
     } catch {
       // 读不到旧标记（本不该发生）：用兜底形状，宁可带上终态也不能丢
@@ -141,7 +135,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
         settledAt: Date.now(),
       },
     };
-    fs.writeFileSync(markerPath(task.id), JSON.stringify(marker));
+    fs.writeFileSync(sessionCommandMarkerPath(task.id), JSON.stringify(marker));
   } catch (error) {
     logger.warn('Failed to stamp the running marker with the terminal outcome; a restart in the retry window would misread the task as interrupted', {
       taskId: task.id,
@@ -196,7 +190,7 @@ function resolveLocale(): 'zh' | 'en' {
 }
 
 function readMarkers(): Array<{ file: string; marker: RunningMarker }> {
-  const dir = markerDir();
+  const dir = sessionCommandMarkerDir();
   let files: string[];
   try {
     files = fs.readdirSync(dir).filter((name) => name.endsWith('.json'));
@@ -258,7 +252,7 @@ function writeInterruptedLedgerRow(
       startedAt: marker.startedAt,
       completedAt: now,
       failure: { message: text, reason: SESSION_COMMAND_TASK_INTERRUPTED_REASON },
-      metadata: { shortName: marker.shortName, childRunId: marker.taskId },
+      metadata: { shortName: marker.shortName, childRunId: marker.taskId, permissionRoleId: marker.permissionRoleId },
     });
   } catch (error) {
     logger.warn('Restart recovery could not record the ledger row', {
@@ -317,7 +311,7 @@ async function recoverDeferredTerminalResult(
         ...(terminal.status === 'failed' && terminal.detail
           ? { failure: { message: terminal.detail, reason: 'session_command_task_failed' } }
           : {}),
-        metadata: { shortName: marker.shortName, childRunId: marker.taskId },
+        metadata: { shortName: marker.shortName, childRunId: marker.taskId, permissionRoleId: marker.permissionRoleId },
       });
     }
   } catch (error) {

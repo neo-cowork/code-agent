@@ -25,7 +25,7 @@ export async function tryReadOnlyProbeBehindGates(
 ): Promise<{ output: string; programs: string[] } | null> {
   const blocking = Object.keys(gates).filter((name) => gates[name]);
   try {
-    if (matchEffectiveExecPolicy(input.command, input.sessionId) === 'forbidden') blocking.push('execPolicyForbidden');
+    if (matchEffectiveExecPolicy(input.command, input.sessionId, input.runId) === 'forbidden') blocking.push('execPolicyForbidden');
   } catch {
     // exec policy 未初始化：与主链一致，视为无规则
   }

@@ -113,6 +113,10 @@ export async function executeCronAgentAction(
     }
   }
 
+  // K2：preapprove 的发起话只认用户写的提示词正文——拼进同条消息的上轮快照（模型写的）
+  // 与事件载荷（外部来的）不算；HEARTBEAT.md 装载的任务出自工作区文件（agent 可写），不声明。
+  const initiatingUserText = ctx?.heartbeatTask ? undefined : action.prompt;
+
   // 核心 CLI 连接器（飞书 / 腾讯会议）：先刷新登录状态。确认未登录则不建会话、不调模型。
   // 探测超时或失败则照常跑，避免一份过期的「未登录」缓存把任务永久跳过。
   const connectorPrecheck = await refreshLostCoreCliConnectors(action.roleId);
@@ -224,7 +228,7 @@ export async function executeCronAgentAction(
           timeZone, action.allowedPersonalSkillIds)
           + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
         undefined,
-        agentRunOptions,
+        { ...agentRunOptions, initiatingUserText },
         eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
       );
       result = await runWithCronJobBudget(definition.maxRunBudget, () => runWithAgentTimeout(

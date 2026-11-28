@@ -125,7 +125,9 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { eventReplyPermissionRequest } from './eventReplySession';
 import { evaluateGuardFabricGate } from './guardFabricGate';
-import { getPolicyEngine } from '../permissions/policyEngine';
+import { getPolicyEngine, isUserDenyRule } from '../permissions/policyEngine';
+import { resolveUserRuleOutcomeForTool, handbackDoneModelText } from '../permissions/userRuleOutcome';
+import { builtInRulesDeny, denyByExecPolicy, nlPreapprovalExecPolicy } from './nlPreapproveBuiltInDeny';
 import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { noteReadOnlyProbeSkipped, tryReadOnlyProbeBehindGates } from './readOnlyProbeGate';
@@ -217,13 +219,12 @@ type ShellWritePathPolicyOutcome =
   | { kind: 'deny'; check: PolicyCheckResult }
   | { kind: 'ask'; uncertain: string[] };
 
-function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string): boolean {
+function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string, runId?: string): boolean {
   // Active policy files union-merge with defaults that always include denied_paths
   // (~/.ssh/**, ~/.aws/**, /etc/**). No file → getPolicyEnforcer returns null.
   if (policyEnforcer?.isActive) return true;
-  return resolveEffectivePolicyRules(sessionId).some((rule) =>
-    rule.id.startsWith('user-deny-')
-    && rule.action === 'deny'
+  return resolveEffectivePolicyRules(sessionId, runId).some((rule) =>
+    isUserDenyRule(rule)
     && rule.matcher.toolSpecifier?.specifierType === 'path'
     && Boolean(rule.matcher.toolSpecifier.specifier)
   );
@@ -232,7 +233,7 @@ function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | unde
 function shellWritePathPolicyCheck(
   command: string,
   workingDirectory: string,
-  policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string,
+  policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string, runId?: string,
 ): ShellWritePathPolicyOutcome {
   const parsed = parseShellCommand(command);
   const unresolved: string[] = [];
@@ -254,11 +255,11 @@ function shellWritePathPolicyCheck(
       policyEnforcer,
       pathCandidates: [target.path, targetPath],
       displayPath: target.path,
-      sessionId,
+      sessionId, runId,
     });
     if (denied) return { kind: 'deny', check: denied };
   }
-  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer, sessionId)) {
+  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer, sessionId, runId)) {
     return { kind: 'ask', uncertain: unresolved };
   }
   return { kind: 'allow' };
@@ -1464,7 +1465,7 @@ export class ToolExecutor {
     // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
     context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
-      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer, effectiveSessionId)
+      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer, effectiveSessionId, effectiveRunId)
       : { kind: 'allow' as const };
     if (isBashToolName(policyToolName) && typeof params.command === 'string') {
       const officialSkillShellCheck = await guardShellOfficialSkillWrites(params.command, bashWorkingDirectory);
@@ -1798,6 +1799,17 @@ export class ToolExecutor {
       }
     }
 
+    // N-PERM-NL-RULES-K2：deny>handback>ask>preapprove 未命中=ask>命中。ask/handback 强制进审批链；preapprove 命中并入 isPreApproved（同一份排除清单）。
+    const nlRule = resolveUserRuleOutcomeForTool(effectiveSessionId, policyToolName, params, effectiveRunId);
+    const nlExecPolicy = nlRule.kind === 'preapproved' ? nlPreapprovalExecPolicy(policyToolName, params.command, effectiveSessionId, effectiveRunId) : null;
+    if (nlExecPolicy === 'forbidden') return denyByExecPolicy(executionToolName, params, permStartTime, effectiveSessionId, this.ledgerOrigin);
+    const nlForcesAsk = nlRule.kind === 'ask' || nlRule.kind === 'handback' || nlExecPolicy === 'prompt';
+    const nlPreapproved = nlRule.kind === 'preapproved' && !nlForcesAsk && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean) && !(await builtInRulesDeny(policyToolName, params, { sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: canonicalBashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel, workingDirectoryFromToolCall: true }));
+    if (nlRule.kind === 'denied') {
+      recordDecision(executionToolName, params, 'policy-deny', 'user-permission-rule', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      return { success: false, error: `Blocked by your permission rule (${nlRule.rule}). Denied by your own settings; do not retry or achieve the same effect another way.` };
+    }
+
     // Check permission if required
     const scheduledWrite = await classifyFileWrite(policyToolName, params, {
       sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
@@ -1805,8 +1817,7 @@ export class ToolExecutor {
     }, permStartTime);
     const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
-    const isPreApproved = !boundaryViolation
-      && !scheduleWriteGrantRequired
+    const isPreApproved = !scheduleWriteGrantRequired && !nlForcesAsk && ((!boundaryViolation
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1820,7 +1831,7 @@ export class ToolExecutor {
       && !unresolvedWriteTargetForcesAsk
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
-      && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools);
+      && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools)) || nlPreapproved);
     if (isPreApproved) {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1828,13 +1839,13 @@ export class ToolExecutor {
 
     // 只读探测闸门（2b）：全部为假才跑 tryReadOnlyProbe；被挡时 readonly_probe_plan_miss 带上变量名。
     const readOnlyProbeGates = {
-      forcePermissionHandler: Boolean(this.forcePermissionHandler), readArgumentForcesClassification, protectedWriteForcesConfirmation,
+      forcePermissionHandler: Boolean(this.forcePermissionHandler), nlExecPolicyPrompt: nlExecPolicy === 'prompt', readArgumentForcesClassification, protectedWriteForcesConfirmation,
       policyForcesConfirmation, readOnlyForcesConfirmation, boundaryViolation: Boolean(boundaryViolation), unresolvedWriteTargetForcesAsk,
       writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification,
       peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
     };
     const readOnlyProbeDetail = boundaryViolation ? { skillName: boundaryViolation.skillName } : undefined;
-    const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments };
+    const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, runId: effectiveRunId, currentAttachments: options.currentAttachments };
     // 拓扑 ask（async_agent 后台 Bash）使下面的 P0 块整体跳过：只读探测在此单独放行，其余捷径仍被拓扑 ask 挡住。
     if (isBashToolName(policyToolName) && params.command && !isPreApproved && guardFabricForcesApproval && !guardFabricAskRuleOnly) {
       // 无人值守（cron）会话的只读授权只来自定时任务的文件夹授权，不认用户提示词里的路径：留给下游原有处理。
@@ -1850,20 +1861,14 @@ export class ToolExecutor {
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
     // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
+    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk && nlExecPolicy !== 'prompt') {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
       // 命令拆词失败时只允许下方的进程内只读探测（它真执行成功才放行），其余放行路径一律不走。
       if (!commandAnalysisFailedReason) try {
         const policyDecision = matchEffectiveExecPolicy(cmd, effectiveSessionId);
-        if (policyDecision === 'forbidden') {
-          recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
-          return {
-            success: false,
-            error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
-          };
-        }
+        if (policyDecision === 'forbidden') return denyByExecPolicy(executionToolName, params, permStartTime, effectiveSessionId, this.ledgerOrigin);
         if (!this.forcePermissionHandler && policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
@@ -1929,7 +1934,7 @@ export class ToolExecutor {
     // 与 isPreApproved 同口径：用户显式配的确认（ask 规则 / always_confirm / readOnly）
     // 和其余强制升档信号不能被绕过；只有 boundaryViolation / writeWithoutWorkspaceAuthority
     // 这两个默认 ask 是本单有意放行的。
-    const roleOwnMemoryUnattendedAllow = !scheduleWriteGrantRequired
+    const roleOwnMemoryUnattendedAllow = !scheduleWriteGrantRequired && !nlForcesAsk
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1966,7 +1971,7 @@ export class ToolExecutor {
     // 文件」的占位符/Markdown 残留补轮——批准即拍板，不重写、不重弹同一张审批卡。
     let userApproved = false;
     let userEditedKeys: string[] = [];
-    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (guardFabricForcesApproval && guardFabricAskRuleOnly)) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
+    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (guardFabricForcesApproval && guardFabricAskRuleOnly) || nlForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || nlForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -2082,6 +2087,7 @@ export class ToolExecutor {
             && !protectedWriteForcesConfirmation
             && !guardFabricForcesApproval
             && !computerApp
+            && !nlForcesAsk
           ) {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
@@ -2237,7 +2243,7 @@ export class ToolExecutor {
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
           || peerOriginForcesConfirmation || launderRetryForcesAsk
-          || Boolean(cuaSensitiveStep)
+          || nlForcesAsk || Boolean(cuaSensitiveStep)
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
           || scheduleWriteGrantRequired
           || shouldForceConfirm;
@@ -2414,13 +2420,14 @@ export class ToolExecutor {
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
       // 信任边界 ask（W3 写边界）同样让路：2026-08-13 真机事故里 devModeAutoApprove
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
-      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk || subagentForcesConfirmation) {
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk || subagentForcesConfirmation || nlForcesAsk) {
         permissionRequest.forceConfirm = true;
         // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
         // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
         // （只读档/guardFabric/保护路径/不确定目标/peer 触发/确认门）照旧人工。
         if (
           boundaryAskForcesConfirmation
+          && !nlForcesAsk && !subagentForcesConfirmation
           && !readOnlyForcesConfirmation
           && !guardFabricForcesApproval
           && !protectedWriteForcesConfirmation
@@ -2435,6 +2442,8 @@ export class ToolExecutor {
         permissionRequest.forceConfirm = true;
         permissionRequest.forceConfirmBoundaryOnly = false;
       }
+      // N-PERM-NL-RULES-K2 handback：卡面/收件箱换「我做完了 / 让 Neo 做这一次」，裁决也走 user_did_it。
+      if (nlRule.kind === 'handback') permissionRequest.handback = true;
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
       }
@@ -2517,13 +2526,15 @@ export class ToolExecutor {
 
       const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
-        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, request: permissionRequest,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && nlRule.kind !== 'handback', request: permissionRequest,
         ask: () => requestPermissionWithTelemetry({
           request: permissionRequest,
           toolCallId: options.currentToolCallId,
           requestPermission: this.requestPermission,
         }),
       });
+      // N-PERM-NL-RULES-K2 handback「我做完了」：工具不执行，以成功形回给模型（用户亲自做，勿重试，继续别的活）——正常出路，不是失败。
+      if (ask.userDidIt) return { success: true, output: ask.message ?? handbackDoneModelText(executionToolName) };
       // N-WRITEBACK-EDIT：用户在审批卡上改过的参数在这里、且只在这里替换。下游的
       // approvedToolCall（工具体内 canUseTool 的短路匹配）、账本、派发全部拿到改后的那份，
       // 8 个写回工具文件一行不动。表外工具/字段/必填为空 → fail-closed 当拒绝处理。

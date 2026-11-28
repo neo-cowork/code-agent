@@ -13,7 +13,7 @@
 // 消费端（E1-E6）不再直读活状态，改读这里的有效视图。没有快照的路径（CLI/eval/
 // 从不 begin 的测试）视图 === 活状态，行为与 origin/main 完全一致。
 //
-// 子代理不穿 runId：模块内维护 sessionId → 最新活跃 run 的映射，E6 侧只传 sessionId。
+// 旧档位/策略调用仍可用会话栈。一句话规则的角色与原话必须按原生 run id 读取。
 
 import {
   currentPolicyMutationSeq,
@@ -39,6 +39,11 @@ import {
 // 快照存储
 // ----------------------------------------------------------------------------
 
+export interface RunUserRuleContext {
+  roleId?: string;
+  initiatingText?: string;
+}
+
 interface RunPolicySnapshot {
   runId: string;
   sessionId?: string;
@@ -50,6 +55,10 @@ interface RunPolicySnapshot {
   mode?: PermissionMode;
   /** null = run 起点没有活跃的 policy 文件（出现新文件是收紧，走活状态）。 */
   enforcer?: PolicyEnforcerState | null;
+  /**
+   * Host-verified role and initiating text, scoped to this native run.
+   */
+  userRuleContext?: RunUserRuleContext;
 }
 
 const runsById = new Map<string, RunPolicySnapshot>();
@@ -78,6 +87,11 @@ function findRunSnapshot(runId?: string, sessionId?: string): RunPolicySnapshot 
   return undefined;
 }
 
+function findExactRunSnapshot(sessionId?: string, runId?: string): RunPolicySnapshot | undefined {
+  const snapshot = runId ? runsById.get(runId) : undefined;
+  return snapshot?.sessionId === sessionId ? snapshot : undefined;
+}
+
 function trimJournalToActiveSnapshots(): void {
   if (runsById.size === 0) {
     trimPolicyMutationsAtOrBelow(currentPolicyMutationSeq());
@@ -93,8 +107,14 @@ function trimJournalToActiveSnapshots(): void {
 /**
  * run 起点冻结基线。在 agentOrchestrator 里紧随角色档写入之后调用——专家自带的
  * 审批档是本轮基线的一部分；finally 里配对 endRunPolicy。
+ * context（N-PERM-NL-RULES-K2）：本轮角色 id 与发起话原文，随快照冻结；run 结束
+ * 随快照一起丢弃（endRunPolicy），不会漏到下一轮或别的会话。
  */
-export function beginRunPolicy(runId: string, sessionId?: string): void {
+export function beginRunPolicy(
+  runId: string,
+  sessionId?: string,
+  context?: RunUserRuleContext,
+): void {
   const watermark = currentPolicyMutationSeq();
   let rules: PolicyRule[] | undefined;
   try {
@@ -120,7 +140,38 @@ export function beginRunPolicy(runId: string, sessionId?: string): void {
   } catch {
     enforcer = undefined;
   }
-  runsById.set(runId, { runId, sessionId, watermark, rules, execRules, mode, enforcer });
+  runsById.set(runId, {
+    runId,
+    sessionId,
+    watermark,
+    rules,
+    execRules,
+    mode,
+    enforcer,
+    ...(context && (context.roleId !== undefined || context.initiatingText !== undefined)
+      ? { userRuleContext: { ...context } }
+      : {}),
+  });
+  if (sessionId) {
+    const stack = activeRunsBySession.get(sessionId) ?? [];
+    stack.push(runId);
+    activeRunsBySession.set(sessionId, stack);
+  }
+  trimJournalToActiveSnapshots();
+}
+
+/**
+ * N-PERM-NL-RULES-K2：只盖章、不冻结。给不经 AgentOrchestrator 的 run 入口用（桌面聊天的
+ * /api/run 自己起 AgentLoop）——这些入口历来读活状态，这里只登记本轮的角色与发起话：
+ * 规则/exec/档位/enforcer 四个组件都不捕获（undefined = 各自回落活状态），权限视图
+ * 与登记前完全一致。同样与 endRunPolicy 配对，run 结束盖章即清。
+ */
+export function beginRunUserRuleContext(
+  runId: string,
+  sessionId: string | undefined,
+  context: RunUserRuleContext,
+): void {
+  runsById.set(runId, { runId, sessionId, watermark: currentPolicyMutationSeq(), userRuleContext: { ...context } });
   if (sessionId) {
     const stack = activeRunsBySession.get(sessionId) ?? [];
     stack.push(runId);
@@ -210,18 +261,36 @@ export function resolveEffectiveSessionMode(sessionId?: string): PermissionMode 
   return effectiveModeFor(findRunSnapshot(undefined, sessionId), sessionId);
 }
 
+/** Role and phrase checks require the call's own run identity, including in concurrent lanes. */
+export function resolveRunUserRuleContext(sessionId?: string, runId?: string): RunUserRuleContext {
+  return { ...findExactRunSnapshot(sessionId, runId)?.userRuleContext };
+}
+
+/** A recovered call can apply its persisted role without replacing any live snapshot. */
+export async function withRecoveredRunUserRuleContext<T>(
+  sessionId: string, runId: string, context: RunUserRuleContext, execute: () => Promise<T>,
+): Promise<T> {
+  if (runsById.has(runId)) return execute();
+  runsById.set(runId, { runId, sessionId, watermark: currentPolicyMutationSeq(), userRuleContext: { ...context } });
+  try {
+    return await execute();
+  } finally {
+    endRunPolicy(runId);
+  }
+}
+
 /** E2/E3：用户规则引擎的有效规则列表。 */
-export function resolveEffectivePolicyRules(sessionId?: string): PolicyRule[] {
+export function resolveEffectivePolicyRules(sessionId?: string, runId?: string): PolicyRule[] {
   const live = getPolicyEngine().getRules();
-  const snapshot = findRunSnapshot(undefined, sessionId);
+  const snapshot = runId ? findExactRunSnapshot(sessionId, runId) : findRunSnapshot(undefined, sessionId);
   if (!snapshot) return live;
   return applyRuleFreeze(live, snapshot);
 }
 
 /** E5：按有效 exec 规则匹配命令决策（null = 不命中，走常规权限流程）。 */
-export function matchEffectiveExecPolicy(command: string, sessionId?: string): PolicyDecision | null {
+export function matchEffectiveExecPolicy(command: string, sessionId?: string, runId?: string): PolicyDecision | null {
   const store = getExecPolicyStore();
-  const snapshot = findRunSnapshot(undefined, sessionId);
+  const snapshot = runId ? findExactRunSnapshot(sessionId, runId) : findRunSnapshot(undefined, sessionId);
   if (!snapshot?.execRules) return store.match(command);
   const snapIds = new Set(snapshot.execRules.map(execRuleId));
   const frozenAway = new Set<string>();

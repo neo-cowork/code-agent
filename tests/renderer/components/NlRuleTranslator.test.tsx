@@ -170,7 +170,7 @@ describe('验收⑤：识别不了 / 受保护的用户话术', () => {
     expect(screen.getByTestId('nl-rule-reason').textContent).toContain('不会帮你设成自动放行');
     const behaviorSelect = screen.getByTestId('nl-rule-behavior') as HTMLSelectElement;
     const optionValues = [...behaviorSelect.querySelectorAll('option')].map((option) => option.value);
-    expect(optionValues).toEqual(['ask', 'deny']);
+    expect(optionValues).toEqual(['ask', 'deny', 'handback']);
     expect(behaviorSelect.value).toBe('ask');
 
     fireEvent.click(screen.getByTestId('nl-rule-confirm'));
@@ -193,6 +193,53 @@ describe('验收⑤：识别不了 / 受保护的用户话术', () => {
       expect(screen.getByTestId('nl-rule-reason').textContent).toContain('更严的那条会生效');
     });
     expect((screen.getByTestId('nl-rule-behavior') as HTMLSelectElement).value).toBe('deny');
+  });
+});
+
+// 返修 r6（PR #2911 Important 3 的界面侧同类）：规则「是不是同一条」只看 档位+规则+角色，
+// 短语不在里面——同一条「我说了才做」换了触发短语再确认，旧实现当成已存在原样写回，
+// 提示「已保存」但新短语被悄悄丢掉，旧短语继续生效。
+describe('K2：同一条 preapprove 规则换短语再确认 → 保存的是卡上这组短语', () => {
+  it('已存旧短语，卡上是新短语 → set 写入新短语，不重复追加', async () => {
+    const saved = {
+      permissions: {
+        deny: [], ask: [], allow: [],
+        nlRules: [
+          { behavior: 'handback', rule: 'Bash(npm publish *)' },
+          { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['旧口令'] },
+        ],
+      },
+    };
+    const result = okResult({
+      draft: {
+        tool: 'Bash', pattern: 'npm publish *', behavior: 'preapprove', phrases: ['新口令'],
+        examples: { hit: ['npm publish --tag next'], miss: ['npm test'] },
+      },
+      rule: 'Bash(npm publish *)',
+      behavior: 'preapprove',
+      phrases: ['新口令'],
+      examples: { hit: ['npm publish --tag next'], miss: ['npm test'] },
+    });
+    invokeDomain.mockImplementation((domain: string, action: string) => {
+      if (domain === IPC_DOMAINS.SETTINGS && action === 'get') return Promise.resolve(saved);
+      if (domain === IPC_DOMAINS.PERMISSION_TRANSLATE && action === 'translate') return Promise.resolve(result);
+      return Promise.resolve(undefined);
+    });
+    render(<NlRuleTranslator />);
+    fireEvent.change(screen.getByTestId('nl-rule-input'), { target: { value: '说新口令才发包' } });
+    fireEvent.click(screen.getByTestId('nl-rule-translate'));
+    fireEvent.click(await screen.findByTestId('nl-rule-confirm'));
+    await waitFor(() => {
+      expect(setCalls()).toHaveLength(1);
+    });
+    expect(setCalls()[0][2]).toEqual({
+      permissions: {
+        nlRules: [
+          { behavior: 'handback', rule: 'Bash(npm publish *)' },
+          { behavior: 'preapprove', rule: 'Bash(npm publish *)', phrases: ['新口令'] },
+        ],
+      },
+    });
   });
 });
 
