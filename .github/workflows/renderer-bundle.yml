@@ -360,8 +360,20 @@ jobs:
             if [ -n "${ROLLBACK_REASON}" ]; then
               ARGS+=(--rollback-reason "${ROLLBACK_REASON}")
             fi
+          else
+            MIN="${MIN_SHELL_VERSION:-$VERSION}"
+            MIN="${MIN#v}"
+            rm -rf "$RUNNER_TEMP/shell-baseline"
+            if git fetch --no-tags --depth=1 origin "+refs/tags/v${MIN}:refs/tags/v${MIN}"; then
+              git worktree add --detach "$RUNNER_TEMP/shell-baseline" "v${MIN}"
+              ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/shell-baseline/node_modules"
+            fi
+            ARGS+=(--shell-baseline-root "$RUNNER_TEMP/shell-baseline")
           fi
           npm run release:renderer-bundle -- "${ARGS[@]}"
+          if [ -f dist/renderer-bundle/publish-gate.json ] && [ "$(node -p "Boolean(require('./dist/renderer-bundle/publish-gate.json').blocked)")" = "true" ]; then
+            echo "RENDERER_PUBLISH_BLOCKED=true" >> "$GITHUB_ENV"
+          fi
           if [ "${DRY_RUN}" = "true" ]; then
             echo "::notice::Renderer bundle dry-run: generated candidate artifacts only; OSS upload and published verification will be skipped."
           fi
@@ -400,6 +412,9 @@ jobs:
           if [ -n "${ROLLOUT_PERCENT}" ]; then
             RECORD_ARGS+=(--rollout-percent "${ROLLOUT_PERCENT}")
           fi
+          if [ -f dist/renderer-bundle/publish-gate.json ]; then
+            RECORD_ARGS+=(--publish-gate-json dist/renderer-bundle/publish-gate.json)
+          fi
           npm run renderer:release-record -- "${RECORD_ARGS[@]}"
           cat dist/renderer-bundle/release-record.md >> "${GITHUB_STEP_SUMMARY}"
 
@@ -412,7 +427,7 @@ jobs:
         run: npm run renderer:verify-production -- --skip-renderer-bundle --retry-attempts 12 --retry-delay-ms 30000
 
       - name: Install ossutil (Aliyun OSS CLI)
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' && env.RENDERER_PUBLISH_BLOCKED != 'true' }}
         run: |
           curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-linux-amd64.zip"
           unzip -o /tmp/ossutil.zip -d /tmp/ossutil
@@ -421,7 +436,7 @@ jobs:
           ossutil version
 
       - name: Upload renderer bundle to Aliyun OSS
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' && env.RENDERER_PUBLISH_BLOCKED != 'true' }}
         env:
           ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
           ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
@@ -462,7 +477,7 @@ jobs:
           fi
 
       - name: Verify published renderer bundle
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' && env.RENDERER_PUBLISH_BLOCKED != 'true' }}
         run: |
           # Verify the immutable version snapshot first. Channel-level latest/
           # objects are overwritten one by one and can briefly come from
@@ -489,7 +504,7 @@ jobs:
           npx tsx scripts/verify-renderer-bundle-publish.mjs "${VERIFY_ARGS[@]}"
 
       - name: Verify production renderer hot-update surface
-        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' }}
+        if: ${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' && env.RENDERER_PUBLISH_BLOCKED != 'true' }}
         run: |
           PROD_ARGS=(
             --manifest-url "${BUNDLE_BASE_URL}/manifest.json"

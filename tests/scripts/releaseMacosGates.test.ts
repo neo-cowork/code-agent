@@ -740,14 +740,15 @@ describe('macOS release fail-closed gates', () => {
     ]) {
       expect(stepByName(name)?.if).toBe(buildCondition);
     }
+    expect(stepByName('Verify production renderer rollout control plane')?.if).toBe(publishCondition);
+    const gatedPublishCondition = "${{ env.CODE_AGENT_CONTROL_PLANE_PRIVATE_KEY != '' && env.CODE_AGENT_CONTROL_PLANE_KEY_ID != '' && env.RENDERER_BUNDLE_DRY_RUN != 'true' && env.RENDERER_PUBLISH_BLOCKED != 'true' }}";
     for (const name of [
-      'Verify production renderer rollout control plane',
       'Install ossutil (Aliyun OSS CLI)',
       'Upload renderer bundle to Aliyun OSS',
       'Verify published renderer bundle',
       'Verify production renderer hot-update surface',
     ]) {
-      expect(stepByName(name)?.if).toBe(publishCondition);
+      expect(stepByName(name)?.if).toBe(gatedPublishCondition);
     }
   });
 
