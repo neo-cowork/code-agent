@@ -4,6 +4,7 @@ import { getIncompleteToolCallIds } from '../../session/streamSnapshot';
 import type { ResponseContentPart } from '../types';
 import type { ModelResponse } from '../../agent/loopTypes';
 import type { ToolCall, ModelConfig } from '../../../shared/contract';
+import { splitThinkTags } from '../../../shared/modelMarkupStrip';
 import { logger } from './aiSdkFetch';
 import type { AiSdkPromptShape } from './aiSdkPromptBuilder';
 
@@ -203,12 +204,24 @@ export function buildStreamResponse(acc: StreamAccumulator, config: ModelConfig)
     streaming: true,
   });
 
+  const { content, reasoning } = splitThinkTags(acc.content, acc.reasoning);
+  if (content !== acc.content) {
+    logger.debug('[AiSdkAdapter] think markup split', {
+      exit: 'buildStreamResponse', contentCharsBefore: acc.content.length, contentCharsAfter: content.length,
+    });
+  }
+  const contentParts = acc.contentParts.flatMap((part): ResponseContentPart[] => {
+    if (part.type !== 'text') return [part];
+    const { content: text } = splitThinkTags(part.text, acc.reasoning);
+    return content && text ? [{ ...part, text }] : [];
+  });
+
   return {
     type: toolCalls.length > 0 ? 'tool_use' : 'text',
-    content: acc.content || undefined,
+    content: content || undefined,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    contentParts: acc.contentParts.length > 0 ? acc.contentParts : undefined,
-    thinking: acc.reasoning || undefined,
+    contentParts: contentParts.length > 0 ? contentParts : undefined,
+    thinking: reasoning || undefined,
     usage: acc.usage || { inputTokens: 0, outputTokens: Math.ceil(acc.charCount / 4) },
     finishReason: acc.finishReason,
     truncated: acc.finishReason === 'length',

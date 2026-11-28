@@ -10,6 +10,7 @@ import {
   type SessionMediaContext,
 } from '@shared/utils/sessionMediaAssets';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { Button } from '../../../../primitives';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -389,15 +390,22 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   )}
                   {userMessage === undefined && !interruptionPlaceholder && !structuredHostReason && !remindersReadDenied && (
                     <>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-expanded={showRawError}
+                        data-testid="tool-raw-error-toggle"
                         onClick={() => setShowRawError((v) => !v)}
-                        className="mt-2 block text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+                        className="mt-2 h-auto px-1.5 py-0.5 text-[11px] font-normal text-zinc-300 hover:text-zinc-100"
                       >
                         {showRawError ? copy.hideRawError : copy.viewRawError}
-                      </button>
+                      </Button>
                       {showRawError && (
-                        <pre className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-800/50 bg-gray-900/50 p-2 text-[11px] text-zinc-500">
+                        <pre
+                          data-testid="tool-raw-error-content"
+                          className="mt-1.5 max-h-48 overflow-auto scrollbar-hidden whitespace-pre-wrap break-words rounded-md border border-zinc-700/60 bg-surface p-2 text-[11px] text-zinc-200"
+                        >
                           {stripAnsiCodes(displayError || '')}
                         </pre>
                       )}
