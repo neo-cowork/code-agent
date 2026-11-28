@@ -11,6 +11,8 @@ import { getServerReconnectingMessage } from './serverConnectionMonitor';
 
 export const OFFLINE_SEND_PENDING_CODE = 'SEND_OFFLINE_PENDING';
 export const OFFLINE_SEND_FAILED_CODE = 'SEND_OFFLINE_FAILED';
+/** 超过该窗口的离线挂起消息不再自动重放，避免久置/重开应用后静默执行过时指令。 */
+export const OFFLINE_AUTO_REPLAY_MAX_AGE_MS = 10 * 60 * 1000;
 
 export type OfflineAutoReplaySurface = 'composer' | 'outbox';
 
@@ -159,7 +161,64 @@ export function isOfflineSendFailureCode(code: string): boolean {
   return code === OFFLINE_SEND_PENDING_CODE || code === OFFLINE_SEND_FAILED_CODE;
 }
 
-/** 登记 Surface B 离线挂起气泡当刻的 eventStreamRevision。 */
+// Surface B 自动重放票据存 sessionStorage（与 Surface A 同口径：跨恢复刷新保留，
+// 关掉标签页/退出重开后自然失效，并受 OFFLINE_AUTO_REPLAY_MAX_AGE_MS 兜底，避免数天后静默执行旧指令）。
+const OUTBOX_AUTO_SEND_PREFIX = 'neo.offlineOutboxAutoSend.v1:';
+
+function outboxAutoSendStorageKey(sessionId: string, clientMessageId: string): string {
+  return `${OUTBOX_AUTO_SEND_PREFIX}${sessionId}:${clientMessageId}`;
+}
+
+function getSafeSessionStorage(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function writeOfflineOutboxAutoSendTicket(sessionId: string, clientMessageId: string): void {
+  const store = getSafeSessionStorage();
+  if (!store) return;
+  try {
+    store.setItem(outboxAutoSendStorageKey(sessionId, clientMessageId), JSON.stringify({ at: Date.now() }));
+  } catch {
+    // Private mode / quota exceeded: degrade to manual retry only.
+  }
+}
+
+export function clearOfflineOutboxAutoSendTicket(sessionId: string, clientMessageId: string): void {
+  const store = getSafeSessionStorage();
+  if (!store) return;
+  try {
+    store.removeItem(outboxAutoSendStorageKey(sessionId, clientMessageId));
+  } catch {
+    // Ignore storage errors on clear.
+  }
+}
+
+export function isOfflineOutboxAutoSendEligible(
+  sessionId: string,
+  clientMessageId: string,
+  now = Date.now(),
+): boolean {
+  const store = getSafeSessionStorage();
+  if (!store) return false;
+  try {
+    const raw = store.getItem(outboxAutoSendStorageKey(sessionId, clientMessageId));
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { at?: unknown };
+    if (typeof parsed.at !== 'number' || now - parsed.at > OFFLINE_AUTO_REPLAY_MAX_AGE_MS) {
+      store.removeItem(outboxAutoSendStorageKey(sessionId, clientMessageId));
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 登记 Surface B 离线挂起气泡当刻的 eventStreamRevision 与本标签页重放票据。 */
 export function recordOfflineOutboxPendingRevisionIfNeeded(
   sessionId: string | undefined,
   clientMessageId: string,
@@ -171,5 +230,6 @@ export function recordOfflineOutboxPendingRevisionIfNeeded(
       clientMessageId,
       useServerConnectionStore.getState().eventStreamRevision,
     );
+    writeOfflineOutboxAutoSendTicket(sessionId, clientMessageId);
   }
 }

@@ -5,6 +5,8 @@
 // 跨 serverConnectionMonitor 恢复刷新保留，但关闭标签页即自然失效。
 // ============================================================================
 
+import { OFFLINE_AUTO_REPLAY_MAX_AGE_MS } from '../../../../utils/offlineSend';
+
 const STORAGE_KEY_PREFIX = 'neo.offlinePendingSend.v1:';
 
 export interface OfflinePendingSendRecord {
@@ -41,7 +43,9 @@ export function readOfflinePendingSend(composerKey: string | null): OfflinePendi
       || typeof parsed.clientMessageId !== 'string'
       || !parsed.clientMessageId.trim()
       || typeof parsed.at !== 'number'
+      || Date.now() - parsed.at > OFFLINE_AUTO_REPLAY_MAX_AGE_MS
     ) {
+      store.removeItem(storageKey(composerKey));
       return null;
     }
     return {

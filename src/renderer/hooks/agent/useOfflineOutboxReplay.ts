@@ -7,17 +7,20 @@
 // ============================================================================
 
 import { useEffect, useRef } from 'react';
-import { clearFailedSend } from '../../stores/failedSendOutbox';
+import { clearFailedSend, recordFailedSend } from '../../stores/failedSendOutbox';
 import { useMessageActionStore } from '../../stores/messageActionStore';
 import { useServerConnectionStore } from '../../stores/serverConnectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { createLogger } from '../../utils/logger';
 import {
+  clearOfflineOutboxAutoSendTicket,
   clearOfflineOutboxFailureRevision,
   finishOfflineAutoReplayAttempt,
   getOfflineOutboxFailureRevision,
   isOfflineAutoReplayingId,
+  isOfflineOutboxAutoSendEligible,
   markOfflineAutoReplayAttempt,
+  OFFLINE_SEND_FAILED_CODE,
   OFFLINE_SEND_PENDING_CODE,
 } from '../../utils/offlineSend';
 
@@ -63,9 +66,29 @@ export function useOfflineOutboxReplay(params: {
       });
       clearFailedSend(currentSessionId, clientMessageId);
       clearOfflineOutboxFailureRevision(currentSessionId, clientMessageId);
+      clearOfflineOutboxAutoSendTicket(currentSessionId, clientMessageId);
       const live = useSessionStore.getState();
       if (live.currentSessionId === currentSessionId) {
         live.setMessages(live.messages.filter((message) => message.id !== pendingError.id));
+      }
+      return;
+    }
+
+    // 1b. 标签页时效守卫：只对本标签页且未过 TTL 的挂起记录自动重放；
+    //     关闭重开或过期后降级为常规手动重试态，绝不在数天后静默执行旧指令。
+    if (!isOfflineOutboxAutoSendEligible(currentSessionId, clientMessageId)) {
+      clearOfflineOutboxFailureRevision(currentSessionId, clientMessageId);
+      const downgradedError = {
+        ...pendingError,
+        metadata: { ...pendingError.metadata, sendFailureCode: OFFLINE_SEND_FAILED_CODE },
+      };
+      const live = useSessionStore.getState();
+      const failedUser = live.messages.find((message) => message.role === 'user' && message.id === clientMessageId);
+      if (failedUser) {
+        recordFailedSend(currentSessionId, failedUser, downgradedError);
+      }
+      if (live.currentSessionId === currentSessionId) {
+        live.setMessages(live.messages.map((message) => (message.id === pendingError.id ? downgradedError : message)));
       }
       return;
     }
@@ -85,6 +108,7 @@ export function useOfflineOutboxReplay(params: {
 
     attemptedErrorIdsRef.current.add(pendingError.id);
     clearOfflineOutboxFailureRevision(currentSessionId, clientMessageId);
+    clearOfflineOutboxAutoSendTicket(currentSessionId, clientMessageId);
     markOfflineAutoReplayAttempt(clientMessageId, 'outbox');
     logger.info('Surface B replaying offline failed bubble', {
       sessionId: currentSessionId,

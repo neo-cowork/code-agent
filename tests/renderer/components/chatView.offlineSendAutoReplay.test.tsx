@@ -523,6 +523,52 @@ describe('Offline send auto-replay (Surface A + Surface B)', { timeout: 60_000 }
     expect(runPayloads).toHaveLength(1);
   });
 
+  it('Surface B stale outbox entry from a closed/reopened app (no sessionStorage ticket) degrades to manual retry without auto-sending', async () => {
+    const sessionId = 'sess-existing';
+    useSessionStore.setState({
+      currentSessionId: sessionId,
+      messages: [
+        { id: 'u-prev', role: 'user', content: '上一轮问题', timestamp: 10 },
+        { id: 'u-stale-old', role: 'user', content: '三天前离线失败的旧指令', timestamp: 20, metadata: { sendFailed: true } },
+        {
+          id: 'err-stale-old',
+          role: 'assistant',
+          content: '',
+          timestamp: 21,
+          metadata: {
+            retryPrompt: '三天前离线失败的旧指令',
+            retryClientMessageId: 'u-stale-old',
+            retrySessionId: sessionId,
+            sendFailureCode: 'SEND_OFFLINE_PENDING',
+          },
+        },
+      ],
+      sessions: [{
+        id: sessionId,
+        title: '已有会话',
+        projectId: 'proj-1',
+        messageCount: 2,
+        turnCount: 2,
+        createdAt: 1,
+        updatedAt: 21,
+        modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
+      }],
+    });
+    // sessionStorage is empty (simulates closing and reopening Neo in a new browser session)
+    sessionStorage.clear();
+
+    render(<ChatView />);
+    act(() => {
+      useServerConnectionStore.getState().markEventStreamConnected();
+    });
+
+    await waitFor(() => {
+      const card = screen.getByTestId('offline-send-card');
+      expect(card.getAttribute('data-offline-card-state')).toBe('failed');
+    });
+    expect(runPayloads).toHaveLength(0);
+  });
+
   it('ProjectComposer offline failure shows Surface A waiting strip and cancel button stops auto-send (en copy checked)', async () => {
     useAppStore.setState({ language: 'en' });
     render(

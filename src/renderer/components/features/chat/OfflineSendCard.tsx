@@ -14,6 +14,7 @@ import { clearFailedSend } from '../../../stores/failedSendOutbox';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import {
+  clearOfflineOutboxAutoSendTicket,
   clearOfflineOutboxFailureRevision,
   isOfflineAutoReplayingId,
   OFFLINE_SEND_PENDING_CODE,
@@ -49,6 +50,7 @@ export function OfflineSendCard({
   const handleRetry = useCallback(() => {
     if (anchorSessionId && retryClientMessageId) {
       clearOfflineOutboxFailureRevision(anchorSessionId, retryClientMessageId);
+      clearOfflineOutboxAutoSendTicket(anchorSessionId, retryClientMessageId);
     }
     const resent = useMessageActionStore.getState().regenerateMessage(messageId);
     if (!resent) return;

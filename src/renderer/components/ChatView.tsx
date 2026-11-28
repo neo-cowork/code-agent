@@ -75,6 +75,7 @@ import {
   readSessionRuntimeModelState,
 } from '../utils/ensureModelConfigured';
 import {
+  finishOfflineAutoReplayAttempt,
   getOfflineAutoReplaySurface,
   markLastSendOfflineFailure,
 } from '../utils/offlineSend';
@@ -251,11 +252,15 @@ export const ChatView: React.FC = () => {
         const envelope = buildEnvelope(content, context?.attachments, context?.clientMessageId);
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
-        void sendMessage(
+        void Promise.resolve(sendMessage(
           context?.localityAnchor
             ? { ...envelope, context: { ...envelope.context, localityAnchor: context.localityAnchor } }
             : envelope,
-        );
+        )).finally(() => {
+          if (context?.clientMessageId && getOfflineAutoReplaySurface(context.clientMessageId) === 'outbox') {
+            finishOfflineAutoReplayAttempt(context.clientMessageId);
+          }
+        });
       },
       () => messagesRef.current,
       (draft) => {

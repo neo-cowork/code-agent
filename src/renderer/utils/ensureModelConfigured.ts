@@ -47,36 +47,45 @@ export async function readSessionRuntimeModelState(
   }
 }
 
+function notifyUnconfiguredModel(
+  settings: AppSettings,
+  provider: ModelProvider,
+  t: Translations,
+  language: Language,
+  openSettingsWhenReady: boolean,
+): void {
+  const { openModelSettings } = useAppStore.getState();
+  if (!hasConfiguredRuntimeModels(settings)) {
+    openModelSettings(provider);
+    return;
+  }
+  const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
+    || getLocalizedProviderDisplayName(provider, language)
+    || t.modelSetup.thisModel;
+  if (isWebMode()) {
+    toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
+  } else if (!openSettingsWhenReady) {
+    toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
+  }
+  openModelSettings(provider);
+}
+
 /** Guide missing-model sends and signed-out setup to the same settings destination. */
 export async function ensureModelConfigured(
   t: Translations,
   language: Language,
   { currentSessionId = null, openSettingsWhenReady = false }: { currentSessionId?: string | null; openSettingsWhenReady?: boolean } = {},
 ): Promise<boolean> {
-  const { openSettingsTab, openModelSettings } = useAppStore.getState();
   try {
     const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
     if (!configured) {
-      const noModels = !hasConfiguredRuntimeModels(settings);
-      if (noModels) {
-        openModelSettings(provider);
-        return false;
-      }
-      const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
-        || getLocalizedProviderDisplayName(provider, language)
-        || t.modelSetup.thisModel;
-      if (isWebMode()) {
-        toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
-      } else if (!openSettingsWhenReady) {
-        toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
-      }
-      openModelSettings(provider);
+      notifyUnconfiguredModel(settings, provider, t, language, openSettingsWhenReady);
       return false;
     }
   } catch (error) {
     logger.debug('Settings read failed while checking model setup', { error });
   }
-  if (openSettingsWhenReady) openSettingsTab('model');
+  if (openSettingsWhenReady) useAppStore.getState().openSettingsTab('model');
   return true;
 }
 
@@ -86,24 +95,10 @@ export async function ensureModelConfiguredForSend(
   language: Language,
   currentSessionId: string | null,
 ): Promise<PreSendModelReadiness> {
-  const { openModelSettings } = useAppStore.getState();
   try {
     const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
     if (!configured) {
-      const noModels = !hasConfiguredRuntimeModels(settings);
-      if (noModels) {
-        openModelSettings(provider);
-        return 'unconfigured';
-      }
-      const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
-        || getLocalizedProviderDisplayName(provider, language)
-        || t.modelSetup.thisModel;
-      if (isWebMode()) {
-        toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
-      } else {
-        toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
-      }
-      openModelSettings(provider);
+      notifyUnconfiguredModel(settings, provider, t, language, false);
       return 'unconfigured';
     }
     return 'ready';
