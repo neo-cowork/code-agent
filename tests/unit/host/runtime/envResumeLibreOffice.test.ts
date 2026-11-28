@@ -574,3 +574,81 @@ describe('⑥ the install died with the process: the park survives and coming ba
     expect(messages().filter((m) => m.role === 'user')).toHaveLength(1);
   });
 });
+
+describe('⑦ a later run meets the same install while the card is still preparing (PR#4124 I1)', () => {
+  it('the open card is shared, keeps its id and keeps following the install to ready; a recheck answers with that same card', async () => {
+    const f = await setup();
+    // Run A parks on the missing runtime and owns the card.
+    await f.park();
+    await settleUntil(() => cards()[0]?.phase === 'fixing');
+    const cardId = cards()[0]!.id;
+    // Run B — the next turn or a helper in the same session — meets the same install while the card is still open.
+    // It cannot park, so its call waits in place; publishEnvAssistNotice re-points its notice onto the open card.
+    const { ctx, engine } = makeEngine(f.execute as never);
+    Object.assign(ctx, { workingDirectory: workspace, runId: 'lo-run-b', sessionId, messages: messages(), onEvent: () => undefined });
+    const later = engine.executeToolsWithHooks([{ id: 'lo-call-b', name: 'Bash', arguments: { command: COMMAND } }]);
+    await settleUntil(() => cards()[0]?.runId === 'lo-run-b');
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0]!.id).toBe(cardId);
+
+    // A page reload re-mounts the card: the host answers with the card itself, not an id derived from the later runId.
+    const call = envAssistRoutes(() => cards());
+    const rechecked = await call('recheck', { noticeId: cardId });
+    expect((rechecked.data?.notice as EnvAssistNotice | undefined)?.id).toBe(cardId);
+
+    // Progress keeps reaching the shared card, and the card turns ready when the install lands.
+    world.report!(Math.round(build.bytes * 0.5), build.bytes); // 10 + 40 = 50%
+    await settleUntil(() => cards()[0]?.progress?.percent === 50);
+    world.hold = false;
+    world.release!();
+    const [resultB] = await later;
+    await settleUntil(() => cards()[0]?.phase === 'resolved');
+    await settleUntil(() => resumedTurns === 1 && durableStatus() === 'completed');
+    out('SHARED_CARD', { cardId, card: cards()[0], history: liveCards() });
+    expect(cards()).toHaveLength(1);
+    expect(cards()[0]).toMatchObject({ id: cardId, phase: 'resolved', doneKey: 'env.done.libreoffice' });
+    expect(String(resultB.error)).toContain('ready now');
+    expect(pdfText()).toContain('%PDF-1.4');
+    expect(logsOf('update not written')).toEqual([]);
+  });
+
+  it('the same run meets the blocker again after its card resolved: the new card (fresh id) follows its own install to ready', async () => {
+    const f = await setup();
+    world.hold = false;
+    await f.park();
+    await settleUntil(() => resumedTurns === 1 && durableStatus() === 'completed' && cards()[0]?.phase === 'resolved');
+    const firstId = cards()[0]!.id;
+    // The managed copy disappears (the user cleared Neo's data, say); the same run id meets the blocker once more.
+    fs.rmSync(resolveLibreOfficeRoot(), { recursive: true, force: true });
+    world.hold = true;
+    const { ctx, engine } = makeEngine(f.execute as never);
+    Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages(), onEvent: () => undefined });
+    const again = engine.executeToolsWithHooks([{ id: 'lo-call-again', name: 'Bash', arguments: { command: COMMAND } }]);
+    await settleUntil(() => cards().length === 2 && cards()[1]?.phase === 'fixing');
+    const secondId = cards()[1]!.id;
+    expect(secondId).not.toBe(firstId);
+    world.report!(Math.round(build.bytes * 0.5), build.bytes);
+    await settleUntil(() => cards()[1]?.progress?.percent === 50);
+    world.hold = false;
+    world.release!();
+    await again;
+    await settleUntil(() => cards()[1]?.phase === 'resolved');
+    out('SECOND_CARD', { firstId, secondId, cards: cards().map((card) => `${card.id}:${card.phase}`) });
+    expect(cards()[0]).toMatchObject({ id: firstId, phase: 'resolved' });
+    expect(logsOf('update not written')).toEqual([]);
+  });
+
+  it('an update for a card that is no longer there is not dropped silently: it leaves a warning with the card id', async () => {
+    const f = await setup();
+    await f.park();
+    await settleUntil(() => cards()[0]?.phase === 'fixing');
+    const stale = cards()[0]!;
+    db.prepare('DELETE FROM messages WHERE id = ?').run(`env-assist:${stale.id}`);
+    world.report!(Math.round(build.bytes * 0.5), build.bytes);
+    const call = envAssistRoutes(() => [stale]);
+    await call('recheck', { noticeId: stale.id });
+    await settleUntil(() => logsOf('update not written').length > 0);
+    out('DROPPED_WRITE_LOG', logsOf('update not written')[0]);
+    expect(logsOf('update not written')[0]).toContain(stale.id);
+  });
+});

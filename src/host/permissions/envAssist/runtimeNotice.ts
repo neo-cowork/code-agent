@@ -70,6 +70,22 @@ export function runtimeNoticeFor(input: {
   };
 }
 
+/**
+ * The card's next copy, read from the install state. Only the content is recomputed: the card keeps its own id.
+ * That id cannot be re-derived from the runId once the card exists — publishEnvAssistNotice re-points a later run's
+ * notice onto a card that is still open (the card keeps its id, the notice brings the later runId), and a run that
+ * meets the blocker again after its card resolved gets a fresh id with a random part.
+ */
+function nextCopy(card: EnvAssistNotice, options: { now?: number; state?: LibreOfficeState } = {}): EnvAssistNotice {
+  return {
+    ...runtimeNoticeFor({
+      sessionId: card.sessionId, runId: card.runId, target: card.target?.id ?? RUNTIME_TARGET,
+      parkedToolCallId: card.parkedToolCallId, now: options.now ?? Date.now(), state: options.state,
+    }),
+    id: card.id,
+  };
+}
+
 /** What the model reads in place of the failed command (the user reads the card). */
 export function runtimeModelGuidance(notice: EnvAssistNotice): string {
   const common = 'Model guidance (not user copy): A card for the missing component has already been shown to the user. '
@@ -125,7 +141,7 @@ export async function holdForRuntimeInstall(notice: EnvAssistNotice, signal?: Ab
     if (state.phase !== 'installing' && state.phase !== 'missing' || waitedTooLong) {
       // A failed / unsupported install says why (offline or not) through the card it settles to; a stall keeps the button-only copy.
       const settled = state.phase === 'failed' || state.phase === 'unsupported'
-        ? runtimeNoticeFor({ sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET, state })
+        ? nextCopy(notice, { state })
         : { ...notice, phase: 'needs_user' as const };
       return runtimeModelGuidance(settled);
     }
@@ -149,7 +165,10 @@ async function writeRuntimeNotice(next: EnvAssistNotice, options: { retry?: bool
     const manager = getSessionManager();
     const messageId = `env-assist:${next.id}`;
     const persisted = (await manager.getMessages(next.sessionId)).find((m) => m.id === messageId);
-    if (!persisted) return;
+    if (!persisted) {
+      logger.warn('Runtime card not found; update not written', { reason: 'card_missing', noticeId: next.id, phase: next.phase });
+      return;
+    }
     const current = persisted.metadata?.envAssist;
     if (!options.retry && current && (current.updatedAt > next.updatedAt || (current.phase !== 'fixing' && next.phase === 'fixing'))) return;
     await manager.addMessageToSession(next.sessionId, { ...persisted, metadata: { ...persisted.metadata, envAssist: next } });
@@ -206,10 +225,7 @@ async function publishTick(): Promise<void> {
     if (state.phase === 'missing' && !kickRequested) { kickRequested = true; kickInstall('card_still_waiting'); }
     for (const [id, follower] of [...followers]) {
       const { notice } = follower;
-      const next = runtimeNoticeFor({
-        sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
-        parkedToolCallId: notice.parkedToolCallId, now, state,
-      });
+      const next = nextCopy(notice, { now, state });
       if (next.phase !== 'fixing') {
         followers.delete(id);
         await writeRuntimeNotice(next);
@@ -310,10 +326,7 @@ export async function retryRuntimeInstall(notice: EnvAssistNotice, reason = 'ret
   kickRequested = true;
   kickInstall(reason);
   // The new attempt registers before ensureLibreOffice returns, so the card reads "preparing" again at once.
-  const next = runtimeNoticeFor({
-    sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
-    parkedToolCallId: notice.parkedToolCallId, now: Date.now(),
-  });
+  const next = nextCopy(notice);
   await writeRuntimeNotice(next, { retry: true });
   followRuntimeInstall(next);
   return next;
@@ -350,17 +363,22 @@ export function libreOfficeResumeProbe(scope?: { runId: string; sessionId: strin
   };
 }
 
+/**
+ * The card a parked run's install shows on: the run's own card, else the session's card that is still preparing.
+ * A later run that met the same install while the card was open took the card over (publishEnvAssistNotice re-points
+ * it and the card then carries that later runId), and every runtime card shows the same, process-wide install.
+ */
+function scopeCard(messages: Message[], scope: { runId: string; sessionId: string }): EnvAssistNotice | undefined {
+  const runtimeCards = messages.map((message) => message.metadata?.envAssist).filter((card): card is EnvAssistNotice => card?.class === 'runtime_missing');
+  return runtimeCards.findLast((card) => card.runId === scope.runId) ?? runtimeCards.findLast((card) => card.phase === 'fixing');
+}
+
 async function syncScopeNotice(scope: { runId: string; sessionId: string }, state: LibreOfficeState): Promise<void> {
   try {
-    const messages = await getSessionManager().getMessages(scope.sessionId);
-    const notice = messages.findLast((message: Message) => message.metadata?.envAssist?.runId === scope.runId
-      && message.metadata.envAssist.class === 'runtime_missing')?.metadata?.envAssist;
+    const notice = scopeCard(await getSessionManager().getMessages(scope.sessionId), scope);
     if (notice?.phase !== 'fixing') return;
     followers.delete(notice.id);
-    const next = runtimeNoticeFor({
-      sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
-      parkedToolCallId: notice.parkedToolCallId, now: Date.now(), state,
-    });
+    const next = nextCopy(notice, { state });
     if (next.phase !== 'fixing') await writeRuntimeNotice(next);
   } catch (error) {
     logger.warn('Runtime card terminal sync failed', { runId: scope.runId, error: error instanceof Error ? error.message : String(error) });
@@ -369,9 +387,7 @@ async function syncScopeNotice(scope: { runId: string; sessionId: string }, stat
 
 async function refollow(scope: { runId: string; sessionId: string }): Promise<void> {
   try {
-    const messages = await getSessionManager().getMessages(scope.sessionId);
-    const notice = messages.findLast((message: Message) => message.metadata?.envAssist?.runId === scope.runId
-      && message.metadata.envAssist.class === 'runtime_missing')?.metadata?.envAssist;
+    const notice = scopeCard(await getSessionManager().getMessages(scope.sessionId), scope);
     if (!notice) { logger.warn('Runtime card not found for a parked run', { reason: 'no_notice', runId: scope.runId }); return; }
     if (notice.phase !== 'fixing') { logger.info('Runtime card is not waiting any more', { reason: 'phase_' + notice.phase, noticeId: notice.id }); return; }
     followRuntimeInstall(notice);
@@ -385,10 +401,7 @@ export async function recheckRuntimeNotice(notice: EnvAssistNotice): Promise<Env
   // An "offline" card asks right away (the window came back online / into focus); the probe is read-only and runs on its own.
   if (isOfflineCard(notice)) { watchOfflineRuntimeCard(notice); void recheckOffline('card_recheck'); return notice; }
   if (notice.phase !== 'fixing') return notice;
-  const next = runtimeNoticeFor({
-    sessionId: notice.sessionId, runId: notice.runId, target: notice.target?.id ?? RUNTIME_TARGET,
-    parkedToolCallId: notice.parkedToolCallId, now: Date.now(),
-  });
+  const next = nextCopy(notice);
   if (next.phase !== notice.phase || next.progress?.percent !== notice.progress?.percent) {
     await writeRuntimeNotice(next);
   }
