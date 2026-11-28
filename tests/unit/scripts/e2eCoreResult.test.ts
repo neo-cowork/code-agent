@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseArgs } from '../../../scripts/e2e-core/args';
-import { SLOT_FLOWS } from '../../../scripts/e2e-core/calendarFlows';
+import { pickSlotFlows, SLOT_FLOWS } from '../../../scripts/e2e-core/calendarFlows';
 import { CORE_FLOWS, CORE_FLOW_IDS, SHELL_WEB_FLOWS } from '../../../scripts/e2e-core/flows';
 import type { AttemptEnv, DbSnapshot } from '../../../scripts/e2e-core/types';
 import {
@@ -118,6 +118,14 @@ describe('e2e-core slot attach (calendar flows)', () => {
     expect(() => parseArgs(['--slot', '0'], {}, '/repo')).toThrow('1-9');
     expect(() => parseArgs(['--slot', 'x'], {}, '/repo')).toThrow();
     expect(() => parseArgs(['--slot'], {}, '/repo')).toThrow('缺少取值');
+  });
+
+  it('slot mode defaults to all four calendar flows when --only is omitted, and still refuses foreign --only ids', () => {
+    expect(pickSlotFlows(null).map((f) => f.id)).toEqual(['F01', 'F02', 'F03', 'F04']);
+    // parseArgs 已把 --only 大写化，pickSlotFlows 收到的是大写 id
+    expect(pickSlotFlows(['F01', 'F04']).map((f) => f.id)).toEqual(['F01', 'F04']);
+    expect(() => pickSlotFlows(['F05'])).toThrow('--only 里混入了 F05');
+    expect(() => pickSlotFlows([])).toThrow('--only 不能为空');
   });
 
   it('slot calendar flows F01-F04 keep the feature-map card sentences, carry the step-0 probe, and stay listed in SHELL_WEB_FLOWS', () => {

@@ -223,14 +223,23 @@ async function cleanupMarkedEvents(_server: ServerInfo, env?: AttemptEnv): Promi
   env.sessionIds.push(await openNewSession(env.page));
   await sendMessage(env.page, `在日历「${calendar}」里把标题带「${marker}」的日程都删掉。`);
   await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: () => clickWritebackButton(env.page, DELETE_BUTTON) }, TURN_TIMEOUT_MS);
-  await sendMessage(env.page, `在日历「${calendar}」里查标题带「${marker}」的日程，一条一条列出标题；没有就明说没有。`);
-  const readAtMs = Date.now();
+  const readPrompt = `在日历「${calendar}」里查标题带「${marker}」的日程，一条一条列出标题；没有就明说没有。`;
+  await sendMessage(env.page, readPrompt);
   await driveTurn(env.page, { mayBeIdle: true }, TURN_TIMEOUT_MS);
   const { data, file } = await env.readDb();
-  // 只看读回合之后落库的工具结果（删除回合的结果会复述标题，不算残留）
-  const afterRead = inSessions(data.messages, env.sessionIds).filter((m) => Number(m.timestamp) >= readAtMs - 2_000);
+  const mine = inSessions(data.messages, env.sessionIds);
+  // 只看读回合（最后一条含读提示词的用户消息）之后落库的工具结果：删除回合的结果会复述标题，混进来就是假残留
+  let at = -1;
+  for (let i = mine.length - 1; i >= 0; i--) {
+    if (String(mine[i].role) === 'user' && String(mine[i].content ?? '').includes(readPrompt)) { at = i; break; }
+  }
+  if (at < 0) throw new Error(`cleanup 的读请求没有落库（快照 ${file}），残留没核对上`);
+  const afterRead = mine.slice(at + 1);
   const leftovers = afterRead.flatMap((m) => toolResultTexts(String(m.tool_results ?? ''))).filter((text) => text.includes(marker));
   if (leftovers.length) throw new Error(`cleanup 后日历里仍有带 ${marker} 的日程（快照 ${file}）：${leftovers.map((t) => t.slice(0, 160)).join(' | ')}`);
+  // 模型没调日历读工具时上面查不到任何东西，残留核对是不可靠的：如实记进 reason，不当绿证据
+  const readToolRan = afterRead.some((m) => String(m.tool_results ?? '').length > 2);
+  if (!readToolRan) env.note('cleanup 残留核对不可靠：读回合没有工具结果（模型可能没调日历读工具，只凭上下文作答）');
 }
 
 // ── 四条流程 ────────────────────────────────────────────────────────────────
@@ -387,3 +396,16 @@ const f04: FlowDef = {
 export const SLOT_FLOWS: FlowDef[] = [f01, f02, f03, f04];
 
 export const SLOT_FLOW_IDS: string[] = SLOT_FLOWS.map((f) => f.id);
+
+/**
+ * --slot 模式的流程清单：缺省四条全跑（不带 --only 也能直接用），
+ * --only 只许从日历流程里挑，混入别的流程直接报错（原生 EventKit 只在打包壳里）。
+ */
+export function pickSlotFlows(only: string[] | null): FlowDef[] {
+  const wanted = only ?? SLOT_FLOW_IDS;
+  const foreign = wanted.filter((id) => !SLOT_FLOWS.some((f) => f.id === id));
+  if (foreign.length || !wanted.length) {
+    throw new Error(`--slot 只能跑日历流程（${SLOT_FLOW_IDS.join(' ')}）${foreign.length ? `，--only 里混入了 ${foreign.join(' ')}` : '，--only 不能为空'}`);
+  }
+  return SLOT_FLOWS.filter((f) => wanted.includes(f.id));
+}

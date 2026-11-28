@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser } from 'playwright';
 import { parseArgs } from './args';
-import { SLOT_FLOWS } from './calendarFlows';
+import { pickSlotFlows } from './calendarFlows';
 import { CORE_FLOWS, CORE_FLOW_IDS } from './flows';
 import { buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure, type AttemptResult, type FlowResult } from './result';
 import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, quiesceServer, startServer, stopServer } from './server';
@@ -128,16 +128,10 @@ async function main(): Promise<number> {
   // （该标志在隔离服务里只是多放行 e2e 种子钩子、少连 MCP/auth/telemetry 这类本次用不到的远端）。
   process.env.CODE_AGENT_E2E ??= '1';
   const startedAt = new Date().toISOString();
+  // --slot 的缺省清单与 foreign 校验都在 pickSlotFlows 里：不带 --only 就是四条日历流程
   const wanted = args.only ?? CORE_FLOW_IDS;
-  // --slot 只许日历流程：原生 EventKit 只在打包壳里，其余流程的隔离服务在这里不存在
-  if (args.slot) {
-    const foreign = wanted.filter((id) => !SLOT_FLOWS.some((f) => f.id === id));
-    if (foreign.length || !wanted.length) {
-      throw new Error(`--slot 只能跑日历流程（${SLOT_FLOWS.map((f) => f.id).join(' ')}）${foreign.length ? `，--only 里混入了 ${foreign.join(' ')}` : '，--only 不能为空'}`);
-    }
-  }
   const flows = args.slot
-    ? SLOT_FLOWS.filter((f) => wanted.includes(f.id))
+    ? pickSlotFlows(args.only)
     : CORE_FLOWS.filter((f) => wanted.includes(f.id));
   if (!args.slot && !args.reuseBuild) {
     console.log('构建 web + renderer …');
