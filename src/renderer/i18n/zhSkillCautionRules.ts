@@ -16,6 +16,7 @@ export const zhSkillCautionRules: { rules: Record<string, string>; embeddedSecre
     fork_bomb: '无限复制自身进程，几秒内耗尽整台电脑的资源',
     disk_wipe: '直接抹掉整块磁盘上的全部数据',
     recursive_delete_targeted: '删除指定文件夹和里面的所有内容（清理构建产物、缓存时常见，删错目标无法恢复）',
+    single_file_delete: '删除一个指定文件（不是文件夹），不进回收站',
     home_delete: '删除你的整个用户主目录，个人文件会全部消失',
     system_dir_delete: '删除系统目录，操作系统会无法正常运行',
     container_dir_delete: '删除整个顶级目录（如 /Applications、/Users 下的全部内容）',

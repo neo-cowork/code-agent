@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseRmTargets } from '../../../src/shared/rmCommandTargets';
+import { isDeleteShellCommand, parseRmTargets } from '../../../src/shared/rmCommandTargets';
 
 describe('parseRmTargets', () => {
   it('单目标：exact 且非递归', () => {
@@ -146,5 +146,30 @@ describe('parseRmTargets', () => {
     expect(parseRmTargets('').targets).toEqual([]);
     expect(parseRmTargets('ls -la').targets).toEqual([]);
     expect(parseRmTargets('echo rm a.log').targets).toEqual([]);
+  });
+
+  it('rm && rmdir 链式删除：点名全部目标，emptyDirTargets 记录空目录数', () => {
+    expect(parseRmTargets('rm -v key-points.md && rmdir -v temp')).toEqual({
+      targets: ['key-points.md', 'temp'],
+      exact: true,
+      recursive: false,
+      emptyDirTargets: 1,
+    });
+    expect(parseRmTargets('unlink old.txt')).toEqual({
+      targets: ['old.txt'],
+      exact: true,
+      recursive: false,
+    });
+  });
+
+  it('isDeleteShellCommand 只命中真实删除段，不误判子命令或只读回显', () => {
+    expect(isDeleteShellCommand('rm a.log')).toBe(true);
+    expect(isDeleteShellCommand('rm -v key-points.md && rmdir -v temp')).toBe(true);
+    expect(isDeleteShellCommand('unlink old.txt')).toBe(true);
+    expect(isDeleteShellCommand('ls | xargs rm')).toBe(true);
+    expect(isDeleteShellCommand('git rm a.log b.log')).toBe(false);
+    expect(isDeleteShellCommand('docker rm web-1')).toBe(false);
+    expect(isDeleteShellCommand('echo rm -v a.md && ls temp')).toBe(false);
+    expect(isDeleteShellCommand('cat a.log')).toBe(false);
   });
 });

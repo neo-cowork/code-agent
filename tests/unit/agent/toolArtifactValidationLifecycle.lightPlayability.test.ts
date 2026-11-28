@@ -118,6 +118,49 @@ describe('lifecycle light contract + playability smoke wiring', () => {
       .toHaveBeenCalledWith('tool_running', expect.stringContaining('第 1/4 次修复'));
   });
 
+  // 任务面板的「当前动作」行原样显示 emitTaskProgress 的文案：切换重写那条曾把内部原因
+  // （失败码 run_smoke_failed/…、patience 耗尽、补丁抗性）直接拼进去。原因只留给模型和日志。
+  it('switching to a fresh rewrite tells the user in plain words; the internal reason stays model-only', async () => {
+    const filePath = await writeTempHtml(CRASH_GAME, 'crash-rewrite.html');
+    const ctx = makeCtx();
+    // 上一轮已失败过且没刷新最佳成绩：这一轮再失败 = patience 用完 → 切换重写。
+    ctx.artifact.validationFailures.set(filePath, {
+      attempts: 1,
+      phase: 'baseline_repair',
+      bestFailureCount: 1,
+      roundsSinceBest: 1,
+    });
+    const { contextAssembly, runFinalizer, toolCall, toolResult } = makeHarness(filePath, CRASH_GAME);
+
+    await handleModifiedArtifactValidation({
+      ctx,
+      contextAssembly,
+      runFinalizer: runFinalizer as RunFinalizer,
+      toolCall,
+      normalizedSuccess: true,
+      toolResult,
+      artifactRepairRollbackSnapshot: null,
+    });
+
+    const metadata = toolResult.metadata as { artifactValidation?: { playabilitySmoke?: { skipped?: boolean } } } | undefined;
+    if (metadata?.artifactValidation?.playabilitySmoke?.skipped) return; // Playwright 不可用环境按 skipped 放过
+
+    expect(ctx.artifact.validationFailures.get(filePath)).toMatchObject({ phase: 'fresh_rewrite', rewriteAttempted: true });
+    const steps = (runFinalizer as unknown as { emitTaskProgress: ReturnType<typeof vi.fn> }).emitTaskProgress
+      .mock.calls.map((call) => String(call[1]));
+    expect(steps).toContain('几轮修复没有进展，改为重新生成…');
+    // 这一轮发给界面的每条进度都不带英文内部词、失败码或内部术语。
+    for (const step of steps) {
+      expect(step, step).not.toMatch(/[A-Za-z_]/);
+      expect(step, step).not.toMatch(/补丁|不收敛|抗性|失败码/);
+    }
+    // 原因仍然给到模型（注入的系统消息），没有被一起删掉。
+    const injected = (contextAssembly as unknown as { injectSystemMessage: ReturnType<typeof vi.fn> }).injectSystemMessage
+      .mock.calls.map((call) => String(call[0])).join('\n');
+    expect(injected).toContain('<artifact-fresh-rewrite>');
+    expect(injected).toContain('patience 耗尽');
+  });
+
   // B7 P1 接线契约：ctx.scaffoldProfile.repairInstructionStyle 必须真传进
   // buildArtifactRepairInstruction——摘掉 lifecycle 的 style 实参本测必红。
   it('injects the compact repair instruction when ctx.scaffoldProfile says compact', async () => {

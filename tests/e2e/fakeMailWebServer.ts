@@ -6,7 +6,7 @@
 // 本体是假的（绝不触碰真实 Mail.app / AppleScript / TCC）。
 //
 // 形态由 NEO_FAKE_MAIL_STATE 选（每次 playwright 起一个进程跑一种）：
-//   ready              — 已授权：两个账户 + 各自邮箱目录（编辑器正常态）
+//   ready              — 已授权：三个账户 + 各自邮箱目录（编辑器正常态）
 //   not-authorized     — readiness unchecked 且 probe_access 抛错（未授权态）
 //   denied-after-ready — 缓存 readiness 已 ready（早前探测通过），probe_access
 //                        照常通过，list_accounts 才抛 -1743——复刻 FB-541 实机
@@ -38,10 +38,15 @@ writeFileSync(
 const ACCOUNTS = [
   { name: 'iCloud · 艾达' },
   { name: 'Gmail · ada.example@gmail.com' },
+  { name: '163 · 艾达' },
 ];
 const MAILBOXES_BY_ACCOUNT: Record<string, string[]> = {
   'iCloud · 艾达': ['INBOX', '归档', '已发送'],
-  'Gmail · ada.example@gmail.com': ['INBOX', '工作'],
+  // Gmail 的系统邮箱带 [Gmail]/ 前缀，和用户标签（工作）混在一起。
+  'Gmail · ada.example@gmail.com': ['INBOX', '工作', '[Gmail]/Sent Mail', '[Gmail]/Drafts', '[Gmail]/Spam', '[Gmail]/Trash', '[Gmail]/All Mail'],
+  // 163 实机反馈的形态（FB-752 / FB-713）：服务商中文邮箱和 Mail.app 自建的英文系统邮箱混排，
+  // 其中「垃圾邮件」（163 自带）与 Junk（Mail.app 建的）是两个不同的邮箱。
+  '163 · 艾达': ['INBOX', '广告邮件', '病毒文件夹', '草稿箱', 'Sent Messages', 'Deleted Messages', 'Junk', '垃圾邮件', 'Receipts'],
 };
 
 function status(readiness: ConnectorStatus['readiness'], connected = false): ConnectorStatus {

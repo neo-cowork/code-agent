@@ -19,6 +19,7 @@ import { Select } from '../../primitives/Select';
 import { FormField } from '../../composites/FormField';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
+import { mailboxOptionLabels } from '../../../utils/mailboxDisplayName';
 import { useMailSources } from './useMailSources';
 
 interface CronMailEventFieldsProps {
@@ -54,7 +55,7 @@ export const CronMailEventFields: React.FC<CronMailEventFieldsProps> = ({
   onBudgetChange,
   violation,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const { state, reload } = useMailSources();
@@ -77,12 +78,14 @@ export const CronMailEventFields: React.FC<CronMailEventFieldsProps> = ({
     ...accounts.map((account) => ({ value: account.name, label: account.name })),
   ];
 
+  const mailboxLabels = mailboxOptionLabels(listedMailboxes, language);
   const mailboxOptions = [
     // 空 value = 缺省 INBOX（不落键）；排在首位，显式选其他邮箱后仍可切回。
     { value: '', label: cc.eventMailboxDefaultLabel },
+    // 显示名只换 label（中文界面把常见系统邮箱译成中文），value 始终是连接器给的原名。
     ...listedMailboxes
-      .filter((name) => name !== CRON_EVENT_TRIGGER.DEFAULT_MAILBOX)
-      .map((name) => ({ value: name, label: name })),
+      .map((name, index) => ({ value: name, label: mailboxLabels[index] }))
+      .filter((option) => option.value !== CRON_EVENT_TRIGGER.DEFAULT_MAILBOX),
   ];
 
   return (

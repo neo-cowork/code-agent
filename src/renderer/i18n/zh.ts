@@ -61,6 +61,7 @@ import { roleFirstWakeZh } from './roleFirstWake';
 import { roleWakeProposalsZh } from './roleWakeProposals';
 import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
+import { confirmPromptsZh } from './confirmPrompts';
 
 export const zh = {
   ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh, ...authZh,
@@ -84,8 +85,7 @@ export const zh = {
   ...connectorRequiredZh,
   ...roleFirstWakeZh,
   ...roleWakeProposalsZh,
-  ...permissionRuleNlZh,
-  ...sessionTaskPresentationZh, ...toolResultSummaryZh, ...codeBlockZh,
+  ...permissionRuleNlZh, ...sessionTaskPresentationZh, ...toolResultSummaryZh, ...codeBlockZh, ...confirmPromptsZh,
   // Common
   common: {
     save: '保存',

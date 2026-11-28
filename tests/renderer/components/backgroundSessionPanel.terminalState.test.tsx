@@ -122,9 +122,13 @@ describe('状态行映射（经渲染）', () => {
     }
   });
 
-  it('其余消息原样展示（engine 终态消息直通）', () => {
+  it('完成行消息原样展示（engine 终态消息直通）；失败行的英文原文不进中文界面的行', () => {
+    renderPanelWith(backgroundTask({ status: 'completed', completionMessage: '报告已整理好' }));
+    expect(itemLine()).toBe('报告已整理好');
+    cleanup();
+
     renderPanelWith(backgroundTask({ status: 'failed', completionMessage: 'Provider auth failure' }));
-    expect(itemLine()).toBe('Provider auth failure');
+    expect(itemLine()).toBe('遇到了没能自动处理的障碍');
   });
 });
 

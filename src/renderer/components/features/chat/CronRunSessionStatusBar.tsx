@@ -59,7 +59,10 @@ function findParkedApprovalForSession(
   const category = classifyToolName(pending.tool);
   const basename = approvalPreviewBasename(pending.argsPreview);
   const args = ['read', 'write', 'edit'].includes(category) && basename ? { file_path: basename } : undefined;
-  const label = args ? humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval') : toolUserLabel(pending.tool, language);
+  // 团队启动审批没有工具人话名可查：用会话卡同一个标题（「启动团队」），不落到泛称「操作」。
+  const label = pending.kind === 'launch'
+    ? t.decisionCard.swarm.title
+    : args ? humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval') : toolUserLabel(pending.tool, language);
   return {
     id: pending.id,
     requestedAt: pending.requestedAt,
