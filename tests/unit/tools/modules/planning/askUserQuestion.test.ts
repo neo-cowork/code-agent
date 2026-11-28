@@ -126,9 +126,9 @@ describe('AskUserQuestion schema', () => {
     expect(itemProps.multiSelect).toBeDefined();
   });
 
-  it('工具描述禁止把写回审批当成表单收集前置步骤', () => {
+  it('工具描述保留审批入口，并要求自行决定执行方式', () => {
     expect(askUserQuestionModule.schema.description).toMatchInlineSnapshot(
-      `"Ask branching decisions only (A/B/proceed). Never collect approval-gated writeback fields. Call the write tool with values/defaults; the approval card is the edit point. “Create meeting now” means tmeetMeetingCreate directly."`,
+      `"Ask branching decisions only. Never collect approval-gated writeback fields. Call writes with values/defaults; the approval card is the edit point. For clear tasks, choose foreground/background, tool and wait time, then act without asking."`,
     );
   });
 });

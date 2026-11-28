@@ -104,6 +104,13 @@ describe('settings search index', () => {
     expect(searchSettings(asr, { installedCapabilities: new Set(['builtin.voice-live']) })).toHaveLength(0);
   });
 
+  it('finds the OS sandbox and keeps existing permission mode searches', () => {
+    expect(searchSettings('沙箱')).toContainEqual(expect.objectContaining({ tab: 'general', labelKey: 'osSandbox' }));
+    for (const query of ['permission', 'bypassPermissions']) {
+      expect(searchSettings(query)).toContainEqual(expect.objectContaining({ tab: 'general', labelKey: 'permissionMode' }));
+    }
+  });
+
   it('covers permission/privacy boundary search terms', () => {
     expect(searchSettings(zh.settings.searchIndex.voiceTranscription).map((entry) => entry.tab)).toContain('privacy');
     expect(searchSettings(zh.settings.searchIndex.diagnosticBundle).map((entry) => entry.tab)).toContain('privacy');

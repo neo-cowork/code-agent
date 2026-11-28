@@ -21,6 +21,8 @@ import { useProviderIconImageSource } from '../../../../utils/providerIconAssets
 interface ProviderListPanelProps {
   configuredRows: ProviderManagementRow[];
   unconfiguredRows: ProviderManagementRow[];
+  /** 已粘贴未保存 key 草稿的 provider id（都在未配置组内）：行尾显示「密钥尚未保存」而不是「添加」 */
+  unsavedKeyProviderIds?: ReadonlySet<string>;
   /** keyless provider（local/Ollama）端点探测结果：undefined=探测中 */
   keylessReachability?: Partial<Record<string, boolean>>;
   selectedProviderId: string;
@@ -123,8 +125,9 @@ const ConfiguredRow: React.FC<{
 const UnconfiguredRow: React.FC<{
   row: ProviderManagementRow;
   selected: boolean;
+  unsavedKey?: boolean;
   onSelect: () => void;
-}> = ({ row, selected, onSelect }) => {
+}> = ({ row, selected, unsavedKey, onSelect }) => {
   const { t } = useI18n();
   const listText = t.settings.model.list;
   return (
@@ -139,9 +142,13 @@ const UnconfiguredRow: React.FC<{
     >
       <ProviderMark row={row} size="sm" />
       <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{row.name}</span>
-      <span className={`shrink-0 text-[11px] ${selected ? 'text-badge-info' : 'text-zinc-600 group-hover:text-badge-info'}`}>
-        {listText.addKey}
-      </span>
+      {unsavedKey ? (
+        <span className="shrink-0 text-[11px] text-badge-warning">{t.settings.model.header.apiKeyUnsaved}</span>
+      ) : (
+        <span className={`shrink-0 text-[11px] ${selected ? 'text-badge-info' : 'text-zinc-600 group-hover:text-badge-info'}`}>
+          {listText.addKey}
+        </span>
+      )}
     </button>
   );
 };
@@ -149,6 +156,7 @@ const UnconfiguredRow: React.FC<{
 export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   configuredRows,
   unconfiguredRows,
+  unsavedKeyProviderIds,
   keylessReachability,
   selectedProviderId,
   defaultProviderId,
@@ -271,6 +279,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
                 key={row.id}
                 row={row}
                 selected={!isAddingProvider && row.id === selectedProviderId}
+                unsavedKey={unsavedKeyProviderIds?.has(row.id)}
                 onSelect={() => onSelect(row.id)}
               />
             ))}

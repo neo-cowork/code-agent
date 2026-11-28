@@ -69,7 +69,7 @@ describe('WorkingFolder native-path keyboard interaction', () => {
   it('renders Tauri reveal targets as native buttons and activates them from the keyboard', async () => {
     const { getByTitle } = render(<WorkingFolder />);
     const directory = getByTitle('/repo/project');
-    const file = getByTitle('/repo/project/file.ts');
+    const file = getByTitle('./file.ts');
 
     expect(directory.tagName).toBe('BUTTON');
     expect(file.tagName).toBe('BUTTON');
@@ -93,7 +93,7 @@ describe('WorkingFolder native-path keyboard interaction', () => {
     platform.web = web;
     const { getByTitle } = render(<WorkingFolder />);
     const directory = getByTitle('/repo/project');
-    const file = getByTitle('/repo/project/file.ts');
+    const file = getByTitle('./file.ts');
 
     expect(directory.tagName).toBe('DIV');
     expect(file.tagName).toBe('DIV');
