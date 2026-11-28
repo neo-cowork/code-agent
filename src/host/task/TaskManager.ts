@@ -82,6 +82,13 @@ function isInferenceHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
 }
 
+function isBackgroundApprovalDetached(sessionId: string): boolean {
+  if (hasInteractiveUi()) return false;
+  const modes = getPermissionModeManager();
+  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
+    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
+}
+
 // ============================================================================
 // TaskManager Class
 // ============================================================================
@@ -111,13 +118,6 @@ function isInferenceHistoryMessage(message: Message): boolean {
  * });
  * ```
  */
-function isBackgroundApprovalDetached(sessionId: string): boolean {
-  if (hasInteractiveUi()) return false;
-  const modes = getPermissionModeManager();
-  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
-    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
-}
-
 export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
