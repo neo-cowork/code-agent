@@ -33,6 +33,8 @@ import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approva
 import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
 import { useBundledCapabilityStore } from '../stores/bundledCapabilityStore';
 import { toggleInstalledVoiceCall } from './useVoiceLiveRuntime';
+import { languages } from '../i18n';
+import { requestConfirm } from '../services/confirmPrompt';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -426,12 +428,23 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           await switchSession(sessions[currentSessionIndex < sessions.length - 1 ? currentSessionIndex + 1 : 0].id);
           return true;
 
-        case 'session.clear':
-          if (useAppStore.getState().isProcessing) return false;
-          if (window.confirm('清空当前会话消息？')) {
-            clearCurrentSession();
-          }
+        case 'session.clear': {
+          const { isProcessing, language } = useAppStore.getState();
+          if (isProcessing) return false;
+          event?.preventDefault();
+          event?.stopPropagation();
+          const copy = languages[language].confirmPrompts;
+          void requestConfirm({
+            title: copy.clearConversation,
+            message: copy.clearConversationMessage,
+            confirmText: copy.clear,
+            variant: 'danger',
+          }).then((confirmed) => {
+            if (confirmed && useSessionStore.getState().currentSessionId === currentSessionId
+              && !useAppStore.getState().isProcessing) return clearCurrentSession();
+          }).catch((error) => logger.error('Failed to clear conversation messages', error));
           return true;
+        }
 
         case 'session.compact':
           if (isInputField || !customHandlers.triggerCompact) return false;

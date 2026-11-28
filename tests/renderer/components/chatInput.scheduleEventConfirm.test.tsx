@@ -331,7 +331,7 @@ describe('event schedule draft normalization', () => {
         } as CreateCronJobInput['schedule'],
       },
     });
-    expect(rowsOf(withAccount).find((row) => row.key === 'mail')?.value).toBe('新邮件 · _icloud · INBOX');
+    expect(rowsOf(withAccount).find((row) => row.key === 'mail')?.value).toBe('新邮件 · _icloud · 收件箱');
 
     // 显式选了邮箱：行值跟着换。
     const withMailbox = makeMailPending({
@@ -341,6 +341,19 @@ describe('event schedule draft normalization', () => {
       },
     });
     expect(rowsOf(withMailbox).find((row) => row.key === 'mail')?.value).toBe('新邮件 · _icloud · 归档');
+
+    // 系统邮箱：中文界面给中文名，英文界面保持连接器原名（缺省邮箱同理）。
+    const withSystemMailbox = makeMailPending({
+      input: {
+        ...withAccount.input,
+        schedule: { ...withAccount.input.schedule, mailbox: 'Sent Messages' } as CreateCronJobInput['schedule'],
+      },
+    });
+    const mailValue = (draft: PendingScheduleDraft, lang: 'zh' | 'en') =>
+      buildScheduleConfirmRows(draft, labels, lang, mailLabels).find((row) => row.key === 'mail')?.value;
+    expect(mailValue(withSystemMailbox, 'zh')).toBe('新邮件 · _icloud · 已发送');
+    expect(mailValue(withSystemMailbox, 'en')).toBe('新邮件 · _icloud · Sent Messages');
+    expect(mailValue(withAccount, 'en')).toBe('新邮件 · _icloud · INBOX');
   });
 });
 
@@ -676,7 +689,7 @@ describe('mail schedule confirm card', () => {
     // 卡内选账号 → 行值陈述实际绑定（mailbox 缺省 INBOX）→ 确认启用。
     fireEvent.change(await screen.findByLabelText(/^邮件账号/), { target: { value: '_icloud' } });
     await waitFor(() => expect(confirmButton().disabled).toBe(false));
-    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · _icloud · INBOX'));
+    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · _icloud · 收件箱'));
 
     // 显式换邮箱：行值跟着换，确认仍可用。
     fireEvent.change(screen.getByLabelText(/^监听邮箱/), { target: { value: '归档' } });
@@ -692,7 +705,7 @@ describe('mail schedule confirm card', () => {
     await waitFor(() => expect(mailRowValue()).toBe('新邮件 · _icloud · 归档'));
 
     fireEvent.change(screen.getByLabelText(/^邮件账号/), { target: { value: 'gmail' } });
-    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · gmail · INBOX'));
+    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · gmail · 收件箱'));
   });
 
   it('connector 不可用（reason 可区分）时字段区给对应提示，确认保持禁用', async () => {

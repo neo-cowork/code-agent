@@ -6,6 +6,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import type { Message } from '../../shared/contract';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 import {
   readExistingCheckpointStore,
   resolveCheckpointStorePaths,
@@ -97,11 +98,15 @@ export class SessionRecoveryService {
         const messages = db.getMessages(session.id);
         if (messages.length === 0) continue;
 
-        // 提取用户请求（第一条 user 消息）
+        // 提取用户请求（第一条 user 消息）。由运行记录还原落库的消息整段以恢复提示开头：
+        // 先剥提示/残留再进摘要，否则「目标:」行会把免责声明当成用户请求回显。
         const firstUserMsg = messages.find(m => m.role === 'user');
+        const cleanedUserText = typeof firstUserMsg?.content === 'string'
+          ? stripTelemetryRecoveryNoticeOrResidue(firstUserMsg.content)
+          : '';
         const userRequest = firstUserMsg?.content
           ? (typeof firstUserMsg.content === 'string'
-            ? firstUserMsg.content.substring(0, 200)
+            ? cleanedUserText.substring(0, 200) || '(unknown)'
             : JSON.stringify(firstUserMsg.content).substring(0, 200))
           : '(unknown)';
 

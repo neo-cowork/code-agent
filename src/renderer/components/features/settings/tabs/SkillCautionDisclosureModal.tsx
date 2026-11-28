@@ -77,7 +77,7 @@ const EMBEDDED_SECRET_RULE_PREFIX = 'embedded_secret_medium:';
  * 档位语义（强确认 / 默认也问 / 只读不问 / 硬拒）与 i18n 叶子里的事实注释一一对应，
  * 规则 id 真源在 commandSafety.ts / shellRules/windowsRules.ts（覆盖测试钉 id 拼写与
  * 映射全量覆盖：host 侧新增规则 id 而没配档位 = 测试红）。
- * 档位成员按 host 已验证的审批行为推导（写入点全量 52 id，一个不漏）：
+ * 档位成员按 host 已验证的审批行为推导（写入点全量 53 id，一个不漏）：
  * - forcedConfirm：命令文本命中 confirmationGate.ts 的 HIGH_RISK_PATTERNS 命令族
  *   （rm 递归强删 / git push·reset / sudo / chmod / chown）→ toolExecutor 置 forceConfirm，
  *   「始终允许」与执行类自动批准压不住；
@@ -98,6 +98,7 @@ const RUNTIME_APPROVAL_TIER_FOR_RULE: Record<string, RuntimeApprovalTier> = {
   recursive_chown: 'forcedConfirm',
   sudo_chmod: 'forcedConfirm',
   // askByDefault：非白名单未知命令（strict 默认问，可被免问档位免去）
+  single_file_delete: 'askByDefault',
   git_clean: 'askByDefault',
   egress_private_host: 'askByDefault',
   egress_unresolvable_target: 'askByDefault',

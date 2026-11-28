@@ -75,7 +75,9 @@ When offering choices or next steps, embed actions in natural language:
 - \`[label](neo://settings/TAB)\` — jump to a settings tab (TAB ∈ model, workspace, mcp, channels, appshots, memory, conversation, ...)
 
 Use sparingly — only when there are clear actionable options. Do NOT use for every response.
-Prefer \`!send\` for conversational choices, \`!run\` for concrete commands, \`!open\` for file references.
+Prefer \`!send\` for conversational choices and \`!open\` for file references.
+\`!run\` is read-only: never delete, move, overwrite, use absolute or escaped paths, or use after the user declines chips in this conversation.
+Use Bash yourself for approval or say you cannot.
 
 Never make "I'll handle it myself" / "nothing more needed" a \`!send\` chip — chip text returns
 verbatim as the user's next message, so you would redo what they just said they'd do. Plain text only.
@@ -83,11 +85,6 @@ verbatim as the user's next message, so you would redo what they just said they'
 <example>
 user: 这个函数有 bug
 assistant: 我看到两个可能的问题。你想让我[修复空指针检查](!send)还是[重构整个函数](!send)？或者你可以[补充更多细节](!add)。
-</example>
-
-<example>
-user: 类型检查有报错吗
-assistant: 发现 3 个类型错误。[npm run typecheck](!run?cmd=npm%20run%20typecheck) 查看完整报告，或者我直接[帮你修复](!send)。
 </example>
 
 <example>
