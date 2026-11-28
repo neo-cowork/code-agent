@@ -47,6 +47,7 @@ import { FeishuLastInboundLine } from './FeishuLastInboundLine';
 import {
   buildChannelConfig, ChannelRequiredField, clearChannelFormError, validateChannelForm, type ChannelFormErrors,
 } from './channelFormValidation';
+import { requestConfirm } from '../../../../services/confirmPrompt';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -726,7 +727,9 @@ export const ChannelsSettings: React.FC = () => {
   };
 
   const handleDelete = async (accountId: string) => {
-    if (!confirm(channelText.toast.deleteConfirm)) return;
+    if (!await requestConfirm({ title: t.confirmPrompts.deleteChannel, confirmText: t.common.delete, variant: 'danger',
+      message: channelText.toast.deleteConfirm,
+    })) return;
 
     try {
       await ipcService.invoke(IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT, accountId);

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
+import { ConfirmPromptHost } from '../../../src/renderer/components/ConfirmPromptHost';
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../src/shared/contract/project';
 import { en } from '../../../src/renderer/i18n/en';
@@ -104,11 +105,10 @@ describe('ProjectSettingsDialog', () => {
     mocks.invokeDomain.mockImplementation(async (_domain, action) => (
       action === 'setCurrent' ? '/repo/docs' : { state: 'trusted' }
     ));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   it('renders English copy and adds an Additional Source as read-only by default', async () => {
-    render(<ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} />);
+    render(<><ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} /><ConfirmPromptHost /></>);
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit project' });
     expect(dialog.parentElement).toBe(document.body);
@@ -125,8 +125,11 @@ describe('ProjectSettingsDialog', () => {
     expect(access.value).toBe('read_only');
 
     fireEvent.change(access, { target: { value: 'read_write' } });
-    expect(window.confirm).toHaveBeenCalledWith('Allow Agent Neo to write to this Source?\n/repo/docs');
-    expect(access.value).toBe('read_write');
+    const confirmation = await screen.findByRole('dialog', { name: 'Allow writing' });
+    expect(confirmation.textContent).toContain('Allow Agent Neo to write to this Source?\n/repo/docs');
+    expect(access.value).toBe('read_only');
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Allow writing' }));
+    await waitFor(() => expect(access.value).toBe('read_write'));
   });
 
   async function failSave(rejection: unknown) {

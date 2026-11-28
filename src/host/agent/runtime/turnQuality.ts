@@ -139,7 +139,10 @@ function buildScoreBreakdown(params: {
   warnings?: string[];
   response?: ModelResponse;
 }): TurnQualityScoreSummary {
-  const injectedMemoryBlocks = params.memory.blocks.filter((block) => block.injected);
+  // user-directives 每轮全量注入、与 query 无关，不算本轮命中的记忆。
+  const injectedMemoryBlocks = params.memory.blocks.filter(
+    (block) => block.injected && block.blockType !== 'user-directives',
+  );
   const visibleMemoryItems = injectedMemoryBlocks.reduce((sum, block) => sum + (block.items?.length || block.count || 0), 0);
   const warnings = params.warnings || [];
   const toolsUsed = params.toolsUsed || [];
@@ -305,7 +308,9 @@ export function buildTurnQualitySummary(
       agentName: ctx.agentName,
       model: `${provider}/${model}`,
       strategyProfile: decision?.strategyProfile,
-      memoryUsed: memory.blocks.reduce((sum, block) => sum + (block.items?.length || block.count || 0), 0),
+      memoryUsed: memory.blocks.reduce((sum, block) => (
+        block.blockType === 'user-directives' ? sum : sum + (block.items?.length || block.count || 0)
+      ), 0),
       toolsUsed: toolsUsed?.length || 0,
       warnings: warnings?.length || 0,
       score,

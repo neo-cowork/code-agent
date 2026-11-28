@@ -25,8 +25,12 @@ function formatModel(summary: TurnQualitySummary): string {
   return provider ? `${provider}/${model}` : model;
 }
 
+// user-directives 每轮无条件全量注入、不算本轮命中的记忆（同 MemorySourceChip 口径），
+// 计数与块数回退一律排除。
 function memoryItems(summary: TurnQualitySummary): TurnQualityMemoryItem[] {
-  const items = summary.memory.blocks.flatMap((block) => block.items || []);
+  const items = summary.memory.blocks
+    .filter((block) => block.blockType !== 'user-directives')
+    .flatMap((block) => block.items || []);
   const seen = new Set<string>();
   return items.filter((item) => {
     if (seen.has(item.entryId)) return false;
@@ -39,7 +43,9 @@ function memoryLabel(summary: TurnQualitySummary): string {
   if (summary.memory.mode === 'off') return '记忆关闭';
   const items = memoryItems(summary);
   if (items.length > 0) return `记忆 ${items.length}`;
-  const injectedBlocks = summary.memory.blocks.filter((block) => block.injected);
+  const injectedBlocks = summary.memory.blocks.filter(
+    (block) => block.injected && block.blockType !== 'user-directives',
+  );
   if (injectedBlocks.some((block) => block.blockType === 'memory_hint')) return '记忆提示';
   if (injectedBlocks.length > 0) return `记忆 ${injectedBlocks.length}`;
   return '记忆 0';

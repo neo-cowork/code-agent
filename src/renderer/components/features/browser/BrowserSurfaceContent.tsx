@@ -24,6 +24,7 @@ import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
 import { buildBrowserWorkbenchStatusRows } from '../../../utils/workbenchPresentation';
 import ipcService from '../../../services/ipcService';
 import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
+import { requestConfirm } from '../../../services/confirmPrompt';
 
 interface AccountRefreshResult {
   accountState: ManagedBrowserAccountStateSummary;
@@ -257,13 +258,18 @@ export const BrowserSurfaceContent: React.FC = () => {
     void importProfileWithDomains(selectedDomains);
   }, [cookieCopy.importCookiesDomainRequired, importProfileWithDomains, selectedDomains]);
 
-  const handleImportAllProfile = useCallback(() => {
+  const handleImportAllProfile = useCallback(async () => {
     const selected = profiles.find((item) => `${item.source}::${item.profileId}` === selectedProfileKey);
     const domains = selected?.cookieDomains?.map((entry) => entry.domain) || [];
     if (domains.length === 0) return;
-    if (!window.confirm(cookieCopy.importCookiesImportAllConfirm)) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.importAllCookies,
+      message: cookieCopy.importCookiesImportAllConfirm,
+      confirmText: t.confirmPrompts.importAll,
+      variant: 'warning',
+    })) return;
     void importProfileWithDomains(domains);
-  }, [cookieCopy.importCookiesImportAllConfirm, importProfileWithDomains, profiles, selectedProfileKey]);
+  }, [cookieCopy.importCookiesImportAllConfirm, importProfileWithDomains, profiles, selectedProfileKey, t.confirmPrompts]);
 
   const handleClearCookies = useCallback(() => run('clearCookies', async () => {
     await ipcService.invokeDomain<AccountClearResult>(

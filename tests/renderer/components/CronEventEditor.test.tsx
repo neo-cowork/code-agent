@@ -9,8 +9,9 @@
 //    （目录没有回落 id），详情页可停用（enabled=false）/删除。
 // 「停用后不再触发」的 host 侧行为在 tests/unit/cron/cronEventTrigger.test.ts。
 // ============================================================================
+import { ConfirmPromptHost } from '../../../src/renderer/components/ConfirmPromptHost';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { ChannelAccount } from '../../../src/shared/contract/channel';
 import { validateEventScheduleConstraints } from '../../../src/shared/cronEventValidation';
@@ -366,7 +367,6 @@ describe('② 列表/详情可见 + 停用/删除', () => {
   });
 
   it('详情页摘要显示账号名/群名；停用走 updateJob(enabled=false)，删除走 deleteJob', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     useCronStore.setState({
       jobs: [makeEventJob()],
       loadExecutions: vi.fn(),
@@ -376,7 +376,7 @@ describe('② 列表/详情可见 + 停用/删除', () => {
       updateJob: vi.fn(async () => null),
       deleteJob: vi.fn(async () => true),
     });
-    render(<CronJobDetail job={makeEventJob()} />);
+    render(<><CronJobDetail job={makeEventJob()} /><ConfirmPromptHost /></>);
 
     expect(screen.getByText('盯群消息')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('通道消息 · 工作飞书 · 林晨, 苏三')).toBeTruthy());
@@ -386,8 +386,9 @@ describe('② 列表/详情可见 + 停用/删除', () => {
       expect(useCronStore.getState().updateJob).toHaveBeenCalledWith('job-event', { enabled: false }));
 
     fireEvent.click(screen.getByText('删除'));
+    const dialog = await screen.findByRole('dialog', { name: '删除定时任务' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(useCronStore.getState().deleteJob).toHaveBeenCalledWith('job-event'));
-    expect(confirmSpy).toHaveBeenCalled();
   });
 });
 

@@ -35,6 +35,7 @@ import {
   updateDesignSettings,
   type CustomImageModelMeta,
 } from '../../../design/designFiles';
+import { requestConfirm } from '../../../../services/confirmPrompt';
 
 export interface BuiltinRow {
   id: string;
@@ -173,6 +174,7 @@ interface CustomEndpointManagerProps {
 }
 
 const CustomEndpointManager: React.FC<CustomEndpointManagerProps> = ({ strings: s, list, save, remove, onChange }) => {
+  const { t } = useI18n();
   const [models, setModels] = useState<CustomImageModelMeta[]>([]);
   const [mode, setMode] = useState<'list' | 'form'>('list');
   const [form, setForm] = useState<CustomModelFormState>(emptyCustomModelForm);
@@ -183,11 +185,16 @@ const CustomEndpointManager: React.FC<CustomEndpointManagerProps> = ({ strings: 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!window.confirm(s.deleteConfirm)) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.deleteCustomModel,
+      message: s.deleteConfirm,
+      confirmText: t.common.delete,
+      variant: 'danger',
+    })) return;
     await remove(id);
     await refresh();
     onChange?.();
-  }, [remove, refresh, onChange, s.deleteConfirm]);
+  }, [remove, refresh, onChange, s.deleteConfirm, t.confirmPrompts.deleteCustomModel, t.common.delete]);
 
   const handleSave = useCallback(async () => {
     if (!form.label.trim()) { setError(s.nameRequired); return; }
