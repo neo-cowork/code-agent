@@ -78,38 +78,33 @@ class SkillWatcher extends EventEmitter implements Disposable {
    * 初始化监听器
    */
   async initialize(workingDirectory: string): Promise<void> {
-    const endOp = beginSkillWatcherOp('initialize');
-    try {
-      this.stopProjectPolling();
-      this.workingDirectory = workingDirectory;
+    this.stopProjectPolling();
+    this.workingDirectory = workingDirectory;
 
-      const skillsDirs = getSkillsDir(workingDirectory);
+    const skillsDirs = getSkillsDir(workingDirectory);
 
-      // 用户级 + 库级：目录集合不变就原样保留，不 close 也不重建
-      this.syncStaticWatchers([
-        { dir: skillsDirs.user.new, source: 'user' },
-        { dir: skillsDirs.user.legacy, source: 'user' },
-        { dir: path.join(getUserConfigDir(), 'libraries'), source: 'library' },
+    // 用户级 + 库级：目录集合不变就原样保留，不 close 也不重建
+    this.syncStaticWatchers([
+      { dir: skillsDirs.user.new, source: 'user' },
+      { dir: skillsDirs.user.legacy, source: 'user' },
+      { dir: path.join(getUserConfigDir(), 'libraries'), source: 'library' },
+    ]);
+
+    // 项目级 Skills 目录（新旧两个路径）。无文件夹会话的工作目录可能只是规划值，
+    // 尚未落盘；这里只读不建，绝不替用户 mkdir。目录（或其祖先）之后才出现也由
+    // 轮询里的「存在性」变化发现，不需要祖先 watcher。
+    if (skillsDirs.project && await this.projectDirectoryExists()) {
+      await Promise.all([
+        this.pollProjectDirectory(skillsDirs.project.new),
+        this.pollProjectDirectory(skillsDirs.project.legacy),
       ]);
-
-      // 项目级 Skills 目录（新旧两个路径）。无文件夹会话的工作目录可能只是规划值，
-      // 尚未落盘；这里只读不建，绝不替用户 mkdir。目录（或其祖先）之后才出现也由
-      // 轮询里的「存在性」变化发现，不需要祖先 watcher。
-      if (skillsDirs.project && await this.projectDirectoryExists()) {
-        await Promise.all([
-          this.pollProjectDirectory(skillsDirs.project.new),
-          this.pollProjectDirectory(skillsDirs.project.legacy),
-        ]);
-      }
-
-      this.initialized = true;
-      logger.info('SkillWatcher initialized', {
-        workingDirectory,
-        watchCount: this.getWatchCount(),
-      });
-    } finally {
-      endOp();
     }
+
+    this.initialized = true;
+    logger.info('SkillWatcher initialized', {
+      workingDirectory,
+      watchCount: this.getWatchCount(),
+    });
   }
 
   private async projectDirectoryExists(): Promise<boolean> {
@@ -138,6 +133,7 @@ class SkillWatcher extends EventEmitter implements Disposable {
 
   /** 让 staticWatchers 与期望的目录集合一致；只对「不再需要」的目录 close。 */
   private syncStaticWatchers(wanted: Array<{ dir: string; source: 'user' | 'library' }>): void {
+    const endOp = beginSkillWatcherOp('sync-static-watchers');
     const wantedDirs = new Set(wanted.map((w) => w.dir));
     for (const [dir, watcher] of this.staticWatchers) {
       if (wantedDirs.has(dir)) continue;
@@ -147,6 +143,7 @@ class SkillWatcher extends EventEmitter implements Disposable {
     for (const { dir, source } of wanted) {
       if (!this.staticWatchers.has(dir)) this.watchDirectory(dir, source);
     }
+    endOp();
   }
 
   private closeWatcher(watcher: fs.FSWatcher, dir: string): void {
