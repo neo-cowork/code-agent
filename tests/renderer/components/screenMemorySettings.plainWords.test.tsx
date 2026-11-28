@@ -13,11 +13,11 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { DEFAULT_OPENCHRONICLE_SETTINGS, type OpenchronicleSettings, type OpenchronicleStatus } from '../../../src/shared/contract/openchronicle';
 
-const platform = vi.hoisted(() => ({ tauri: false }));
+const platform = vi.hoisted(() => ({ tauri: false, web: false }));
 vi.mock('../../../src/renderer/utils/platform', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/renderer/utils/platform')>()),
-  isWebMode: () => false,
-  isDesktopShellMode: () => true,
+  isWebMode: () => platform.web,
+  isDesktopShellMode: () => !platform.web,
   isTauriMode: () => platform.tauri,
 }));
 
@@ -48,6 +48,7 @@ const COPY = {
     sites: '网站（每行一个，* 代表任意字符）',
     tileNotInstalled: '未安装',
     nothingYet: '还没有可以参考的屏幕内容。',
+    webBody: '屏幕记忆要在你的电脑上持续记下你在各个应用里看过的内容，只有装在这台电脑上的 Agent Neo 桌面版能做到。',
   },
   en: {
     notInstalled: 'This computer does not have OpenChronicle, the companion program screen memory needs, so the switches below cannot be used yet. After installing it, press Refresh.',
@@ -58,6 +59,7 @@ const COPY = {
     sites: 'Websites (one per line; * means any characters)',
     tileNotInstalled: 'Not installed',
     nothingYet: 'Nothing from your screen to refer to yet.',
+    webBody: 'Screen memory keeps a record on your computer of what you look at across apps, which only the Agent Neo desktop app installed on that computer can do.',
   },
 } as const;
 
@@ -235,6 +237,7 @@ async function renderPage(lang: Lang) {
 
 beforeEach(() => {
   platform.tauri = false;
+  platform.web = false;
   calls.length = 0;
   host = {
     settings: { ...DEFAULT_OPENCHRONICLE_SETTINGS },
@@ -287,6 +290,23 @@ describe('① Screen Memory page speaks plain words (real ScreenMemorySettings, 
     if (lang === 'en' && !tauri) {
       expect(pageStrings(container, { skipTextareaValues: true }).filter((text) => /[一-鿿]/.test(text))).toEqual([]);
     }
+  });
+});
+
+// 网页构建里设置页不显示屏幕记忆这一项（showScreenMemoryTab = isDesktopShellMode()），真页面到不了这个分支，
+// 这里直接渲染它，核对网页分支的文案同样没有内部词、且不去问宿主。
+describe('① web-mode branch of ScreenMemorySettings', () => {
+  it.each(['zh', 'en'] as const)('%s shows the plain web explanation only', async (lang) => {
+    platform.web = true;
+    useAppStore.setState({ language: lang, cloudUIStrings: null });
+    const { container } = render(<ScreenMemorySettings />);
+    await waitFor(() => expect(container.textContent).toContain(COPY[lang].webBody));
+
+    const strings = pageStrings(container);
+    census.push({ scenario: `${lang} web`, strings });
+    expect(bannedHits(strings, lang === 'zh' ? ZH_BANNED : EN_BANNED)).toEqual([]);
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(calls).toEqual([]);
   });
 });
 
