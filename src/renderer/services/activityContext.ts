@@ -92,13 +92,15 @@ function normalizeSourceKind(value: unknown): ActivityContextSourceKind {
   return 'unknown';
 }
 
-function inferSources(record: RawRecord): ActivityContextSourcePreview[] {
+type SourceLabels = Record<ActivityContextSourceKind, string>;
+
+function inferSources(record: RawRecord, labels: SourceLabels): ActivityContextSourcePreview[] {
   const explicit = Array.isArray(record.sources) ? record.sources : [];
   const fromExplicit = explicit
     .map((item) => {
       if (typeof item === 'string') {
         const kind = normalizeSourceKind(item);
-        return { kind, label: SOURCE_LABELS[kind], summary: SOURCE_LABELS[kind] };
+        return { kind, label: labels[kind], summary: labels[kind] };
       }
       const source = asRecord(item);
       if (!source) return null;
@@ -108,7 +110,7 @@ function inferSources(record: RawRecord): ActivityContextSourcePreview[] {
       const items = Array.isArray(source.items) ? source.items : [];
       return {
         kind,
-        label: asString(source.label) || SOURCE_LABELS[kind],
+        label: asString(source.label) || labels[kind],
         summary: compactText(
           asString(source.summary) ||
           asString(source.detail) ||
@@ -123,7 +125,7 @@ function inferSources(record: RawRecord): ActivityContextSourcePreview[] {
   const inferred: ActivityContextSourcePreview[] = [...fromExplicit];
   const pushIfMissing = (kind: ActivityContextSourceKind, summary: string) => {
     if (!inferred.some((item) => item.kind === kind)) {
-      inferred.push({ kind, label: SOURCE_LABELS[kind], summary });
+      inferred.push({ kind, label: labels[kind], summary });
     }
   };
 
@@ -142,12 +144,12 @@ function inferSources(record: RawRecord): ActivityContextSourcePreview[] {
 
   return inferred.length > 0
     ? inferred
-    : [{ kind: 'unknown', label: SOURCE_LABELS.unknown, summary: '后端尚未声明来源' }];
+    : [{ kind: 'unknown', label: labels.unknown, summary: '后端尚未声明来源' }];
 }
 
-function summarizeActivitySource(source: RawRecord): string | null {
+function summarizeActivitySource(source: RawRecord, labels: SourceLabels): string | null {
   const kind = normalizeSourceKind(source.kind || source.type || source.source);
-  const label = SOURCE_LABELS[kind];
+  const label = labels[kind];
   const text = asString(source.text);
   if (text) return `${label}: ${compactText(text)}`;
 
@@ -184,7 +186,11 @@ function extractEvidence(value: unknown): string[] {
     .filter(Boolean);
 }
 
-export function normalizeActivityContextResponse(input: unknown): ActivityContextPreview {
+// sourceLabels：来源名按界面语言传入（设置页传语言包里的说法）；不传时沿用这里的中文名。
+export function normalizeActivityContextResponse(
+  input: unknown,
+  sourceLabels: SourceLabels = SOURCE_LABELS,
+): ActivityContextPreview {
   const root = asRecord(input);
   const data = asRecord(root?.data) || root;
   if (!data) {
@@ -209,7 +215,7 @@ export function normalizeActivityContextResponse(input: unknown): ActivityContex
           .map(asRecord)
           .filter((item): item is RawRecord => Boolean(item))
           .filter((item) => asString(item.status) !== 'unavailable')
-          .map(summarizeActivitySource)
+          .map((item) => summarizeActivitySource(item, sourceLabels))
           .filter((item): item is string => Boolean(item))
           .slice(0, 4)
           .join('\n')
@@ -247,12 +253,12 @@ export function normalizeActivityContextResponse(input: unknown): ActivityContex
       : 'ready',
     recentContextSummary,
     agentInjectionPreview,
-    sources: inferSources(data),
+    sources: inferSources(data, sourceLabels),
     evidence,
   };
 }
 
-export async function getCurrentActivityContext(): Promise<ActivityContextPreview> {
+export async function getCurrentActivityContext(sourceLabels?: SourceLabels): Promise<ActivityContextPreview> {
   const result = await ipcService.invokeDomain<unknown>(IPC_DOMAINS.ACTIVITY, 'getCurrentContext');
-  return normalizeActivityContextResponse(result);
+  return normalizeActivityContextResponse(result, sourceLabels);
 }

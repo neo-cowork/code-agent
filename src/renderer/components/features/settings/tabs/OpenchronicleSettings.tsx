@@ -1,10 +1,12 @@
 // ============================================================================
 // OpenchronicleSettings — 「屏幕记忆」设置 tab
-// 控制外部 OpenChronicle daemon 的开关 + 隐私黑名单
+// 控制外部 OpenChronicle 配套程序的开关 + 隐私名单。
+// 状态没回来前、以及宿主报告没装（status.installed === false）时，开关/勾选/名单全部锁住，
+// 只显示一句未安装说明；宿主原始报错只进日志，界面上换成语言包里的一句话。
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, AlertTriangle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Eye, EyeOff, AlertTriangle, Info, RefreshCw } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -12,6 +14,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import type {
   OpenchronicleSettings as OcSettings,
   OpenchronicleStatus,
@@ -43,6 +46,8 @@ function getOpenchronicleStateLabel(
 
 interface OpenchronicleSettingsProps {
   embedded?: boolean;
+  /** 装没装在本组件轮询里翻转时通知上层（屏幕记忆页据此重读顶部状态格）。 */
+  onInstalledChange?: () => void;
 }
 
 interface OpenchronicleToggleSwitchProps {
@@ -68,13 +73,32 @@ export const OpenchronicleToggleSwitch: React.FC<OpenchronicleToggleSwitchProps>
   );
 };
 
-export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false }) => {
+export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false, onInstalledChange }) => {
   const { t } = useI18n();
   const openchronicleText = t.settings.openchronicle;
   const [settings, setSettings] = useState<OcSettings>(DEFAULT_OPENCHRONICLE_SETTINGS);
   const [status, setStatus] = useState<OpenchronicleStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusReadFailed, setStatusReadFailed] = useState(false);
+
+  // 没拿到状态前不知道装没装，同样锁住；宿主明确说没装时显示未安装说明。
+  const notInstalled = status?.installed === false;
+  const locked = status === null || notInstalled;
+  // 关掉开关后宿主残留的上一次失败原因不再提示（关闭成功时宿主不清 lastError）。
+  const rawError = notInstalled ? null : error ?? (settings.enabled ? status?.lastError : undefined) ?? null;
+
+  useEffect(() => {
+    if (rawError) logger.warn('OpenChronicle reported a problem', { detail: rawError });
+  }, [rawError]);
+
+  const lastInstalled = useRef<boolean | null>(null);
+  const installed = status?.installed;
+  useEffect(() => {
+    if (installed === undefined) return;
+    if (lastInstalled.current !== null && lastInstalled.current !== installed) onInstalledChange?.();
+    lastInstalled.current = installed;
+  }, [installed, onInstalledChange]);
 
   const refresh = useCallback(async () => {
     try {
@@ -84,8 +108,10 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       ]);
       if (s) setSettings(s);
       if (st) setStatus(st);
+      setStatusReadFailed(false);
     } catch (e) {
       logger.error('refresh failed', e);
+      setStatusReadFailed(true);
     }
   }, []);
 
@@ -96,6 +122,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
   }, [refresh]);
 
   const handleToggle = async (next: boolean) => {
+    if (locked) return;
     setBusy(true);
     setError(null);
     try {
@@ -132,7 +159,9 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
     );
   }
 
-  const stateUi = getOpenchronicleStateLabel(status?.state ?? 'stopped', openchronicleText.stateLabels);
+  const stateUi = notInstalled
+    ? { dot: STATE_DOT.stopped, text: openchronicleText.status.notInstalled }
+    : getOpenchronicleStateLabel(status?.state ?? 'stopped', openchronicleText.stateLabels);
 
   return (
     <div className={embedded ? 'space-y-4' : 'p-6 space-y-6 max-w-3xl'}>
@@ -154,6 +183,14 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       </header>
       )}
 
+      {/* 没装配套程序：一句人话说明，下面的控件全部锁住 */}
+      {notInstalled && (
+        <div className="flex items-start gap-2 rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-3 text-sm text-zinc-300">
+          <Info className="w-4 h-4 mt-0.5 shrink-0 text-zinc-400" />
+          <p>{openchronicleText.notInstalled}</p>
+        </div>
+      )}
+
       {/* 主开关 */}
       <section className="border border-zinc-700 rounded-lg p-4">
         <div className="flex items-center justify-between">
@@ -165,22 +202,21 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
           </div>
           <OpenchronicleToggleSwitch
             checked={settings.enabled}
-            busy={busy}
+            busy={busy || locked}
             onToggle={() => handleToggle(!settings.enabled)}
           />
         </div>
 
         <div className="mt-4 pt-4 border-t border-zinc-700 grid grid-cols-2 gap-3 text-xs">
           <div>
-            <div className="text-zinc-400">{openchronicleText.status.daemon}</div>
+            <div className="text-zinc-400">{openchronicleText.status.state}</div>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`w-2 h-2 rounded-full ${stateUi.dot}`} />
               <span>{stateUi.text}</span>
-              {status?.pid && <span className="text-zinc-500">pid {status.pid}</span>}
             </div>
           </div>
           <div>
-            <div className="text-zinc-400">{openchronicleText.status.mcpEndpoint}</div>
+            <div className="text-zinc-400">{openchronicleText.status.connection}</div>
             <div className="mt-1">
               <span className={status?.mcpHealthy ? 'text-badge-success' : 'text-zinc-500'}>
                 {status?.mcpHealthy ? openchronicleText.status.connected : openchronicleText.status.disconnected}
@@ -188,18 +224,18 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
             </div>
           </div>
           <div>
-            <div className="text-zinc-400">Buffer</div>
-            <div className="mt-1">{status?.bufferFiles ?? 0} captures</div>
+            <div className="text-zinc-400">{openchronicleText.status.pending}</div>
+            <div className="mt-1">{interpolatePlural(openchronicleText.status.pendingCount, status?.bufferFiles ?? 0)}</div>
           </div>
           <div>
-            <div className="text-zinc-400">Memory</div>
-            <div className="mt-1">{status?.memoryEntries ?? 0} entries</div>
+            <div className="text-zinc-400">{openchronicleText.status.kept}</div>
+            <div className="mt-1">{interpolatePlural(openchronicleText.status.keptCount, status?.memoryEntries ?? 0)}</div>
           </div>
         </div>
 
-        {(error || status?.lastError) && (
+        {(rawError || (status === null && statusReadFailed)) && (
           <div className="mt-3 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-badge-danger">
-            {error || status?.lastError}
+            {rawError ? openchronicleText.runError : openchronicleText.statusUnavailable}
           </div>
         )}
 
@@ -210,9 +246,11 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
           >
             <RefreshCw className="w-3 h-3" /> {openchronicleText.refresh}
           </button>
-          <span className="text-xs text-zinc-500">
-            {openchronicleText.status.dataDirPrefix}<code className="bg-zinc-800 px-1 rounded">~/.openchronicle/memory/</code>
-          </span>
+          {status?.installed && (
+            <span className="text-xs text-zinc-500">
+              {openchronicleText.status.dataDirPrefix}<code className="bg-zinc-800 px-1 rounded">~/.openchronicle/memory/</code>
+            </span>
+          )}
         </div>
       </section>
 
@@ -229,13 +267,13 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
             type="checkbox"
             checked={settings.autoInjectContext}
             onChange={(e) => updateSettings({ autoInjectContext: e.target.checked })}
-            disabled={!settings.enabled}
-            className="w-4 h-4"
+            disabled={locked || !settings.enabled}
+            className="w-4 h-4 disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </label>
       </section>
 
-      {/* 黑名单（Phase 3 真正实现，先给 UI 占位） */}
+      {/* 不带进对话的应用和网站 */}
       <section className="border border-zinc-700 rounded-lg p-4">
         <div className="font-medium mb-2">{openchronicleText.blacklist.title}</div>
         <div className="text-xs text-zinc-400 mb-3">
@@ -250,9 +288,10 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
               onChange={(e) =>
                 updateSettings({ blacklistApps: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })
               }
-              disabled={!settings.enabled}
+              disabled={locked || !settings.enabled}
               rows={4}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono"
+              aria-label={openchronicleText.blacklist.appsLabel}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono disabled:opacity-50 disabled:cursor-not-allowed"
               placeholder={openchronicleText.blacklist.appsPlaceholder}
             />
           </div>
@@ -263,10 +302,11 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
               onChange={(e) =>
                 updateSettings({ blacklistUrlPatterns: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })
               }
-              disabled={!settings.enabled}
+              disabled={locked || !settings.enabled}
               rows={4}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono"
-              placeholder="*.bank.com&#10;accounts.google.com/signin*"
+              aria-label={openchronicleText.blacklist.urlPatternsLabel}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder={openchronicleText.blacklist.urlPatternsPlaceholder}
             />
           </div>
         </div>
