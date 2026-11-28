@@ -78,11 +78,13 @@ export function hydrateApprovalGatesAtBoot(
   now: number = Date.now(),
   deps: ParkedApprovalHydrationDeps = {},
 ): { plan: number; launch: number; parked: number; survived: number } {
+  const resolveSessionOriginKind = deps.resolveSessionOriginKind ?? defaultResolveSessionOriginKind();
   const plan = getPlanApprovalGate().attachPersistence(repo, now);
+  // 必须先于 launch gate 的 attachPersistence：被作废的行不能再被它当 pending 载回内存。
+  const voidedLaunches = voidUnattendedLaunchApprovals(repo, now, resolveSessionOriginKind);
   const launch = getSwarmLaunchApprovalGate().attachPersistence(repo, now);
   const loadSessionMessages = deps.loadSessionMessages ?? defaultLoadSessionMessages();
   const resolveWorkingDirectory = deps.resolveWorkingDirectory ?? defaultResolveWorkingDirectory();
-  const resolveSessionOriginKind = deps.resolveSessionOriginKind ?? defaultResolveSessionOriginKind();
   const parkSessionDurableRuns = (sessionId: string, at: number) => {
     let repository: DurableRunRepository | null = deps.durableRunRepository ?? null;
     if (!repository) {
@@ -190,9 +192,9 @@ export function hydrateApprovalGatesAtBoot(
       logger.warn('Durable run repository unavailable; parked runs not closed after approval rejection');
     }
   }
-  if (plan + launch + parked > 0) {
+  if (plan + launch + parked + voidedLaunches > 0) {
     logger.warn(
-      `Closed approvals from previous process: ${plan} plan(s) + ${launch} launch(es) + ${parked} rejected parked approval(s)`,
+      `Closed approvals from previous process: ${plan} plan(s) + ${launch} launch(es) + ${parked} rejected parked approval(s) + ${voidedLaunches} rejected launch(es) of ended unattended runs`,
     );
   }
   if (survivors.length > 0) {
@@ -202,6 +204,46 @@ export function hydrateApprovalGatesAtBoot(
   }
   collapseClosedRestartOriginStacks(repo);
   return { plan, launch, parked, survived: survivors.length };
+}
+
+/**
+ * cron / heartbeat 的运行不跨重启续跑：它留下的团队启动审批再也没有等待者，载回内存只会
+ * 在收件箱里变成一张点了也没人接的卡。启动时直接拒掉（与同来源的工具审批同一原因码）；
+ * 其余来源的 launch 行不动，交给 gate 的 attachPersistence 照旧载回 pending。
+ */
+function voidUnattendedLaunchApprovals(
+  repo: PendingApprovalRepository,
+  now: number,
+  resolveSessionOriginKind: (sessionId: string) => string | null,
+): number {
+  let voided = 0;
+  for (const row of repo.listByKindAndStatus('launch', 'pending')) {
+    let sessionId: string | null = null;
+    try {
+      const payload = JSON.parse(row.payloadJson) as { sessionId?: unknown } | null;
+      if (typeof payload?.sessionId === 'string') sessionId = payload.sessionId;
+    } catch {
+      // 读不出 payload 的行交给 gate 的 hydrate 按原样处理（它会 warn）。
+    }
+    const originKind = sessionId ? resolveSessionOriginKind(sessionId) : null;
+    if (originKind !== 'cron' && originKind !== 'heartbeat') continue;
+    const changes = repo.resolve({
+      id: row.id,
+      status: 'rejected',
+      feedback: 'Auto-rejected after restart: run_ended_after_restart',
+      resolvedAt: now,
+    });
+    voided += changes;
+    if (changes > 0) {
+      logger.warn('Voided team launch approval of unattended run after restart', {
+        requestId: row.id,
+        sessionId,
+        reason: 'run_ended_after_restart',
+        originKind,
+      });
+    }
+  }
+  return voided;
 }
 
 function collapseClosedRestartOriginStacks(repo: PendingApprovalRepository): void {
