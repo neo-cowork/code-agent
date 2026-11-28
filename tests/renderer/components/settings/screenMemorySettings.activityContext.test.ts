@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ActivityContextPreviewPanel } from '../../../src/renderer/components/features/settings/tabs/ScreenMemorySettings';
+import { ActivityContextPreviewPanel } from '../../../../src/renderer/components/features/settings/tabs/ScreenMemorySettings';
 
 describe('ScreenMemorySettings ActivityContext preview', () => {
   it('renders compact recent context and agent injection previews without local paths', () => {

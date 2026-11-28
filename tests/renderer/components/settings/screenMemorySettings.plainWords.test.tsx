@@ -10,20 +10,20 @@ import React from 'react';
 import fs from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_DOMAINS } from '../../../src/shared/ipc';
-import { DEFAULT_OPENCHRONICLE_SETTINGS, type OpenchronicleSettings, type OpenchronicleStatus } from '../../../src/shared/contract/openchronicle';
+import { IPC_DOMAINS } from '../../../../src/shared/ipc';
+import { DEFAULT_OPENCHRONICLE_SETTINGS, type OpenchronicleSettings, type OpenchronicleStatus } from '../../../../src/shared/contract/openchronicle';
 
 const platform = vi.hoisted(() => ({ tauri: false, web: false }));
-vi.mock('../../../src/renderer/utils/platform', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/renderer/utils/platform')>()),
+vi.mock('../../../../src/renderer/utils/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/renderer/utils/platform')>()),
   isWebMode: () => platform.web,
   isDesktopShellMode: () => !platform.web,
   isTauriMode: () => platform.tauri,
 }));
 
-import ipcService from '../../../src/renderer/services/ipcService';
-import { ScreenMemorySettings } from '../../../src/renderer/components/features/settings/tabs/ScreenMemorySettings';
-import { useAppStore } from '../../../src/renderer/stores/appStore';
+import ipcService from '../../../../src/renderer/services/ipcService';
+import { ScreenMemorySettings } from '../../../../src/renderer/components/features/settings/tabs/ScreenMemorySettings';
+import { useAppStore } from '../../../../src/renderer/stores/appStore';
 
 const NOW = 1_795_000_000_000;
 // 与 settingsRenderedJargon 同一预算：整页（含 Tauri 下的桌面活动区）在负载高的机器上首屏可能超过默认 1 秒。
