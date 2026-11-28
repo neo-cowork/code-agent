@@ -20,13 +20,14 @@ export interface WorkspaceGroup {
    *  groups use the full workspace path, and the fallback bucket uses
    *  UNCATEGORIZED_WORKSPACE_KEY. */
   key: string;
-  /** Display name — project groups use their primary workspace basename until
-   *  Project metadata loads; the fallback bucket uses the caller-supplied
+  /** Display name — project groups use their newest listed workspace basename
+   *  until Project metadata loads; the fallback bucket uses the caller-supplied
    *  uncategorizedName (i18n, 禁硬编码). */
   name: string;
   /** Primary workspace path, usually the most recently active session's path. */
   path?: string;
-  /** All workspace paths represented by the group, newest activity first. */
+  /** Workspace paths listed for the group (hover tip, drawer), newest activity
+   *  first. Neo-made task folders are left out. */
   paths: string[];
   /** Project id for this group, when known. */
   projectId?: string;
@@ -137,7 +138,8 @@ function getGroupPaths(sessions: SessionWithMeta[]): string[] {
  * - Unpinned chats in a Neo-made task folder join the uncategorized bucket.
  * - The uncategorized bucket (if non-empty) is always appended at the end; its
  *   display name comes from the caller (i18n), not hardcoded here.
- * - `projectFallbackName` covers the rare group with no primary path at all
+ * - `projectFallbackName` covers the rare group with no listed path at all, e.g. a
+ *   folderless space whose chats live in task folders, until Project metadata loads
  *   (i18n, 禁硬编码 — 复用侧栏「项目」section 标题词条即可)。
  */
 export function groupByWorkspace(
@@ -169,8 +171,11 @@ export function groupByWorkspace(
       (max, s) => Math.max(max, s.updatedAt || 0),
       0,
     );
-    const paths = getGroupPaths(sortedSessions);
-    const primaryPath = paths[0];
+    const sessionPaths = getGroupPaths(sortedSessions);
+    // A Neo-made task folder is a chat's file home, not where its group lives (each chat in a
+    // folderless space gets one), so it neither names the group nor is listed as its path.
+    const paths = sessionPaths.filter((path) => !isTaskFolderPath(path));
+    const primaryPath = sessionPaths[0];
 
     if (key === UNCATEGORIZED_WORKSPACE_KEY) {
       uncategorized = {
@@ -185,7 +190,7 @@ export function groupByWorkspace(
     } else {
       categorized.push({
         key,
-        name: primaryPath ? basenameOf(primaryPath) : projectFallbackName,
+        name: paths[0] ? basenameOf(paths[0]) : projectFallbackName,
         path: primaryPath,
         paths,
         isUncategorized: false,

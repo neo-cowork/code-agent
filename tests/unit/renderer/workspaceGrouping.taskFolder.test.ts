@@ -84,6 +84,20 @@ describe('workspaceGrouping: chats in a Neo-made task folder', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ key: 'project:proj_s', projectId: 'proj_s', isUncategorized: false });
     expect(groups[0].sessions.map((item) => item.id)).toEqual(['d']);
+    // The space header never borrows the chat's task-folder name for its label or hover paths.
+    expect(groups[0].name).toBe(PROJECT_FALLBACK);
+    expect(groups[0].paths).toEqual([]);
+  });
+
+  it('lists only the user folders of a space that mixes task-folder and user-folder chats', () => {
+    const groups = group([
+      session({ id: 'trip', projectId: 'proj_s', workingDirectory: '/x/Neo/任务_1103_trip-plan', metadata: { projectPinned: true }, updatedAt: 300 }),
+      session({ id: 'photos', projectId: 'proj_s', workingDirectory: '/x/Pictures/kyoto', updatedAt: 200 }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: 'project:proj_s', name: 'kyoto', paths: ['/x/Pictures/kyoto'] });
+    expect(groups[0].sessions.map((item) => item.id)).toEqual(['trip', 'photos']);
   });
 
   it('(e) keeps a user-picked ws- folder as its own folder-named group', () => {
