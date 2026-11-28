@@ -385,13 +385,118 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     const en = renderCard(request, 'en').text;
     expect(en).toContain('Mingjing');
     expect(en).toContain('Role "Mingjing" proactivity changes:');
-    expect(en).toContain('How often to interrupt: Silent (not proactive) -> Daily brief (');
+    expect(en).toContain('How often to interrupt: Silent (not proactive) -> Daily brief (at 09:00)');
+    expect(en).not.toContain('Daily brief (Daily');
     expect(en).toContain('Quiet hours: Not set -> 22:00 to 08:00');
     expect(en).not.toContain('明镜');
     // user-typed topics ("天气") are values, not copy; every other CJK char would be untranslated card text
     expect(en.split('天气').join('')).not.toMatch(/\p{Script=Han}|[\u3000-\u303f\uff00-\uffef]/u);
     const zh = renderCard(request, 'zh').text;
-    expect(zh).toContain(hostSummary);
+    expect(zh).toContain('角色「明镜」主动性调整：\n打扰频率：静默（不主动） -> 每日简报（09:00）\n永远别提：+ 天气、weather\n免打扰时段：未设置 -> 22:00 至 08:00');
+    expect(zh).not.toContain('每日简报（每天');
+  });
+
+  describe('role setting frequency row deduplication (zh and en)', () => {
+    const snapshot = (level: string, cadence: string | null) => ({
+      level,
+      cadence,
+      quietHours: null,
+      topicsInclude: [] as string[],
+      topicsExclude: [] as string[],
+    });
+
+    const roleRequest = (
+      id: string,
+      before: ReturnType<typeof snapshot>,
+      after: ReturnType<typeof snapshot>,
+    ): PermissionRequest => ({
+      id,
+      sessionId: 'session-current',
+      type: 'command',
+      tool: 'set_role_proactivity',
+      forceConfirm: true,
+      reason: '角色「明镜」主动性调整',
+      dangerLevel: 'normal',
+      timestamp: 1,
+      details: {
+        roleId: '明镜',
+        before,
+        after,
+        preview: { type: 'generic', summary: '角色「明镜」主动性调整' },
+        changes: '角色「明镜」主动性调整',
+      },
+    } as unknown as PermissionRequest);
+
+    const assertNoRepetition = (text: string, label: string): void => {
+      expect(text, `${label}: no word repeated back-to-back`).not.toMatch(/\b([a-z]+)\b\W+\1\b/iu);
+      const freqLine = text.split('\n').find((l) => l.startsWith('How often to interrupt:') || l.startsWith('打扰频率：')) ?? '';
+      expect(freqLine, `${label}: frequency line present`).not.toBe('');
+      const value = freqLine.replace(/^(?:How often to interrupt:\s*|打扰频率：)/u, '');
+      for (const side of value.split(' -> ')) {
+        expect(side, `${label}: no repeated "daily" in "${side}"`).not.toMatch(/\bdaily\b.*\bdaily\b/iu);
+        expect(side.includes('每日') && side.includes('每天'), `${label}: must not mix 每日 and 每天 in "${side}"`).toBe(false);
+      }
+    };
+
+    it('daily + every-day cadence (before and after, 6-field and 5-field) says daily once in en and zh', () => {
+      const fromSilent = roleRequest('role-daily-from-silent', snapshot('silent', null), snapshot('daily', '0 0 9 * * *'));
+      const enFromSilent = renderCard(fromSilent, 'en').text;
+      const zhFromSilent = renderCard(fromSilent, 'zh').text;
+      expect(enFromSilent).toContain('How often to interrupt: Silent (not proactive) -> Daily brief (at 09:00)');
+      expect(enFromSilent).not.toContain('Daily brief (Daily');
+      expect(zhFromSilent).toContain('打扰频率：静默（不主动） -> 每日简报（09:00）');
+      expect(zhFromSilent).not.toContain('每日简报（每天');
+      assertNoRepetition(enFromSilent, 'fromSilent en');
+      assertNoRepetition(zhFromSilent, 'fromSilent zh');
+
+      const bothDaily = roleRequest('role-daily-both', snapshot('daily', '0 30 8 * * *'), snapshot('daily', '0 9 * * *'));
+      const enBoth = renderCard(bothDaily, 'en').text;
+      const zhBoth = renderCard(bothDaily, 'zh').text;
+      expect(enBoth).toContain('How often to interrupt: Daily brief (at 08:30) -> Daily brief (at 09:00)');
+      expect(enBoth).not.toContain('Daily brief (Daily');
+      expect(zhBoth).toContain('打扰频率：每日简报（08:30） -> 每日简报（09:00）');
+      expect(zhBoth).not.toContain('每日简报（每天');
+      assertNoRepetition(enBoth, 'bothDaily en');
+      assertNoRepetition(zhBoth, 'bothDaily zh');
+    });
+
+    it('daily + weekdays cadence keeps existing wording in en and zh', () => {
+      const req = roleRequest('role-daily-weekdays', snapshot('silent', null), snapshot('daily', '0 0 9 * * 1-5'));
+      const enText = renderCard(req, 'en').text;
+      const zhText = renderCard(req, 'zh').text;
+      expect(enText).toContain('How often to interrupt: Silent (not proactive) -> Daily brief (Weekdays at 09:00)');
+      expect(zhText).toContain('打扰频率：静默（不主动） -> 每日简报（工作日 09:00）');
+      assertNoRepetition(enText, 'daily weekdays en');
+      assertNoRepetition(zhText, 'daily weekdays zh');
+    });
+
+    it('realtime + every-day cadence keeps existing wording in en and zh', () => {
+      const req = roleRequest('role-realtime-daily', snapshot('silent', null), snapshot('realtime', '0 0 9 * * *'));
+      const enText = renderCard(req, 'en').text;
+      const zhText = renderCard(req, 'zh').text;
+      expect(enText).toContain('How often to interrupt: Silent (not proactive) -> Real-time (Daily at 09:00)');
+      expect(zhText).toContain('打扰频率：静默（不主动） -> 实时介入（每天 09:00）');
+      assertNoRepetition(enText, 'realtime daily en');
+      assertNoRepetition(zhText, 'realtime daily zh');
+    });
+
+    it('daily without cadence and silent render plain level labels in en and zh', () => {
+      const dailyToSilent = roleRequest('role-daily-to-silent', snapshot('daily', null), snapshot('silent', null));
+      const enText = renderCard(dailyToSilent, 'en').text;
+      const zhText = renderCard(dailyToSilent, 'zh').text;
+      expect(enText).toContain('How often to interrupt: Daily brief -> Silent (not proactive)');
+      expect(zhText).toContain('打扰频率：每日简报 -> 静默（不主动）');
+      assertNoRepetition(enText, 'daily without cadence en');
+      assertNoRepetition(zhText, 'daily without cadence zh');
+
+      const silentToDaily = roleRequest('role-silent-to-daily', snapshot('silent', null), snapshot('daily', null));
+      const enRev = renderCard(silentToDaily, 'en').text;
+      const zhRev = renderCard(silentToDaily, 'zh').text;
+      expect(enRev).toContain('How often to interrupt: Silent (not proactive) -> Daily brief');
+      expect(zhRev).toContain('打扰频率：静默（不主动） -> 每日简报');
+      assertNoRepetition(enRev, 'silent to daily en');
+      assertNoRepetition(zhRev, 'silent to daily zh');
+    });
   });
 
   it('outside-workspace read says read-only, never write/overwrite', () => {

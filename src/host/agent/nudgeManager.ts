@@ -15,6 +15,7 @@ import { getSessionTodos as getCurrentTodos } from './todoParser';
 import { getIncompleteTasks } from '../services/planning/taskStore';
 import { READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, type TaskProgressState } from './loopTypes';
 import type { ContextInjectionSource } from '../context/contextEventLedger';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 
 const logger = createLogger('NudgeManager');
 
@@ -142,6 +143,9 @@ export class NudgeManager {
     workingDirectory: string,
     expectedOutputFiles: string[],
   ): void {
+    // 由运行记录还原的消息整段以恢复提示开头：提示是宿主免责声明，不是用户需求，
+    // P0 会把 _originalUserPrompt 原文回注给模型——先剥提示/残留再派生一切状态。
+    const cleanedUserMessage = stripTelemetryRecoveryNoticeOrResidue(userMessage);
     this.targetFiles = targetFiles;
     this.modifiedFiles.clear();
     this.verificationOutcome = 'none';
@@ -151,23 +155,23 @@ export class NudgeManager {
     this.todoNudgeCount = 0;
     this.goalVerificationCount = 0;
     this._subtaskNudgeCount = 0;
-    this._extractedSubtasks = this._extractSubtasksFromPrompt(userMessage);
+    this._extractedSubtasks = this._extractSubtasksFromPrompt(cleanedUserMessage);
     this.outputFileNudgeCount = 0;
     this.abandonedOutputAnnounced = false;
 
     this._outputValidationDone = false;
-    this._originalUserPrompt = userMessage;
+    this._originalUserPrompt = cleanedUserMessage;
     this._requirementVerificationDone = false;
     this._enhancedValidationDone = false;
     this._lastStructureInfo = null;
-    this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
+    this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(cleanedUserMessage);
     this.expectsMutationCompletion =
       expectedOutputFiles.length > 0 ||
       targetFiles.length > 0 ||
-      this.hasExplicitMutationIntent(userMessage);
-    this._enforceTaskCompletion = /任务|待办|todo|task|plan|计划|分工|TaskManager|task_create|task_update|task_list/i.test(userMessage);
+      this.hasExplicitMutationIntent(cleanedUserMessage);
+    this._enforceTaskCompletion = /任务|待办|todo|task|plan|计划|分工|TaskManager|task_create|task_update|task_list/i.test(cleanedUserMessage);
     this._taskManagerUsedInRun = false;
-    this._readOnlyTaskIntent = this.inferReadOnlyTaskIntent(userMessage, targetFiles, expectedOutputFiles);
+    this._readOnlyTaskIntent = this.inferReadOnlyTaskIntent(cleanedUserMessage, targetFiles, expectedOutputFiles);
 
     // P5-3: snapshot initial data files
     try {
