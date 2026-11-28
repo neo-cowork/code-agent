@@ -169,20 +169,7 @@ export const usePendingStopStore = create<PendingStopStoreState>()((set) => ({
 
   clear: (sessionId) => {
     set((state) => {
-      if (!(sessionId in state.entries)) {
-        // 仍同步清掉可能残留在 sessionStorage 里的条目
-        const stored = readStoredPendingStops();
-        if (sessionId in stored) {
-          const remaining: Record<string, PendingStopEntry> = {};
-          for (const [id, intent] of Object.entries(stored)) {
-            if (id !== sessionId) {
-              remaining[id] = { ...intent, phase: 'pending', recordedAtRevision: null };
-            }
-          }
-          writeStoredPendingStops(remaining);
-        }
-        return state;
-      }
+      if (!(sessionId in state.entries)) return state;
       const nextEntries = { ...state.entries };
       delete nextEntries[sessionId];
       writeStoredPendingStops(nextEntries);

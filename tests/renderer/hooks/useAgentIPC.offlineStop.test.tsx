@@ -404,6 +404,41 @@ describe('offline stop feedback and reconnect replay via useAgentIPC().cancel', 
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
+  it('does not stamp runCancellation onto another session if user switches before cancel settles', async () => {
+    let resolveCancel!: (value: { message: string; sessionId: string }) => void;
+    invokeMock.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveCancel = resolve;
+      }),
+    );
+
+    render(<ComposerHarness sessionId={SESSION_ID} />);
+    fireEvent.click(screen.getByTestId('composer-stop-button'));
+
+    await waitFor(() => {
+      expect(cancelCalls()).toHaveLength(1);
+    });
+
+    // Switch to session B while session A's cancel request is still in flight
+    act(() => {
+      useSessionStore.setState({
+        currentSessionId: 'session-other-b',
+        messages: [makeUserMessage('user-other-b', '另一个会话的问题')],
+      });
+    });
+
+    await act(async () => {
+      resolveCancel({ message: 'Cancelled', sessionId: SESSION_ID });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(useTaskStore.getState().sessionStates[SESSION_ID]?.status).toBe('cancelled');
+    });
+    const otherMsg = useSessionStore.getState().messages.find((m) => m.id === 'user-other-b');
+    expect(otherMsg?.metadata?.workbench?.runCancellation).toBeUndefined();
+  });
+
   it('renders plain English copy in en UI', async () => {
     useAppStore.setState({ language: 'en' });
     invokeMock.mockImplementationOnce(async (channel: string) => {

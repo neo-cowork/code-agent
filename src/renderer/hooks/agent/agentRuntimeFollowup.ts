@@ -32,11 +32,22 @@ export function getLatestNonMetaUserMessageId(
   return null;
 }
 
-export function markLatestUserMessageRunCancelled(cancelledAt: number): void {
+export function markLatestUserMessageRunCancelled(
+  cancelledAt: number,
+  expectedSessionId?: string,
+  targetMessageId?: string | null,
+): void {
   const sessionStore = useSessionStore.getState();
-  const latestUserId = getLatestNonMetaUserMessageId(sessionStore.messages);
+  if (expectedSessionId && sessionStore.currentSessionId !== expectedSessionId) {
+    return;
+  }
+  const latestUserId = targetMessageId !== undefined
+    ? targetMessageId
+    : getLatestNonMetaUserMessageId(sessionStore.messages);
   if (!latestUserId) return;
-  const latestUser = sessionStore.messages.find((message) => message.id === latestUserId);
+  const latestUser = sessionStore.messages.find(
+    (message) => message.id === latestUserId && message.role === 'user' && !message.isMeta,
+  );
   if (!latestUser) return;
 
   sessionStore.updateMessage(latestUser.id, {

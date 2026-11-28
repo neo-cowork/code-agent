@@ -123,7 +123,7 @@ export async function deliverAgentCancel(input: {
 
     usePendingStopStore.getState().clear(sessionId);
     if (confirmed) {
-      markLatestUserMessageRunCancelled(Date.now());
+      markLatestUserMessageRunCancelled(Date.now(), sessionId, userMessageId);
       useTaskStore.getState().updateSessionState(sessionId, { status: 'cancelled' });
       setSessionProcessing(sessionId, false);
       if (typeof window !== 'undefined' && window.domainAPI) {
