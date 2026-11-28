@@ -3,18 +3,16 @@ import { classifyError } from '../../model/errorClassifier';
 import { resolveProviderBaseUrl } from '../../model/providers/providerResolution';
 import { probeOfflineNetwork } from '../../permissions/envAssist/probes/offlineProbe';
 import type { AgentEvent, ModelConfig, ToolCall } from '../../../shared/contract';
-import type { RunEnvelope } from '../../../shared/contract/durableRun';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
 import { resolveLoginExpiredTarget } from '../../permissions/envAssist/loginRecovery';
 import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { isQuotaWaitParkableRun } from '../../runtime/quotaWaitParkability';
 import { recordParkedCallApproval } from '../../permissions/parkedCallApproval';
 import { createLogger } from '../../services/infra/logger';
+import { hasEnvBlockedNote, setEnvBlockedNote } from './envBlockedNotes';
 
-const notes = new Map<string, NonNullable<RunEnvelope['envBlocked']>>();
 const logger = createLogger('EnvBlockedTurn');
-export function peekEnvBlockedNote(runId: string | undefined): RunEnvelope['envBlocked'] { return runId ? notes.get(runId) : undefined; }
-export function clearEnvBlockedNote(runId: string): void { notes.delete(runId); }
+export { peekEnvBlockedNote, clearEnvBlockedNote } from './envBlockedNotes';
 
 export function settleEnvBlockedTool(error: unknown, input: {
   runId?: string; toolCallId: string; markCancelled: () => void; toolName?: string; args?: unknown; sessionId?: string;
@@ -26,7 +24,7 @@ export function settleEnvBlockedTool(error: unknown, input: {
     return false;
   }
   // A parallel batch can encounter several blockers; the first owns this park.
-  if (!notes.has(input.runId)) notes.set(input.runId, {
+  if (!hasEnvBlockedNote(input.runId)) setEnvBlockedNote(input.runId, {
     class: error.class, target: error.target, toolCallId: error.toolCallId,
   });
   // The user already confirmed this call and it never ran: keep a one-shot credential for the resumed run (parkedCallApproval.ts).
@@ -49,7 +47,7 @@ export async function settleOfflineInference(error: unknown, input: {
   if (await probeOfflineNetwork(target) || input.shouldStop()) return false;
   const now = Date.now();
   const deadlineAt = now + OFFLINE_RESUME_TIMEOUT_MS;
-  notes.set(runId, { class: 'offline', target: 'network', ...target, deadlineAt });
+  setEnvBlockedNote(runId, { class: 'offline', target: 'network', ...target, deadlineAt });
   input.markCancelled();
   logger.info('Network unavailable; parking model inference', { runId, sessionId });
   try {
@@ -66,7 +64,7 @@ export async function settleOfflineInference(error: unknown, input: {
 
 /** Keep dispatched operations open for native recovery; close only unstarted calls. */
 export function envBlockedCancelledClosures(runId: string | undefined, toolCalls: ToolCall[]): ToolCall[] {
-  if (!runId || !notes.has(runId)) return toolCalls;
+  if (!runId || !hasEnvBlockedNote(runId)) return toolCalls;
   const operations = getConfiguredApplicationRunRegistry()?.getDurableEnvelope(runId)?.pendingOperations ?? [];
   return toolCalls.filter((call) => !operations.some((op) => op.operationId === `tool:${call.id}`
     && !['succeeded', 'failed', 'abandoned'].includes(op.status)));

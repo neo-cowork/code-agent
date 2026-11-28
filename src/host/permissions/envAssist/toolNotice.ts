@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentEvent, Message, ToolResult } from '../../../shared/contract';
 import type { EnvAssistNotice } from '../../../shared/contract/envAssist';
-import { peekEnvBlockedNote } from '../../agent/runtime/envBlockedTurn';
+import { peekEnvBlockedNote } from '../../agent/runtime/envBlockedNotes';
 import { emitExternalAgentEvent } from '../../services/agentEngine/agentEngineEventSink';
 import { getDatabase } from '../../services/core/databaseService';
 import { getSessionManager } from '../../services/infra/sessionManager';
