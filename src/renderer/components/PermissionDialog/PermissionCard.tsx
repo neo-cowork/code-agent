@@ -115,6 +115,10 @@ function normalizeRequest(
       to_ms: unknownField(request.details, 'to_ms'),
       calendar: unknownField(request.details, 'calendar'),
       sensitiveStep: request.details.sensitiveStep,
+      title: stringField(request.details, 'title'),
+      subject: stringField(request.details, 'subject'),
+      to: unknownField(request.details, 'to'),
+      name: stringField(request.details, 'name'),
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
     rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,

@@ -115,6 +115,11 @@ export interface PermissionRequestDetails {
     elementLabel?: string;
     appName?: string;
   };
+  /** 审批卡一句话摘要所需的对象字段（非可编辑工具不背整份 rawArgs，只透传安全对象名） */
+  title?: string;
+  subject?: string;
+  to?: unknown;
+  name?: string;
 }
 
 // 权限请求

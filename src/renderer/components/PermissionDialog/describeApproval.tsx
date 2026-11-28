@@ -14,7 +14,7 @@ import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
 import { formatFilePath, getPermissionConfig, getPermissionTitle, type ApprovalPathContext } from './utils';
-import { permissionConsequence, permissionSummary } from './permissionPresentation';
+import { actionObjectQuestion, permissionConsequence, permissionSummary } from './permissionPresentation';
 import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 import { formatDateTime } from '../../utils/formatDateTime';
@@ -275,7 +275,7 @@ function describeKind(
       return {
         kind,
         title: p.titleWebOpen,
-        question: url ? p.questionNetwork.replace('{target}', url) : p.genericApprovalQuestion,
+        question: url ? p.questionNetwork.replace('{target}', url) : (actionObjectQuestion(request, t, language) ?? p.genericApprovalQuestion),
         consequence: url ? p.consequenceWebOpen.replace('{target}', url) : genericConsequence,
         icon,
       };
@@ -314,7 +314,7 @@ function describeKind(
       return {
         kind,
         title: p.genericApprovalTitle,
-        question: p.genericApprovalQuestion,
+        question: actionObjectQuestion(request, t, language) ?? p.genericApprovalQuestion,
         consequence: hasListableDetails(request) ? quiet(genericConsequence) : undefined,
         icon,
       };
