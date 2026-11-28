@@ -14,7 +14,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
     queuedPermissionRequests: [] as Array<Record<string, unknown>>,
     openPreview: vi.fn(),
     workingDirectory: '/repo',
-    language: 'zh' as const,
+    language: 'zh' as 'zh' | 'en',
     setLanguage: vi.fn(),
     cloudUIStrings: undefined,
   };
@@ -88,6 +88,49 @@ describe('ToolHeader terminal copy', () => {
     const text = view.container.textContent ?? '';
     expect(text).not.toContain(zh.deliveryExperience.approvalRequired);
     expect(text).toContain(humanizeToolFailureReason(toolCall, zh));
+  });
+
+  it('user-denied Write result card shows next-step guidance in both zh and en without raw English prefix', async () => {
+    const appStoreMod = await import('../../../src/renderer/stores/appStore') as unknown as {
+      __mockAppState: { language: 'zh' | 'en' };
+    };
+    const toolCall: ToolCall = {
+      id: 'write-denied-next-step',
+      name: 'Write',
+      arguments: { file_path: '/outside/summary.md', content: 'notes' },
+      result: {
+        toolCallId: 'write-denied-next-step',
+        success: false,
+        error: 'Permission denied by user. The user just declined this kind of action.',
+        metadata: {
+          failureCode: 'permission-denied',
+          hostReason: { code: 'PERMISSION_DENIED_BY_USER', modelText: 'Permission denied by user.', metadata: { toolName: 'Write' } },
+        },
+      },
+    };
+
+    try {
+      appStoreMod.__mockAppState.language = 'zh';
+      const zhView = render(<ToolCallDisplay toolCall={toolCall} index={0} total={1} />);
+      const zhText = zhView.container.textContent ?? '';
+      expect(zhText).toContain('未写入 · summary.md');
+      expect(zhText).toContain('审批被拒绝');
+      expect(zhText).toContain('请在新消息里再告诉 Neo 要做什么，确认卡片就会重新出现。');
+      expect(zhText).not.toContain('Permission denied by user');
+      zhView.unmount();
+
+      appStoreMod.__mockAppState.language = 'en';
+      const enView = render(<ToolCallDisplay toolCall={toolCall} index={0} total={1} />);
+      const enText = enView.container.textContent ?? '';
+      expect(enText).toContain('Not written · summary.md');
+      expect(enText).toContain('The approval was denied');
+      expect(enText).toContain('Tell Neo what you want in a new message to bring the approval card back.');
+      expect(enText).not.toContain('Permission denied by user');
+      expect(enText).not.toMatch(/[\u4e00-\u9fff]/);
+      enView.unmount();
+    } finally {
+      appStoreMod.__mockAppState.language = 'zh';
+    }
   });
 
   it('foreground spawn_agent renders pending-approval / running wording while active and only shows 未成功 with real reason on failure', async () => {
