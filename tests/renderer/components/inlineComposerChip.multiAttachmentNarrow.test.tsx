@@ -114,4 +114,44 @@ describe('InlineComposerChip multi-attachment narrow layout', () => {
     expect(chipEl?.textContent).toBe('a.txt');
     expect(chipEl?.querySelector('[data-chip-label-tail]')).toBeNull();
   });
+
+  it('guards PDF chip with description against narrow-width overflow and keeps non-file chip width unchanged', () => {
+    lang.current = 'en';
+    const { container } = render(
+      <div>
+        <InlineComposerChip
+          chip={{
+            key: 'file:pdf-1',
+            kind: 'file',
+            id: 'pdf-1',
+            label: 'quarterly-report-01.pdf',
+            category: 'pdf',
+            description: 'PDF · 12 pages',
+          }}
+          onRemove={vi.fn()}
+        />
+        <InlineComposerChip
+          chip={{
+            key: 'skill:weekly-summary',
+            kind: 'skill',
+            id: 'weekly-summary',
+            label: 'weekly-summary',
+          }}
+          onRemove={vi.fn()}
+        />
+      </div>,
+    );
+
+    const pdfChip = container.querySelector('[data-inline-chip="file"]');
+    expect(pdfChip?.className).toContain('overflow-hidden');
+    expect(pdfChip?.className).toContain('max-w-[9.5rem]');
+    const descEl = screen.getByText('PDF · 12 pages');
+    expect(descEl.className).toContain('min-w-0');
+    expect(descEl.className).toContain('truncate');
+    expect(descEl.className).toContain('sm:shrink-0');
+
+    const skillChip = container.querySelector('[data-inline-chip="skill"]');
+    expect(skillChip?.className).toContain('max-w-[220px]');
+    expect(skillChip?.className).not.toContain('max-w-[9.5rem]');
+  });
 });
