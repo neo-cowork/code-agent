@@ -164,12 +164,20 @@ async function checkCalendarWrites(env: AttemptEnv, expectTool: string | null): 
 
 // ── 写回卡（日历）的点击：不是普通卡的「允许 / 暂不」，按钮是 创建 / 更新 / 删除 ──
 
-/** 点写回卡的确认按钮并等卡片收起或换阶段；文字完全匹配，避免「创建」撞上「修改后创建」。 */
-async function clickWritebackButton(page: Page, label: string): Promise<void> {
-  const card = await currentPermissionCard(page);
+/** 写回卡按钮的可访问名是「标签 + 快捷键 + 描述」渲染进同一颗按钮（DecisionCard.tsx），整词 exact 永远点不中；按「以标签开头」匹配，「修改后创建」这类以同字结尾的选项不会被命中。 */
+function writebackButton(card: CardLocator, label: string): ReturnType<CardLocator['getByRole']> {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return card.getByRole('button', { name: new RegExp(`^${escaped}`) });
+}
+
+/** 点写回卡的确认按钮并等卡片收起或换阶段；点之前先核对卡面写着专属日历——写错日历在批准时就要拦下，而不是等写完读库。 */
+async function clickWritebackButton(env: AttemptEnv, label: string): Promise<void> {
+  const calendar = calendarOf(env);
+  const card = await currentPermissionCard(env.page);
   if (!card) throw new Error(`点「${label}」前审批卡已离开页面`);
   const before = await card.innerText({ timeout: 10_000 });
-  await card.getByRole('button', { name: label, exact: true }).click({ timeout: 10_000 });
+  if (!before.includes(calendar)) throw new Error(`审批卡上没有专属日历「${calendar}」，不点「${label}」（卡面：${before.slice(0, 200)}）`);
+  await writebackButton(card, label).click({ timeout: 10_000 });
   await waitFor(`点「${label}」后卡片收起`, async () => {
     if (!(await card.isVisible().catch(() => false))) return true;
     return (await card.innerText({ timeout: 10_000 }).catch(() => before)) !== before;
@@ -186,8 +194,8 @@ async function waitForCard(page: Page, what: string): Promise<CardLocator> {
 
 /** 点确认按钮后等回合收尾；期间再冒出的同类卡继续点同一颗按钮。 */
 async function approveAndSettle(env: AttemptEnv, label: string): Promise<void> {
-  await clickWritebackButton(env.page, label);
-  await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: () => clickWritebackButton(env.page, label) }, TURN_TIMEOUT_MS);
+  await clickWritebackButton(env, label);
+  await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: () => clickWritebackButton(env, label) }, TURN_TIMEOUT_MS);
 }
 
 // ── F02 / F03 的前置事件：经同一聊天 + 审批路径先创建本标记的事件 ──
@@ -214,15 +222,14 @@ function toolResultTexts(raw: string): string[] {
     .filter(Boolean);
 }
 
-async function cleanupMarkedEvents(_server: ServerInfo, env?: AttemptEnv): Promise<void> {
-  if (!env) return;
+async function cleanupMarkedEvents(_server: ServerInfo, env: AttemptEnv): Promise<void> {
   const calendar = typeof env.scratch.calendar === 'string' ? env.scratch.calendar : '';
   const marker = typeof env.scratch.marker === 'string' ? env.scratch.marker : '';
   // step 0 就红了（没日历名 / 没标记）：本次尝试没发过任何消息，更没写过事件，无事可清
   if (!calendar || !marker) return;
   env.sessionIds.push(await openNewSession(env.page));
   await sendMessage(env.page, `在日历「${calendar}」里把标题带「${marker}」的日程都删掉。`);
-  await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: () => clickWritebackButton(env.page, DELETE_BUTTON) }, TURN_TIMEOUT_MS);
+  await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: () => clickWritebackButton(env, DELETE_BUTTON) }, TURN_TIMEOUT_MS);
   const readPrompt = `在日历「${calendar}」里查标题带「${marker}」的日程，一条一条列出标题；没有就明说没有。`;
   await sendMessage(env.page, readPrompt);
   await driveTurn(env.page, { mayBeIdle: true }, TURN_TIMEOUT_MS);
