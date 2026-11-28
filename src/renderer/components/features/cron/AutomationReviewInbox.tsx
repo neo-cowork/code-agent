@@ -358,6 +358,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {groupParkedWrites(parked).filter((item) => item.status !== 'voided').map((item) => {
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
+                  // 团队启动审批：复用会话卡的问句，只有批准 / 拒绝（没有「本次运行都允许」之类的铸权入口）。
+                  const isLaunch = item.kind === 'launch';
                   const isExternal = item.riskClass === 'external';
                   // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
                   // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
@@ -395,7 +397,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
-                          {isPairing
+                          {isLaunch
+                            ? interpolatePlural(t.decisionCard.swarm.question, item.launchMemberCount ?? 1)
+                            : isPairing
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
                               ? interpolatePlural(cc.parkedWriteGroupTitle, item.groupIds.length, { folder: folderDisplayName(item.writeGrantFolder) })

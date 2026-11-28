@@ -21,7 +21,7 @@ interface BackgroundHandoffSubmitOptions {
 
 export interface UseBackgroundHandoffSubmitParams {
   currentSessionId: string | null;
-  handleSubmit: (e?: undefined, opts?: BackgroundHandoffSubmitOptions) => void | Promise<void>;
+  handleSubmit: (e?: undefined, opts?: BackgroundHandoffSubmitOptions) => unknown;
 }
 
 export function useBackgroundHandoffSubmit(params: UseBackgroundHandoffSubmitParams) {

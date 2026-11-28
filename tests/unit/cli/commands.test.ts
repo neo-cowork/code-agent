@@ -297,6 +297,7 @@ describe('CLI command entrypoints', () => {
     const { stdout } = mockProcessIO();
     mocks.loadSettings.mockResolvedValue({ enabled: true });
     mocks.getStatus.mockResolvedValue({
+      installed: true,
       state: 'running',
       pid: 123,
       mcpHealthy: true,
@@ -309,6 +310,7 @@ describe('CLI command entrypoints', () => {
     await openchronicleCommand.parseAsync(['node', 'openchronicle', 'on'], { from: 'node' });
 
     expect(stdout.join('\n')).toContain('Toggle:        ON');
+    expect(stdout.join('\n')).toContain('Installed:     yes');
     expect(stdout.join('\n')).toContain('Daemon state:  running');
     expect(stdout.join('\n')).toContain('PID:           123');
     expect(stdout.join('\n')).toContain('MCP healthy:   yes');

@@ -20,6 +20,8 @@ export class AwaitingApprovalRunListing {
     const rows = [
       ...repo.listByKindAndStatus('tool_approval', 'pending'),
       ...repo.listByKindAndStatus('directory_access', 'pending'),
+      // 团队启动审批的 payload 是 SwarmLaunchRequest：同样带 sessionId / requestedAt，没有 tool。
+      ...repo.listByKindAndStatus('launch', 'pending'),
     ];
     const out: AwaitingApprovalRun[] = [];
     const seen = new Set<string>();

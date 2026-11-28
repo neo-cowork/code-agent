@@ -119,8 +119,8 @@ export async function handleModifiedArtifactValidation({
     runFinalizer.emitTaskProgress(
       'tool_running',
       effectiveProbe.passed
-        ? '正在运行 artifact 可玩性验收...'
-        : 'artifact 结构验收失败，正在准备修复上下文...',
+        ? '正在检查产物能否正常使用…'
+        : '产物结构检查没通过，正在准备修复…',
     );
     const artifactValidationOptions: GameArtifactValidationOptions = {
       contractLevel: fullContract ? 'full' : 'light',
@@ -205,10 +205,10 @@ export async function handleModifiedArtifactValidation({
       if (strategy.kind === 'switch_rewrite') {
         phase = 'fresh_rewrite';
         failureState.rewriteAttempted = true;
-        runFinalizer.emitTaskProgress('tool_running', `补丁修复不收敛（${strategy.reason}），切换为干净重写...`);
+        runFinalizer.emitTaskProgress('tool_running', '几轮修复没有进展，改为重新生成…');
       } else if (strategy.kind === 'degraded_release') {
         failureState.degradedReleasePending = strategy.reason;
-        runFinalizer.emitTaskProgress('tool_running', 'artifact 修复不再有净进展，准备按最佳版本降级交付...');
+        runFinalizer.emitTaskProgress('tool_running', '修复没有新进展，准备交付目前最好的版本…');
       }
       failureState.phase = phase;
       failureMap.set(absolutePath, failureState);
@@ -324,7 +324,7 @@ export async function handleModifiedArtifactValidation({
           checks: validation.checks,
         },
       };
-      runFinalizer.emitTaskProgress('tool_running', 'artifact 验收通过');
+      runFinalizer.emitTaskProgress('tool_running', '产物检查通过');
       getArtifactValidationFailureMap(ctx).delete(absolutePath);
       if (ctx.artifact.repairGuard?.targetFile === absolutePath) {
         ctx.artifact.markValidationPassed(absolutePath);
