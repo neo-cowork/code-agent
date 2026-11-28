@@ -24,7 +24,9 @@ export function trackPendingSessionTitle(sessionId: string, promise: Promise<unk
 }
 
 /**
- * Check whether an auto-title job is currently in flight for a session.
+ * Synchronously check whether an auto-title job is currently in flight for a session.
+ * Lets terminal settlement callers decide whether to detach the bounded wait off
+ * their `await` chain (avoiding blocking settlement or adding a microtask when idle).
  */
 export function hasPendingSessionTitle(sessionId: string): boolean {
   return pendingTitleJobs.has(sessionId);

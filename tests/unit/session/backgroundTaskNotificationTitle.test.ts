@@ -259,14 +259,14 @@ describe('BackgroundTaskManager pending session title wait', () => {
     bgManager.on('update', (event: { type: string }) => updates.push(event.type));
 
     expect(await bgManager.moveToBackground(sid)).toBe(true);
-    const failPromise = bgManager.markFailed(sid, 'Provider auth failure');
+    await bgManager.markFailed(sid, 'Provider auth failure');
 
-    // Panel row flips to failed immediately; OS banner waits for the pending title job.
+    // Panel row flips to failed and markFailed resolves immediately without blocking
+    // terminal settlement callers; only the OS banner waits for the pending title job.
     expect(updates).toEqual(['added', 'failed']);
     expect(notifyTaskComplete).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(8_000);
-    await failPromise;
 
     expect(notifyTaskComplete).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ sessionId: sid, sessionTitle: enSmartTitle, succeeded: false }),
@@ -310,13 +310,12 @@ describe('BackgroundTaskManager pending session title wait', () => {
 
     const bgManager = new BackgroundTaskManager();
     expect(await bgManager.moveToBackground(sid)).toBe(true);
-    const failPromise = bgManager.markFailed(sid, 'Provider auth failure');
+    await bgManager.markFailed(sid, 'Provider auth failure');
 
     await vi.advanceTimersByTimeAsync(BACKGROUND_NOTIFICATION_TIMEOUTS.TITLE_WAIT_MS - 1);
     expect(notifyTaskComplete).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
-    await failPromise;
 
     expect(notifyTaskComplete).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ sessionId: sid, sessionTitle: enDraft, succeeded: false }),
@@ -342,13 +341,12 @@ describe('BackgroundTaskManager pending session title wait', () => {
 
     const bgManager = new BackgroundTaskManager();
     expect(await bgManager.moveToBackground(sid)).toBe(true);
-    const failPromise = bgManager.markFailed(sid, 'Provider auth failure');
+    await bgManager.markFailed(sid, 'Provider auth failure');
 
     await vi.advanceTimersByTimeAsync(1_000);
     expect(bgManager.moveToForeground(sid)).not.toBeNull();
 
     await vi.advanceTimersByTimeAsync(8_000);
-    await failPromise;
 
     expect(notifyTaskComplete).not.toHaveBeenCalled();
   });
@@ -366,13 +364,13 @@ describe('BackgroundTaskManager pending session title wait', () => {
     bgManager.on('update', (event: { type: string }) => updates.push(event.type));
 
     expect(await bgManager.moveToBackground(sid)).toBe(true);
-    const completePromise = bgManager.markCompleted(sid, 'All clauses reviewed');
+    await bgManager.markCompleted(sid, 'All clauses reviewed');
 
+    // Panel row flips to completed and markCompleted resolves immediately without blocking callers.
     expect(updates).toEqual(['added', 'completed']);
     expect(notifyTaskComplete).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(5_000);
-    await completePromise;
 
     expect(notifyTaskComplete).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ sessionId: sid, sessionTitle: enSmartTitle }),
@@ -408,13 +406,12 @@ describe('BackgroundTaskManager pending session title wait', () => {
 
     const bgManager = new BackgroundTaskManager();
     expect(await bgManager.moveToBackground(sid)).toBe(true);
-    const completePromise = bgManager.markCompleted(sid, 'Done');
+    await bgManager.markCompleted(sid, 'Done');
 
     await vi.advanceTimersByTimeAsync(BACKGROUND_NOTIFICATION_TIMEOUTS.TITLE_WAIT_MS - 1);
     expect(notifyTaskComplete).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1);
-    await completePromise;
 
     expect(notifyTaskComplete).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ sessionId: sid, sessionTitle: enDraft }),
@@ -440,13 +437,12 @@ describe('BackgroundTaskManager pending session title wait', () => {
 
     const bgManager = new BackgroundTaskManager();
     expect(await bgManager.moveToBackground(sid)).toBe(true);
-    const completePromise = bgManager.markCompleted(sid, 'Done');
+    await bgManager.markCompleted(sid, 'Done');
 
     await vi.advanceTimersByTimeAsync(1_000);
     expect(bgManager.moveToForeground(sid)).not.toBeNull();
 
     await vi.advanceTimersByTimeAsync(5_000);
-    await completePromise;
 
     expect(notifyTaskComplete).not.toHaveBeenCalled();
   });

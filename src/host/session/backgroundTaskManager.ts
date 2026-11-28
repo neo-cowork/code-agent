@@ -145,6 +145,27 @@ class BackgroundTaskManager extends EventEmitter {
     // Keep background settlement, while a running role wake owns its output notification.
     if (isRoleWakeRunActive(sessionId)) return;
 
+    // Only the OS banner waits for an in-flight auto-title job; detach so terminal
+    // settlement callers (agent_complete, companion push, semaphore release) never block.
+    if (hasPendingSessionTitle(sessionId)) {
+      void this.finishMarkCompletedNotification(sessionId, task, message, duration).catch((err: unknown) => {
+        logger.warn('Deferred completion notification failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      return;
+    }
+
+    await this.finishMarkCompletedNotification(sessionId, task, message, duration);
+  }
+
+  private async finishMarkCompletedNotification(
+    sessionId: string,
+    task: BackgroundSessionInfo,
+    message?: string,
+    duration?: number,
+  ): Promise<void> {
     // 终态与 running-guard 已同步落定；标题读取慢/卡住不拖面板收线。读完后条目被切前台/
     // 重新入后台（map 里已不是这个对象）就不再通知，免得盖掉新条目。
     if (!(await this.refreshLiveTitle(sessionId, task))) return;
@@ -186,6 +207,27 @@ class BackgroundTaskManager extends EventEmitter {
       task,
     });
 
+    // Only the OS banner waits for an in-flight auto-title job; detach so terminal
+    // settlement callers (agent_complete, companion push, semaphore release) never block.
+    if (hasPendingSessionTitle(sessionId)) {
+      void this.finishMarkFailedNotification(sessionId, task, error, duration).catch((err: unknown) => {
+        logger.warn('Deferred failure notification failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      return;
+    }
+
+    await this.finishMarkFailedNotification(sessionId, task, error, duration);
+  }
+
+  private async finishMarkFailedNotification(
+    sessionId: string,
+    task: BackgroundSessionInfo,
+    error?: string,
+    duration?: number,
+  ): Promise<void> {
     if (!(await this.refreshLiveTitle(sessionId, task))) return;
 
     // 发送系统通知。succeeded:false → 标题「任务失败」；MAX_ITERATIONS code 就地翻人话。
