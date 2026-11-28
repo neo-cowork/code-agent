@@ -3,6 +3,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { zhAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsZh } from './permissionGrants';
 import { memoryInjectionPauseZh } from './memoryInjectionPause';
+import { zhSettingsScreenMemory } from './zhSettingsScreenMemory';
 // Settings namespace translations (zh/Work) — 纯平移拆分（债务门）
 export const zhSettingsWork = {
     workspace: {
@@ -738,107 +739,7 @@ export const zhSettingsWork = {
         },
       },
     },
-    openchronicle: {
-      operationFailed: '操作失败',
-      webUnavailable: '屏幕记忆功能仅在 macOS 桌面版可用——它需要本地后台 daemon 监听系统活动。',
-      refresh: '刷新',
-      stateLabels: {
-        running: '运行中',
-        starting: '启动中…',
-        stopping: '停止中…',
-        stopped: '已停止',
-        error: '异常',
-      },
-      header: {
-        introPrefix: '通过外部 ',
-        introMiddle: ' daemon ',
-        introSuffix: '抓取你的跨 app 工作活动（macOS AX Tree），让 Agent Neo 在新对话开始时知道你刚才在干啥。',
-        warning: '开启后 OpenChronicle 会 7×24 在后台运行（即使关闭 Agent Neo），直到你在这里关掉它。',
-      },
-      control: {
-        enableScreenMemory: '启用屏幕记忆',
-        description: 'ON：启动 OC daemon + 注册 MCP server · OFF：彻底退出 daemon',
-      },
-      status: {
-        daemon: 'Daemon 状态',
-        mcpEndpoint: 'MCP 端点',
-        connected: '✓ 已连通',
-        disconnected: '— 未连接',
-        dataDirPrefix: '数据目录: ',
-      },
-      autoInject: {
-        title: '自动注入上下文到对话',
-        description: '新会话第一轮时把"你刚才在哪个 app 看什么"作为 system message 注入（限 500 tokens）',
-      },
-      blacklist: {
-        title: '隐私黑名单',
-        description: '命中黑名单的 app 或 URL 不会被注入到对话上下文（OC daemon 仍会捕获，但 Agent Neo 端过滤）',
-        appsLabel: '黑名单 App（每行一个）',
-        appsPlaceholder: '1Password\nBitwarden\n微信',
-        urlPatternsLabel: '黑名单 URL pattern（glob，每行一个）',
-      },
-      screenMemory: {
-        refresh: '刷新',
-        webDescription: 'Web 模式不直接控制本机屏幕记忆。请在桌面版里配置。',
-        webBody: '统一入口已保留，但 OpenChronicle daemon 和 Native Desktop provider 都需要桌面壳能力。',
-        pageDescription: '配置屏幕记忆采集、注入和隐私边界。预览与桌面活动控制默认收在诊断区。',
-        providerStateLabels: {
-          running: '运行中',
-          starting: '启动中',
-          stopping: '停止中',
-          stopped: '已停止',
-          available: '可用',
-          unavailable: '不可用',
-          error: '异常',
-        },
-        status: {
-          currentRuntime: '当前运行',
-          webFallback: 'Web 降级',
-          automaticScreenMemory: '自动屏幕记忆',
-          openchronicleConfigurable: 'OpenChronicle 可配置',
-          desktopAvailable: '桌面版可用',
-          manualDesktopActivity: '手动桌面活动',
-          nativeDesktopAvailable: 'Native Desktop 可用',
-          tauriOnly: '仅 Tauri 可用',
-        },
-        activityContext: {
-          empty: {
-            recentContextSummary: '正在读取最近屏幕上下文。',
-            agentInjectionPreview: '正在读取将注入 agent 的内容。',
-          },
-          error: {
-            recentContextUnavailable: 'ActivityContext 暂不可用。',
-            agentInjectionUnavailable: '本轮不会从屏幕记忆注入额外上下文。',
-          },
-          capturedAt: {
-            none: '尚无时间',
-          },
-          title: 'ActivityContext 预览',
-          degraded: '降级',
-          noSources: '暂无来源',
-          recentContextPreview: '最近上下文预览',
-          agentInjectionPreview: '将注入 agent 的内容预览',
-          evidenceFallback: '证据预览只展示摘要，本地截图路径和文件路径不会在这里展开。',
-        },
-        nativeUnavailable: {
-          title: '当前桌面壳没有 Tauri Native Desktop provider',
-          description: '这里保留入口和能力说明；手动桌面活动采集、截图和录音控制只在 Tauri 桌面版执行。',
-        },
-        captureSection: {
-          title: '采集与注入设置',
-          openchronicleTitle: '自动屏幕记忆 / OpenChronicle 外部 provider',
-          openchronicleDescription: '通过 Agent Neo 桥设置 OpenChronicle daemon，不改变采集内核和后台生命周期。',
-        },
-        diagnostics: {
-          title: '诊断与预览',
-          description: 'ActivityContext 预览和手动桌面活动控制用于排查采集链路，默认收起。',
-          activityTitle: '统一 ActivityContext 预览',
-          activityDescription: '预览最近屏幕上下文和即将注入 agent 的摘要，不展示本地截图路径。',
-          nativeDesktopTitle: '手动桌面活动 / Tauri Native Desktop provider',
-          nativeDesktopDescription: 'Tauri 桌面版可直接查看和控制本机桌面活动采集；其他桌面壳只展示能力边界。',
-        },
-      },
-    },
+    openchronicle: zhSettingsScreenMemory,
     privacy: {
       webDescription: '本地 PII 防线，启用后协作内容进入云端 LLM 前自动脱敏命名实体（姓名/地址/医疗 ID 等）。',
       pageDescription: '权限与数据边界总览。默认本地优先；会出云端的路径、通道凭证和诊断包单独表达。',

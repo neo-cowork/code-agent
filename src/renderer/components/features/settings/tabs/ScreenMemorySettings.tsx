@@ -11,11 +11,11 @@ import type {
   ActivityProviderState,
 } from '@shared/contract/activityProvider';
 import {
-  getDesktopShellLabel,
   isDesktopShellMode,
   isTauriMode,
   isWebMode,
 } from '../../../../utils/platform';
+import { createLogger } from '../../../../utils/logger';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
@@ -29,6 +29,8 @@ import {
   type ActivityContextPreview,
   type ActivityContextSourcePreview,
 } from '../../../../services/activityContext';
+
+const logger = createLogger('ScreenMemorySettings');
 
 interface StatusItem {
   label: string;
@@ -44,12 +46,6 @@ const toneClass: Record<StatusItem['tone'], string> = {
 
 type ProviderKind = ActivityProviderDescriptor['kind'];
 type ScreenMemorySettingsText = typeof zh.settings.openchronicle.screenMemory;
-
-const providerKindLabel: Record<ProviderKind, string> = {
-  bundled: 'Bundled provider',
-  sidecar: 'Sidecar provider',
-  daemon: 'Daemon provider',
-};
 
 function getProviderStateLabel(
   state: ActivityProviderState,
@@ -68,10 +64,6 @@ function buildEmptyActivityContext(
     sources: [],
     evidence: [],
   };
-}
-
-function getShellLabel(): string {
-  return getDesktopShellLabel();
 }
 
 function stateTone(state?: ActivityProviderState): StatusItem['tone'] {
@@ -96,18 +88,23 @@ function buildStatusItems(
   const desktopShell = isDesktopShellMode();
   const tauri = isTauriMode();
 
+  // 宿主在 metadata.installed 里如实报告配套程序装没装；没装时这一格直接说「未安装」。
+  const openchronicleMissing = openchronicle?.metadata?.installed === false;
+
   return [
     {
       label: labels.currentRuntime,
-      value: desktopShell ? getShellLabel() : labels.webFallback,
+      value: desktopShell ? labels.desktopApp : labels.webFallback,
       tone: desktopShell ? 'ready' : 'blocked',
     },
     {
       label: labels.automaticScreenMemory,
-      value: openchronicle
-        ? getProviderStateLabel(openchronicle.state, providerStateLabels)
-        : desktopShell ? labels.openchronicleConfigurable : labels.desktopAvailable,
-      tone: desktopShell ? stateTone(openchronicle?.state) : 'blocked',
+      value: openchronicleMissing
+        ? labels.notInstalled
+        : openchronicle
+          ? getProviderStateLabel(openchronicle.state, providerStateLabels)
+          : desktopShell ? labels.openchronicleConfigurable : labels.desktopAvailable,
+      tone: !desktopShell || openchronicleMissing ? 'blocked' : stateTone(openchronicle?.state),
     },
     {
       label: labels.manualDesktopActivity,
@@ -136,13 +133,15 @@ const ProviderHeading: React.FC<{
           <h3 className="text-sm font-medium text-zinc-200">{title}</h3>
           {(provider || fallbackKind) && (
             <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
-              {providerKindLabel[provider?.kind || fallbackKind!]}
+              {screenMemoryText.providerKindLabels[provider?.kind || fallbackKind!]}
             </span>
           )}
           {provider && (
             <span className="inline-flex items-center gap-1 rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
               <Circle className={`h-2 w-2 fill-current stroke-0 ${stateDotClass(provider.state)}`} />
-              {getProviderStateLabel(provider.state, screenMemoryText.providerStateLabels)}
+              {provider.metadata?.installed === false
+                ? screenMemoryText.status.notInstalled
+                : getProviderStateLabel(provider.state, screenMemoryText.providerStateLabels)}
             </span>
           )}
         </div>
@@ -183,7 +182,7 @@ function formatCapturedAt(
   }).format(new Date(ms));
 }
 
-function SourceBadge({ source }: { source: ActivityContextSourcePreview }) {
+function SourceBadge({ source, label }: { source: ActivityContextSourcePreview; label: string }) {
   const className = {
     automatic_background: 'border-badge-info/20 bg-cyan-500/10 text-badge-info',
     manual_capture: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
@@ -193,11 +192,9 @@ function SourceBadge({ source }: { source: ActivityContextSourcePreview }) {
   }[source.kind];
 
   return (
-    <span
-      title={source.summary}
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ${className}`}
-    >
-      {source.label}
+    // 不再把 source.summary 挂成悬停提示：来源没内容时它是宿主的英文诊断原因，有内容时与下方预览重复。
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ${className}`}>
+      {label}
     </span>
   );
 }
@@ -244,7 +241,7 @@ export const ActivityContextPreviewPanel: React.FC<{
       <div className="mb-3 flex flex-wrap gap-1.5">
         {context.sources.length > 0 ? (
           context.sources.map((source, index) => (
-            <SourceBadge key={`${source.kind}:${index}`} source={source} />
+            <SourceBadge key={`${source.kind}:${index}`} source={source} label={activityText.sourceLabels[source.kind]} />
           ))
         ) : (
           <span className="text-xs text-zinc-500">{activityText.noSources}</span>
@@ -279,10 +276,12 @@ export const ScreenMemorySettings: React.FC = () => {
     () => buildEmptyActivityContext(screenMemoryText.activityContext.empty),
     [screenMemoryText.activityContext.empty],
   );
-  const [activityContext, setActivityContext] = useState<ActivityContextPreview>(() => buildEmptyActivityContext());
+  const [activityContext, setActivityContext] = useState<ActivityContextPreview>(
+    () => buildEmptyActivityContext(screenMemoryText.activityContext.empty),
+  );
   const [providers, setProviders] = useState<ActivityProviderDescriptor[]>([]);
   const [contextLoading, setContextLoading] = useState(true);
-  const [contextError, setContextError] = useState<string | null>(null);
+  const [contextFailed, setContextFailed] = useState(false);
   const web = isWebMode();
   const tauri = isTauriMode();
 
@@ -309,10 +308,18 @@ export const ScreenMemorySettings: React.FC = () => {
         getCurrentActivityContext(),
       ]);
       setProviders(providerResult.providers);
-      setActivityContext(contextResult);
-      setContextError(null);
+      // 没有任何可参考内容时，服务层给的是它自己的占位句，界面换成语言包里的说法。
+      setActivityContext(contextResult.status === 'empty'
+        ? {
+            ...contextResult,
+            recentContextSummary: screenMemoryText.activityContext.nothingYet.recentContextSummary,
+            agentInjectionPreview: screenMemoryText.activityContext.nothingYet.agentInjectionPreview,
+          }
+        : contextResult);
+      setContextFailed(false);
     } catch (error) {
-      setContextError(error instanceof Error ? error.message : String(error));
+      logger.warn('activity context refresh failed', { detail: error instanceof Error ? error.message : String(error) });
+      setContextFailed(true);
       setActivityContext({
         ...emptyActivityContext,
         recentContextSummary: screenMemoryText.activityContext.error.recentContextUnavailable,
@@ -321,7 +328,7 @@ export const ScreenMemorySettings: React.FC = () => {
     } finally {
       setContextLoading(false);
     }
-  }, [emptyActivityContext, screenMemoryText.activityContext.error.agentInjectionUnavailable, screenMemoryText.activityContext.error.recentContextUnavailable]);
+  }, [emptyActivityContext, screenMemoryText.activityContext.error.agentInjectionUnavailable, screenMemoryText.activityContext.error.recentContextUnavailable, screenMemoryText.activityContext.nothingYet.agentInjectionPreview, screenMemoryText.activityContext.nothingYet.recentContextSummary]);
 
   useEffect(() => {
     if (!web) {
@@ -361,7 +368,7 @@ export const ScreenMemorySettings: React.FC = () => {
         <ProviderHeading
           icon={<Server className="w-4 h-4" />}
           title={screenMemoryText.captureSection.openchronicleTitle}
-          description={openchronicleProvider?.summary || screenMemoryText.captureSection.openchronicleDescription}
+          description={screenMemoryText.captureSection.openchronicleDescription}
           provider={openchronicleProvider}
           fallbackKind="daemon"
         />
@@ -390,12 +397,15 @@ export const ScreenMemorySettings: React.FC = () => {
             title={screenMemoryText.diagnostics.activityTitle}
             description={screenMemoryText.diagnostics.activityDescription}
           />
-          <ActivityContextPreviewPanel context={activityContext} degraded={contextError} />
+          <ActivityContextPreviewPanel
+            context={activityContext}
+            degraded={contextFailed ? screenMemoryText.activityContext.degradedMessage : null}
+          />
 
           <ProviderHeading
             icon={tauri ? <Monitor className="w-4 h-4" /> : <Globe2 className="w-4 h-4" />}
             title={screenMemoryText.diagnostics.nativeDesktopTitle}
-            description={nativeDesktopProvider?.summary || screenMemoryText.diagnostics.nativeDesktopDescription}
+            description={screenMemoryText.diagnostics.nativeDesktopDescription}
             provider={nativeDesktopProvider}
             fallbackKind="bundled"
           />

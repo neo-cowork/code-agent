@@ -23,8 +23,8 @@ describe('ScreenMemorySettings ActivityContext preview', () => {
       },
     }));
 
-    expect(html).toContain('最近上下文预览');
-    expect(html).toContain('将注入 agent 的内容预览');
+    expect(html).toContain('最近记下的内容');
+    expect(html).toContain('新对话会带上的摘要');
     expect(html).toContain('自动后台');
     expect(html).toContain('会议音频');
     expect(html).toContain('截图分析');
