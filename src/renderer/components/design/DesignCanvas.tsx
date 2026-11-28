@@ -72,6 +72,7 @@ import {
   zoomFromWheel,
 } from './canvasCameraInput';
 import { VideoPlayOverlay, DiffEvidenceOverlay } from './DesignCanvasOverlays';
+import { requestConfirm } from '../../services/confirmPrompt';
 
 export const DesignCanvas: React.FC<{
   showErrorBar?: boolean;
@@ -671,7 +672,9 @@ export const DesignCanvas: React.FC<{
     }
     // 成本按 mask 通道实际用的编辑模型算（万相 imageedit），不再按用户选的标注模型。
     const est = formatCny(estimateImageCostCny(DESIGN_IMAGE_MODELS.edit));
-    if (!window.confirm(`${t.design.annotCostConfirm}（${est}）`)) return;
+    if (!await requestConfirm({ title: t.confirmPrompts.paidGeneration, confirmText: t.confirmPrompts.continue, variant: 'warning',
+      message: `${t.design.annotCostConfirm}（${est}）`,
+    })) return;
     await editByAnnotation({
       baseNode: selectedImageNode,
       shapes: annotShapes,

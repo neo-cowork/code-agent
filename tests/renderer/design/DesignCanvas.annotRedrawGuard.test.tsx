@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 标注重绘「先校验、后付费确认」守卫（2026-08-02 收口工单任务三）。
-// 旧顺序：先弹「要花 ¥x 吗」的 window.confirm，点确定后才在 editByAnnotation 深处被告知
+// 旧顺序：先弹「要花 ¥x 吗」的原生确认，点确定后才在 editByAnnotation 深处被告知
 // 「请先圈出区域」。新顺序：onAnnotRedraw 在弹 confirm 之前先用
 // hasMaskArea(annotShapesToMaskGeometry(annotShapes)) 拦下纯文字标注。
 //
@@ -10,9 +10,12 @@
 //   标注形状是从真实事件链路产出的，不是直接塞 state。
 // - 正对照：圈了 rect 区域时 confirm 必须真被调用、editByAnnotation 必须真走到——
 //   若 Stage mock 失明（形状根本没进去），正对照会先红，不会误判。
+import { requestConfirm } from '../../../src/renderer/services/confirmPrompt';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+
+vi.mock('../../../src/renderer/services/confirmPrompt', () => ({ requestConfirm: vi.fn() }));
 
 const generation = vi.hoisted(() => ({ editByAnnotation: vi.fn() }));
 const toolbarProps = vi.hoisted(() => ({ current: null as Record<string, any> | null }));
@@ -240,7 +243,7 @@ describe('标注重绘：先校验圈区，后付费确认（2026-08-02 收口�
     fireEvent.change(input, { target: { value: '改成蓝色' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.mocked(requestConfirm).mockResolvedValue(true);
     await act(async () => {
       await toolbarProps.current?.onAnnotRedraw();
     });
@@ -259,7 +262,7 @@ describe('标注重绘：先校验圈区，后付费确认（2026-08-02 收口�
     fireEvent.mouseMove(screen.getByTestId('konva-stage'), { clientX: 120, clientY: 100 });
     fireEvent.mouseUp(screen.getByTestId('konva-stage'), { clientX: 120, clientY: 100 });
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.mocked(requestConfirm).mockResolvedValue(true);
     await act(async () => {
       await toolbarProps.current?.onAnnotRedraw();
     });
