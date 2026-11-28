@@ -759,3 +759,13 @@ export const ARTIFACT_PREVIEW_CAPTURE_TIMEOUTS = {
 
 /** Wait for the renderer to prepare and display an attended schedule draft. */
 export const SCHEDULE_DRAFT_ACK_TIMEOUT_MS = 90_000;
+
+/**
+ * Background task terminal notification title wait budget.
+ * Holds only the OS banner until an in-flight auto-title job settles, so a
+ * fast failure does not freeze a truncated draft title on the immutable banner.
+ */
+export const BACKGROUND_NOTIFICATION_TIMEOUTS = {
+  /** Max wait for an in-flight session auto-title job before notifying. */
+  TITLE_WAIT_MS: 20_000,
+} as const;

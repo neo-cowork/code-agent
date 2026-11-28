@@ -2362,8 +2362,7 @@ pub fn desktop_start_audio_rec() -> Result<AudioRecStartResult, String> {
         }
     }
 
-    let ffmpeg_bin = find_ffmpeg_binary()
-        .ok_or_else(|| "ffmpeg not found. Install: brew install ffmpeg".to_string())?;
+    let ffmpeg_bin = find_ffmpeg_binary().ok_or("recorder_missing")?;
 
     // fifo 落在数据目录下，随通道隔离：测试包用 ~/.code-agent-dev/audio-capture.fifo，
     // 不与生产包的 ~/.code-agent/audio-capture.fifo 撞同一管道。
