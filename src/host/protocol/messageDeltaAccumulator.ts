@@ -1,4 +1,5 @@
 import type { AgentEvent, MessageSnapshotData } from '../../shared/contract';
+import { splitThinkTags } from '../../shared/modelMarkupStrip';
 
 interface AccumulatorEntry {
   sessionId: string;
@@ -120,12 +121,13 @@ export class MessageDeltaAccumulator {
   }
 
   private toSnapshot(entry: AccumulatorEntry, isFinal: boolean): MessageSnapshotData {
+    const { content, reasoning } = splitThinkTags(entry.content, entry.reasoning);
     return {
       role: 'assistant',
       turnId: entry.turnId,
       messageId: entry.messageId,
-      content: entry.content,
-      ...(entry.reasoning ? { reasoning: entry.reasoning } : {}),
+      content,
+      ...(reasoning ? { reasoning } : {}),
       isFinal,
       source: 'main_accumulator',
     };

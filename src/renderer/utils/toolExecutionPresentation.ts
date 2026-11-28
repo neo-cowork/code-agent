@@ -352,6 +352,44 @@ export function isRemindersReadAuthorizationFailure(
   return toolName === 'reminders' && metadata?.code === 'not_authorized' && metadata.accessProbeDenied === true;
 }
 
+type ConnectorFailureCodeKey = 'not_authorized' | 'not_found';
+type ConnectorFailureDomain = 'mail' | 'calendar' | 'reminders' | 'default';
+
+function resolveConnectorFailureDomain(
+  toolName: string | undefined,
+  metadata?: Record<string, unknown> | null,
+): ConnectorFailureDomain {
+  const connector = typeof metadata?.connector === 'string' ? metadata.connector.toLowerCase() : '';
+  const name = (toolName ?? '').toLowerCase();
+  if (connector === 'mail' || name === 'mail' || name.startsWith('mail_')) return 'mail';
+  if (connector === 'calendar' || name === 'calendar' || name.startsWith('calendar_')) return 'calendar';
+  if (connector === 'reminders' || name === 'reminders' || name.startsWith('reminders_')) return 'reminders';
+  return 'default';
+}
+
+function resolveConnectorFailureCodeCopy(
+  toolName: string | undefined,
+  metadata: Record<string, unknown> | null | undefined,
+  error: string | undefined,
+  t: Translations,
+): { summary: string; detail: string; folded: string } | null {
+  const domain = resolveConnectorFailureDomain(toolName, metadata);
+  const rawCode = sanitizeCodeParamValue(metadata?.code);
+  let codeKey: ConnectorFailureCodeKey | null = null;
+  if (rawCode === 'not_authorized' || rawCode === 'not_found') {
+    codeKey = rawCode;
+  } else if (
+    domain === 'reminders'
+    && !rawCode
+    && typeof error === 'string'
+    && /no reminder list named/i.test(error)
+  ) {
+    codeKey = 'not_found';
+  }
+  if (!codeKey) return null;
+  return t.toolStepHumanize.connectorFailureCodes[codeKey][domain];
+}
+
 /**
  * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
  * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
@@ -447,6 +485,10 @@ export function humanizeToolError(
       summary: interpolateCodeCopy(copy.summary, metadata),
       detail: copy.detail ? interpolateCodeCopy(copy.detail, metadata) : undefined,
     };
+  }
+  const connectorFailure = resolveConnectorFailureCodeCopy(toolName, metadata, error, t);
+  if (connectorFailure) {
+    return { summary: connectorFailure.summary, detail: connectorFailure.detail };
   }
   // 结构化 hostReason/failureCode/code 都没命中，才轮到 preflight 这条「历史呈现」兜底
   // ——它读的是自由文本（Bash 里是被执行程序自己的 stdout/stderr），必须排在所有结构化
@@ -609,6 +651,11 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   const reason = sanitizeCodeParamValue(metadata?.reason);
   if (reason) return redactCredentialText(reason);
 
+  if (!isRemindersReadAuthorizationFailure(toolCall.name, metadata)) {
+    const connectorFailure = resolveConnectorFailureCodeCopy(toolCall.name, metadata, error, t);
+    if (connectorFailure) return connectorFailure.folded;
+  }
+
   const classifiedCode = humanizeToolError(undefined, toolCall.name, t, metadata);
   if (classifiedCode) return classifiedCode.detail ?? classifiedCode.summary;
 
@@ -658,8 +705,9 @@ export function resolveCollapsedFailureSummary(
       t.toolStepHumanize.failureReasonMissing,
     ].filter((value): value is string => Boolean(value)),
   );
+  const reasonLower = reason.toLowerCase();
   const extra = [humanized?.detail, humanized?.summary].find(
-    (candidate) => typeof candidate === 'string' && candidate.length > 0 && !seen.has(candidate),
+    (candidate) => typeof candidate === 'string' && candidate.length > 0 && !seen.has(candidate) && !reasonLower.includes(candidate.toLowerCase()),
   );
   return extra ?? null;
 }
