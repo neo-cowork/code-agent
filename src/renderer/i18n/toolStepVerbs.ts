@@ -128,6 +128,11 @@ interface ToolStepVerbBundle {
   };
   /** 登记表外仍未翻译的全大写码（^[A-Z][A-Z0-9_]*$）的兜底句；数字退出码 / HTTP nnn 不走这里 */
   rawFailureCodeFallback: string;
+  /** 连接器失败码（metadata.code: not_authorized / not_found）→ 折叠行单句 + 展开卡摘要/下一步 */
+  connectorFailureCodes: Record<
+    'not_authorized' | 'not_found',
+    Record<'mail' | 'calendar' | 'reminders' | 'default', { summary: string; detail: string; folded: string }>
+  >;
   /** delegate_session 被拒的小写码（metadata.code）→ 一句人话；不含码名，说明没有交接出去 */
   delegationRejectionCodes: {
     target_unavailable: string;
@@ -274,6 +279,52 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     COMMAND_FAILED: '命令运行失败，可展开查看输出',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
+  connectorFailureCodes: {
+    not_authorized: {
+      mail: {
+        summary: '邮件未获授权',
+        detail: '请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 控制邮件，然后重试。',
+        folded: '邮件未获授权：请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 控制邮件，然后重试。',
+      },
+      calendar: {
+        summary: '日历未获授权',
+        detail: '请在「系统设置 > 隐私与安全性 > 日历」中允许 Neo 访问日历，然后重试。',
+        folded: '日历未获授权：请在「系统设置 > 隐私与安全性 > 日历」中允许 Neo 访问日历，然后重试。',
+      },
+      reminders: {
+        summary: '提醒事项未获授权',
+        detail: '请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 控制提醒事项，然后重试。',
+        folded: '提醒事项未获授权：请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 控制提醒事项，然后重试。',
+      },
+      default: {
+        summary: '该应用未获授权',
+        detail: '请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 访问该应用，然后重试。',
+        folded: '该应用未获授权：请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 访问该应用，然后重试。',
+      },
+    },
+    not_found: {
+      mail: {
+        summary: '找不到指定的邮箱或账户',
+        detail: '请在邮件应用中检查对应账户和邮箱是否存在后重试。',
+        folded: '找不到指定的邮箱或账户：请在邮件应用中检查对应账户和邮箱是否存在后重试。',
+      },
+      calendar: {
+        summary: '找不到指定的日历或日程',
+        detail: '请在日历应用中检查对应日历和日程是否存在后重试。',
+        folded: '找不到指定的日历或日程：请在日历应用中检查对应日历和日程是否存在后重试。',
+      },
+      reminders: {
+        summary: '找不到指定的提醒列表或提醒',
+        detail: '请在提醒事项应用中检查对应列表是否存在后重试。',
+        folded: '找不到指定的提醒列表或提醒：请在提醒事项应用中检查对应列表是否存在后重试。',
+      },
+      default: {
+        summary: '找不到指定的账户或列表',
+        detail: '请在对应应用中检查项目是否存在后重试。',
+        folded: '找不到指定的账户或列表：请在对应应用中检查项目是否存在后重试。',
+      },
+    },
+  },
   delegationRejectionCodes: {
     target_unavailable: 'Neo 找不到要交接的那个对话，所以没有交接出去。请确认对话还在后重试。',
     not_delegatable: '那个对话现在不能接收交接，所以没有交接出去。请换一个对话再试。',
@@ -377,6 +428,52 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     COMMAND_FAILED: 'The command failed to run; expand to see its output',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
+  connectorFailureCodes: {
+    not_authorized: {
+      mail: {
+        summary: 'Mail is not authorized',
+        detail: 'Allow Neo to control Mail in System Settings > Privacy & Security > Automation, then try again.',
+        folded: 'Mail is not authorized: allow Neo to control Mail in System Settings > Privacy & Security > Automation, then try again.',
+      },
+      calendar: {
+        summary: 'Calendar is not authorized',
+        detail: 'Allow Neo to access Calendar in System Settings > Privacy & Security > Calendars, then try again.',
+        folded: 'Calendar is not authorized: allow Neo to access Calendar in System Settings > Privacy & Security > Calendars, then try again.',
+      },
+      reminders: {
+        summary: 'Reminders is not authorized',
+        detail: 'Allow Neo to control Reminders in System Settings > Privacy & Security > Automation, then try again.',
+        folded: 'Reminders is not authorized: allow Neo to control Reminders in System Settings > Privacy & Security > Automation, then try again.',
+      },
+      default: {
+        summary: 'App access is not authorized',
+        detail: 'Allow Neo to access the app in System Settings > Privacy & Security > Automation, then try again.',
+        folded: 'App access is not authorized: allow Neo to access the app in System Settings > Privacy & Security > Automation, then try again.',
+      },
+    },
+    not_found: {
+      mail: {
+        summary: 'Mailbox or account not found',
+        detail: 'Check that the account and mailbox exist in Mail, then try again.',
+        folded: 'Mailbox or account not found: check that the account and mailbox exist in Mail, then try again.',
+      },
+      calendar: {
+        summary: 'Calendar or event not found',
+        detail: 'Check that the calendar and event exist in Calendar, then try again.',
+        folded: 'Calendar or event not found: check that the calendar and event exist in Calendar, then try again.',
+      },
+      reminders: {
+        summary: 'Reminder list or reminder not found',
+        detail: 'Check that the list exists in Reminders, then try again.',
+        folded: 'Reminder list or reminder not found: check that the list exists in Reminders, then try again.',
+      },
+      default: {
+        summary: 'Account or list not found',
+        detail: 'Check that it exists in the app, then try again.',
+        folded: 'Account or list not found: check that it exists in the app, then try again.',
+      },
+    },
+  },
   delegationRejectionCodes: {
     target_unavailable: 'Neo could not find the chat to hand this to, so nothing was handed over. Check that it still exists and try again.',
     not_delegatable: 'That chat cannot take a hand-off right now, so nothing was handed over. Pick a different chat and try again.',

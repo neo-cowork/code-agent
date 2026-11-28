@@ -482,6 +482,33 @@ describe('MCPSettings status', () => {
     expect(screen.getByText('已连接 1 / 共 2 个')).toBeTruthy();
   });
 
+  it('diagnostics row matches the card: disabled-but-connected shows grey dot, grey badge and no counts', () => {
+    mcpServers = [
+      connectedGithubServer,
+      { ...makeConnectedServer('memory-kv', 'in-process'), enabled: false },
+    ];
+
+    render(React.createElement(MCPSettings));
+
+    // enabled + connected：诊断行绿点、绿色徽章、已加载计数
+    const githubDot = screen.getByTestId('mcp-diagnostic-status-dot-github');
+    const githubCells = githubDot.closest('tr')!.querySelectorAll('td');
+    expect(githubDot.className).toContain('bg-mark-success');
+    expect(githubCells[1].querySelector('span')!.className).toContain('text-badge-success');
+    expect(githubCells[3].textContent).toContain(`12${mcpText.management.countToolSuffix}`);
+    expect(githubCells[3].textContent).toContain(`3${mcpText.management.countResourceSuffix}`);
+
+    // disabled + connected：同一判据下灰点、灰色徽章、计数位为破折号，与卡片徽章（已禁用）同判
+    const disabledDot = screen.getByTestId('mcp-diagnostic-status-dot-memory-kv');
+    const disabledCells = disabledDot.closest('tr')!.querySelectorAll('td');
+    expect(disabledDot.className).not.toContain('bg-mark-success');
+    expect(disabledDot.className).toContain('bg-zinc-600');
+    expect(disabledCells[1].querySelector('span')!.className).not.toContain('text-badge-success');
+    expect(disabledCells[3].textContent).toBe('—');
+    expect(within(screen.getByTestId('mcp-connector-card-memory-kv'))
+      .getByText(mcpText.grid.cardStatus.disabled, { exact: true })).toBeTruthy();
+  });
+
   it('a card switched to installing (connecting) is neither counted nor shown connected', async () => {
     mockDomainInvoke.mockImplementation(() => new Promise(() => {}));
     mcpServers = [

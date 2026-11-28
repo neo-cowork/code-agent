@@ -454,7 +454,7 @@ describe('shared command host ports', () => {
 
     const missing = makeCtx();
     expect((await permissionsCommand.handler(missing.ctx, [])).success).toBe(true);
-    expect(missing.lines[0]).toContain('当前档位：请求批准');
+    expect(missing.lines[0]).toContain('当前档位：每次先问我');
     expect(missing.lines[0]).toContain('执行规则：暂不可用');
     expect(missing.lines[0]).toContain('最近决定：暂不可用');
     expect(missing.lines.some((line) => line.startsWith('error:'))).toBe(false);

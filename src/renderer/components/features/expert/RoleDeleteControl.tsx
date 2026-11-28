@@ -1,7 +1,7 @@
 // ============================================================================
 // RoleDeleteControl - 用户自建角色的删除入口（N-ROLE-CREATE-DIRECT-DELETE）
 //
-// 二次确认（in-app ConfirmDialog，绝不用 window.confirm）→ deleteRole 移入回收站 →
+// 二次确认（应用内 ConfirmDialog）→ deleteRole 移入回收站 →
 // 带「撤销」动作的 toast（restoreDeletedRole 整份还原，30 天内有效）。
 // 挂载门在 shouldMountRoleDeleteControl：只有用户自建角色显示。
 // ============================================================================

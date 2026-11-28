@@ -6,6 +6,7 @@ import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionUpdatedEvent }
 import ipcService from '../services/ipcService';
 import { isTerminalRecoverySessionStatus } from '../utils/streamRecoveryMessage';
 import { useAppStore } from './appStore';
+import { usePendingStopStore } from './pendingStopStore';
 import { rememberLastViewedSession } from './sessionBootDraft';
 import { runningBroadcastLightsTurn } from './parkedContinueTurn';
 import { useSessionStore, type SessionWithMeta } from './sessionStore';
@@ -74,7 +75,11 @@ export async function bindInitializedSessionBroadcasts(
       && !hostStampPredatesTerminal(sessionId, updates?.updatedAt)
     ) {
       useAppStore.getState().setSessionProcessing(sessionId, true);
-      useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+      const keepCancelling = useTaskStore.getState().sessionStates[sessionId]?.status === 'cancelling'
+        && usePendingStopStore.getState().entries[sessionId]?.phase === 'pending';
+      if (!keepCancelling) {
+        useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
+      }
     }
 
     if (useSessionStore.getState().currentSessionId === sessionId && updates.workingDirectory !== undefined) {

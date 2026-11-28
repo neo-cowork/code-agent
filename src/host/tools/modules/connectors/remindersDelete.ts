@@ -16,7 +16,12 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import {
+  appleScriptFailureForDisplay,
+  appleScriptWriteFailureCode,
+  connectorNotFoundCode,
+  describeAppleScriptWriteFailure,
+} from './appleScriptWriteFailure';
 import { remindersDeleteSchema as schema } from './remindersDelete.schema';
 import { captureReminderBefore } from './undoMetadata';
 
@@ -101,11 +106,13 @@ async function executeRemindersDelete(
       schema.name,
     );
     const failureName = copy.deleteFailed;
-    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure) : undefined;
+    const failureCode = appleScriptWriteFailureCode(error).code ?? connectorNotFoundCode(error);
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure, failureCode) : undefined;
     return {
       ok: false,
       error: failure,
       ...(userMessage ? { userMessage } : {}),
+      ...(failureCode ? { code: failureCode } : {}),
       meta: {
         action: 'delete_reminder',
         connector: 'reminders',

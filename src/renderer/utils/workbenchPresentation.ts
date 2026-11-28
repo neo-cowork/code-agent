@@ -19,6 +19,7 @@ import type {
   WorkbenchMcpRegistryItem,
 } from './workbenchCapabilityRegistry';
 import { isMcpAuthenticationFailure } from './mcpRecovery';
+import { isConnectorCardConnected } from './connectorCardPresentation';
 import { zh } from '../i18n/zh';
 
 type WorkbenchRuntimeStatus = 'connected' | 'disconnected' | 'connecting' | 'error' | 'lazy';
@@ -226,7 +227,7 @@ export function getMcpTrustSummary(
     parts.push(server.transport);
   }
 
-  const hasLoadedCounts = server.lifecycle.connectionState === 'connected'
+  const hasLoadedCounts = isConnectorCardConnected(server, server.lifecycle.connectionState)
     && Number.isFinite(server.toolCount)
     && Number.isFinite(server.resourceCount);
   if (hasLoadedCounts) {

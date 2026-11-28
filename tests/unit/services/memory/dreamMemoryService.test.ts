@@ -65,6 +65,8 @@ function makeDb() {
     searchTranscriptFts: vi.fn(),
     getTranscriptAround: vi.fn(),
     listMemories: vi.fn(() => [] as MemoryRecord[]),
+    findMemoryByEntryId: vi.fn(() => null),
+    listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
     createMemory: vi.fn((data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>) => ({
       id: 'mem-created',
       accessCount: 0,

@@ -103,6 +103,7 @@ import { useChatInputSubmit } from './useChatInputSubmit';
 import { useQuestionCardPlaceholder } from './questionCardAnswer';
 import { readComposerRoundtripText, useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
+import { PendingStopNotice } from './PendingStopNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraftRequest } from './useScheduleDraftRequest';
 import { useScheduleDraft } from './useScheduleDraft';
@@ -1522,6 +1523,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
+        <PendingStopNotice sessionId={currentSessionId} onRetryStop={onStop} />
         {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
@@ -1692,7 +1694,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
 
-            {/* 当前会话挂载的连接器 / MCP chip 放在「请求批准」右侧；无挂载不占位 */}
+            {/* 当前会话挂载的连接器 / MCP chip 放在「每次先问我」右侧；无挂载不占位 */}
             <MountedConnectorIcons />
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；

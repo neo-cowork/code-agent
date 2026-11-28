@@ -1,6 +1,7 @@
 import type { TraceNode, TraceProjection } from '@shared/contract/trace';
 import type { CrossSessionSearchResultItem } from '@shared/ipc/types';
 import type { SearchMatch } from '../components/features/chat/ChatSearchBar';
+import { isSkillStatusContent } from '../components/features/chat/MessageBubble/SkillStatusMessage';
 import type { PendingSessionSearchJump } from '../stores/sessionUIStore';
 import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 
@@ -10,6 +11,7 @@ import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay
  * 用户节点先剥掉旧组队配方前缀（legacyTeamRecipeDisplay.ts），与气泡展示同一口径。
  */
 export function getTraceNodeSearchText(node: TraceNode): string {
+  if (node.subtype === 'skill_status' || (node.type === 'user' && isSkillStatusContent(node.content))) return '';
   const content = node.type === 'user' ? stripLegacyTeamRecipeSeed(node.content) : node.content;
   const result = node.toolCall?.result;
   return typeof result === 'string' && result ? `${content}\n${result}` : content;

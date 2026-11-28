@@ -21,7 +21,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 
 const channelState = vi.hoisted(() => ({ sendMessage: vi.fn(), getAllAccounts: vi.fn() }));
 vi.mock('../../../src/host/channels/channelManager', () => ({
-  getChannelManager: () => ({ getAllAccounts: channelState.getAllAccounts, sendMessage: channelState.sendMessage }),
+  getChannelManager: () => ({ getAccount: () => undefined, getAllAccounts: channelState.getAllAccounts, sendMessage: channelState.sendMessage }),
 }));
 
 // 单 run 携带上限压到 3：5 个事件的批里才能出现「被携带上限丢掉」的那一条。
@@ -184,7 +184,7 @@ describe('② 观察档的通道结果回复：零发送 + 一条 would_act', ()
       target: 'feishu:oc_group',
       runId: 'run-obs-1',
       // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：would_act 行也带「命中的规则」。
-      matchedRule: 'channel message · account acc-1 · chat oc_group',
+      matchedRule: 'channel message · chat oc_group',
       // 逐事件决策标签不进「本会发出」的正文
       summary: '好的，周五下午三点开会，我来订会议室。',
     });
@@ -299,11 +299,11 @@ describe('③ 逐事件决策台账', () => {
     expect(byEvent.e5.reason).toBe('run failed: provider timeout after 3 retries');
     // 返修②：每条事件行都带「命中的任务规则」——配置推导（source + 账号 + 群/邮箱），
     // 模型陈述了 rule= 就用模型的（e2），被丢弃的 e4 也记录准入它的规则。
-    expect(byEvent.e1.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
+    expect(byEvent.e1.matchedRule).toBe('channel message · chat oc_group');
     expect(byEvent.e2.matchedRule).toBe('客户群要周报');
-    expect(byEvent.e3.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
-    expect(byEvent.e4.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
-    expect(byEvent.e5.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
+    expect(byEvent.e3.matchedRule).toBe('channel message · chat oc_group');
+    expect(byEvent.e4.matchedRule).toBe('channel message · chat oc_group');
+    expect(byEvent.e5.matchedRule).toBe('channel message · chat oc_group');
   });
 
   it('观察档：模型说 act 的事件记 would_act（不是 acted）', async () => {
@@ -333,7 +333,7 @@ describe('③ 逐事件决策台账', () => {
     trigger.dispose();
     expect(rows).toEqual([expect.objectContaining({
       eventId: 'e1', decision: 'would_act', reason: 'would answer the question', runId: 'run-o',
-      matchedRule: 'channel message · account acc-1 · chat oc_group',
+      matchedRule: 'channel message · chat oc_group',
     })]);
   });
 
