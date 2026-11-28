@@ -13,7 +13,6 @@ import type { loadVadRuntime } from '../../../../src/host/services/desktop/audio
 
 const mocks = vi.hoisted(() => ({
   loadVadRuntime: vi.fn<typeof loadVadRuntime>(),
-  userConfigDir: '',
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
@@ -26,17 +25,17 @@ vi.mock('../../../../src/host/services/desktop/audioVadRuntime', async (importOr
 vi.mock('../../../../src/host/services/desktop/nativeDesktopService', () => ({
   getNativeDesktopService: () => ({ getStatus: () => ({}) }),
 }));
-vi.mock('../../../../src/host/config/configPaths', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../src/host/config/configPaths')>()),
-  getUserConfigDir: () => mocks.userConfigDir,
-}));
 
 type AudioCaptureModule = typeof import('../../../../src/host/services/desktop/desktopAudioCapture');
 type PrerequisitesModule = typeof import('../../../../src/host/services/desktop/audioCapturePrerequisites');
 
 const PROGRAM_NAMES = ['ffmpeg', 'rec', 'whisper-cli', 'whisper-cpp'];
 const realExistsSync = fs.existsSync;
-const originalEnv = { home: process.env.CODE_AGENT_HOME, path: process.env.PATH };
+const originalEnv = {
+  home: process.env.CODE_AGENT_HOME,
+  dataDir: process.env.CODE_AGENT_DATA_DIR,
+  path: process.env.PATH,
+};
 
 let capture: AudioCaptureModule;
 let prerequisites: PrerequisitesModule;
@@ -75,8 +74,8 @@ beforeEach(() => {
   binDir = path.join(sandbox, 'bin');
   fs.mkdirSync(neoHome, { recursive: true });
   fs.mkdirSync(binDir, { recursive: true });
-  mocks.userConfigDir = path.join(sandbox, 'config');
   process.env.CODE_AGENT_HOME = neoHome;
+  process.env.CODE_AGENT_DATA_DIR = path.join(sandbox, 'config');
   process.env.PATH = [binDir, '/usr/bin', '/bin'].join(path.delimiter);
   systemPrograms = new Set<string>();
   speechProbability = 0;
@@ -115,6 +114,8 @@ afterAll(() => {
   fs.rmSync(osHome, { recursive: true, force: true });
   if (originalEnv.home === undefined) delete process.env.CODE_AGENT_HOME;
   else process.env.CODE_AGENT_HOME = originalEnv.home;
+  if (originalEnv.dataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+  else process.env.CODE_AGENT_DATA_DIR = originalEnv.dataDir;
   process.env.PATH = originalEnv.path;
 });
 
