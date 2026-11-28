@@ -825,6 +825,7 @@ export const ChatView: React.FC = () => {
   return (
     <div
         ref={globalDropZoneRef}
+        data-composer-popover-boundary
         className="flex-1 min-h-0 flex overflow-hidden relative"
         onDragEnter={handleGlobalDragEnter}
         onDragOver={handleGlobalDragOver}

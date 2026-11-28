@@ -24,6 +24,7 @@ import {
   libraryRowSubtitle,
 } from './atMentionPanelModel';
 import { interpolatePlural } from '../../../../i18n/interpolate';
+import { useComposerPopoverMaxHeight } from './useComposerPopoverMaxHeight';
 
 interface AtMentionPopoverProps {
   query: string;
@@ -52,6 +53,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
 }) => {
   const { t, language } = useI18n();
   const listRef = useRef<HTMLDivElement>(null);
+  const popoverMaxHeight = useComposerPopoverMaxHeight(listRef, 280);
   const totalCount = libraryRows.length + fileRows.length + sessionRows.length + artifactRows.length;
 
   // 高亮行滚动跟随（同 SlashCommandPopover 的 data-selected 方案）
@@ -68,7 +70,8 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
     <div
       ref={listRef}
       data-at-mention-popover
-      className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[280px] overflow-y-auto"
+      style={{ maxHeight: popoverMaxHeight }}
+      className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 overflow-y-auto"
     >
       {/* 任务 15：搜索可见性 —— query 非空回显结果数，空 query 提示可搜索 */}
       <div className="sticky top-0 z-10 elevation-l2 border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-500">
