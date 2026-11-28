@@ -6,17 +6,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser } from 'playwright';
 import { parseArgs } from './args';
+import { SLOT_FLOWS } from './calendarFlows';
 import { CORE_FLOWS, CORE_FLOW_IDS } from './flows';
 import { buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure, type AttemptResult, type FlowResult } from './result';
 import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, quiesceServer, startServer, stopServer } from './server';
-import type { AttemptEnv, FlowDef, ServerInfo } from './types';
+import { attachSlot, dumpSlotDb } from './slotAttach';
+import type { AttemptEnv, DbSnapshot, FlowDef, ServerInfo } from './types';
 import { dismissFirstRunLayers, setDeliveryProbe, setStallRecovery } from './ui';
 
 const ATTEMPT_CAP_MS = 12 * 60_000;
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; server: ServerInfo; bin: string; out: string }): Promise<AttemptResult> {
-  const { browser, server, bin, out } = ctx;
+/** 读一份新快照：隔离服务走 neo-realrun dump，挂靠槽走只读 better-sqlite3（slotAttach）。 */
+type ReadDbFn = (server: ServerInfo) => Promise<{ file: string; data: DbSnapshot }>;
+
+async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; server: ServerInfo; bin: string; out: string; slot: boolean; readDb: ReadDbFn }): Promise<AttemptResult> {
+  const { browser, server, bin, out, slot, readDb } = ctx;
   const tag = `${flow.id}-a${n}`;
   const shots = path.join(out, 'shots');
   fs.mkdirSync(shots, { recursive: true });
@@ -32,7 +37,7 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
   const env: AttemptEnv = {
     page, server, sessionIds: [], startedAtMs: Date.now(), sseFile, scratch: {},
     note: (text) => { if (!notes.includes(text)) notes.push(text); },
-    readDb: async () => { const r = dumpDb(bin, server); lastDb = r.file; return r; },
+    readDb: async () => { const r = await readDb(server); lastDb = r.file; return r; },
   };
   setDeliveryProbe(async (since) => (await env.readDb()).data.permissionDecisions.some((r) => Number(r.recorded_at) >= since - 2_000));
   setStallRecovery(async () => {
@@ -43,7 +48,8 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
     if (id) await page.locator(`[data-session-id="${id}"]`).first().click({ timeout: 15_000 }).catch(() => {});
   });
   const started = Date.now();
-  const restarted = await quiesceServer(bin, server);
+  // 挂靠槽不做 quiesce / kill9 / restart：那是 neo-realrun 对自己起的服务才有的权限
+  const restarted = slot ? null : await quiesceServer(bin, server);
   if (restarted) env.note(restarted);
   await flow.prepare?.(server);
   let failedStep: AttemptResult['failedStep'] = null;
@@ -53,22 +59,30 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
     await page.getByTestId('sidebar-new-task').waitFor({ timeout: 30_000 });
     // 首启流程（F18 一类）要用首启弹层，默认的「点掉首启弹层」对它们关掉
     if (!flow.requiresFirstRun) await dismissFirstRunLayers(page);
-    for (const [i, step] of flow.steps.entries()) {
-      try {
-        await step.run(env);
-      } catch (e) {
-        failedStep = { n: i + 1, text: step.text };
-        reason = (e as Error).message;
-        break;
+    // step 0 探针（日历流程）：没发任何消息之前先验前提；红在 step 0，本次尝试不再跑步骤（详情走 env.note → reason）
+    try {
+      await flow.probe?.(env);
+    } catch (e) {
+      failedStep = { n: 0, text: (e as Error).message };
+    }
+    if (!failedStep) {
+      for (const [i, step] of flow.steps.entries()) {
+        try {
+          await step.run(env);
+        } catch (e) {
+          failedStep = { n: i + 1, text: step.text };
+          reason = (e as Error).message;
+          break;
+        }
       }
     }
   } catch (e) {
-    failedStep = { n: 0, text: '打开页面并进入聊天界面' };
+    if (!failedStep) failedStep = { n: 0, text: '打开页面并进入聊天界面' };
     reason = (e as Error).message;
   } finally {
-    // 收尾护栏（F17 恢复界面语言）：步骤红不红都要跑，失败只记 note 不掩盖原失败
+    // 收尾护栏（F17 恢复界面语言 / 日历流程清本标记的事件）：步骤红不红都要跑，失败只记 note 不掩盖原失败
     try {
-      await flow.cleanup?.(server);
+      await flow.cleanup?.(server, env);
     } catch (e) {
       notes.push(`cleanup 失败：${(e as Error).message}`);
     }
@@ -86,13 +100,13 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
 }
 
 // 每次尝试一个全新的浏览器：浏览器崩了只红这一次尝试，不拖垮整轮
-async function runIsolated(flow: FlowDef, n: number, ctx: { headed: boolean; server: ServerInfo; bin: string; out: string }): Promise<AttemptResult> {
+async function runIsolated(flow: FlowDef, n: number, ctx: { headed: boolean; server: ServerInfo; bin: string; out: string; slot: boolean; readDb: ReadDbFn }): Promise<AttemptResult> {
   const started = Date.now();
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ headless: !ctx.headed });
     return await Promise.race([
-      runAttempt(flow, n, { browser, server: ctx.server, bin: ctx.bin, out: ctx.out }),
+      runAttempt(flow, n, { browser, server: ctx.server, bin: ctx.bin, out: ctx.out, slot: ctx.slot, readDb: ctx.readDb }),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`单次尝试超过 ${ATTEMPT_CAP_MS / 60_000} 分钟，强制结束`)), ATTEMPT_CAP_MS)),
     ]);
   } catch (e) {
@@ -107,27 +121,42 @@ async function runIsolated(flow: FlowDef, n: number, ctx: { headed: boolean; ser
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2), process.env, process.cwd());
-  assertRealrunBin(args.realrunBin);
+  // --slot 模式不用 neo-realrun；只有自建隔离服务才需要它
+  if (!args.slot) assertRealrunBin(args.realrunBin);
   // F16 要用 POST /api/dev/seed-messages 种长会话：它只认 CODE_AGENT_E2E=1（dev.ts），
   // neo-realrun 只开 CODE_AGENT_ENABLE_DEV_API。种子写进的是本次隔离 HOME 的库，先于起服务设好
   // （该标志在隔离服务里只是多放行 e2e 种子钩子、少连 MCP/auth/telemetry 这类本次用不到的远端）。
   process.env.CODE_AGENT_E2E ??= '1';
   const startedAt = new Date().toISOString();
   const wanted = args.only ?? CORE_FLOW_IDS;
-  const flows = CORE_FLOWS.filter((f) => wanted.includes(f.id));
-  if (!args.reuseBuild) {
+  // --slot 只许日历流程：原生 EventKit 只在打包壳里，其余流程的隔离服务在这里不存在
+  if (args.slot) {
+    const foreign = wanted.filter((id) => !SLOT_FLOWS.some((f) => f.id === id));
+    if (foreign.length || !wanted.length) {
+      throw new Error(`--slot 只能跑日历流程（${SLOT_FLOWS.map((f) => f.id).join(' ')}）${foreign.length ? `，--only 里混入了 ${foreign.join(' ')}` : '，--only 不能为空'}`);
+    }
+  }
+  const flows = args.slot
+    ? SLOT_FLOWS.filter((f) => wanted.includes(f.id))
+    : CORE_FLOWS.filter((f) => wanted.includes(f.id));
+  if (!args.slot && !args.reuseBuild) {
     console.log('构建 web + renderer …');
     execFileSync('npm', ['run', '-s', 'build:web'], { cwd: REPO_ROOT, stdio: 'inherit' });
     execFileSync('npm', ['run', '-s', 'build:renderer'], { cwd: REPO_ROOT, stdio: 'inherit' });
   }
   fs.mkdirSync(args.out, { recursive: true });
-  const server = startServer(args.realrunBin, REPO_ROOT, args.out);
+  const readDb: ReadDbFn = args.slot
+    ? (server) => Promise.resolve(dumpSlotDb(server, args.slot as number, args.out))
+    : (server) => Promise.resolve(dumpDb(args.realrunBin, server));
+  const server = args.slot
+    ? await attachSlot(args.slot, args.out)
+    : startServer(args.realrunBin, REPO_ROOT, args.out);
   const results: FlowResult[] = [];
   try {
     for (const flow of flows) {
       const attempts: AttemptResult[] = [];
       for (let n = 1; n <= args.repeat; n++) {
-        const attempt = await runIsolated(flow, n, { headed: args.headed, server, bin: args.realrunBin, out: args.out });
+        const attempt = await runIsolated(flow, n, { headed: args.headed, server, bin: args.realrunBin, out: args.out, slot: args.slot !== null, readDb });
         attempts.push(attempt);
         console.log(attempt.status === 'pass'
           ? `PASS ${flow.id} attempt ${n} (${Math.round(attempt.durationMs / 1000)}s)${attempt.reason ? ` — ${attempt.reason}` : ''}`
@@ -136,7 +165,10 @@ async function main(): Promise<number> {
       results.push(buildFlowResult(flow.id, flow.title, attempts));
     }
   } finally {
-    try { stopServer(args.realrunBin, server); } catch (e) { console.error(`e2e-core: 停服务失败：${(e as Error).message}`); process.exitCode = 1; }
+    // 挂靠槽不是我们起的服务：只清自己的会话，从不 stop / kill9 / restart 槽
+    if (!args.slot) {
+      try { stopServer(args.realrunBin, server); } catch (e) { console.error(`e2e-core: 停服务失败：${(e as Error).message}`); process.exitCode = 1; }
+    }
   }
   const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   const result = buildResult({ startedAt, commit, model: server.model }, results);
