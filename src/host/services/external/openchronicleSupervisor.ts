@@ -303,7 +303,7 @@ export async function stopDaemon(): Promise<{ ok: boolean; error?: string }> {
 export async function getStatus(): Promise<OpenchronicleStatus> {
   const shim = await resolveShim();
   if (!shim) {
-    return { state: 'stopped', mcpHealthy: false, lastError: 'OpenChronicle 未安装' };
+    return { installed: false, state: 'stopped', mcpHealthy: false, lastError: 'OpenChronicle 未安装' };
   }
   const result = await runShim(['status']);
   const mcpHealthy = await probeMcpHealthy();
@@ -328,6 +328,7 @@ export async function getStatus(): Promise<OpenchronicleStatus> {
   }
 
   return {
+    installed: true,
     state: currentState,
     pid,
     mcpEndpoint: OPENCHRONICLE_MCP_ENDPOINT,

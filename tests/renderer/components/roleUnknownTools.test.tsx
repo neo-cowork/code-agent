@@ -25,12 +25,12 @@ const detail: RolePanelDetail = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  useAppStore.setState({ language: 'zh' });
+  useAppStore.setState({ language: 'zh', developerMode: false });
 });
 
 describe('expert detail unknown tools', () => {
   it.each([['zh', '需核对'], ['en', 'Needs checking']] as const)('%s marks an unmappable tool as needing a check without hiding or granting it', async (language, label) => {
-    useAppStore.setState({ language });
+    useAppStore.setState({ language, developerMode: true });
     invokeDomain.mockImplementation((_domain: string, action: string) => Promise.resolve(action === 'detail' ? detail : []));
     render(<RoleDetailPage roleId="日程管家" />);
     fireEvent.click(await screen.findByTestId('role-detail-tab-skills'));

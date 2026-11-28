@@ -25,6 +25,8 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useSkillStore } from '../../../stores/skillStore';
 import { invokeSkillIPCOrThrow } from '../../../services/invokeSkillIPC';
 import { createLogger } from '../../../utils/logger';
+import { isBackendCurrentlyOffline, markLastSendOfflineFailure } from '../../../utils/offlineSend';
+import { getServerReconnectingMessage } from '../../../utils/serverConnectionMonitor';
 import { ChatInput } from '../chat/ChatInput';
 import { deriveSkillLibraryId } from '../chat/ChatInput/slashPickerModel';
 
@@ -94,7 +96,12 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
         // 失败时留在空间页，已输入的文字才能留在这个输入框里。
         preserveSecondaryPages: true,
       });
-      if (!session) return false;
+      if (!session) {
+        if (useSessionStore.getState().error === getServerReconnectingMessage() || isBackendCurrentlyOffline()) {
+          markLastSendOfflineFailure(envelope.clientMessageId);
+        }
+        return false;
+      }
       // sessionless 期选中的 skill 在这里补挂载（新会话 id 已知、切页之前）；
       // 失败不拦发送，已打的字不能丢（toast + warn 留痕）
       const selectedSkillIds = envelope.context?.selectedSkillIds ?? [];
