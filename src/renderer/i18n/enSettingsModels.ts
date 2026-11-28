@@ -77,6 +77,7 @@ export const enSettingsModels = {
         addProvider: 'Add Provider',
         doctor: 'Doctor',
         configuredPrefix: 'Available · ',
+        notReadyPrefix: 'Not ready · ', configuredEmpty: 'No provider is ready yet',
         noMatch: 'No matching Provider',
         unconfiguredTooltip: 'These Providers do not have a saved API Key yet. Add one before the model list is shown.',
         unconfiguredPrefix: 'Needs Key · ',
