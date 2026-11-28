@@ -1692,7 +1692,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
 
-            {/* 当前会话挂载的连接器 / MCP chip 放在「请求批准」右侧；无挂载不占位 */}
+            {/* 当前会话挂载的连接器 / MCP chip 放在「每次先问我」右侧；无挂载不占位 */}
             <MountedConnectorIcons />
 
             {/* B+ 移除: AbilityMenu (Routing/Browser/Live Preview) — 挪到 Settings；

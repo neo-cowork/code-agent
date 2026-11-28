@@ -90,3 +90,63 @@ export function truncateHead(
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '\n... (output truncated)';
 }
+
+// ============================================================================
+// 整词截断 — 用户可见任务标题不得切出半个词（FB-3029 / FB-1933）
+// ============================================================================
+
+const CLAUSE_PUNCTUATION = new Set(['，', '。', ',', '.', ';', '；']);
+const MIN_CLAUSE_PREFIX_CODE_POINTS = 8;
+const CJK_SEGMENT_LOCALE_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const FALLBACK_BOUNDARY_CHAR = /[\s\p{P}]/u;
+const TRAILING_NON_WORD_CHARS = /[\s\p{P}]+$/u;
+
+/**
+ * 整词截断 — 预算（码位）内只保留完整分词段
+ *
+ * 未超预算时原文返回（调用方据此决定是否加省略号）。超预算时：
+ * 1. 优先落在预算内最后一个句读边界（，。,.;；），前提是它之前留下至少 8 个码位；
+ * 2. 否则用 Intl.Segmenter 词粒度分段，保留完整段并丢弃尾随的空白/标点段；
+ * 3. 运行时没有 Intl.Segmenter 时退回预算内最后一个空白或标点；
+ * 4. 预算内找不到任何边界（整段是一个长 token / URL）时返回 undefined，
+ *    由调用方决定回落（固定文案或旧的硬切）。
+ *
+ * @param text - 已归一化的文本（调用方负责折叠空白）
+ * @param maxCodePoints - 码位预算（正文部分，不含省略号）
+ * @returns 原文或「截断文本 + …」；无可用边界时 undefined
+ */
+export function truncateAtWordBoundary(text: string, maxCodePoints: number): string | undefined {
+  const chars = Array.from(text);
+  if (chars.length <= maxCodePoints) return text;
+
+  const lastInBudget = Math.min(maxCodePoints, chars.length - 1);
+  for (let i = lastInBudget; i >= MIN_CLAUSE_PREFIX_CODE_POINTS; i--) {
+    if (CLAUSE_PUNCTUATION.has(chars[i])) {
+      const head = chars.slice(0, i).join('').trimEnd();
+      if (head) return `${head}…`;
+      break;
+    }
+  }
+
+  if (typeof Intl.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter(CJK_SEGMENT_LOCALE_PATTERN.test(text) ? 'zh' : 'en', { granularity: 'word' });
+    let cut = '';
+    let pending = '';
+    let used = 0;
+    for (const part of segmenter.segment(text)) {
+      used += Array.from(part.segment).length;
+      if (used > maxCodePoints) break;
+      pending += part.segment;
+      if (part.isWordLike) cut = pending;
+    }
+    return cut ? `${cut}…` : undefined;
+  }
+
+  for (let i = lastInBudget; i > 0; i--) {
+    if (FALLBACK_BOUNDARY_CHAR.test(chars[i])) {
+      const head = chars.slice(0, i).join('').replace(TRAILING_NON_WORD_CHARS, '');
+      return head ? `${head}…` : undefined;
+    }
+  }
+  return undefined;
+}
