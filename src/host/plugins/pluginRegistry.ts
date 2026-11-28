@@ -785,6 +785,9 @@ export class PluginRegistry {
     );
   }
 
+  // macOS, Node 24, 2026-11-28: 30 pauses per condition, max 4.13 ms idle, 11.26 ms with
+  // SkillWatcher + three recursive watches (20k files each), 15.47 ms with added file churn.
+  // All measured pauses were below the 50 ms budget.
   pauseWatching(): boolean {
     const wasWatching = this.stopWatcher !== null;
     this.stopWatcher?.();
