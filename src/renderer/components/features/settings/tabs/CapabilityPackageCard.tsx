@@ -35,6 +35,13 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
   const { t } = useI18n();
   const pluginsText = t.settings.plugins;
   const capabilityText = t.capabilityPackages;
+  // 内置插件的卡片名与描述走 i18n 词条（capabilityPackages.builtinPlugins）——
+  // host manifest 的 name/description 是给模型和工具读的英文工程描述，不上卡片。
+  // 用 Object.hasOwn——`in` 走原型链，toString 这类 id 会被误命中（同 connectorSources.ts）。
+  // 第三方插件没有词条，回退 manifest 原文。
+  const builtinText = Object.hasOwn(capabilityText.builtinPlugins, plugin.id)
+    ? capabilityText.builtinPlugins[plugin.id as keyof typeof capabilityText.builtinPlugins]
+    : undefined;
   const setActiveInternalFeature = useAppStore((state) => state.setActiveInternalFeature);
   const busy = busyKey === `capability-package:uninstall:${plugin.id}`;
   const isInternal = plugin.surface === 'internal-feature';
@@ -69,10 +76,10 @@ export const CapabilityPackageCard: React.FC<CapabilityPackageCardProps> = ({
     <PluginCard
       testId={`capability-package-${plugin.id}`}
       icon={isInternal ? <Blocks className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
-      name={plugin.name}
+      name={builtinText?.name ?? plugin.name}
       status={status}
       statusTone={statusTone}
-      description={plugin.description}
+      description={builtinText?.description ?? plugin.description}
       permissions={permissions}
       meta={meta}
       detailsLabel={capabilityText.detailsLabel}
