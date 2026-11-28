@@ -7,14 +7,15 @@
 // ============================================================================
 
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import { getHomeDir } from '../../config/configPaths';
 
 const WHISPER_BINARY_NAMES = ['whisper-cli', 'whisper-cpp'];
 const WHISPER_BIN_DIRS = ['/opt/homebrew/bin', '/usr/local/bin'];
 
-function whichOnPath(name: string): string | null {
+/** PATH 里找一个命令；找不到返回 null（录音程序的查找也用它，见 desktop/microphoneRecorder） */
+export function whichOnPath(name: string): string | null {
   try {
     return execFileSync('which', [name], { encoding: 'utf-8' }).trim() || null;
   } catch {
@@ -40,17 +41,25 @@ export function findWhisperBinary(
   return null;
 }
 
-function whisperModelDir(homeDir: string = os.homedir()): string {
-  return path.join(homeDir, '.cache', 'whisper');
+/**
+ * 找 whisper 模型文件，前置检查和真实转写都走这里，两边读到的永远是同一份。
+ * 目录跟着 getHomeDir（设了 CODE_AGENT_HOME 就用它）；有首选文件名且存在就用它，
+ * 否则用目录里任意一个 ggml-*.bin。
+ */
+export function findWhisperModel(preferredName?: string, homeDir: string = getHomeDir()): string | null {
+  const dir = path.join(homeDir, '.cache', 'whisper');
+  try {
+    if (preferredName && fs.existsSync(path.join(dir, preferredName))) return path.join(dir, preferredName);
+    const fallback = fs.readdirSync(dir).find((f) => f.startsWith('ggml-') && f.endsWith('.bin'));
+    return fallback ? path.join(dir, fallback) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** 模型目录里有没有任何 ggml-*.bin（有程序没模型同样转不了字） */
-export function hasWhisperModel(homeDir: string = os.homedir()): boolean {
-  try {
-    return fs.readdirSync(whisperModelDir(homeDir)).some((f) => f.startsWith('ggml-') && f.endsWith('.bin'));
-  } catch {
-    return false;
-  }
+export function hasWhisperModel(homeDir: string = getHomeDir()): boolean {
+  return findWhisperModel(undefined, homeDir) !== null;
 }
 
 /**

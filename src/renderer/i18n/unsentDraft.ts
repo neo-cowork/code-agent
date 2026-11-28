@@ -12,6 +12,12 @@ export const unsentDraftCopyZh = {
   unsentDraftNameSeparator: '、',
   unsentDraftPutBack: '放回输入框',
   unsentDraftDiscard: '丢弃',
+  offlineSendWaiting: '网络断开，这条消息还没发出去，连接恢复后会自动发送',
+  offlineSendReplaying: '连接已恢复，正在发送…',
+  offlineSendCancelAuto: '不自动发送',
+  offlineSendReplayFailed: '连接恢复后这条消息还是没发出去，点发送再试一次',
+  offlineSendAttachmentsNotSent: '网络断开，这条带附件的消息没发出去，连接恢复后请再点发送',
+  offlineSendRetryFailedCard: '连接恢复后这条消息还是没发出去，请重试。',
 };
 
 export const unsentDraftCopyEn: typeof unsentDraftCopyZh = {
@@ -26,4 +32,10 @@ export const unsentDraftCopyEn: typeof unsentDraftCopyZh = {
   unsentDraftNameSeparator: ', ',
   unsentDraftPutBack: 'Put it back in the input',
   unsentDraftDiscard: 'Discard',
+  offlineSendWaiting: "Connection lost. This message wasn't sent yet and will be sent automatically when the connection returns.",
+  offlineSendReplaying: 'Connection restored. Sending…',
+  offlineSendCancelAuto: "Don't send automatically",
+  offlineSendReplayFailed: "This message still couldn't be sent after reconnecting. Press Send to try again.",
+  offlineSendAttachmentsNotSent: "Connection lost. This message with attachments wasn't sent — press Send again once reconnected.",
+  offlineSendRetryFailedCard: "This message still couldn't be sent after reconnecting. Please try again.",
 };

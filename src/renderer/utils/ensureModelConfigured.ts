@@ -8,14 +8,18 @@ import { getLocalizedProviderDisplayName } from '../i18n/providerDisplay';
 import { toast } from '../hooks/useToast';
 import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
+import { useAuthStore } from '../stores/authStore';
 import { createLogger } from './logger';
+import { isOfflineTransportError, OFFLINE_SEND_FAILED_CODE } from './offlineSend';
 import { isWebMode } from './platform';
 
 const logger = createLogger('modelSetup');
 
+export type PreSendModelReadiness = 'ready' | 'unconfigured' | 'offline';
+
 async function readModelReadiness(
   currentSessionId: string | null,
-  options: { allowCloudManaged?: boolean },
+  options: { allowCloudManaged?: boolean; propagateOffline?: boolean },
 ): Promise<{ settings: AppSettings; provider: ModelProvider; configured: boolean }> {
   const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
   const defaultProvider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
@@ -27,21 +31,52 @@ async function readModelReadiness(
       );
       if (effective?.provider && effective.adaptive !== true && effective.model !== 'auto') provider = effective.provider;
     } catch (error) {
+      if (options.propagateOffline && isOfflineTransportError(error)) throw error;
       logger.debug('Effective model read failed; using the default provider', { error });
     }
   }
   return { settings, provider, configured: hasConfiguredRuntimeProvider(settings, provider, options) };
 }
 
-export async function hasConfiguredSessionRuntimeModel(
+export async function readSessionRuntimeModelState(
   currentSessionId: string | null,
   options: { allowCloudManaged?: boolean } = {},
-): Promise<boolean> {
+): Promise<PreSendModelReadiness> {
   try {
-    return (await readModelReadiness(currentSessionId, options)).configured;
-  } catch {
-    return false;
+    return (await readModelReadiness(currentSessionId, { ...options, propagateOffline: true })).configured ? 'ready' : 'unconfigured';
+  } catch (error) {
+    return isOfflineTransportError(error) ? 'offline' : 'unconfigured';
   }
+}
+
+export async function validateOfflineRetry(sessionId: string | null): Promise<Error | undefined> {
+  const allowCloudManaged = useAuthStore.getState().isAuthenticated;
+  const modelState = await readSessionRuntimeModelState(sessionId, { allowCloudManaged });
+  if (modelState === 'ready' && (!allowCloudManaged || useAuthStore.getState().isAuthenticated)) return;
+  return Object.assign(new Error('Offline retry preflight failed'), { code: OFFLINE_SEND_FAILED_CODE });
+}
+
+function notifyUnconfiguredModel(
+  settings: AppSettings,
+  provider: ModelProvider,
+  t: Translations,
+  language: Language,
+  openSettingsWhenReady: boolean,
+): void {
+  const { openModelSettings } = useAppStore.getState();
+  if (!hasConfiguredRuntimeModels(settings)) {
+    openModelSettings(provider);
+    return;
+  }
+  const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
+    || getLocalizedProviderDisplayName(provider, language)
+    || t.modelSetup.thisModel;
+  if (isWebMode()) {
+    toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
+  } else if (!openSettingsWhenReady) {
+    toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
+  }
+  openModelSettings(provider);
 }
 
 /** Guide missing-model sends and signed-out setup to the same settings destination. */
@@ -50,29 +85,35 @@ export async function ensureModelConfigured(
   language: Language,
   { currentSessionId = null, openSettingsWhenReady = false }: { currentSessionId?: string | null; openSettingsWhenReady?: boolean } = {},
 ): Promise<boolean> {
-  const { openSettingsTab, openModelSettings } = useAppStore.getState();
   try {
     const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
     if (!configured) {
-      const noModels = !hasConfiguredRuntimeModels(settings);
-      if (noModels) {
-        openModelSettings(provider);
-        return false;
-      }
-      const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
-        || getLocalizedProviderDisplayName(provider, language)
-        || t.modelSetup.thisModel;
-      if (isWebMode()) {
-        toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
-      } else if (!openSettingsWhenReady) {
-        toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
-      }
-      openModelSettings(provider);
+      notifyUnconfiguredModel(settings, provider, t, language, openSettingsWhenReady);
       return false;
     }
   } catch (error) {
     logger.debug('Settings read failed while checking model setup', { error });
   }
-  if (openSettingsWhenReady) openSettingsTab('model');
+  if (openSettingsWhenReady) useAppStore.getState().openSettingsTab('model');
   return true;
+}
+
+/** 发送前模型检查：把「连不上后台」与「没配模型」分开，离线不弹模型设置页。 */
+export async function ensureModelConfiguredForSend(
+  t: Translations,
+  language: Language,
+  currentSessionId: string | null,
+): Promise<PreSendModelReadiness> {
+  try {
+    const { settings, provider, configured } = await readModelReadiness(currentSessionId, { propagateOffline: true });
+    if (!configured) {
+      notifyUnconfiguredModel(settings, provider, t, language, false);
+      return 'unconfigured';
+    }
+    return 'ready';
+  } catch (error) {
+    if (isOfflineTransportError(error)) return 'offline';
+    logger.debug('Settings read failed while checking model setup', { error });
+    return 'ready';
+  }
 }
