@@ -205,7 +205,7 @@ export async function handleModifiedArtifactValidation({
       if (strategy.kind === 'switch_rewrite') {
         phase = 'fresh_rewrite';
         failureState.rewriteAttempted = true;
-        runFinalizer.emitTaskProgress('tool_running', `补丁修复不收敛（${strategy.reason}），切换为干净重写...`);
+        runFinalizer.emitTaskProgress('tool_running', '几轮修复没有进展，改为重新生成…');
       } else if (strategy.kind === 'degraded_release') {
         failureState.degradedReleasePending = strategy.reason;
         runFinalizer.emitTaskProgress('tool_running', '修复没有新进展，准备交付目前最好的版本…');
