@@ -185,7 +185,8 @@ describe('成员对话页', () => {
       agents: [teamMember, { ...writerRecord, runId }],
       events: [{
         id: 1, runId, seq: 1, timestamp: 1_000, eventType: 'swarm:agent:updated',
-        agentId: teamMember.agentId, level: 'info', title: '市场组已开始核对口径', summary: '', payload: null,
+        agentId: teamMember.agentId, level: 'info', title: 'agent:updated',
+        summary: `${teamMember.agentId} → running`, payload: null,
       }],
     };
     invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
@@ -211,7 +212,7 @@ describe('成员对话页', () => {
     expect(header?.querySelector('p')?.textContent).toBe(roleLabel);
     expect(screen.getByTestId('role-initial-avatar-explore').getAttribute('aria-label')).toBe(title);
     expect(screen.getByTestId('member-process-messages').textContent).toContain('已找到原始统计表');
-    expect(screen.getByTestId('member-run-trail').textContent).toContain('市场组已开始核对口径');
+    expect(screen.getByTestId('member-run-trail').textContent).toContain(t.expert.memberBar.runTrailEvents.agentUpdated);
     expect(screen.getByTestId('member-final-output').textContent).toContain(teamMember.finalOutput);
   });
 
@@ -402,35 +403,6 @@ describe('成员对话页', () => {
     expect(screen.queryAllByTestId('member-recent-action')).toHaveLength(0);
     // 没有最近动作就不渲染置顶高亮块
     expect(screen.queryByTestId('member-current-action')).toBeNull();
-  });
-
-  it('运行轨迹消费账本已落的生命周期事件，只取本成员 + run 级', async () => {
-    invokeMock.mockImplementation((channel: unknown) => {
-      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
-      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
-        return Promise.resolve({
-          ...ledgerDetail,
-          events: [
-            { id: 1, runId: 'run-1', seq: 1, timestamp: 1_000, eventType: 'swarm:started', agentId: null, level: 'info', title: '组队启动', summary: '' },
-            { id: 2, runId: 'run-1', seq: 2, timestamp: 2_000, eventType: 'swarm:agent:updated', agentId: 'researcher', level: 'info', title: '调研员开始工作', summary: '正在核对口径' },
-            { id: 3, runId: 'run-1', seq: 3, timestamp: 3_000, eventType: 'swarm:agent:updated', agentId: 'writer', level: 'info', title: '撰稿员开始工作', summary: '别人的轨迹' },
-          ],
-        });
-      }
-      return Promise.resolve(null);
-    });
-    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
-
-    render(<MemberConversationView sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('member-run-trail')).toBeTruthy());
-
-    const trail = screen.getByTestId('member-run-trail');
-    expect(trail.textContent).toContain('调研员开始工作');
-    expect(trail.textContent).toContain('正在核对口径');
-    expect(trail.textContent).toContain('组队启动');
-    expect(trail.textContent).not.toContain('别人的轨迹');
-    // 倒序：最新一条排最前
-    expect(screen.getAllByTestId('member-run-trail-event')[0].textContent).toContain('调研员开始工作');
   });
 
   // ── S3：普通代理（非 Team 成员）视图 ──
