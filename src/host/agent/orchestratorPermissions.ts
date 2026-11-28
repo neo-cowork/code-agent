@@ -5,12 +5,11 @@
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import { isApprovePermissionResponse } from '../../shared/contract/permission';
-import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
+import type { PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
-import { OUTBOUND_APPROVAL_DEGRADE, PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { OUTBOUND_APPROVAL_DEGRADE } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
-import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -19,9 +18,9 @@ import { approveByScheduleWriteGrant, writeGrantFolderForParking } from '../cron
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
 import type { InsertPendingApprovalInput, PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
-import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { terminalApprovalPreviewText } from '../tools/modules/terminal/terminalApprovalPreview';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
+import { buildApprovalLedgerRow, buildParkedArgsPreview, hasBackgroundRunIdentity } from './approvalLedgerRow';
 import { approvalParkEvents } from './approvalParkEvents';
 import {
   buildUnattendedDegradeFeedback,
@@ -31,7 +30,6 @@ import {
 } from './unattendedApprovalTerminal';
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
-import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
 import { commandGrantKey } from '../permissions/commandGrantTarget';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { matchToolGrant } from '../permissions/toolGrantStore';
@@ -48,16 +46,6 @@ const logger = createLogger('AgentOrchestrator');
 
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
 const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
-
-/**
- * 后台任务/子代理 lane 的审批带着自己的 run 身份（subagentToolRuntime 把
- * { agentId, runId } 摊进请求；前台请求两者皆无）。run 收线清理据此放过它们
- * （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
- */
-function hasBackgroundRunIdentity(request: PermissionRequest): boolean {
-  return (typeof request.runId === 'string' && request.runId.length > 0)
-    || (typeof request.agentId === 'string' && request.agentId.length > 0);
-}
 
 /**
  * 重新确认「还有没有面能裁决这条审批」的节拍。
@@ -83,29 +71,6 @@ function toDeliveryOutcome(resolution: ParkedResolution): PermissionDeliveryOutc
  * allow_run/allow_24h 在放行语义上等价 allow）。 */
 function isApproveResponse(response: PermissionResponse): boolean {
   return isApprovePermissionResponse(response);
-}
-
-/**
- * 停车审批的参数预览（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）：argsSummary 的取值字段
- * 加上 url/changes，脱敏后截断。这里只去密钥形态（redactSecrets：API key / Bearer / .env 值），
- * 不走 guardSensitiveText 的路径/邮箱掩码——路径与命令本体正是「这步要干什么」要给用户看的信息。
- */
-function buildParkedArgsPreview(request: PermissionRequest): string | undefined {
-  const parts = [
-    request.details?.command,
-    terminalApprovalPreviewText(request.tool, request.details?.preview),
-    request.details?.path,
-    request.details?.filePath,
-    request.details?.url,
-    request.details?.changes,
-    // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：参数摘要显示「会发出的正文」。
-    request.details?.replyText,
-  ].filter((part): part is string => typeof part === 'string' && part.length > 0);
-  if (parts.length === 0) return undefined;
-  const redacted = redactCommandSecrets(parts.join(' · '));
-  return redacted.length > PARKED_APPROVAL_PREVIEW_MAX_CHARS
-    ? `${redacted.slice(0, PARKED_APPROVAL_PREVIEW_MAX_CHARS - 1)}…`
-    : redacted;
 }
 
 /**
@@ -142,6 +107,7 @@ export class OrchestratorPermissionIsland {
       machineDenial?: PermissionDenialSource,
       updatedArgs?: Record<string, unknown>,
       message?: string,
+      attendedFeedback?: 'superseded',
     ) => void;
     request: PermissionRequest;
     /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
@@ -157,6 +123,7 @@ export class OrchestratorPermissionIsland {
     getExecutionTopology,
     hasApprovalUi,
     isDetachedRun = () => false,
+    backgroundTaskLane = false,
     onEvent,
     injectedPendingApprovalRepo,
   }: {
@@ -165,6 +132,7 @@ export class OrchestratorPermissionIsland {
     getExecutionTopology: () => ExecutionTopology;
     hasApprovalUi: (request: PermissionRequest) => boolean;
     isDetachedRun?: () => boolean;
+    backgroundTaskLane?: boolean;
     onEvent: (event: AgentEvent) => void;
     injectedPendingApprovalRepo?: PendingApprovalRepository;
   }) {
@@ -173,6 +141,7 @@ export class OrchestratorPermissionIsland {
     this.getExecutionTopology = getExecutionTopology;
     this.hasApprovalUi = hasApprovalUi;
     this.isDetachedRun = isDetachedRun;
+    this.backgroundTaskLane = backgroundTaskLane;
     this.onEvent = onEvent;
     this.injectedPendingApprovalRepo = injectedPendingApprovalRepo;
   }
@@ -181,6 +150,7 @@ export class OrchestratorPermissionIsland {
   private readonly isDevModeAutoApproveEnabled: () => boolean;
   private readonly getExecutionTopology: () => ExecutionTopology;
   private readonly isDetachedRun: () => boolean;
+  private readonly backgroundTaskLane: boolean;
   private readonly hasApprovalUi: (request: PermissionRequest) => boolean;
   private readonly onEvent: (event: AgentEvent) => void;
 
@@ -459,7 +429,7 @@ export class OrchestratorPermissionIsland {
 
   /**
    * 用户中途改向：只作废还挂着的交互审批卡。停车（无人值守）审批不动，
-   * 也不写停车台账。解除语义与 drain 相同——机器取消，不是用户拒绝。
+   * 解除语义与 drain 相同——机器取消，不是用户拒绝。
    */
   supersedeInteractivePendingApprovals(): void {
     const interactive = [...this.pendingPermissions.entries()].filter(([, entry]) => !entry.parked);
@@ -474,7 +444,7 @@ export class OrchestratorPermissionIsland {
       } catch (error) {
         logger.warn('Superseded permission event could not be emitted; resolving cancelled anyway', error);
       }
-      entry.resolve('deny', 'cancelled');
+      entry.resolve('deny', 'cancelled', undefined, undefined, 'superseded');
     }
   }
 
@@ -672,10 +642,20 @@ export class OrchestratorPermissionIsland {
         } catch { /* 留痕失败不值得再赔上一个进程 */ }
       };
 
+      let mirrorRepo: PendingApprovalRepository | null = null;
+      const settleMirror = (status: 'approved' | 'rejected', feedback: string | null): void => {
+        try {
+          mirrorRepo?.resolve({ id: fullRequest.id, status, feedback, resolvedAt: Date.now() });
+        } catch (error) {
+          safeWarn('Attended approval ledger settlement failed', error);
+        }
+      };
+
       const settleTimedOut = (): void => {
         clearInterval(watchdog);
         this.pendingPermissions.delete(fullRequest.id);
         noteCompanionApprovalSettlement({ requestId: fullRequest.id, outcome: 'expired' });
+        settleMirror('rejected', 'attended approval timed out');
         safeWarn(`Timeout for ${request.type} on ${request.tool}, denying`);
         try {
           // 同一稳定 permission_request 事件做加法回传终态；renderer 以 host 结果为准，
@@ -717,7 +697,9 @@ export class OrchestratorPermissionIsland {
               this.pendingPermissions.delete(fullRequest.id);
               void this.parkApproval(fullRequest, permissionLevel, repo, 'tool_approval', 'degrade').then(resolve, (error) => {
                 safeWarn('Detached approval could not be parked; denying', error);
-                this.resolveParkedApproval(fullRequest.id, 'deny', undefined, 'fail-closed');
+                if (!this.resolveParkedApproval(fullRequest.id, 'deny', undefined, 'fail-closed')) {
+                  settleMirror('rejected', 'run cancelled');
+                }
                 resolve({ approved: false, denialSource: 'fail-closed' });
               });
               return;
@@ -740,14 +722,41 @@ export class OrchestratorPermissionIsland {
       }, APPROVAL_UI_RECHECK_MS);
 
       this.pendingPermissions.set(fullRequest.id, {
-        resolve: (response, machineDenial, updatedArgs) => {
+        resolve: (response, machineDenial, updatedArgs, _message, attendedFeedback) => {
           clearInterval(watchdog);
           recordHumanGrant(response, fullRequest, updatedArgs);
+          settleMirror(
+            isApproveResponse(response) ? 'approved' : 'rejected',
+            attendedFeedback ?? (machineDenial === 'cancelled' ? 'run cancelled' : null),
+          );
           resolve(toAskResult(response, machineDenial, updatedArgs));
         },
         request: fullRequest,
       });
-      this.onEvent({ type: 'permission_request', data: fullRequest });
+      const { id: requestId, sessionId, parentToolUseId, tool } = fullRequest;
+      // The explicit legacy unattended terminal mode still times out without a ledger row.
+      if (sessionId && parentToolUseId && !approvalTerminal) {
+        try {
+          const repo = this.getPendingApprovalRepo();
+          if (repo) {
+            const row = buildApprovalLedgerRow(fullRequest, permissionLevel, 'tool_approval', buildParkedArgsPreview(fullRequest));
+            if (this.backgroundTaskLane) row.payload.backgroundLane = true;
+            repo.insert(row);
+            mirrorRepo = repo;
+            logger.info('Attended approval mirrored to ledger', { requestId, sessionId, tool });
+          }
+        } catch (error) {
+          safeWarn('Attended approval ledger insert failed', error);
+        }
+      }
+      try {
+        this.onEvent({ type: 'permission_request', data: fullRequest });
+      } catch (error) {
+        clearInterval(watchdog);
+        this.pendingPermissions.delete(requestId);
+        settleMirror('rejected', 'run cancelled');
+        throw error;
+      }
     }).finally(releaseHold);
   }
 
@@ -814,67 +823,9 @@ export class OrchestratorPermissionIsland {
         request: fullRequest,
       });
 
-      const isDirectoryAccess = kind === 'directory_access';
-      // 跨重启引用只在两个 id 都真实在时写；messageId 权限路径上没有真源，不填（不许发明）。
-      const argsRef = fullRequest.sessionId && fullRequest.parentToolUseId
-        ? { sessionId: fullRequest.sessionId, toolCallId: fullRequest.parentToolUseId }
-        : undefined;
-      const argsSummaryRaw = fullRequest.details?.command
-        ?? fullRequest.details?.path
-        ?? fullRequest.details?.filePath
-        ?? fullRequest.details?.url;
-      const payload: ToolApprovalPayload = {
-        sessionId: fullRequest.sessionId ?? null,
-        ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
-        tool: fullRequest.tool,
-        type: fullRequest.type,
-        permissionLevel,
-        ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
-        ...(hasBackgroundRunIdentity(fullRequest) ? { backgroundLane: true as const } : {}),
-        ...pickApprovalOrigin(fullRequest.details),
-        requestedAt: fullRequest.timestamp,
-        argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
-        ...(argsRef ? { argsRef } : {}),
-        // 跨重启存活原料（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：指纹 + 忠实标记由
-        // toolExecutor 随请求上抛；不忠实（台账形 ≠ 原始 args）的行照写数据，判据侧拦。
-        ...(argsRef && fullRequest.argsFingerprint
-          ? {
-            argsFingerprint: fullRequest.argsFingerprint,
-            ledgerFaithful: fullRequest.ledgerFaithful === true,
-          }
-          : {}),
-        ...(argsPreview ? { argsPreview } : {}),
-        ...(writeGrantFolder ? { writeGrantFolder } : {}),
-        // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
-        ...(fullRequest.details?.sensitiveStep
-          ? { sensitiveStep: fullRequest.details.sensitiveStep }
-          : {}),
-        // 目录授权卡直接给人话："访问 <path>（只读/读写）· <agent 理由>"，不用通用 tool 名。
-        displayTool: isDirectoryAccess
-          ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${
-              fullRequest.details?.requestedAccess === 'read_write' ? '读写' : '只读'
-            }）${fullRequest.reason ? `· ${fullRequest.reason}` : ''}`
-          // 事件回复（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：卡上点名宿主绑定的去向
-          // （群名），不裸奔工具内部名；正文在 argsPreview（参数行）。
-          : typeof fullRequest.details?.replyDestination === 'string' && fullRequest.details.replyDestination
-            ? `回复 ${fullRequest.details.replyDestination}`
-            : undefined,
-        riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
-        // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
-        standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
-        ...(fullRequest.details.targetApp ? { targetApp: fullRequest.details.targetApp } : {}),
-        ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
-      };
+      const row = buildApprovalLedgerRow(fullRequest, permissionLevel, kind, argsPreview, writeGrantFolder);
       try {
-        repo.insert({
-          id: fullRequest.id,
-          kind,
-          agentId: null,
-          agentName: null,
-          coordinatorId: fullRequest.sessionId ?? null,
-          payload,
-          submittedAt: fullRequest.timestamp,
-        });
+        repo.insert(row);
       } catch (err) {
         logger.warn(`Parked approval persist failed for ${fullRequest.id}`, err);
       }
@@ -904,7 +855,7 @@ export class OrchestratorPermissionIsland {
         id: fullRequest.id,
         sessionId: fullRequest.sessionId ?? null,
         tool: fullRequest.tool,
-        riskClass: payload.riskClass,
+        riskClass: row.payload.riskClass,
       });
 
       this.onEvent({ type: 'permission_request', data: fullRequest });

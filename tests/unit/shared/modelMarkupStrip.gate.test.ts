@@ -45,3 +45,23 @@ describe('落库/转录路径不得按 think 截断正文（r1 回归）', () =>
     expect(stripInternalFormatMimicry({} as never, '好<longcat_tool_call>x')).toBe('好');
   });
 });
+
+describe('splitThinkTags', () => {
+  it.each([
+    ['plain\n ', '', 'plain\n ', ''],
+    ['<think>x</think>a', '', 'a', 'x'],
+    ['a<think>x</think>', 'r', 'a', 'r\nx'],
+    ['a<think>x', '', 'a', 'x'],
+    ['a</think>b', '', 'b', 'a'],
+    ['a</think>b', 'r', 'ab', 'r'],
+    [' a</think>b ', 'r', ' ab ', 'r'],
+    ['a</think>b<think>x</think>c', '', 'abc', 'x'],
+    ['a<think>x', 'r', 'ax', 'r'],
+    ['a</think>b</think> \n', 'r', '', 'r\nab'],
+    ['a</think>b</think>', '', '', 'ab'],
+    ['<think>x</think>a</think>', 'r', '', 'r\nxa'],
+    ['<think>outer <think>inner</think> tail</think>', 'r', '', 'r\nouter inner tail'],
+  ])('separates content %j with reasoning %j', (raw, reasoning, content, expectedReasoning) => {
+    expect(splitThinkTags(raw, reasoning)).toEqual({ content, reasoning: expectedReasoning });
+  });
+});
