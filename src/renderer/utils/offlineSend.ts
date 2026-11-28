@@ -16,6 +16,14 @@ export type OfflineAutoReplaySurface = 'composer' | 'outbox';
 
 const NETWORK_TYPE_ERROR_RE = /failed to fetch|load failed|networkerror|fetch failed/i;
 
+function safeServerReconnectingMessage(): string | null {
+  try {
+    return getServerReconnectingMessage() || null;
+  } catch {
+    return null;
+  }
+}
+
 /** 识别真正的「连不上 Neo 后台」传输故障（不含 HTTP 4xx/5xx 业务错误或普通 Error）。 */
 export function isOfflineTransportError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -24,7 +32,8 @@ export function isOfflineTransportError(error: unknown): boolean {
   if (record.code === 'NETWORK_ERROR') return true;
   if (error instanceof Error) {
     const msg = error.message.trim();
-    if (msg && msg === getServerReconnectingMessage()) return true;
+    const reconnectingMessage = safeServerReconnectingMessage();
+    if (msg && reconnectingMessage && msg === reconnectingMessage) return true;
     if (error instanceof TypeError && NETWORK_TYPE_ERROR_RE.test(msg)) return true;
   }
   return false;
