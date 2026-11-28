@@ -17,6 +17,7 @@ import type {
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import type { BrowserWorkbenchStatusTone } from '../../../../utils/workbenchPresentation';
 import { zh } from '../../../../i18n/zh';
+import { formatPathForDisplay } from '../../../../utils/formatPathForDisplay';
 
 export type WorkspaceSettingsText = typeof zh.settings.workspace;
 
@@ -95,7 +96,7 @@ export function buildConfigScopeTiles(summary: ConfigScopeSummary | null): Confi
     id: layer.id,
     label: layer.label,
     value: `${layer.activeCount}/${layer.items.length}`,
-    caption: layer.pathLabel,
+    caption: formatPathForDisplay(layer.pathLabel),
     warningCount: layer.warningCount,
   }));
 }
