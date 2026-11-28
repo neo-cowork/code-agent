@@ -41,6 +41,7 @@ export interface UserMessagePayload {
   id: string;
   content: string;
   timestamp?: number;
+  source?: Message['source'];
   attachments?: Message['attachments'];
   metadata?: Message['metadata'];
 }
