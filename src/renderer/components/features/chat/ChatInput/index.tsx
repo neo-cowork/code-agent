@@ -96,6 +96,7 @@ import { buildDirectRoutingPlaceholder, getPreferredAgentMentionToken, isLeading
 import { useDragAndDrop } from './useDragAndDrop';
 import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
+import { useComposerPopoverMaxHeight } from './useComposerPopoverMaxHeight';
 import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useComposerPrefill } from './useComposerPrefill';
@@ -458,6 +459,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [submittingSeedComposer, setSubmittingSeedComposer] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const agentMentionListRef = useRef<HTMLDivElement>(null);
   const debugDraftAppliedRef = useRef(false);
 
   useComposerAppEvents(setShowCommandPalette, setSeedComposer);
@@ -1025,6 +1027,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     dismissAtMention: atMention.dismiss,
     onComposerDraftDiscarded: clearPendingResendClientMessageId,
   });
+  const agentMentionMaxHeight = useComposerPopoverMaxHeight(
+    agentMentionListRef,
+    240,
+    isAgentMentionAutocompleteOpen,
+  );
 
   // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
   const {
@@ -1568,7 +1575,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           )}
           {/* @ File autocomplete dropdown */}
           {!isAgentCommandAutocompleteOpen && isAgentMentionAutocompleteOpen && agentMentionAutocomplete && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[240px] overflow-y-auto">
+            <div
+              ref={agentMentionListRef}
+              data-agent-mention-autocomplete
+              style={{ maxHeight: agentMentionMaxHeight }}
+              className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 overflow-y-auto"
+            >
               {agentMentionAutocomplete.matches.map((agent, index) => {
                 const agentRole = (agent as { role?: string }).role;
                 // Neo 合成候选（工作卡 / 续接 topic）自带 role：主文案直接用 name
