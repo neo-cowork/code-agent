@@ -293,11 +293,13 @@ class TerminalWriteHandler implements ToolHandler<Record<string, unknown>, strin
       };
     }
 
-    // 3) 普通写入可复用同一调用的外层审批。高危命令仍走二次确认。
+    // 3) 普通写入可复用外层审批。Bash 卡降档的单文件删除仍需确认后才能写入真实终端。
+    const requiresConfirmation = validation.riskLevel === 'high'
+      || validation.securityFlags.includes('single_file_delete');
     const permit = await canUseTool(
       terminalWriteSchema.name,
       args,
-      validation.riskLevel === 'high'
+      requiresConfirmation
         ? `dangerous:typing into the user's live terminal: ${input.slice(0, 200)}`
         : undefined,
     );

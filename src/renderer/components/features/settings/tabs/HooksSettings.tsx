@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plug, FolderOpen, FileText, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { formatPathForDisplay } from '../../../../utils/formatPathForDisplay';
 import { useI18n } from '../../../../hooks/useI18n';
 
 const logger = createLogger('HooksSettings');
@@ -270,8 +271,8 @@ const ConfigPathRow: React.FC<{
 }> = ({ label, path, onOpen, onReveal, actionsText }) => (
   <div className="flex items-center gap-3 px-3 py-2.5">
     <span className="text-xs text-zinc-500 w-16 flex-shrink-0">{label}</span>
-    <code className="flex-1 min-w-0 truncate text-xs text-zinc-300 font-mono" title={path}>
-      {path}
+    <code className="flex-1 min-w-0 truncate text-xs text-zinc-300 font-mono" title={formatPathForDisplay(path)}>
+      {formatPathForDisplay(path)}
     </code>
     <div className="flex items-center gap-1 flex-shrink-0">
       <button

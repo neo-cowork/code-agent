@@ -1,17 +1,17 @@
 import table from './settingsTerms.json';
 import { getProviderInfo } from '@shared/constants';
-import { isDynamicCustomProviderId } from '@shared/modelRuntime';
+import { formatDynamicCustomProviderFallback, isDynamicCustomProviderId } from '@shared/modelRuntime';
 import type { ModelProvider } from '@shared/contract';
 
 type SettingsLanguage = 'zh' | 'en';
 
-function formatDynamicCustomProviderFallback(id: string): string {
-  return id
-    .replace(/^custom-/i, '')
-    .split('-')
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
-    .join(' ');
+export function formatLocalizedCustomProviderFallback(id: string, language: SettingsLanguage): string {
+  const genericMatch = /^custom-provider(?:-(\d+))?$/i.exec(id.trim());
+  if (genericMatch) {
+    const base = language === 'zh' ? `自定义${getSettingsVocabulary(language).provider}` : 'Custom provider';
+    return genericMatch[1] ? `${base} ${genericMatch[1]}` : base;
+  }
+  return formatDynamicCustomProviderFallback(id);
 }
 
 function word(id: string, language: SettingsLanguage): string {
@@ -39,12 +39,15 @@ export function getProviderDisplayName(
   language: SettingsLanguage,
 ): string {
   if (isDynamicCustomProviderId(id)) {
-    const normalizedId = id.toLowerCase();
+    const normalizedId = id.trim().toLowerCase();
     const trimmedConfigured = configuredName?.trim();
     if (trimmedConfigured && trimmedConfigured.toLowerCase() !== normalizedId) return trimmedConfigured;
+    const sharedFallback = formatDynamicCustomProviderFallback(id);
     const trimmedFallback = fallbackName.trim();
-    if (trimmedFallback && trimmedFallback.toLowerCase() !== normalizedId) return trimmedFallback;
-    return formatDynamicCustomProviderFallback(id);
+    if (trimmedFallback && trimmedFallback.toLowerCase() !== normalizedId && trimmedFallback !== sharedFallback) {
+      return trimmedFallback;
+    }
+    return formatLocalizedCustomProviderFallback(id, language);
   }
   const defaultName = getProviderInfo(id)?.displayName;
   if (language === 'en') return configuredName || fallbackName || defaultName || id;

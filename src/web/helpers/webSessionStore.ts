@@ -654,20 +654,23 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         const sessionExists = cliSessionManager
           ? await prepareCliSessionForWrite(cliSessionManager, input.sessionId, input.title, input.titleAlreadyBroadcast)
           : false;
-        const willCreateRow = cliSessionManager ? !sessionExists : true;
+        const fallbackDb = cliSessionManager ? null : await deps.getDatabase();
+        const willCreateRow = fallbackDb
+          ? !fallbackDb.getSession(input.sessionId)
+          : !sessionExists;
         const projectId = willCreateRow
           ? resolveProjectIdForNewSession(deps.logger, input.sessionId, input.workingDirectory)
           : undefined;
-        const db = cliSessionManager
-          ? null
-          : await ensureDbSession(
-            deps.getDatabase,
+        const db = fallbackDb
+          ? await ensureDbSession(
+            () => fallbackDb,
             input.sessionId,
             input.title,
             input.modelConfig,
             input.workingDirectory,
             projectId,
-          );
+          )
+          : null;
         await persistMessageToDb(
           sm,
           db,

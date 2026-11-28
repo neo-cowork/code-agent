@@ -22,8 +22,10 @@ function reserveClosedPort(): Promise<number> {
 
 describe('ensureServerAlive (hung server recovery)', () => {
   const cleanups: Array<() => void> = [];
+  const originalPath = process.env.PATH;
 
   afterEach(() => {
+    process.env.PATH = originalPath;
     while (cleanups.length) {
       try {
         cleanups.pop()?.();
@@ -33,7 +35,7 @@ describe('ensureServerAlive (hung server recovery)', () => {
     }
   });
 
-  it('kills a live unresponsive pid via kill9 before restarting and returns a hang reason', async () => {
+  async function runHungRecovery(shim: 'ok' | 'failing' | 'absent') {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-core-server-test-'));
     cleanups.push(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
@@ -106,14 +108,23 @@ process.exit(2);
       model: 'test-model',
     };
 
-    const reason = await ensureServerAlive(fakeBin, server);
-    expect(reason).not.toBeNull();
-    expect(reason).toContain('卡死');
-    expect(reason).toContain(String(hungPid));
-    expect(reason).toContain('kill9 + restart');
+    // PATH 垫片：`sample` 先于 kill9 被调用，参数里的 -file 指向 <server.dir>/hang-sample-<pid>-<ts>.txt
+    const shimDir = path.join(tmpDir, 'shim');
+    fs.mkdirSync(shimDir, { recursive: true });
+    if (shim !== 'absent') {
+      const body = shim === 'ok'
+        ? `echo "sample $*" >> ${callsLog}\nwhile [ "$1" != "-file" ]; do shift; done\necho "Call graph: shim-sample" > "$2"\n`
+        : `echo "sample $*" >> ${callsLog}\necho "sample: boom" >&2\nexit 7\n`;
+      fs.writeFileSync(path.join(shimDir, 'sample'), `#!/bin/sh\n${body}`, { mode: 0o755 });
+    }
+    process.env.PATH = `${shimDir}${path.delimiter}${shim === 'absent' ? '/usr/bin-none' : originalPath}`;
 
+    const reason = await ensureServerAlive(fakeBin, server);
     const calls = fs.readFileSync(callsLog, 'utf8').trim().split('\n');
-    expect(calls).toEqual(['kill9', 'restart']);
+    return { reason, calls, hungPid, serverDir };
+  }
+
+  function expectHungChildKilled(hungPid: number): void {
 
     let childStillAlive = true;
     try {
@@ -122,6 +133,38 @@ process.exit(2);
       childStillAlive = false;
     }
     expect(childStillAlive).toBe(false);
+  }
+
+  it('samples the hung pid BEFORE kill9, restarts, and puts the sample path in the reason', async () => {
+    const { reason, calls, hungPid, serverDir } = await runHungRecovery('ok');
+    expect(reason).not.toBeNull();
+    expect(reason).toContain('卡死');
+    expect(reason).toContain(String(hungPid));
+    expect(reason).toContain('kill9 + restart');
+    expect(calls).toHaveLength(3);
+    const [head, sampleFile] = calls[0].split(' -file ');
+    expect(head).toBe(`sample ${hungPid} 3`);
+    expect(path.dirname(sampleFile)).toBe(serverDir);
+    expect(path.basename(sampleFile)).toMatch(new RegExp(`^hang-sample-${hungPid}-.+\\.txt$`));
+    expect(calls.slice(1)).toEqual(['kill9', 'restart']);
+    expect(fs.existsSync(sampleFile)).toBe(true);
+    expect(reason).toContain(sampleFile);
+    expectHungChildKilled(hungPid);
+  });
+
+  it('keeps restarting when sample fails, and says why in the console and reason', async () => {
+    const { reason, calls, hungPid } = await runHungRecovery('failing');
+    expect(calls.map((c) => c.split(' ')[0])).toEqual(['sample', 'kill9', 'restart']);
+    expect(reason).toContain('kill9 + restart');
+    expect(reason).toContain('原生栈采样未取到');
+    expectHungChildKilled(hungPid);
+  });
+
+  it('keeps restarting when sample is not on PATH', async () => {
+    const { reason, calls, hungPid } = await runHungRecovery('absent');
+    expect(calls).toEqual(['kill9', 'restart']);
+    expect(reason).toContain('原生栈采样未取到');
+    expectHungChildKilled(hungPid);
   });
 });
 

@@ -9,7 +9,8 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useI18n } from '../../../../hooks/useI18n';
+import { useI18n, type Language } from '../../../../hooks/useI18n';
+import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
 import { Check } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -83,9 +84,13 @@ export const BuiltinModelList: React.FC<{
   groupName?: string;
   onSelect?: (id: string) => void;
   onConfigure: (provider: string) => void;
+  language?: Language;
   // 只读模式（如生音乐段）：仅展示，不渲染默认选择 radio。
   readOnly?: boolean;
-}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => (
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, language, readOnly = false }) => {
+  const storeLanguage = useAppStore((state) => state.language);
+  const effectiveLanguage = language ?? storeLanguage;
+  return (
   <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-zinc-300">{title}</span>
@@ -124,7 +129,7 @@ export const BuiltinModelList: React.FC<{
               <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{m.label}</span>
               {m.source === 'bridged' && m.sourceLabel && (
                 <span className="inline-flex shrink-0 items-center rounded-full bg-zinc-700/40 px-2 py-0.5 text-[11px] font-medium text-zinc-400">
-                  {bridgedFromBadge.replace('{name}', m.sourceLabel)}
+                  {bridgedFromBadge.replace('{name}', resolveProviderLabel(m.provider, m.sourceLabel, effectiveLanguage))}
                 </span>
               )}
               {isSelected && (
@@ -155,7 +160,8 @@ export const BuiltinModelList: React.FC<{
       })}
     </ul>
   </div>
-);
+  );
+};
 
 // 通用自定义端点管理器（列表 + 新增表单），复用 CustomImageModelManagerView。
 // 通过注入的 list/save/delete 适配 image / video 两套 IPC；save 的 cost 字段名差异在适配层抹平。
@@ -281,7 +287,7 @@ const RegionLockStrictToggle: React.FC<{
 };
 
 export const VisualModelsSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const s = t.settings.visualModels;
   const cm = t.design.customModel;
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -369,6 +375,7 @@ export const VisualModelsSettings: React.FC = () => {
           groupName="design-image-model"
           onSelect={(id) => saveDefaults(id, defaultVideoModelId)}
           onConfigure={handleConfigure}
+          language={language}
         />
         <CustomEndpointManager
           strings={cm}
@@ -404,6 +411,7 @@ export const VisualModelsSettings: React.FC = () => {
           groupName="design-video-model"
           onSelect={(id) => saveDefaults(defaultImageModelId, id)}
           onConfigure={handleConfigure}
+          language={language}
         />
         <p className="rounded-lg border border-badge-warning/20 bg-amber-500/5 px-3 py-2 text-[11px] text-badge-warning/90">
           {s.videoPendingNote}
@@ -438,6 +446,7 @@ export const VisualModelsSettings: React.FC = () => {
           manageButton={cm.manage}
           configureButton={s.configureButton}
           onConfigure={handleConfigure}
+          language={language}
           readOnly
         />
       </section>
