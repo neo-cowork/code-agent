@@ -55,6 +55,7 @@ import { btwQuestionArgs } from './parseBtwCommand';
 import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
+import { useComposerPopoverMaxHeight } from './useComposerPopoverMaxHeight';
 import { interpolatePlural } from '../../../../i18n/interpolate';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
@@ -150,6 +151,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useImeCompositionRef();
+  const popoverMaxHeight = useComposerPopoverMaxHeight(listRef, 280, isOpen);
   const { t, language } = useI18n();
   const { keybindings, platform } = useKeybindingsSettings();
   const getShortcutLabel = useMemo(() => (actionId: KeybindingActionId): string | undefined => {
@@ -861,7 +863,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     <div
       ref={listRef}
       data-slash-command-popover
-      className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 max-h-[280px] overflow-y-auto"
+      style={{ maxHeight: popoverMaxHeight }}
+      className="absolute bottom-full left-0 right-0 mb-1 elevation-l2 popover-enter rounded-lg z-20 overflow-y-auto"
     >
       <div className="py-1">
         {grouped.map((group) => (

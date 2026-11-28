@@ -10,6 +10,7 @@ import type {
   TodoItem,
 } from '../shared/contract';
 import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
+import { trackPendingSessionTitle } from '../host/session/pendingSessionTitle';
 import { readSqliteErrorCode } from '../host/services/core/database/sqliteErrors';
 import {
   resolveSessionTitle,
@@ -453,12 +454,15 @@ export class CLISessionManager {
       && typeof message.content === 'string'
       && message.content.trim()
     ) {
-      void this.maybeUpdateTitle(sessionId, message.content).catch((error: unknown) => {
-        logger.warn('session title generation failed', {
-          sessionId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+      trackPendingSessionTitle(
+        sessionId,
+        this.maybeUpdateTitle(sessionId, message.content).catch((error: unknown) => {
+          logger.warn('session title generation failed', {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
+      );
     }
   }
 

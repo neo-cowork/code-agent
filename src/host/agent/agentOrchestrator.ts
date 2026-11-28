@@ -151,6 +151,7 @@ export class AgentOrchestrator {
       getExecutionTopology: () => this.toolExecutor.getExecutionTopology(),
       hasApprovalUi: config.hasApprovalUi,
       isDetachedRun: config.isDetachedRun,
+      backgroundTaskLane: config.backgroundTaskLane,
       onEvent: (event) => this.onEvent(event),
       injectedPendingApprovalRepo: config.pendingApprovalRepo,
     });

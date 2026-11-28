@@ -9,6 +9,8 @@ export interface ModelCapabilityMatrixEntry {
     deepseekReasoningContent?: boolean;
     /** 端点明确拒绝 stream_options 时关闭 include_usage；未声明默认开启。 */
     noStreamOptions?: true;
+    /** The relay can stop early when the model repeats reasoning delimiters. */
+    describeThinkTags?: true;
   };
   /**
    * ADR-068 D1 断流续接能力分档（2026-09-14 核查，逐家附官方来源）。只有官方文档证实的
@@ -96,6 +98,11 @@ const MATRIX: ModelCapabilityMatrix = {
       // N-STREAM-RESUME-DOGFOOD-2026-09-30.md）：官方 Partial Mode——末条 assistant
       // 消息带 partial:true 续写，标记打在消息上而非顶层 body，主端点不变。
       streamResume: { mode: 'prefix-param', param: 'partial' },
+    },
+  },
+  xiaomi: {
+    models: {
+      'neohorse-1.5-flash-preview': { requestCompat: { describeThinkTags: true } },
     },
   },
   'custom-tokenrhythm': {
