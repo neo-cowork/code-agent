@@ -14,6 +14,9 @@ import {
   formatNativeModelSwitcherTooltip,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
 import { TaskStrategySettingsPanel } from '../../../src/renderer/components/features/settings/tabs/TaskStrategySettingsPanel';
+import { BuiltinModelList, type BuiltinRow } from '../../../src/renderer/components/features/settings/tabs/VisualModelsSettings';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const UNNAMED_IDS: readonly ModelProvider[] = [
@@ -263,7 +266,7 @@ describe('customProviderLabel across switcher, tooltips, task strategy, and visu
       expect(optgroupLabels).toContain('Xiaomi Ultraspeed');
       expect(optgroupLabels).toContain('CommonStack Pro');
 
-      // 5. Visual model bridge sourceLabels
+      // 5. Visual model bridge sourceLabels + rendered BuiltinModelList badge
       const bridged = deriveBridgedVisualModels(SETTINGS_FIXTURE);
       expect(bridged).toHaveLength(5);
       for (const item of bridged) {
@@ -272,6 +275,42 @@ describe('customProviderLabel across switcher, tooltips, task strategy, and visu
       const bridgedByProvider = new Map(bridged.map((item) => [item.sourceProvider, item.sourceLabel]));
       expect(bridgedByProvider.get('custom-provider')).not.toBe(bridgedByProvider.get('custom-provider-2'));
       expect(bridgedByProvider.get('custom-named-relay')).toBe('CommonStack Pro');
+
+      const dict = language === 'zh' ? zh : en;
+      const bridgedRows: BuiltinRow[] = bridged.map((item) => ({
+        id: item.id,
+        label: item.label,
+        provider: item.sourceProvider,
+        available: true,
+        source: 'bridged',
+        sourceLabel: item.sourceLabel,
+      }));
+      const { container: visualContainer } = render(
+        <BuiltinModelList
+          title={dict.settings.visualModels.builtinTitle}
+          hint={dict.settings.visualModels.defaultHint}
+          rows={bridgedRows}
+          availableBadge={dict.design.customModel.availableBadge}
+          unconfiguredBadge={dict.design.customModel.unconfiguredBadge}
+          defaultBadge={dict.settings.visualModels.defaultBadge}
+          bridgedFromBadge={dict.settings.visualModels.bridgedFromBadge}
+          manageButton={dict.design.customModel.manage}
+          configureButton={dict.settings.visualModels.configureButton}
+          onConfigure={vi.fn()}
+        />,
+      );
+      const visualText = visualContainer.textContent ?? '';
+      expect(visualText).not.toMatch(/custom-/i);
+      expect(visualText).not.toContain('Provider 2');
+      expect(visualText).toContain(
+        dict.settings.visualModels.bridgedFromBadge.replace('{name}', expectedGeneric1),
+      );
+      expect(visualText).toContain(
+        dict.settings.visualModels.bridgedFromBadge.replace('{name}', expectedGeneric2),
+      );
+      expect(visualText).toContain(
+        dict.settings.visualModels.bridgedFromBadge.replace('{name}', 'CommonStack Pro'),
+      );
     },
   );
 });

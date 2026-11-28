@@ -15,6 +15,9 @@ import {
   formatNativeModelSwitcherTooltip,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
 import { TaskStrategySettingsPanel } from '../../../src/renderer/components/features/settings/tabs/TaskStrategySettingsPanel';
+import { BuiltinModelList, type BuiltinRow } from '../../../src/renderer/components/features/settings/tabs/VisualModelsSettings';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const UNNAMED_IDS: readonly ModelProvider[] = [
@@ -198,6 +201,43 @@ describe('customProviderDisplayName gate: no provider-name exit leaks custom-* f
         if (!UNNAMED_IDS.includes(item.sourceProvider as ModelProvider)) continue;
         expect(item.sourceLabel, `deriveBridgedVisualModels(${item.sourceProvider})`).not.toMatch(RAW_CUSTOM_ID);
       }
+
+      const dict = language === 'zh' ? zh : en;
+      const bridgedRows: BuiltinRow[] = bridged.map((item) => ({
+        id: item.id,
+        label: item.label,
+        provider: item.sourceProvider,
+        available: true,
+        source: 'bridged',
+        sourceLabel: item.sourceLabel,
+      }));
+      const bridgedBadgeHtml = renderToStaticMarkup(
+        React.createElement(BuiltinModelList, {
+          title: dict.settings.visualModels.builtinTitle,
+          hint: dict.settings.visualModels.defaultHint,
+          rows: bridgedRows,
+          availableBadge: dict.design.customModel.availableBadge,
+          unconfiguredBadge: dict.design.customModel.unconfiguredBadge,
+          defaultBadge: dict.settings.visualModels.defaultBadge,
+          bridgedFromBadge: dict.settings.visualModels.bridgedFromBadge,
+          manageButton: dict.design.customModel.manage,
+          configureButton: dict.settings.visualModels.configureButton,
+          onConfigure: vi.fn(),
+          language,
+        }),
+      );
+      const bridgedBadgeText = bridgedBadgeHtml.replace(/<[^>]+>/g, ' ');
+      expect(bridgedBadgeText, 'BuiltinModelList bridged badge text').not.toMatch(RAW_CUSTOM_ID);
+      expect(bridgedBadgeText, 'BuiltinModelList bridged badge bare Provider 2').not.toContain('Provider 2');
+      expect(bridgedBadgeText).toContain(
+        dict.settings.visualModels.bridgedFromBadge.replace(
+          '{name}',
+          language === 'zh' ? '自定义模型服务 2' : 'Custom provider 2',
+        ),
+      );
+      expect(bridgedBadgeText).toContain(
+        dict.settings.visualModels.bridgedFromBadge.replace('{name}', 'CommonStack Pro'),
+      );
 
       // Named custom provider remains untouched across exits
       const namedCfg = PROVIDERS_FIXTURE['custom-named-relay']!;
