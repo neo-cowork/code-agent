@@ -178,7 +178,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
         ) : undefined}
       />
       {/* min-w-0 + overflow-hidden：窄窗下内容列收缩、行内截断，禁止把页面撑出横向滚动（房规：宽内容在自身容器内滚） */}
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div data-composer-popover-boundary className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div className="flex min-w-0 flex-1 flex-col">
           {/* pt-4 = 页头 bar 与 tab 行的间距（批P 第五波④：修前贴死 0px）。
               准绳=能力中心页头↔内容区现值 16px（PageContent py-4）；tab 行下方
