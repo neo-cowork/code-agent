@@ -1260,6 +1260,7 @@ export class TaskManager extends EventEmitter {
       // 后台 lane 没有页面时审批停车进收件箱（degrade），不再 60s 自动拒绝。
       // cron/heartbeat/channel/语音会话保持它们自己的停车模式，这里恒 false。
       ...(eventKey !== sessionId ? { isDetachedRun: () => isBackgroundApprovalDetached(sessionId) } : {}),
+      backgroundTaskLane: eventKey !== sessionId,
       onEvent: async (event: AgentEvent) => this.trackEventHandling(sessionId, this.handleAgentEvent(sessionId, event, eventKey)),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {

@@ -17,7 +17,11 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import {
+  appleScriptFailureForDisplay,
+  appleScriptWriteFailureCode,
+  describeAppleScriptWriteFailure,
+} from './appleScriptWriteFailure';
 import { shouldLogMailFailureDetail } from '../../outboundGuard';
 import { mailSendSchema as schema } from './mailSend.schema';
 
@@ -121,6 +125,7 @@ async function executeMailSend(
       ok: false,
       error: failure,
       ...(userMessage ? { userMessage } : {}),
+      ...appleScriptWriteFailureCode(error),
       meta: {
         action: 'send_message',
         connector: 'mail',

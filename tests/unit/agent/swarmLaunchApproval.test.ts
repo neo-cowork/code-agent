@@ -41,6 +41,8 @@ const permissionState = vi.hoisted(() => ({
 vi.mock('../../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({
     getModeForSession: () => permissionState.mode,
+    isUnattendedSession: () => false,
+    isUnattendedApprovalDegrade: () => false,
   }),
 }));
 

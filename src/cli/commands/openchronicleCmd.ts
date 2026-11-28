@@ -44,6 +44,7 @@ export const openchronicleCommand = new Command('openchronicle')
         const settings = await loadSettings();
         const status = await getStatus();
         console.log(`Toggle:        ${settings.enabled ? 'ON' : 'OFF'}`);
+        console.log(`Installed:     ${status.installed ? 'yes' : 'no'}`);
         console.log(`Daemon state:  ${status.state}`);
         if (status.pid) console.log(`PID:           ${status.pid}`);
         console.log(`MCP healthy:   ${status.mcpHealthy ? 'yes' : 'no'}`);

@@ -35,6 +35,8 @@ import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
 import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
 import { SessionConflictCard } from './SessionConflictCard';
+import { OfflineSendCard } from './OfflineSendCard';
+import { OFFLINE_SEND_FAILED_CODE, OFFLINE_SEND_PENDING_CODE } from '../../../utils/offlineSend';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
@@ -455,6 +457,8 @@ const AssistantTextNode: React.FC<{
     || node.metadata?.turnQuality
     || node.metadata?.agentError
     || node.metadata?.envAssist
+    || node.metadata?.sendFailureCode === OFFLINE_SEND_PENDING_CODE
+    || node.metadata?.sendFailureCode === OFFLINE_SEND_FAILED_CODE
     // ADR-068 刀 4：B2 续答段刚起头时正文还空，一次性续接说明先于首字渲染
     || resumeNote
     || resumeSignal,
@@ -619,6 +623,12 @@ const AssistantTextNode: React.FC<{
       {/* 会话被没结束的旧任务占着：说明句点名的「放弃 / 重试」在这里真有按钮 */}
       {node.metadata?.sendFailureCode === 'RUN_SESSION_CONFLICT' && (
         <SessionConflictCard node={node} sessionId={sessionId} />
+      )}
+
+      {/* 离线发送挂起与自动重放失败卡片 */}
+      {(node.metadata?.sendFailureCode === OFFLINE_SEND_PENDING_CODE
+        || node.metadata?.sendFailureCode === OFFLINE_SEND_FAILED_CODE) && (
+        <OfflineSendCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}

@@ -44,6 +44,7 @@ describe('activity provider IPC', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getOpenchronicleStatus.mockResolvedValue({
+      installed: true,
       state: 'running',
       pid: 1234,
       mcpHealthy: true,
@@ -102,12 +103,31 @@ describe('activity provider IPC', () => {
       kind: 'daemon',
       state: 'running',
       contextRole: 'automatic-background',
+      metadata: expect.objectContaining({ installed: true }),
     });
     expect(providers[1]).toMatchObject({
       id: 'tauri-native-desktop',
       kind: 'bundled',
       state: 'running',
       contextRole: 'manual-scene-capture',
+    });
+  });
+
+  it('falls back to an error provider with unknown install state (not "not installed") when the status read throws', async () => {
+    mocks.getOpenchronicleStatus.mockRejectedValueOnce(new Error('status read failed'));
+    const ipc = createMockIpcMain();
+    registerActivityHandlers(ipc.ipcHost as any);
+
+    const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.ACTIVITY, {
+      action: 'listProviders',
+    });
+
+    expect(response.success).toBe(true);
+    expect((response.data as any).providers[0]).toMatchObject({
+      id: 'openchronicle',
+      state: 'error',
+      lastError: 'status read failed',
+      metadata: expect.objectContaining({ installed: null }),
     });
   });
 

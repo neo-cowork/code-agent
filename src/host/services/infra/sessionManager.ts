@@ -32,6 +32,7 @@ import { stampAssistantMessageCorrelation } from '../../session/assistantCorrela
 import { getTelemetryCollector } from '../../telemetry';
 import { clearScheduleDraftRequest } from '../../cron/scheduleDraftRequests';
 import { clearSessionRuntimeCaches } from '../../session/sessionCacheLifecycle';
+import { trackPendingSessionTitle } from '../../session/pendingSessionTitle';
 import { removeToolScreenshotDir } from '../../tools/utils/toolScreenshotDir';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
@@ -1005,9 +1006,9 @@ export class SessionManager implements Disposable {
 
     // 第一条用户消息时自动生成会话标题（webServer 多会话路径走这里）
     if (inserted && isVisibleHistoryMessage(message) && message.role === 'user' && typeof message.content === 'string' && message.content.trim()) {
-      void this.maybeUpdateTitleForSession(sessionId, message.content).catch(() => {
+      trackPendingSessionTitle(sessionId, this.maybeUpdateTitleForSession(sessionId, message.content).catch(() => {
         /* 静默降级 */
-      });
+      }));
     }
   }
 

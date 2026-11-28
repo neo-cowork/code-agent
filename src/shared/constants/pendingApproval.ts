@@ -22,3 +22,6 @@ export const OUTBOUND_APPROVAL_DEGRADE = {
     feedback: '外发未获批准，内容未发送。不要重试这一步；继续其他工作，并在最终报告里说明「未发送（需要你批准）」。',
   },
 } as const;
+
+/** The tool call parked behind a team-launch approval (pending_approvals kind='launch'). */
+export const LAUNCH_APPROVAL_TOOL = 'spawn_agent';

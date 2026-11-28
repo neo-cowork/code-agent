@@ -33,6 +33,8 @@ export const OPENCHRONICLE_MCP_ENDPOINT = 'http://127.0.0.1:8742/mcp';
 export type OpenchronicleProcessState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
 
 export interface OpenchronicleStatus {
+  /** 本机是否找到 OpenChronicle CLI；false 时设置页锁住开关，只显示一句未安装说明。 */
+  installed: boolean;
   state: OpenchronicleProcessState;
   pid?: number;
   mcpEndpoint?: string;

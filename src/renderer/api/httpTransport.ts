@@ -718,10 +718,13 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 网络层失败（无 HTTP 响应）：服务可能已死，交给连接监视器；
           // 横幅已在（!= ok）时把 WebKit 的裸 `TypeError: Load failed` 换成人话。
           reportServerUnreachable();
-          if (getServerConnectionStatus() !== 'ok') {
-            throw new Error(getServerReconnectingMessage(), { cause: err });
+          const networkError = getServerConnectionStatus() !== 'ok'
+            ? new Error(getServerReconnectingMessage(), { cause: err })
+            : err;
+          if (networkError instanceof Error && !('code' in networkError)) {
+            Object.assign(networkError, { code: 'NETWORK_ERROR' });
           }
-          throw err;
+          throw networkError;
         }
 
         // 非 2xx 响应：读取错误体并抛出，避免当 SSE 流解析

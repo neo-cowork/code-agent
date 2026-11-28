@@ -20,7 +20,10 @@ vi.mock('../../../src/host/services/desktop/audioVadRuntime', () => ({
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
-vi.mock('../../../src/host/config/configPaths', () => ({ getUserConfigDir: () => leaves.userConfigDir }));
+vi.mock('../../../src/host/config/configPaths', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/config/configPaths')>()),
+  getUserConfigDir: () => leaves.userConfigDir,
+}));
 vi.mock('../../../src/host/runtime/runtimeAssetStatus', () => ({ getRuntimeAssetsStatus: leaves.getRuntimeAssetsStatus }));
 vi.mock('../../../src/host/services/cloud/updateService', () => ({ prepareRuntimeAssetOnDemand: leaves.prepareRuntimeAssetOnDemand }));
 vi.mock('../../../src/host/services/desktop/nativeDesktopService', () => ({
