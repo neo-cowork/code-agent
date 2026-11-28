@@ -6,7 +6,9 @@ import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { createSwarmTraceStorageId, type SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
-import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
@@ -168,6 +170,93 @@ describe('SessionMemberBar（折叠 chip）', () => {
     }
     expect(chip.getAttribute('title')).not.toContain('session_command_task_interrupted_by_restart');
     expect(chip.getAttribute('title')).not.toContain('interrupted_by_restart');
+  });
+
+  // N-FIX-MEMBER-BAR-COLLAPSED-FAILED-NO-REASON：失败行带稳定 failure code 时，
+  // 折叠 chip 直接报原因词（步数上限/预算用尽），不笼统报「失败」。
+  it.each([
+    ['zh', 'step-cap-reached' as const, '1 个代理 · 步数上限 · 提炼合同关键条款'],
+    ['en', 'step-cap-reached' as const, '1 agent · Step limit · Read the chain pages'],
+    ['zh', 'budget-exhausted' as const, '1 个代理 · 预算用尽 · 提炼合同关键条款'],
+    ['en', 'budget-exhausted' as const, '1 agent · Budget exhausted · Read the chain pages'],
+    ['zh', 'unknown' as const, '1 个代理 · 失败 · 提炼合同关键条款'],
+    ['en', 'unknown' as const, '1 agent · Failed · Read the chain pages'],
+  ] as const)('failed chip says the plain reason for task failure code %s (%s)', async (language, reason, expected) => {
+    appState.language = language;
+    useBackgroundTaskStore.setState({ tasks: [
+      {
+        id: 'one', sessionId: 'session-1', source: 'delegate_task',
+        title: language === 'zh' ? '提炼合同关键条款' : 'Read the chain pages',
+        status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+        failure: { reason, message: 'run ended' },
+      },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain(expected);
+  });
+
+  it.each(['zh', 'en'] as const)('failed chip reads the live agent-tree node failureCode (%s)', async (language) => {
+    appState.language = language;
+    const failedNode: AgentTreeNode = {
+      id: 'agent-9', role: 'background', background: true, status: 'failed', statusLabel: '失败',
+      children: [], worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [],
+      sources: ['spawnGuard'], failureCode: AgentFailureCode.StepCapReached,
+      failureReason: 'Max iterations reached (20).',
+    };
+    const snapshot: AgentTreeSnapshot = {
+      generatedAt: 1, roots: [failedNode], nodes: [failedNode],
+      summary: {
+        total: 1, running: 0, completed: 0, failed: 1, cancelled: 0, blocked: 0,
+        withWorktree: 0, ownershipConflicts: [],
+      },
+    };
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(snapshot);
+      return Promise.resolve(null);
+    });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain(language === 'zh'
+      ? '1 个代理 · 步数上限 · 助手'
+      : '1 agent · Step limit · Background assistant'));
+  });
+
+  it.each(['zh', 'en'] as const)('failed chip infers step-cap from a persisted member error (%s)', async (language) => {
+    appState.language = language;
+    const failedAgent: SwarmRunAgentRecord = {
+      ...agents[0], status: 'failed', endTime: 4_001,
+      error: 'Max iterations reached (20).', failureCategory: null,
+    };
+    mockLedger(
+      { ...completedDetail, agents: [failedAgent] },
+      { ...run, totalAgents: 1, completedCount: 0, failedCount: 1 },
+    );
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    await waitFor(() => expect(chip.textContent).toContain(language === 'zh'
+      ? '1 个代理 · 步数上限 · 调研员'
+      : '1 agent · Step limit ·'));
+    expect(chip.textContent).not.toContain(language === 'zh' ? '失败' : 'Failed');
+  });
+
+  it('failed chip falls back to the generic word when failed rows carry different codes', async () => {
+    appState.language = 'zh';
+    useBackgroundTaskStore.setState({ tasks: [
+      {
+        id: 'a', sessionId: 'session-1', source: 'delegate_task', title: '任务甲',
+        status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+        failure: { reason: 'step-cap-reached', message: 'run ended' },
+      },
+      {
+        id: 'b', sessionId: 'session-1', source: 'delegate_task', title: '任务乙',
+        status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+        failure: { reason: 'budget-exhausted', message: 'run ended' },
+      },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain('2 个代理 · 失败 · 任务甲');
   });
 
   it('cancelled chip names the stopped agent, with name only when no reason exists', async () => {

@@ -220,7 +220,11 @@ export class CLISessionManager {
   /**
    * 更新会话
    */
-  async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
+  async updateSession(
+    sessionId: string,
+    updates: Partial<Session>,
+    options?: { broadcastTitle?: boolean },
+  ): Promise<void> {
     let persisted = false;
     if (await this.ensureDbReady()) {
       try {
@@ -242,7 +246,7 @@ export class CLISessionManager {
     // web 构建走本类，不经过 host SessionManager.notifySessionUpdated。
     // 标题落库后立刻推到 renderer 总线，侧栏不必等本轮结束或整页刷新。
     const title = typeof updates.title === 'string' ? updates.title : '';
-    if (persisted && title.trim()) {
+    if (persisted && title.trim() && options?.broadcastTitle !== false) {
       this.broadcastSessionTitle(sessionId, title);
     }
   }

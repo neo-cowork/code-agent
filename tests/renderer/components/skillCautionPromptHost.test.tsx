@@ -9,12 +9,15 @@
 // - slash 确认 → EXTENSION_INSTALL 携 token 重调；取消 → 按失败收口（reject）
 // ============================================================================
 
+import { requestConfirm } from '../../../src/renderer/services/confirmPrompt';
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
+
+vi.mock('../../../src/renderer/services/confirmPrompt', () => ({ requestConfirm: vi.fn() }));
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }));
 const invokeSkillIPCOrThrow = vi.hoisted(() => vi.fn());
@@ -73,7 +76,7 @@ describe('SkillCautionPromptHost（拖拽 ZIP 入口）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     invokeSkillIPC.mockResolvedValue(true);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(requestConfirm).mockResolvedValue(true);
   });
 
   afterEach(() => {
