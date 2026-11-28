@@ -9,9 +9,12 @@ import { toast } from '../hooks/useToast';
 import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from './logger';
+import { isOfflineTransportError } from './offlineSend';
 import { isWebMode } from './platform';
 
 const logger = createLogger('modelSetup');
+
+export type PreSendModelReadiness = 'ready' | 'unconfigured' | 'offline';
 
 async function readModelReadiness(
   currentSessionId: string | null,
@@ -33,14 +36,14 @@ async function readModelReadiness(
   return { settings, provider, configured: hasConfiguredRuntimeProvider(settings, provider, options) };
 }
 
-export async function hasConfiguredSessionRuntimeModel(
+export async function readSessionRuntimeModelState(
   currentSessionId: string | null,
   options: { allowCloudManaged?: boolean } = {},
-): Promise<boolean> {
+): Promise<PreSendModelReadiness> {
   try {
-    return (await readModelReadiness(currentSessionId, options)).configured;
-  } catch {
-    return false;
+    return (await readModelReadiness(currentSessionId, options)).configured ? 'ready' : 'unconfigured';
+  } catch (error) {
+    return isOfflineTransportError(error) ? 'offline' : 'unconfigured';
   }
 }
 
@@ -75,4 +78,38 @@ export async function ensureModelConfigured(
   }
   if (openSettingsWhenReady) openSettingsTab('model');
   return true;
+}
+
+/** 发送前模型检查：把「连不上后台」与「没配模型」分开，离线不弹模型设置页。 */
+export async function ensureModelConfiguredForSend(
+  t: Translations,
+  language: Language,
+  currentSessionId: string | null,
+): Promise<PreSendModelReadiness> {
+  const { openModelSettings } = useAppStore.getState();
+  try {
+    const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
+    if (!configured) {
+      const noModels = !hasConfiguredRuntimeModels(settings);
+      if (noModels) {
+        openModelSettings(provider);
+        return 'unconfigured';
+      }
+      const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
+        || getLocalizedProviderDisplayName(provider, language)
+        || t.modelSetup.thisModel;
+      if (isWebMode()) {
+        toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
+      } else {
+        toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
+      }
+      openModelSettings(provider);
+      return 'unconfigured';
+    }
+    return 'ready';
+  } catch (error) {
+    if (isOfflineTransportError(error)) return 'offline';
+    logger.debug('Settings read failed while checking model setup', { error });
+    return 'ready';
+  }
 }
