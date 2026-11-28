@@ -20,6 +20,7 @@ import {
 import { IPC_CHANNELS } from '../../../../../shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatPathForDisplay } from '../../../../utils/formatPathForDisplay';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -251,7 +252,7 @@ export const RealModePanel: React.FC = () => {
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500">{nano.pathLabel}</span>
-                      <span className="text-zinc-400 truncate max-w-[200px]" title={projectStatus.projectPath || ''}>
+                      <span className="text-zinc-400 truncate max-w-[200px]" title={projectStatus.projectPath ? formatPathForDisplay(projectStatus.projectPath) : ''}>
                         {projectStatus.projectPath?.split('/').slice(-2).join('/')}
                       </span>
                     </div>
