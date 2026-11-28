@@ -223,11 +223,11 @@ describe('offline stop feedback and reconnect replay via useAgentIPC().cancel', 
     expect(screen.queryByTestId('pending-stop-notice')).toBeNull();
   });
 
-  it('(d) latest user message differs after reload (newer turn) -> no cancel sent', async () => {
+  it.each(['user-turn-1', null])('(d) saved user message %s differs after reload (newer turn) -> no cancel sent', async (userMessageId) => {
     window.sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        [SESSION_ID]: { sessionId: SESSION_ID, userMessageId: 'user-turn-1', at: Date.now() },
+        [SESSION_ID]: { sessionId: SESSION_ID, userMessageId, at: Date.now() },
       }),
     );
     useSessionStore.setState({

@@ -221,7 +221,7 @@ export function usePendingStopReplay(input: {
     if (entry.userMessageId !== null && messages.length === 0) return;
 
     const latestUserMessageId = getLatestNonMetaUserMessageId(messages);
-    if (entry.userMessageId !== null && latestUserMessageId !== entry.userMessageId) {
+    if (latestUserMessageId !== entry.userMessageId) {
       usePendingStopStore.getState().clear(currentSessionId);
       return;
     }
@@ -241,7 +241,7 @@ export function usePendingStopReplay(input: {
     if (!currentSessionId || entry?.phase !== 'pending') return;
     if (isHydratingSession || isLoading) return;
     if (entry.userMessageId !== null && messages.length === 0) return;
-    if (entry.userMessageId !== null && getLatestNonMetaUserMessageId(messages) !== entry.userMessageId) {
+    if (getLatestNonMetaUserMessageId(messages) !== entry.userMessageId) {
       return;
     }
     if (!isTurnActive || taskStatus === 'cancelled') return;
