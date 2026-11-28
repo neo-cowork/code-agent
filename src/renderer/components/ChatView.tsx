@@ -649,10 +649,9 @@ export const ChatView: React.FC = () => {
       send: async () => {
         const dispatchToAgent = async (preflightError?: Error) => {
           if (preflightError && useSessionStore.getState().currentSessionId !== feedbackSessionId) return false;
-          const delivery = await sendMessage(
-            preflightError ? { ...outboundEnvelope, sessionId: feedbackSessionId ?? undefined } : outboundEnvelope,
-            preflightError ? { preflightError } : undefined,
-          );
+          const delivery = preflightError
+            ? await sendMessage({ ...outboundEnvelope, sessionId: feedbackSessionId ?? undefined }, { preflightError })
+            : await sendMessage(outboundEnvelope);
           if (delivery?.outcome === 'queued' && feedbackSessionId) {
             setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
               type: 'enqueue_succeeded',
