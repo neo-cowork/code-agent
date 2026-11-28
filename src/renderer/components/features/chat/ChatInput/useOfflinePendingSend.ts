@@ -29,6 +29,7 @@ import {
   finishOfflineAutoReplayAttempt,
   getOfflineAutoReplaySurface,
   markOfflineAutoReplayAttempt,
+  OFFLINE_AUTO_REPLAY_MAX_AGE_MS,
 } from '../../../../utils/offlineSend';
 
 const logger = createLogger('OfflineSendReplay');
@@ -89,7 +90,7 @@ export function useOfflinePendingSend(params: UseOfflinePendingSendParams): Offl
   const isLoadingSession = useSessionStore((state) => state.isLoading);
 
   const [pendingRecord, setPendingRecord] = useState<OfflinePendingSendRecord | null>(() => readOfflinePendingSend(composerKey));
-  const [status, setStatus] = useState<OfflinePendingSendStatus>(() => (readOfflinePendingSend(composerKey) ? 'waiting' : 'idle'));
+  const [status, setStatus] = useState<OfflinePendingSendStatus>(() => (pendingRecord ? 'waiting' : 'idle'));
 
   const valueRef = useRef(value);
   valueRef.current = value;
@@ -230,6 +231,17 @@ export function useOfflinePendingSend(params: UseOfflinePendingSendParams): Offl
     if (recordedRevision !== undefined) {
       if (eventStreamRevision <= recordedRevision) return;
     } else if (serverStatus !== 'ok') {
+      return;
+    }
+
+    // 3. 同页未刷新场景下同样复核 TTL（与 Surface B 同口径）：超期不再静默执行旧指令。
+    if (Date.now() - pendingRecord.at > OFFLINE_AUTO_REPLAY_MAX_AGE_MS) {
+      clearOfflinePendingSend(pendingRecord.composerKey);
+      clearComposerOfflineFailureRevision(pendingRecord.composerKey);
+      setPendingRecord(null);
+      hydratedTextRef.current = pendingRecord.text;
+      if (!valueRef.current.trim()) setValue(pendingRecord.text);
+      setStatus('replay_failed');
       return;
     }
 

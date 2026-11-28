@@ -74,8 +74,20 @@ export function useOfflineOutboxReplay(params: {
       return;
     }
 
-    // 1b. 标签页时效守卫：只对本标签页且未过 TTL 的挂起记录自动重放；
-    //     关闭重开或过期后降级为常规手动重试态，绝不在数天后静默执行旧指令。
+    // 2. 非浏览器明确 offline；同页未刷新须等 eventStreamRevision 推进（SSE onopen 本身即证明可达，
+    //    不与 /api/health 轮询竞态）；刷新后新堆无记录，挂载且 status === 'ok' 且事件流已连上即触发。
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (eventStreamRevision < 1) return;
+
+    const recordedRevision = getOfflineOutboxFailureRevision(currentSessionId, clientMessageId);
+    if (recordedRevision !== undefined) {
+      if (eventStreamRevision <= recordedRevision) return;
+    } else if (serverStatus !== 'ok') {
+      return;
+    }
+
+    // 3. 标签页时效守卫：只对本标签页且未过 TTL 的挂起记录自动重放；
+    //    关闭重开或过期后在连接恢复/重新打开时降级为常规手动重试态，绝不静默执行旧指令。
     if (!isOfflineOutboxAutoSendEligible(currentSessionId, clientMessageId)) {
       clearOfflineOutboxFailureRevision(currentSessionId, clientMessageId);
       const downgradedError = {
@@ -90,18 +102,6 @@ export function useOfflineOutboxReplay(params: {
       if (live.currentSessionId === currentSessionId) {
         live.setMessages(live.messages.map((message) => (message.id === pendingError.id ? downgradedError : message)));
       }
-      return;
-    }
-
-    // 2. 非浏览器明确 offline；同页未刷新须等 eventStreamRevision 推进（SSE onopen 本身即证明可达，
-    //    不与 /api/health 轮询竞态）；刷新后新堆无记录，挂载且 status === 'ok' 且事件流已连上即触发。
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-    if (eventStreamRevision < 1) return;
-
-    const recordedRevision = getOfflineOutboxFailureRevision(currentSessionId, clientMessageId);
-    if (recordedRevision !== undefined) {
-      if (eventStreamRevision <= recordedRevision) return;
-    } else if (serverStatus !== 'ok') {
       return;
     }
     if (isOfflineAutoReplayingId(clientMessageId) || attemptedErrorIdsRef.current.has(pendingError.id)) return;

@@ -569,6 +569,45 @@ describe('Offline send auto-replay (Surface A + Surface B)', { timeout: 60_000 }
     expect(runPayloads).toHaveLength(0);
   });
 
+  it('Surface A same-page pending send expired past TTL does not auto-send on reconnect', async () => {
+    const sessionId = 'sess-new-project';
+    const composerKey = composerDraftStorageKey(sessionId, false)!;
+    seedBlankProjectSession(sessionId);
+
+    const realNow = Date.now;
+    let fakeNow = realNow();
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow);
+    try {
+      render(<ChatView />);
+      await screen.findByTestId('chat-composer-textarea');
+      const prompt = '几小时前在同页离线时发出的消息';
+      const editor = typeIntoComposer(prompt);
+
+      transportMode = 'offline';
+      await act(async () => {
+        fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' });
+      });
+      await screen.findByTestId('offline-pending-send-notice');
+
+      // Advance clock beyond 10-minute TTL without reloading the page
+      fakeNow += 11 * 60 * 1000;
+      transportMode = 'online';
+      act(() => {
+        useServerConnectionStore.getState().markEventStreamConnected();
+      });
+
+      await waitFor(() => {
+        const strip = screen.getByTestId('offline-pending-send-notice');
+        expect(strip.getAttribute('data-offline-send-state')).toBe('replay_failed');
+      });
+      expect(runPayloads).toHaveLength(0);
+      expect(readOfflinePendingSend(composerKey)).toBeNull();
+      expect(screen.getByTestId('chat-composer-textarea').textContent).toBe(prompt);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('ProjectComposer offline failure shows Surface A waiting strip and cancel button stops auto-send (en copy checked)', async () => {
     useAppStore.setState({ language: 'en' });
     render(
