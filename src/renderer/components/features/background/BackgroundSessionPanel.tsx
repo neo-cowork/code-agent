@@ -23,6 +23,9 @@ import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutco
 import { deleteIncompleteFileNames } from '../../../utils/agentFailureCopy';
 import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
 import { IconButton } from '../../primitives';
+import { Button } from '../../primitives/Button';
+import { describeBackgroundFailure } from '@shared/taskReasonLanguage';
+import type { TaskBlockedCategory } from '@shared/contract/planning';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import { DeleteIncompleteActions } from './DeleteIncompleteActions';
 
@@ -31,18 +34,27 @@ interface BackgroundTaskLineLabels {
   words: { completed: string; failed: string; cancelled: string; failedTool: string; warnings: string };
   maxIterations: string;
   deleteIncomplete: string;
+  /** 失败原因被清洗掉时按类别兜底的一句话（与任务面板同一组文案） */
+  blockedReason: Record<TaskBlockedCategory, string>;
+}
+
+/** 失败行的自由文本报错：行上只放一句原因，类别决定「下一步」，原文点开才显示 */
+interface BackgroundFailureDetails {
+  category: TaskBlockedCategory;
+  detail?: string;
 }
 
 /**
  * 条目状态行：running → 由组件渲染计时；终态 → 结果行。completionMessage 携带
- * 稳定 code（USER_CANCELLED / MAX_ITERATIONS_REACHED）时翻译成人话，其余原样展示
- * （engine 的终态消息），空则回落默认完成/失败行。
+ * 稳定 code（USER_CANCELLED / MAX_ITERATIONS_REACHED）时翻译成人话；失败行的自由文本
+ * 只留一句与界面语言一致的原因（留不下就用类别文案），原文交给 failure.detail；
+ * 完成行原样展示（engine 的终态消息），空则回落默认完成/失败行。
  */
 function resolveBackgroundTaskStatusLine(
   session: Pick<BackgroundSessionInfo, 'status' | 'completionMessage'>,
   labels: BackgroundTaskLineLabels,
-  opts: { taskCancelled: boolean; toolStepOutcome?: { failed: number; total: number } },
-): { isRunning: boolean; line: string } {
+  opts: { taskCancelled: boolean; toolStepOutcome?: { failed: number; total: number }; language: 'zh' | 'en' },
+): { isRunning: boolean; line: string; failure?: BackgroundFailureDetails } {
   const terminal = resolveBackgroundTerminalKey(session, opts);
   if (!terminal) return { isRunning: true, line: '' };
   const isRunning = session.status === 'running' && terminal !== 'cancelled-by-user';
@@ -50,6 +62,10 @@ function resolveBackgroundTaskStatusLine(
   const message = session.completionMessage;
   if (message === BACKGROUND_TASK_DELETE_INCOMPLETE) return { isRunning: false, line: labels.deleteIncomplete };
   if (message === RUN_ERROR_CODE_MAX_ITERATIONS) return { isRunning: false, line: labels.maxIterations };
+  if (message && session.status === 'failed') {
+    const { reason, category, detail } = describeBackgroundFailure(message, opts.language);
+    return { isRunning: false, line: reason || labels.blockedReason[category], failure: { category, detail } };
+  }
   if (message) return { isRunning: false, line: message };
   const words: Partial<Record<typeof terminal, string>> = {
     'failed-unknown': labels.words.failed,
@@ -81,6 +97,7 @@ interface BackgroundSessionItemProps {
   onStop: () => void;
   onClear: () => void;
   line: string;
+  failure?: BackgroundFailureDetails;
   foregroundAria: string;
   stopAria: string;
   clearAria: string;
@@ -93,10 +110,13 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
   onStop,
   onClear,
   line,
+  failure,
   foregroundAria,
   stopAria,
   clearAria,
 }) => {
+  const { t } = useI18n();
+  const [rawErrorOpen, setRawErrorOpen] = React.useState(false);
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-badge-info" />,
     completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
@@ -165,6 +185,37 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
           />
         </div>
       )}
+      {/* 下一步与原始报错放在切前台按钮之外：点「查看原始报错」不能把会话切走 */}
+      {failure && (
+        <div className="basis-full px-3 pb-2">
+          <div className="text-xs text-zinc-300" data-testid="background-session-next-step">
+            {t.backgroundPanel.failureNextStepLine.replace('{step}', t.backgroundPanel.failureNextStep[failure.category])}
+          </div>
+          {failure.detail && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-1 mt-0.5 !rounded !px-1 !py-0.5 text-[11px]"
+                aria-expanded={rawErrorOpen}
+                data-testid="background-session-raw-error-toggle"
+                onClick={() => setRawErrorOpen((open) => !open)}
+              >
+                {rawErrorOpen ? t.rendererHumanPipe.toolDetails.hideRawError : t.rendererHumanPipe.toolDetails.viewRawError}
+              </Button>
+              {rawErrorOpen && (
+                <pre
+                  className="mt-1 max-h-40 select-text overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-600 bg-zinc-800 p-2 text-[11px] text-zinc-200"
+                  data-testid="background-session-raw-error"
+                >
+                  {failure.detail}
+                </pre>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -212,6 +263,7 @@ export const BackgroundSessionPanel: React.FC = () => {
       warnings: t.outcomeWords['completed-with-warnings'].timeline.label,
     },
     maxIterations: t.backgroundPanel.maxIterationsLine,
+    blockedReason: t.taskPanel.taskBlockedReason,
   };
 
   if (isMinimized) {
@@ -260,12 +312,13 @@ export const BackgroundSessionPanel: React.FC = () => {
 
           <div className="p-2 space-y-2 max-h-80 overflow-y-auto">
             {backgroundSessions.map((session) => {
-              const { isRunning, line } = resolveBackgroundTaskStatusLine(
+              const { isRunning, line, failure } = resolveBackgroundTaskStatusLine(
                 session,
                 lineLabels,
                 {
                   taskCancelled: sessionStates[session.sessionId]?.status === 'cancelled',
                   toolStepOutcome: stepOutcomes[session.sessionId],
+                  language,
                 },
               );
               return (
@@ -277,6 +330,7 @@ export const BackgroundSessionPanel: React.FC = () => {
                   onStop={() => void stopBackgroundSession(session.sessionId)}
                   onClear={() => void dismissBackgroundSession(session.sessionId)}
                   line={isRunning ? formatBackgroundDuration(session.startedAt, now, durationLabels) : line}
+                  failure={isRunning ? undefined : failure}
                   foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', titleOf(session))}
                   stopAria={t.backgroundPanel.stopAria.replace('{title}', titleOf(session))}
                   clearAria={t.backgroundPanel.clearAria.replace('{title}', titleOf(session))}
