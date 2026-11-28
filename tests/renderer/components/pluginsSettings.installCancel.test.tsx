@@ -264,8 +264,9 @@ describe('PluginsSettings install cancellation', () => {
     });
 
     render(<PluginsSettings />);
-    expect(await screen.findByText('Image Process')).toBeTruthy();
-    expect(screen.getByText('Computer Use')).toBeTruthy();
+    // 内置卡片名走 zh 词条（capabilityPackages.builtinPlugins），不再显示 manifest 英文名
+    expect(await screen.findByText(zh.capabilityPackages.builtinPlugins['builtin.imageProcess'].name)).toBeTruthy();
+    expect(screen.getByText(zh.capabilityPackages.builtinPlugins['builtin.computerUse'].name)).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: zh.settings.plugins.manualImport.install }));
 
     await waitFor(() => {
