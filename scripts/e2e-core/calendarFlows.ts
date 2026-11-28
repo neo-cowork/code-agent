@@ -63,19 +63,21 @@ function isFullAccess(status: Record<string, unknown>): boolean {
 
 /**
  * step 0：任何消息都没发之前先验前提。NEO_E2E_CALENDAR 未设 → 红在「没有专属日历」；
- * 日历连接器不是完全访问 → 红在「日历未授权」，原始状态 JSON 挂到 reason。通过时把日历名与运行标记写进 scratch。
+ * 日历连接器不是完全访问 → 红在「日历未授权」，原始状态 JSON 挂到 reason。
+ * 日历名与运行标记只在授权通过后才写进 scratch——step 0 红（含未授权）时 cleanup 看不到它们，
+ * 不会在红了之后又发任何消息。
  */
 async function probeCalendar(env: AttemptEnv): Promise<void> {
   const calendar = process.env[CALENDAR_ENV_VAR]?.trim();
   if (!calendar) throw new Error(NO_CALENDAR_STEP_TEXT);
-  env.scratch.calendar = calendar;
-  env.scratch.marker = `E2E-${Math.random().toString(16).slice(2, 8)}`;
   const statuses = await connectorStatuses(env.server);
   const calendarStatus = statuses.find((s) => s.id === 'calendar');
   if (!calendarStatus || !isFullAccess(calendarStatus)) {
     env.note(`日历连接器原始状态：${JSON.stringify(statuses)}`);
     throw new Error(UNAUTHORIZED_STEP_TEXT);
   }
+  env.scratch.calendar = calendar;
+  env.scratch.marker = `E2E-${Math.random().toString(16).slice(2, 8)}`;
   env.note(`step 0 授权探针通过：专属日历「${calendar}」完全访问，本次运行标记 ${markerOf(env)}`);
 }
 

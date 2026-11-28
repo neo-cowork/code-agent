@@ -154,6 +154,11 @@ describe('e2e-core slot attach (calendar flows)', () => {
 
     /** 跑公开流程对象的 step 0 探针（F01.probe），返回红/绿与 note。 */
     async function probe(data: unknown): Promise<{ error: Error | null; notes: string[]; marker: string }> {
+      const { env, ...rest } = await probeAndKeepEnv(data);
+      return { ...rest, marker: String(env.scratch.marker ?? '') };
+    }
+
+    async function probeAndKeepEnv(data: unknown): Promise<{ error: Error | null; notes: string[]; env: AttemptEnv }> {
       port = await startFixture(data);
       const notes: string[] = [];
       const env = { server: { port, token: 't' }, scratch: {}, note: (t: string) => notes.push(t) } as unknown as AttemptEnv;
@@ -163,7 +168,7 @@ describe('e2e-core slot attach (calendar flows)', () => {
       } catch (e) {
         error = e as Error;
       }
-      return { error, notes, marker: String(env.scratch.marker ?? '') };
+      return { error, notes, env };
     }
 
     beforeEach(() => {
@@ -202,6 +207,13 @@ describe('e2e-core slot attach (calendar flows)', () => {
       delete process.env.NEO_E2E_CALENDAR;
       const { error } = await probe(fullAccess);
       expect(error?.message).toBe('precondition: no dedicated calendar (NEO_E2E_CALENDAR)');
+    });
+
+    it('leaves nothing in scratch on the unauthorized red, so cleanup cannot act after step 0', async () => {
+      const { error, env } = await probeAndKeepEnv(withDetail('calendar_denied'));
+      expect(error?.message).toBe('前置：日历未授权');
+      expect(env.scratch.calendar).toBeUndefined();
+      expect(env.scratch.marker).toBeUndefined();
     });
   });
 
