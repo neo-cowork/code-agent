@@ -593,7 +593,7 @@ describe('N-ENV-ASSIST-S7-RELOGIN layered recovery (ToolExecutionEngine -> toolR
     // path. The card must not promise "I will continue" because nothing resumes this run.
     const result = {
       success: false, error: 'Unauthorized', output: undefined as string | undefined,
-      metadata: { [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true, serverName: 'notes' },
+      metadata: { [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true, serverName: 'notes' } as Record<string, unknown>,
     };
     await publishEnvAssistToolNotice({
       toolName: 'mcp__notes__list_notes', result, sessionId: f.sessionId, runId: 'run-nonparkable',
