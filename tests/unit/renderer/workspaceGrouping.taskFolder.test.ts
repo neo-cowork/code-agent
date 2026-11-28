@@ -1,0 +1,139 @@
+import { describe, expect, it } from 'vitest';
+import {
+  findSessionAfterRemoval,
+  groupByWorkspace,
+  UNCATEGORIZED_WORKSPACE_KEY,
+  type WorkspaceGroup,
+} from '../../../src/renderer/utils/workspaceGrouping';
+import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
+import { UNSORTED_PROJECT_ID } from '../../../src/shared/contract/project';
+
+// Owner decision B: a chat started without picking a folder lives in a Neo-made task
+// folder (任务_MMDD_… / Task_MMDD_…) but sits in Quick chats under its own title.
+const QUICK_CHATS = '快速对话';
+const PROJECT_FALLBACK = '项目';
+
+function session(overrides: Partial<SessionWithMeta> & Pick<SessionWithMeta, 'id'>): SessionWithMeta {
+  return {
+    title: `${overrides.id} chat`,
+    createdAt: 1,
+    updatedAt: 1,
+    modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
+    messageCount: 2,
+    turnCount: 1,
+    ...overrides,
+  };
+}
+
+function group(sessions: SessionWithMeta[]): WorkspaceGroup[] {
+  return groupByWorkspace(sessions, QUICK_CHATS, PROJECT_FALLBACK);
+}
+
+function groupOf(groups: WorkspaceGroup[], sessionId: string): WorkspaceGroup | undefined {
+  return groups.find((candidate) => candidate.sessions.some((item) => item.id === sessionId));
+}
+
+describe('workspaceGrouping: chats in a Neo-made task folder', () => {
+  it('(a) puts an unsorted chat in 任务_1101_create-role into Quick chats', () => {
+    const groups = group([
+      session({ id: 'a', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/Neo/任务_1101_create-role' }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: UNCATEGORIZED_WORKSPACE_KEY, name: QUICK_CHATS, isUncategorized: true });
+    expect(groups[0].sessions.map((item) => item.id)).toEqual(['a']);
+  });
+
+  it('(b) puts an unsorted chat in Task_1116_init-memory into Quick chats', () => {
+    const groups = group([
+      session({ id: 'b', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/Neo/Task_1116_init-memory' }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: UNCATEGORIZED_WORKSPACE_KEY, name: QUICK_CHATS, isUncategorized: true });
+    expect(groups[0].sessions.map((item) => item.id)).toEqual(['b']);
+  });
+
+  it('(c) puts a chat whose implicit project was minted for its task folder into Quick chats when not pinned', () => {
+    const groups = group([
+      session({
+        id: 'c',
+        projectId: 'proj_a',
+        workingDirectory: '/x/Neo/任务_1102_weekly-report',
+        metadata: { expertThread: { roleId: 'role-1', setAt: 1 } },
+      }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: UNCATEGORIZED_WORKSPACE_KEY, name: QUICK_CHATS, isUncategorized: true });
+    expect(groups[0].projectId).toBeUndefined();
+    expect(groups.some((candidate) => candidate.key === 'project:proj_a')).toBe(false);
+  });
+
+  it('(d) keeps a chat created inside a space (pinned) under that space', () => {
+    const groups = group([
+      session({
+        id: 'd',
+        projectId: 'proj_s',
+        workingDirectory: '/x/Neo/任务_1103_trip-plan',
+        metadata: { projectPinned: true },
+      }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: 'project:proj_s', projectId: 'proj_s', isUncategorized: false });
+    expect(groups[0].sessions.map((item) => item.id)).toEqual(['d']);
+  });
+
+  it('(e) keeps a user-picked ws- folder as its own folder-named group', () => {
+    const groups = group([
+      session({ id: 'e', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/work/ws-1794806695891' }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      key: '/x/work/ws-1794806695891',
+      name: 'ws-1794806695891',
+      isUncategorized: false,
+    });
+  });
+
+  it('(f) leaves a project in a user folder unchanged', () => {
+    const groups = group([
+      session({ id: 'f', projectId: 'proj_r', workingDirectory: '/x/work/report' }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      key: 'project:proj_r',
+      name: 'report',
+      path: '/x/work/report',
+      projectId: 'proj_r',
+      isUncategorized: false,
+    });
+  });
+
+  it('(g) lands on another Quick-chats session after removing (a)', () => {
+    const sessions = [
+      session({ id: 'a', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/Neo/任务_1101_create-role', updatedAt: 300 }),
+      session({ id: 'f', projectId: 'proj_r', workingDirectory: '/x/work/report', updatedAt: 250 }),
+      session({ id: 'plain', projectId: UNSORTED_PROJECT_ID, updatedAt: 200 }),
+    ];
+
+    expect(groupOf(group(sessions), 'plain')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
+    expect(findSessionAfterRemoval(sessions, 'a')?.id).toBe('plain');
+  });
+
+  it('reads the task-folder shape from the last segment across separators', () => {
+    const groups = group([
+      session({ id: 'win', projectId: UNSORTED_PROJECT_ID, workingDirectory: 'C:\\Users\\me\\Neo\\Task_1116_init-memory' }),
+      session({ id: 'slash', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/Neo/任务_1101_create-role/' }),
+      session({ id: 'parent', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/Neo/任务_1101_create-role/assets' }),
+    ]);
+
+    expect(groupOf(groups, 'win')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
+    expect(groupOf(groups, 'slash')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
+    expect(groupOf(groups, 'parent')).toMatchObject({ key: '/x/Neo/任务_1101_create-role/assets', name: 'assets' });
+  });
+});

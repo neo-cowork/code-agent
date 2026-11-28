@@ -44,7 +44,7 @@ const user: AuthUser = { id: 'restore-user', email: 'restore@example.test', nick
 const restored: AuthStatus = { isAuthenticated: true, user, isLoading: false, sessionTrustState: 'verified' };
 const expired: AuthStatus = { isAuthenticated: false, user: null, isLoading: false, sessionExpired: true };
 const expiredEvent: AuthEvent = { type: 'signed_out', sessionExpired: true };
-const groupNames = ['project-alpha', 'project-beta', '任务_1111_周报'];
+const groupNames = ['project-alpha', 'project-beta', 'weekly-notes'];
 const sessions: Session[] = groupNames.map((name, index) => ({
   id: `restore-${index}`, title: index === 2 ? `${name}_整理资料` : `${name} work`,
   workingDirectory: `/repo/${name}`, projectId: index < 2 ? name : undefined, createdAt: 1, updatedAt: 2,
