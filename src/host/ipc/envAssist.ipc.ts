@@ -30,7 +30,8 @@ import {
 } from '../permissions/envAssist/loginRecovery';
 import { createLogger } from '../services/infra/logger';
 import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
-import { armEnvResumeOnSessionReturn, clearEnvResumeWaiter, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
+import { armEnvResumeOnSessionReturn, clearEnvResumeWaiter, recheckOfflineRun, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
+import { probeOfflineNetwork } from '../permissions/envAssist/probes/offlineProbe';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 const logger = createLogger('EnvAssistIpc');
@@ -189,6 +190,15 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const probe = noticeProbe(deps, notice, actionPayload.pane);
     if (!probe) return { status: 'rejected' };
     return settle(deps, notice, { status: 'checked', outcome: await probe() });
+  },
+  recheckOffline: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
+    const parsed = EnvAssistSchemas.recheck.safeParse(payload);
+    if (!parsed.success) return { status: 'rejected' };
+    const notice = await deps.findNotice(parsed.data.noticeId);
+    if (notice?.class !== 'offline') return { status: 'rejected' };
+    if (notice.phase === 'resolved') return { status: 'checked', notice };
+    if (!await recheckOfflineRun(notice.sessionId, notice.runId, getApplicationRunRegistry())) return { status: 'checked' };
+    return withResolvedNotice(deps, notice.id, { status: 'checked' });
   },
   /** Settings switch off→on (the click): passive check → one-shot dialog → poll; the host writes the setting only when granted. */
   enableSettingGrant: async (deps: EnvAssistDependencies, payload: unknown): Promise<CalendarSettingResult> => {
@@ -374,6 +384,7 @@ registerEnvAssistHandlers.routes = routes;
  * Distinguishable degrade reasons are logged; 'unavailable' stops the waiter (manual Continue still works).
  */
 export const envResumeProbeFactory: EnvResumeProbeFactory = (block) => {
+  if (block.class === 'offline') return async () => await probeOfflineNetwork(block) ? 'green' : 'red';
   if (block.class === 'login_expired') {
     return async () => {
       const status = await probeLoginStatus(block.target);

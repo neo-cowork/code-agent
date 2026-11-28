@@ -61,6 +61,7 @@ interface NativeModelContinuationTasks {
       modelSpec?: { provider: string; model: string };
       disableAutoAgent?: boolean;
       goalRecoverySnapshot?: GoalRecoverySnapshot;
+      recoveredWorkingDirectory?: string;
     },
     messageMetadata?: Message['metadata'],
     clientMessageId?: string,
@@ -318,6 +319,9 @@ export function createApplicationNativeRecoveryPorts(
           : {}),
         disableAutoAgent: true,
         ...(input.descriptor.goalState ? { goalRecoverySnapshot: input.descriptor.goalState } : {}),
+        ...(input.descriptor.envResumePending?.class === 'offline'
+          ? { recoveredWorkingDirectory: input.descriptor.workspace.cwd }
+          : {}),
       },
       source.metadata,
       source.id,
@@ -417,6 +421,9 @@ export function createApplicationNativeRecoveryPorts(
             // auto-agent routing would replay a larger graph instead of this operation.
             disableAutoAgent: true,
             ...(input.descriptor.goalState ? { goalRecoverySnapshot: input.descriptor.goalState } : {}),
+            ...(input.descriptor.envResumePending?.class === 'offline'
+              ? { recoveredWorkingDirectory: input.descriptor.workspace.cwd }
+              : {}),
           },
           {
             ...source.metadata,

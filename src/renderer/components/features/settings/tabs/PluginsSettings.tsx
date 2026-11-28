@@ -72,6 +72,7 @@ import {
   normalizeMarketplaceResult,
   toDisplayPath,
 } from './PluginsSettings.helpers';
+import { requestConfirm } from '../../../../services/confirmPrompt';
 
 const PLUGIN_RELOAD_RETRY_DELAYS_MS = [25, 75, 150] as const;
 
@@ -259,8 +260,10 @@ export const PluginsSettings: React.FC = () => {
     });
   }, [pluginsText, runAction]);
 
-  const handleRemoveMarketplace = useCallback((name: string) => {
-    if (!window.confirm(`${pluginsText.toast.removeMarketplaceConfirmPrefix}${name}${pluginsText.toast.removeMarketplaceConfirmSuffix}`)) return;
+  const handleRemoveMarketplace = useCallback(async (name: string) => {
+    if (!await requestConfirm({ title: t.confirmPrompts.removeMarketplace, confirmText: t.confirmPrompts.remove, variant: 'danger',
+      message: `${pluginsText.toast.removeMarketplaceConfirmPrefix}${name}${pluginsText.toast.removeMarketplaceConfirmSuffix}`,
+    })) return;
     void runAction(`marketplace:remove:${name}`, async () => {
       const result = normalizeMarketplaceResult<void>(
         await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_REMOVE, name),
@@ -269,7 +272,7 @@ export const PluginsSettings: React.FC = () => {
       if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
       return `${pluginsText.toast.removeMarketplaceSuccessPrefix}${name}`;
     });
-  }, [pluginsText, runAction]);
+  }, [pluginsText, runAction, t.confirmPrompts]);
 
   // marketplace 插件的 skill caution 确认流：确认 = 携 host 下发的 token 原样重发
   // （options 其余不变）；内容变化导致二次 confirmation-required 时，用新命中/新 token
@@ -370,9 +373,11 @@ export const PluginsSettings: React.FC = () => {
     });
   }, [pluginsText, runAction]);
 
-  const handleUninstall = useCallback((plugin: InstalledPlugin) => {
+  const handleUninstall = useCallback(async (plugin: InstalledPlugin) => {
     const spec = getPluginSpec(plugin);
-    if (!window.confirm(`${pluginsText.toast.uninstallConfirmPrefix}${spec}${pluginsText.toast.uninstallConfirmSuffix}`)) return;
+    if (!await requestConfirm({ title: t.confirmPrompts.uninstallPlugin, confirmText: t.confirmPrompts.uninstall, variant: 'danger',
+      message: `${pluginsText.toast.uninstallConfirmPrefix}${spec}${pluginsText.toast.uninstallConfirmSuffix}`,
+    })) return;
     void runAction(`plugin:uninstall:${spec}`, async () => {
       const result = normalizeMarketplaceResult<void>(
         await ipcService.invoke(
@@ -385,7 +390,7 @@ export const PluginsSettings: React.FC = () => {
       if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
       return `${pluginsText.toast.uninstallSuccessPrefix}${spec}`;
     });
-  }, [pluginsText, runAction]);
+  }, [pluginsText, runAction, t.confirmPrompts]);
 
   const handleSelectCapabilityPackage = useCallback(() => {
     setPackageBusy(true);
@@ -414,14 +419,16 @@ export const PluginsSettings: React.FC = () => {
     })();
   }, [continueStagedPackage, pluginsText.manualImport.action, pluginsText.manualImport.importUnavailable]);
 
-  const handleUninstallCapabilityPackage = useCallback((plugin: InstalledCapabilityPackage) => {
-    if (!window.confirm(`${pluginsText.manualImport.uninstallConfirmPrefix}${plugin.name}${pluginsText.manualImport.uninstallConfirmSuffix}`)) return;
+  const handleUninstallCapabilityPackage = useCallback(async (plugin: InstalledCapabilityPackage) => {
+    if (!await requestConfirm({ title: t.confirmPrompts.uninstallPlugin, confirmText: t.confirmPrompts.uninstall, variant: 'danger',
+      message: `${pluginsText.manualImport.uninstallConfirmPrefix}${plugin.name}${pluginsText.manualImport.uninstallConfirmSuffix}`,
+    })) return;
     void runAction(`capability-package:uninstall:${plugin.id}`, async () => {
       const result = await ipcService.invoke(IPC_CHANNELS.CAPABILITY_PACKAGE_UNINSTALL, plugin.id);
       if (!result.success) throw new Error(result.error);
       return `${pluginsText.manualImport.uninstalledPrefix}${plugin.name}`;
     });
-  }, [pluginsText.manualImport, runAction]);
+  }, [pluginsText.manualImport, runAction, t.confirmPrompts]);
 
   const handleRunCapabilityPackage = useCallback((
     plugin: InstalledCapabilityPackage,

@@ -11,6 +11,8 @@ type CronEventDecisionTextLanguage = 'zh' | 'en';
 type CronEventDecisionTextKey =
   | 'channelChatRule'
   | 'channelAnyChatRule'
+  | 'channelChatRuleWithoutAccount'
+  | 'channelAnyChatRuleWithoutAccount'
   | 'mailRule'
   | 'webhookRule'
   | 'missingDecisions'
@@ -83,6 +85,18 @@ const TEMPLATES: readonly DecisionTextTemplate[] = [
     stored: 'channel message · account {account} · any chat',
     zh: '通道消息 · 账号 {account} · 任意会话',
     en: 'Channel message · account {account} · any chat',
+  },
+  {
+    key: 'channelChatRuleWithoutAccount',
+    stored: 'channel message · chat {chat}',
+    zh: '通道消息 · 会话 {chat}',
+    en: 'Channel message · chat {chat}',
+  },
+  {
+    key: 'channelAnyChatRuleWithoutAccount',
+    stored: 'channel message · any chat',
+    zh: '通道消息 · 任意会话',
+    en: 'Channel message · any chat',
   },
   {
     key: 'mailRule',

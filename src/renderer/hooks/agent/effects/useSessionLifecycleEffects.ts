@@ -9,6 +9,7 @@ import {
 } from '@shared/utils/agentErrorClassification';
 import { createLogger } from '../../../utils/logger';
 import { useAppStore } from '../../../stores/appStore';
+import { usePendingStopStore } from '../../../stores/pendingStopStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
@@ -217,7 +218,8 @@ export const useSessionLifecycleEffects = ({
           break;
 
         case 'agent_complete':
-        case 'agent_cancelled':
+        case 'agent_cancelled': {
+          const waitingForNetwork = event.type === 'agent_cancelled' && event.data?.reason === 'offline';
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           // 终态粘滞：终局一旦应用，这个 run 的尾巴事件/旧响应不得再点亮运行态
@@ -234,7 +236,7 @@ export const useSessionLifecycleEffects = ({
             flushRef.current();
             setActiveToolProgress(null);
             setToolTimeoutWarning(null);
-            if (event.type === 'agent_cancelled') {
+            if (event.type === 'agent_cancelled' && !waitingForNetwork) {
               markLatestUserTurnCancelled(
                 currentTurnMessageIdRef.current,
                 Date.now(),
@@ -245,7 +247,8 @@ export const useSessionLifecycleEffects = ({
           }
           clearSessionProcessing();
           if (eventSessionId) {
-            if (event.type === 'agent_cancelled') {
+            if (event.type === 'agent_cancelled' && !waitingForNetwork) {
+              usePendingStopStore.getState().clear(eventSessionId);
               markRuntimeSessionCancelled(eventSessionId);
             } else {
               clearRuntimeSessionState(eventSessionId);
@@ -256,6 +259,7 @@ export const useSessionLifecycleEffects = ({
           }
           refreshContextHealth();
           break;
+        }
 
         case 'research_detected':
           lastEventAtRef.current = Date.now();

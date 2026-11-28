@@ -83,13 +83,20 @@ export async function publishEnvAssistToolNotice(input: {
   input.result.output = undefined;
   input.result.metadata = { envAssist: notice };
   if (input.modelResult) Object.assign(input.modelResult, { error: input.result.error, output: undefined, metadata: input.result.metadata });
+  await publishEnvAssistNotice(notice, input.onEvent);
+}
+
+export async function publishEnvAssistNotice(notice: EnvAssistNotice, onEvent: (event: AgentEvent) => void): Promise<void> {
   await queueNoticeWrite(notice, async () => {
     const manager = getSessionManager();
-    const messages = await manager.getMessages(input.sessionId);
-    const live = notice.phase === 'needs_user' ? messages.findLast((m) => {
+    const messages = await manager.getMessages(notice.sessionId);
+    const live = (notice.phase === 'needs_user' || notice.class === 'offline') ? messages.findLast((m) => {
       const candidate = m.metadata?.envAssist;
-      return (candidate?.phase === 'needs_user' || candidate?.phase === 'unconfirmed')
-        && candidate.class === notice.class && candidate.target?.id === notice.target?.id;
+      // Main: publish-time dedupe matches the same phase (offline dedupe is per run). S7: a login card may already
+      // sit in 'unconfirmed' (cancelled reauthorize) — the republished needs_user notice reuses that card, one per run/connector.
+      return (candidate?.phase === notice.phase || (notice.class === 'login_expired' && candidate?.phase === 'unconfirmed'))
+        && candidate.class === notice.class && candidate.target?.id === notice.target?.id
+        && (notice.class !== 'offline' || candidate.runId === notice.runId);
     }) : undefined;
     let persisted = live ?? messages.find((m) => m.id === `env-assist:${notice.id}`);
     const computedId = notice.id;
@@ -105,11 +112,11 @@ export async function publishEnvAssistToolNotice(input: {
       id: messageId, role: 'assistant', content: '', timestamp: persisted?.timestamp ?? notice.updatedAt,
       metadata: { ...persisted?.metadata, envAssist: notice },
     };
-    await manager.addMessageToSession(input.sessionId, message);
-    if (!persisted || (live && notice.id !== computedId)) {
-      input.onEvent({ type: 'env_assist_notice', data: notice });
+    await manager.addMessageToSession(notice.sessionId, message);
+    if (!persisted || notice.class === 'offline' || (live && notice.id !== computedId)) {
+      onEvent({ type: 'env_assist_notice', data: notice });
     }
-    if (!persisted) input.onEvent({ type: 'message', data: message });
+    if (!persisted) onEvent({ type: 'message', data: message });
   });
 }
 
@@ -124,9 +131,10 @@ async function writeResolved(notice: EnvAssistNotice, now: number): Promise<void
   const persisted = (await manager.getMessages(notice.sessionId)).find((m) => m.id === messageId);
   if (!persisted) return;
   const current = persisted.metadata?.envAssist;
-  if (current?.phase !== 'needs_user' && current?.phase !== 'unconfirmed') return;
+  if (!current || (current.class === 'offline' ? current.phase !== 'fixing' : current.phase !== 'needs_user' && current.phase !== 'unconfirmed')) return;
   const { action: _action, ...rest } = current;
-  const doneKey = current.class === 'login_expired' ? 'env.done.loginExpired' : `env.done.${current.target?.id ?? ''}`;
+  const doneKey = current.class === 'offline' ? 'env.offline.resolved'
+    : current.class === 'login_expired' ? 'env.done.loginExpired' : `env.done.${current.target?.id ?? ''}`;
   const resolved: EnvAssistNotice = { ...rest, phase: 'resolved', doneKey, updatedAt: now };
   await manager.addMessageToSession(notice.sessionId, { ...persisted, metadata: { ...persisted.metadata, envAssist: resolved } });
   emitExternalAgentEvent(notice.sessionId, { type: 'env_assist_notice', data: resolved });

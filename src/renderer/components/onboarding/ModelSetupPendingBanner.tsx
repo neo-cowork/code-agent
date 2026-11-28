@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { invokeDomain } from '../../services/ipcService';
+import { Button } from '../primitives/Button';
 import { useI18n } from '../../hooks/useI18n';
 
 /**
@@ -35,13 +36,9 @@ export const ModelSetupPendingBanner: React.FC<{
       className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-zinc-300"
     >
       <span className="min-w-0 flex-1 truncate">{t.onboarding.pendingBanner}</span>
-      <button
-        type="button"
-        className="rounded px-2 py-0.5 text-badge-warning hover:bg-amber-500/20"
-        onClick={onOpenSettings}
-      >
+      <Button size="sm" variant="ghost" onClick={onOpenSettings}>
         {t.onboarding.pendingBannerAction}
-      </button>
+      </Button>
       <button
         type="button"
         aria-label={t.onboarding.pendingBannerDismiss}

@@ -49,6 +49,17 @@ class FakeMemoryDb {
     return record;
   }
 
+  findMemoryByEntryId(entryId: string): MemoryRecord | null {
+    return this.records.find((record) => (record.metadata as { memoryEntry?: { id?: string } } | null)?.memoryEntry?.id === entryId) ?? null;
+  }
+
+  listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+    return this.records.filter((record) => {
+      const feedback = (record.metadata as Record<string, unknown> | null)?.injectionFeedback;
+      return typeof feedback === 'object' && feedback !== null;
+    });
+  }
+
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null {
     const index = this.records.findIndex((record) => record.id === id);
     if (index < 0) return null;
@@ -448,4 +459,146 @@ describe('Light Memory consolidation live contract', () => {
     expect(await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8')).toBe(beforeAlpha);
     await expect(fs.stat(path.join(memoryDir, 'unsafe-directive.md'))).rejects.toThrow();
   });
+
+
+// N-MEM-SOURCE-WRONG-FEEDBACK：被用户标记「不对/过时了」的来源在 consolidation 里优先处理
+describe('user-flagged sources (N-MEM-SOURCE-WRONG-FEEDBACK)', () => {
+  function flaggedMirrorDb(filename: string): FakeMemoryDb {
+    const db = new FakeMemoryDb();
+    db.records.push({
+      id: 'mirror-1',
+      type: 'project_knowledge',
+      category: 'project',
+      content: 'mirror body',
+      source: 'user_defined',
+      confidence: 1,
+      metadata: {
+        memoryEntry: { id: `light:${filename}`, sourceOfTruth: 'light_file', filePath: filename },
+        injectionFeedback: { kind: 'wrong', at: 1_000, count: 1 },
+      },
+      status: 'active',
+      accessCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return db;
+  }
+
+  /** r2：尊重 listMemories 窗口参数的假库——flaggedLightFilenames 旧实现只扫最新 N 行。 */
+  class WindowedFakeDb extends FakeMemoryDb {
+    override listMemories(options?: { limit?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC' }): MemoryRecord[] {
+      const rows = [...this.records].sort((a, b) => b.updatedAt - a.updatedAt);
+      return options?.limit === undefined ? rows : rows.slice(0, options.limit);
+    }
+
+    /** 与真 MemoryRepository 同语义：全量取带负反馈 metadata 的行，不看窗口。 */
+    listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+      return this.records.filter((record) => {
+        const feedback = (record.metadata as Record<string, unknown> | null)?.injectionFeedback;
+        return typeof feedback === 'object' && feedback !== null;
+      });
+    }
+  }
+
+  it('r2 被标记的镜像行挤出最新 500 行窗口：整理点名不丢（flaggedSources 同源查询）', async () => {
+    await fs.rm(path.join(memoryDir, 'beta.md'));
+    await fs.rm(path.join(memoryDir, 'conflict.md'));
+    const db = new WindowedFakeDb();
+    db.records.push({
+      id: 'mirror-old',
+      type: 'project_knowledge',
+      category: 'project',
+      content: 'mirror body',
+      source: 'user_defined',
+      confidence: 1,
+      metadata: {
+        memoryEntry: { id: 'light:alpha.md', sourceOfTruth: 'light_file', filePath: 'alpha.md' },
+        injectionFeedback: { kind: 'wrong', at: 1_000, count: 1 },
+      },
+      status: 'active',
+      accessCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    for (let i = 0; i < 600; i += 1) {
+      db.records.push({
+        id: `junk-${i}`,
+        type: 'project_knowledge',
+        category: 'project',
+        content: `window-junk-${i}`,
+        source: 'user_defined',
+        confidence: 0.5,
+        metadata: {},
+        status: 'archived',
+        accessCount: 0,
+        createdAt: 2 + i,
+        updatedAt: 2 + i,
+      });
+    }
+    // 坐实：窗口内看不到被标记行（旧实现的全部视野）
+    expect(db.listMemories({ limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).some((r) => r.id === 'mirror-old')).toBe(false);
+
+    const report = await consolidateLightMemory({ dryRun: true, force: true, db });
+    expect(report.triggered).toBe(true);
+    const prompt = mocks.memoryTask.mock.calls[0][0] as string;
+    // r2 修复前：窗口扫不到 kind → 点名段消失、被标记文件不再排最前
+    expect(prompt).toContain('标记为「不对/过时了」');
+    expect(prompt).toContain('不得原样保留');
+  });
+
+  it('③ 有标记时穿过小库健康跳过：healthy 存量 + flagged 行也触发', async () => {
+    await fs.rm(path.join(memoryDir, 'beta.md'));
+    await fs.rm(path.join(memoryDir, 'conflict.md'));
+    await fs.writeFile(path.join(memoryDir, 'INDEX.md'), [
+      '# Memory Index',
+      '',
+      '- [alpha.md](alpha.md) — Release facts',
+      '',
+    ].join('\n'), 'utf-8');
+
+    // 无标记：健康跳过（对照组）
+    const skipped = await consolidateLightMemory({ dryRun: true, db: new FakeMemoryDb() });
+    expect(skipped.triggered).toBe(false);
+
+    const report = await consolidateLightMemory({ dryRun: true, db: flaggedMirrorDb('alpha.md') });
+    expect(report.triggered).toBe(true);
+    expect(report.reason).toContain('user-flagged');
+  });
+
+  it('③ 标记文件在 prompt 里排最前并点名「不得原样保留」', async () => {
+    const report = await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      db: flaggedMirrorDb('beta.md'),
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    expect(report.triggered).toBe(true);
+    const prompt = mocks.memoryTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('标记为「不对/过时了」');
+    expect(prompt).toContain('- beta.md');
+    expect(prompt).toContain('不得原样保留');
+    // beta.md（被标记）排在 alpha.md（未标记）前面
+    expect(prompt.indexOf('### beta.md')).toBeLessThan(prompt.indexOf('### alpha.md'));
+  });
+
+  it('③ 审计行带 flaggedSources；撤销后（kind 清空）不再算标记', async () => {
+    const db = flaggedMirrorDb('alpha.md');
+    const report = await consolidateLightMemory({
+      dryRun: false,
+      force: true,
+      db,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    expect(report.applied).toBe(true);
+    const auditLines = (await fs.readFile(
+      path.join(memoryDir, MEMORY_CONSOLIDATION.AUDIT_FILENAME),
+      'utf-8',
+    )).trim().split('\n');
+    const audits = auditLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(audits.length).toBeGreaterThanOrEqual(2);
+    for (const audit of audits) {
+      expect(audit.flaggedSources).toEqual(['alpha.md']);
+    }
+  });
+});
 });

@@ -28,6 +28,7 @@ import {
 } from '../../shared/contract/evidenceInvalidation';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { getProjectSourceGitStates } from '../services/git/gitStatusService';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 
 const execFileAsync = promisify(execFile);
 
@@ -336,7 +337,8 @@ export async function buildCompletionSummaryRecord(input: BuildCompletionSummary
     sessionId: ctx.sessionId,
     traceId: ctx.stats.traceId,
     agentId: ctx.agentId,
-    objective: compactText(input.userMessage, MAX_OBJECTIVE_LENGTH) ?? '',
+    // 还原消息整段以恢复提示开头：objective 只记用户原话，剥完为空说明那条消息没有正文。
+    objective: compactText(stripTelemetryRecoveryNoticeOrResidue(input.userMessage), MAX_OBJECTIVE_LENGTH) ?? '',
     status: input.status,
     startedAt: ctx.stats.runStartTime,
     endedAt,

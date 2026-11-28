@@ -149,7 +149,7 @@ describe('RequestDetails 写入后果句路径人话化', () => {
     for (const boundary of [undefined, 'file.external_write']) {
       storeState.request = writeReq(p, boundary);
       const html = render();
-      // 后果句沿用 formatFilePath 的长路径缩写，但仍是绝对路径而不是上传位置词
+      // 真实家目录未知时不折 ~，后果句与文件行均保留真实目录路径而不是上传位置词
       expect(consequenceOf(html)).toMatch(/\/Users\/.*avatar\.png/);
       expect(html).toContain(p);
       expect(html).not.toContain('你上传的文件');

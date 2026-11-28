@@ -338,6 +338,13 @@ function firstChatName(events: readonly ChannelEventRecord[]): string | undefine
   return events.find((event) => event.chatName?.trim())?.chatName?.trim() || undefined;
 }
 
+function describeBatchRule(schedule: EventScheduleConfig, events: readonly ChannelEventRecord[]): string {
+  const accountName = schedule.source === 'channel'
+    ? getChannelManager().getAccount(schedule.accountId)?.name?.trim()
+    : undefined;
+  return describeEventScheduleRule(schedule, { chatName: firstChatName(events), accountName });
+}
+
 function toEventRecord(message: ChannelMessage, listen: boolean): ChannelEventRecord {
   return {
     messageId: typeof message.id === 'string' ? message.id : '',
@@ -579,7 +586,7 @@ export class CronEventTrigger {
           ...state.droppedEvents,
           ...state.pending.map((event) => ({ eventId: event.messageId, cause: 'automation_inactive' as const })),
         ], undefined, current.schedule.type === 'event'
-          ? describeEventScheduleRule(current.schedule, { chatName: firstChatName(state.pending) })
+          ? describeBatchRule(current.schedule, state.pending)
           : undefined));
       }
       this.states.delete(jobId);
@@ -699,7 +706,7 @@ export class CronEventTrigger {
   ): Promise<void> {
     const state = this.stateFor(jobId);
     const epoch = this.epoch;
-    const rule = describeEventScheduleRule(schedule);
+    const rule = describeBatchRule(schedule, carried);
     for (const event of carried) state.heldIds.delete(event.messageId);
     try {
       // 邮件先补取正文再预筛：判据可能依赖正文；补好的正文随批进 run，不再读第二遍。
@@ -836,7 +843,7 @@ export class CronEventTrigger {
         // 事件行的「命中规则」：配置推导（模型在决策标签里说了 rule= 则以模型为准）；
         // 本批事件带群名时「会话」位渲染成群名（可读目标，N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）。
         matchedRule: definition.schedule.type === 'event'
-          ? describeEventScheduleRule(definition.schedule, { chatName: firstChatName(carried) })
+          ? describeBatchRule(definition.schedule, carried)
           : undefined,
       }));
     } catch (error) {

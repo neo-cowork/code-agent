@@ -8,6 +8,7 @@ import type { DurableRunReadService } from '../../host/app/durableRunReadService
 import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
 import type { RunHandle } from '../../host/runtime/runContext';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
+import { DurableStaleHandleError } from '../../host/runtime/durableLeaseGuards';
 import { finalizeOrParkDurableRun } from '../../host/agent/orchestrator/durableRunTerminal';
 import { resolveWorkspacePath } from '../../host/runtime/workspaceScope';
 import {
@@ -104,16 +105,22 @@ class AgentDurableRouteRunLifecycle {
     durableStatus: ExternalEngineTerminalStatus,
   ): Promise<void> {
     if (!(this.deps.durableActivation && this.runHandle)) return;
-    await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
-      now: Date.now(),
-      status: durableStatus,
-      reason: finalStatus,
-      event: {
-        type: `run_${finalStatus}`,
-        payload: { sessionId: this.deps.sessionId },
-        recordedAt: Date.now(),
-      },
-    }, this.runHandle);
+    try {
+      await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
+        now: Date.now(),
+        status: durableStatus,
+        reason: finalStatus,
+        event: {
+          type: `run_${finalStatus}`,
+          payload: { sessionId: this.deps.sessionId },
+          recordedAt: Date.now(),
+        },
+      }, this.runHandle);
+    } catch (error) {
+      // 这条 run 已被新 handle 接管（恢复后续跑）：本轮的结果照常返回，终态归新 handle 写。
+      if (!(error instanceof DurableStaleHandleError)) throw error;
+      this.deps.logger.warn('Durable Run terminal superseded by a newer handle; keeping the route result', { finalStatus, ...error.details });
+    }
   }
 
   async markFailure(input: { disconnected: boolean; message: string }): Promise<void> {
@@ -150,7 +157,11 @@ class AgentDurableRouteRunLifecycle {
         this.terminalStatus = input.disconnected ? 'cancelled' : 'failed';
         this.terminal = true;
       } catch (error) {
-        this.deps.logger.error('Durable Run terminal commit failed:', error);
+        if (error instanceof DurableStaleHandleError) {
+          this.deps.logger.warn('Durable Run failure terminal superseded by a newer handle', error.details);
+        } else {
+          this.deps.logger.error('Durable Run terminal commit failed:', error);
+        }
       }
     }
   }

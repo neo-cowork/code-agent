@@ -1,7 +1,9 @@
 // 内置 provider 的展示名随界面语言：英文界面统一英文名，中文界面保持原样。
 // 英文名来自 shared（注册表 / 模型目录），这里只保存中文界面要保留的原中文名与描述。
 import { PROVIDER_REGISTRY, getProviderDisplayName } from '@shared/constants';
+import { formatDynamicCustomProviderFallback, isDynamicCustomProviderId } from '@shared/modelRuntime';
 import type { Language } from './index';
+import { formatLocalizedCustomProviderFallback } from './settingsVocabulary';
 
 interface ZhProviderText {
   name?: string;
@@ -55,6 +57,17 @@ export function resolveProviderText(
 
 /** 切换器 / 任务策略分组的 provider 标签：运行时选项自带的 label 优先，缺省取注册表名，再按界面语言本地化。 */
 export function resolveProviderLabel(provider: string, label: string | undefined, language: Language): string {
+  if (isDynamicCustomProviderId(provider)) {
+    const trimmed = label?.trim();
+    if (
+      !trimmed
+      || trimmed.toLowerCase() === provider.trim().toLowerCase()
+      || trimmed === formatDynamicCustomProviderFallback(provider)
+    ) {
+      return formatLocalizedCustomProviderFallback(provider, language);
+    }
+    return label ?? trimmed;
+  }
   return localizeProviderLabel(provider, label || getProviderDisplayName(provider) || provider, language);
 }
 

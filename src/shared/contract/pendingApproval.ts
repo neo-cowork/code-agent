@@ -118,8 +118,10 @@ export interface ToolApprovalPayload {
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
 export interface ParkedApprovalInboxItem {
   id: string;
-  kind?: 'tool_approval' | 'directory_access' | 'channel_pairing';
+  kind?: 'tool_approval' | 'directory_access' | 'channel_pairing' | 'launch';
   sessionId: string | null;
+  /** kind='launch' only: how many team members the pending launch would start. */
+  launchMemberCount?: number;
   /** 原始 assistant tool_call id；渲染端据此把「等批准」精确对到会话里那一步。老行没有。 */
   toolCallId?: string;
   sessionTitle?: string;

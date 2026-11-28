@@ -43,21 +43,23 @@ export const CRON_EVENT_DECISION_BLOCK_PATTERN = new RegExp(`<${TAG}\\b[^>]*>[\\
  * 群/邮箱目录。三类事件源之外没有别的筛选字段（无关键词/过滤文本），规则即绑定本身。
  * options.chatName / accountName：本批入站事件携带的群名与账号显示名
  * （N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）——有就把「会话/账号」位渲染成人话，
- * 没有才落配置里的原始 id；绑定判定永远逐字用 id，展示替换不影响准入。
+ * 缺群名时回落 chatId，缺账号名时省略账号位；绑定判定永远逐字用 id，展示替换不影响准入。
  */
 export function describeEventScheduleRule(
   schedule: EventScheduleConfig,
   options?: { chatName?: string; accountName?: string },
 ): string {
   if (schedule.source === 'channel') {
-    return truncateObserveText(
-      buildCronEventDecisionText(schedule.chatId ? 'channelChatRule' : 'channelAnyChatRule', {
-        account: options?.accountName?.trim() || schedule.accountId,
-        // 群名只用于展示替换，绑定判定仍逐字用 chatId；名字缺失回落原始 id。
-        ...(schedule.chatId ? { chat: options?.chatName?.trim() || schedule.chatId } : {}),
-      }),
-      CRON_EVENT_DECISIONS.MAX_REASON_CHARS,
-    );
+    const account = options?.accountName?.trim();
+    const chat = schedule.chatId ? options?.chatName?.trim() || schedule.chatId : undefined;
+    const rule = chat
+      ? account
+        ? buildCronEventDecisionText('channelChatRule', { account, chat })
+        : buildCronEventDecisionText('channelChatRuleWithoutAccount', { chat })
+      : account
+        ? buildCronEventDecisionText('channelAnyChatRule', { account })
+        : buildCronEventDecisionText('channelAnyChatRuleWithoutAccount');
+    return truncateObserveText(rule, CRON_EVENT_DECISIONS.MAX_REASON_CHARS);
   }
   if (schedule.source === 'connector') {
     return truncateObserveText(

@@ -1,4 +1,5 @@
 import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
+import { backgroundTaskFailureCopy } from '../../../utils/agentFailureCopy';
 import { readHelperOutcomes } from '../../../utils/helperOutcomeCopy';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
@@ -175,7 +176,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       //  · 仍要计数——直接 continue 会让「WebSearch 失败 → WebFetch 失败 → 模型给出答案」
       //    这种整组都被过滤的情形 label 变成空串，撞上下面 `!label` 的守卫，整个工具组
       //    从时间线上消失，用户连「搜索发生过」都不知道。
-      const benign = isAutoLoadedRetry(tc.metadata) || tc.recovered;
+      const benign = isAutoLoadedRetry(tc.metadata) || (tc.recovered && !terminalById.get(tc.id)?.handedOff);
       const preflight = benign ? null : getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
         toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
       } });
@@ -227,8 +228,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       if (!tc) continue;
       // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，不参与组状态判定
       // （否则组会卡 error/partial、顶红、一直展开，把成功的一轮演成翻车）。
-      if (isAutoLoadedRetry(tc.metadata) || tc.recovered) continue;
       const terminal = terminalById.get(tc.id);
+      if (isAutoLoadedRetry(tc.metadata) || (tc.recovered && !terminal?.handedOff)) continue;
       if (!terminal) continue;
       if (terminal.stepStatus === 'pending-approval') return 'pending-approval';
       if (terminal.state === 'running') hasRunning = true;
@@ -302,6 +303,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const p = t.decisionCard.permission;
     const requestDetails = request.details as Record<string, unknown>;
     const denied = request.decision === 'deny' || request.decision === 'never';
+    const deniedOnce = request.decision === 'deny';
     const timedOut = request.decision === 'timeout';
     const superseded = request.decision === 'superseded';
     const statusLabel = superseded
@@ -328,7 +330,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const details = redactCredentialText(JSON.stringify(request.details, null, 2));
 
     const allowed = !denied && !timedOut && !superseded;
-    return [{ request, statusLabel, stepLabel, details, timedOut, denied, nodeIndex: nodes.indexOf(node), foldKey: allowed && request.tool === 'ExcelAutomate' ? `${request.tool}:${classifyToolCall(request.tool, requestDetails)}` : null }];
+    return [{ request, statusLabel, stepLabel, details, timedOut, denied, deniedOnce, nodeIndex: nodes.indexOf(node), foldKey: allowed && request.tool === 'ExcelAutomate' ? `${request.tool}:${classifyToolCall(request.tool, requestDetails)}` : null }];
   }), [nodes, resolvedPermissionRequests, t]);
   // 连续、同工具同步骤类的「你已允许」折成一行带次数；拒绝 / 超时 / 被顶替从不折叠。
   const permissionEvidenceRows = useMemo(() => permissionEvidence.reduce<Array<typeof permissionEvidence[number] & { count: number }>>((rows, item) => {
@@ -348,11 +350,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   // （原先还挂了一档 toolFailureCode 兜底，已删：它不可达——那一行只在 status 为
   //   partial/error 时渲染，而那两种状态成立就必然存在 success===false 的 toolCall，
   //   failureReason 于是必非空，永远轮不到那一档。）
-  const permissionRequestOutcome = permissionEvidence.some(({ denied }) => denied)
-    ? t.outcomeWords['failed-approval-denied'].timeline
-    : permissionEvidence.some(({ timedOut }) => timedOut)
-      ? t.outcomeWords['failed-timeout'].timeline
-      : null;
+  const permissionRequestReason = permissionEvidence.some(({ deniedOnce }) => deniedOnce)
+    ? t.decisionCard.permission.deniedReasonWithNextStep
+      .replace('{reason}', t.outcomeWords['failed-approval-denied'].timeline.reason)
+      .replace('{nextStep}', t.decisionCard.permission.deniedNextStep)
+    : permissionEvidence.some(({ denied }) => denied)
+      ? t.outcomeWords['failed-approval-denied'].timeline.reason
+      : permissionEvidence.some(({ timedOut }) => timedOut)
+        ? t.outcomeWords['failed-timeout'].timeline.reason
+        : null;
   const planApproval = useMemo(
     () => toolCalls.map(getPlanApprovalRecord).find((record) => record !== null) ?? null,
     [toolCalls],
@@ -421,10 +427,15 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const failureReason = useMemo(() => {
     // 与组头 label 同口径：已恢复/自动重试的失败不算数，否则会出现 label 说「1 条未成功」、
     // 原因行说「2 失败」这种自相矛盾。
+    // 已交给后台任务的调用不是它自己的失败：任务失败时读任务的人话原因，其余情况不报失败。
+    const handedOffFailure = toolCalls.map((toolCall) => terminalById.get(toolCall.id))
+      .find((terminal) => terminal?.handedOffOutcome === 'failed' && terminal.handoffTask);
     const unsettled = toolCalls.filter((toolCall) => toolCall.result?.success === false
+      && !terminalById.get(toolCall.id)?.handedOff
       && !isAutoLoadedRetry(toolCall.result?.metadata) && toolCall.result?.metadata?.recovered !== true);
     // 从未执行的作废步不是失败：不进失败计数；全是作废步时只读第一条「未执行 · 原因」。
     const failedCalls = unsettled.filter((toolCall) => !terminalById.get(toolCall.id)?.notRun);
+    if (failedCalls.length === 0 && handedOffFailure?.handoffTask) return backgroundTaskFailureCopy(handedOffFailure.handoffTask, t);
     if (failedCalls.length === 0) return unsettled.length > 0 ? humanizeToolFailureReason(unsettled[0], t) : null;
     if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
     return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
@@ -435,7 +446,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   // 结局优先：这组里有多少次失败已被后续成功恢复——只用于安静地标个「已恢复」，不顶红。
   // skipped（从未执行）的行虽会被投影层降级成 recovered，但不是「失败后恢复」，不计入。
   const recoveredCount = useMemo(
-    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped).length,
+    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped && !terminalById.get(n.toolCall.id)?.handedOff).length,
     [nodes, terminalById],
   );
   const totalDuration = useMemo(() => {
@@ -551,7 +562,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
+              {permissionRequestReason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
         </span>
@@ -576,7 +587,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      {permissionEvidenceRows.map(({ request, statusLabel, stepLabel, details, timedOut, denied, count }) => (
+      {permissionEvidenceRows.map(({ request, statusLabel, stepLabel, details, timedOut, denied, deniedOnce, count }) => (
         <div
           key={request.id}
           className="ml-4 flex items-start gap-2 pl-3 text-[11px] leading-5 text-zinc-500"
@@ -590,6 +601,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                   ? `${t.outcomeWords['failed-timeout'].timeline.label} · ${t.outcomeWords['failed-timeout'].timeline.reason} · ${stepLabel}`
                   : `${statusLabel} · ${stepLabel}${count > 1 ? ` · ${t.decisionCard.permission.settledAllowedFolded.replace('{count}', String(count))}` : ''}`}
             </summary>
+            {deniedOnce && (
+              <p
+                className="mt-1 whitespace-normal break-words text-[11px] leading-4 text-zinc-400"
+                data-testid="permission-decision-denied-next-step"
+              >
+                {t.decisionCard.permission.deniedNextStep}
+              </p>
+            )}
             <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-primary px-2 py-1.5 text-[10px] leading-4 text-zinc-500">
               {details}
             </pre>

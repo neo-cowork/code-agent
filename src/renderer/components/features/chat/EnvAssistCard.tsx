@@ -7,6 +7,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
 import { invokeDomain } from '../../../services/ipcService';
 import { useEnvAssistStore } from '../../../stores/envAssistStore';
+import { OfflineEnvAssistCard } from './OfflineEnvAssistCard';
 import { useEnvCardResumesAutomatically } from '../../../hooks/useEnvParkedTarget';
 
 const SAFE_CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/;
@@ -24,9 +25,15 @@ function resolveLoginTargetName(
 }
 
 export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice }): React.ReactElement {
-  const { t, language } = useI18n();
   const live = useEnvAssistStore((state) => state.notices[snapshot.id]);
   const notice = live && live.updatedAt >= snapshot.updatedAt ? live : snapshot;
+  return notice.class === 'offline'
+    ? <OfflineEnvAssistCard notice={notice} />
+    : <PermissionEnvAssistCard notice={notice} />;
+}
+
+function PermissionEnvAssistCard({ notice }: { notice: EnvAssistNotice }): React.ReactElement {
+  const { t, language } = useI18n();
   const isLogin = notice.class === 'login_expired';
   const [available, setAvailable] = useState(isLogin);
   const [busy, setBusy] = useState(false);
@@ -71,9 +78,10 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
             : notice.phase === 'unconfirmed'
               ? (notice.sentenceKey === 'env.sentence.loginUnconfirmed' ? interpolate(t.env.login.unconfirmed, { name: loginName }) : '')
               : notice.sentenceKey === 'env.sentence.loginExpired' ? interpolate(t.env.login.expired, { name: loginName }) : ''
+    : notice.phase === 'resolved' && notice.sentenceKey === 'env.reused.mail' ? t.env.reused
     : notice.phase === 'resolved'
-      ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
-      : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
+    ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
+    : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
   // 停车等授权的那一轮：允许后同一任务自动续做，卡上一并说清（输入框上方不再另起一行重复）。
   const autoResumes = !isLogin && useEnvCardResumesAutomatically(notice) && notice.phase !== 'resolved' && Boolean(sentence);
   const label = isLogin

@@ -10,7 +10,7 @@ type EnvBlock = NonNullable<DurableResumeState['envBlocked']>;
 /** 授权目标的人话名（日历/邮件…）；未登记的目标回落原 id，不吞掉。 */
 export function useEnvTargetLabel(block: Pick<EnvBlock, 'target'> | undefined): string | undefined {
   const { t } = useI18n();
-  if (!block) return undefined;
+  if (!block || block.target === 'network') return undefined;
   return (t.env.target as Record<string, string>)[block.target] ?? block.target;
 }
 
@@ -35,7 +35,7 @@ export function useEnvParkedStep(sessionId: string | null | undefined): { toolCa
     return { class: notice.class, target: notice.target.id, toolCallId: notice.parkedToolCallId };
   }));
   const target = useEnvTargetLabel(block);
-  return block && target ? { toolCallId: block.toolCallId, target, login: block.class === 'login_expired' } : undefined;
+  return block?.toolCallId && target ? { toolCallId: block.toolCallId, target, login: block.class === 'login_expired' } : undefined;
 }
 
 export function useEnvParkedTarget(sessionId: string | null | undefined, toolCallId: string): { target: string; login: boolean } | undefined {
@@ -51,10 +51,10 @@ export function useEnvParkedTarget(sessionId: string | null | undefined, toolCal
 export function useEnvParkedCardOpen(resume: Pick<DurableResumeState, 'interruptCause' | 'runId'> | undefined): boolean {
   const runId = resume?.interruptCause === 'env_blocked' ? resume.runId : undefined;
   const snapshot = useSessionStore((state) => (runId
-    ? state.messages?.find((message) => message.metadata?.envAssist?.runId === runId)?.metadata?.envAssist
+    ? state.messages?.findLast((message) => message.metadata?.envAssist?.runId === runId)?.metadata?.envAssist
     : undefined));
   const live = useEnvAssistStore((state) => (runId
-    ? Object.values(state.notices).find((notice) => notice.runId === runId)
+    ? Object.values(state.notices).findLast((notice) => notice.runId === runId)
     : undefined));
   const notice: EnvAssistNotice | undefined = live && (!snapshot || live.updatedAt >= snapshot.updatedAt) ? live : snapshot;
   return Boolean(notice && notice.phase !== 'resolved');
