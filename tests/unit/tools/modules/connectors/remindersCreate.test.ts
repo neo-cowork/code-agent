@@ -138,6 +138,18 @@ describe('remindersCreateModule (native)', () => {
       });
     });
 
+    it('tags unknown reminder list errors with code not_found', async () => {
+      execMock.mockRejectedValue(
+        new Error('No reminder list named "UnknownList". Available lists: Reminders. Omit list to use the default list.'),
+      );
+      const result = await run({ ...validArgs, list: 'UnknownList' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('not_found');
+        expect(result.error).toContain('No reminder list named "UnknownList"');
+      }
+    });
+
     it('sanitizes osascript failure and adds no-Bash/osascript guidance when nothing was created', async () => {
       const osascriptError = Object.assign(
         new Error('Command failed: osascript -e \'tell application "Reminders" to make new reminder\''),

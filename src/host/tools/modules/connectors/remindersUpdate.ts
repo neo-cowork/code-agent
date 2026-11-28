@@ -16,7 +16,12 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { appleScriptFailureForDisplay, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import {
+  appleScriptFailureForDisplay,
+  appleScriptWriteFailureCode,
+  connectorNotFoundCode,
+  describeAppleScriptWriteFailure,
+} from './appleScriptWriteFailure';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
 import { remindersUpdateNoChangeError } from './remindersApprovalDetails';
 import { normalizeReminderCreateTime } from '../../reminderCreateTime';
@@ -111,11 +116,13 @@ async function executeRemindersUpdate(
     );
     const title = typeof args.title === 'string' ? args.title.trim() : '';
     const failureName = title ? `${copy.updateFailed}${separator}${title}` : copy.updateFailed;
-    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure) : undefined;
+    const failureCode = appleScriptWriteFailureCode(error).code ?? connectorNotFoundCode(error);
+    const userMessage = locale === 'en' ? appleScriptFailureForDisplay(error, 'Reminders', appleScriptFailure, failureCode) : undefined;
     return {
       ok: false,
       error: failure,
       ...(userMessage ? { userMessage } : {}),
+      ...(failureCode ? { code: failureCode } : {}),
       meta: {
         action: 'update_reminder',
         connector: 'reminders',

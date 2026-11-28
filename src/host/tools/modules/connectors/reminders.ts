@@ -20,6 +20,7 @@ import {
   describeAppleScriptFailure,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
+import { connectorNotFoundCode } from './appleScriptWriteFailure';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeStatusDetail, formatConnectorStatus, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
@@ -193,23 +194,23 @@ async function executeReminders(
       meta: buildRemindersMeta(ctx, action, output, { count: reminders.length, reminders }, copy.read.items),
     };
   } catch (error) {
-    const osascriptFailure = isAppleScriptFailure(error);
+    const isScriptFailure = isAppleScriptFailure(error);
     const failure = describeAppleScriptFailure(
       'Reminders', error,
       !probingAccess && action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
     );
     ctx.logger.warn('reminders connector failed', {
       connector: 'reminders',
-      code: osascriptFailure ? failure.code : 'connector_error',
+      code: isScriptFailure ? failure.code : 'connector_error',
       detail: appleScriptFailureLogDetail(error),
     });
     const displayMessage = failure.code === 'timeout' ? failure.message : catalog.appleScriptFailure[failure.code];
     const result: ToolResult<string> = {
       ok: false,
-      error: osascriptFailure
+      error: isScriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
-      code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
+      code: isScriptFailure ? failure.code : (connectorNotFoundCode(error) ?? 'CONNECTOR_FAILED'),
       ...(locale === 'en' && failure.code !== 'not_authorized' ? { userMessage: displayMessage } : {}),
     };
     if (result.code === 'not_authorized') {
