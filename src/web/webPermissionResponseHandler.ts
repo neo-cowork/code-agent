@@ -16,6 +16,8 @@ import { IPC_CHANNELS } from '../shared/ipc';
 import { getTaskManager } from '../host/task/TaskManager';
 import { closeDeadParkedApproval } from '../host/agent/parkedApprovalHydration';
 import { resumeSurvivingParkedApproval } from '../host/agent/parkedApprovalResume';
+import { getSwarmLaunchApprovalGate } from '../host/agent/swarmLaunchApproval';
+import { isApprovePermissionResponse } from '../shared/contract/permission';
 import { deliverForegroundPermissionResponse } from './foregroundPermissionRegistry';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../shared/contract/permission';
 import type { PendingDevPermissionRequest } from './routes/dev';
@@ -79,6 +81,79 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
       const updatedArgs = (rawUpdatedArgs ?? undefined) as Record<string, unknown> | undefined;
 
       const targetSessionId = sessionId || getCurrentSessionId();
+
+      // 团队启动审批（kind='launch'）不在权限岛 / TaskManager 的挂起表里，只活在启动闸门：
+      // 收件箱、运行记录状态条回传的应答必须先在这里认领，否则一路落到 unknown_request
+      // 被丢弃（11-27 夜跑 F15：同一 id 被丢 111 次，定时任务永远「运行中」）。
+      const launchGate = getSwarmLaunchApprovalGate();
+      const launchRequest = launchGate.getPendingRequests().find((request) => request.id === requestId);
+      if (launchRequest) {
+        if (launchRequest.sessionId !== targetSessionId) {
+          logger.warn('Team launch approval response not delivered: session mismatch (web)', {
+            requestId,
+            response,
+            sessionId: targetSessionId,
+            ownerSessionId: launchRequest.sessionId,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'LAUNCH_APPROVAL_SESSION_MISMATCH',
+              message: `Team launch approval ${requestId} belongs to another session (session=${targetSessionId ?? 'none'})`,
+            },
+          };
+        }
+        if (updatedArgs) {
+          logger.warn('Team launch approval response rejected: a launch cannot be edited (web)', {
+            requestId,
+            response,
+            sessionId: targetSessionId,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'LAUNCH_APPROVAL_NOT_EDITABLE',
+              message: `Team launch approval ${requestId} does not accept edited arguments`,
+            },
+          };
+        }
+        const approved = isApprovePermissionResponse(response);
+        const scope = { sessionId: launchRequest.sessionId, runId: launchRequest.runId };
+        const settled = approved
+          ? launchGate.approve(requestId, undefined, scope)
+          : launchGate.reject(requestId, 'Rejected by the user in the review inbox. Do not retry this team launch.', scope);
+        if (!settled) {
+          // 并发：别处（会话卡 / 到期计时器）先一步结算了。
+          logger.warn('Team launch approval response not delivered: already settled (web)', {
+            requestId,
+            response,
+            sessionId: targetSessionId,
+          });
+          return {
+            success: false,
+            error: {
+              code: FAILURE_CODES.unknown_request,
+              message: `Team launch approval ${requestId} was already settled (session=${targetSessionId})`,
+            },
+          };
+        }
+        logger.info('Team launch approval response delivered (web)', {
+          requestId,
+          response,
+          sessionId: targetSessionId,
+          decision: approved ? 'approved' : 'rejected',
+        });
+        return {
+          success: true,
+          data: {
+            requestId,
+            sessionId: targetSessionId,
+            source: 'team-launch-approval',
+            decision: approved ? 'approved' : 'rejected',
+          },
+        };
+      }
+
       const foregroundOutcome = targetSessionId
         ? deliverForegroundPermissionResponse(targetSessionId, requestId, response, updatedArgs)
         : undefined;
