@@ -19,6 +19,30 @@ import { AttachmentIcon } from './AttachmentBar';
 import { COMMAND_ICONS } from './PendingCommandChip';
 import type { InlineChipKind } from './composerRichTextModel';
 
+const FILE_CHIP_TAIL_CHARS = 8;
+// 12 个半宽视觉单位（如 "contract.pdf"）在 9.5rem 宽度内不截断，无需拆成 head + tail
+const FILE_CHIP_SPLIT_MIN_UNITS = 12;
+
+function visualWidthUnits(chars: string[]): number {
+  let units = 0;
+  for (const ch of chars) {
+    units += (ch.codePointAt(0) ?? 0) > 0x7f ? 2 : 1;
+  }
+  return units;
+}
+
+function splitFileChipLabel(label: string): { head: string; tail: string } {
+  const chars = Array.from(label);
+  if (chars.length <= FILE_CHIP_TAIL_CHARS || visualWidthUnits(chars) <= FILE_CHIP_SPLIT_MIN_UNITS) {
+    return { head: label, tail: '' };
+  }
+  const splitAt = chars.length - FILE_CHIP_TAIL_CHARS;
+  return {
+    head: chars.slice(0, splitAt).join(''),
+    tail: chars.slice(splitAt).join(''),
+  };
+}
+
 export interface InlineChipView {
   /** `${kind}:${id}`，与 DOM 挂载点 / store 条目对账 */
   key: string;
@@ -68,6 +92,7 @@ export function InlineComposerChip({
     : 'text-zinc-400 hover:bg-zinc-600/70 hover:text-zinc-100';
 
   const CommandIcon = chip.kind === 'command' ? (COMMAND_ICONS[chip.id] ?? Target) : null;
+  const fileLabelParts = chip.kind === 'file' ? splitFileChipLabel(chip.label) : null;
 
   return (
     <span
@@ -81,7 +106,7 @@ export function InlineComposerChip({
         event.preventDefault();
         onRemove(chip);
       }}
-      className={`group mx-px inline-flex max-w-[220px] cursor-default select-none items-center gap-1 rounded-full border px-1.5 py-0.5 align-baseline text-xs transition-colors ${palette}`}
+      className={`group mx-px inline-flex max-w-[9.5rem] sm:max-w-[220px] cursor-default select-none items-center gap-1 rounded-full border px-1.5 py-0.5 align-baseline text-xs transition-colors ${palette}`}
     >
       {chip.kind === 'command' && CommandIcon ? (
         <CommandIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -105,7 +130,14 @@ export function InlineComposerChip({
       ) : (
         <AttachmentIcon category={chip.category ?? 'document'} className="h-3.5 w-3.5 shrink-0" />
       )}
-      <span className="min-w-0 truncate">{chip.label}</span>
+      {fileLabelParts?.tail ? (
+        <span className="inline-flex min-w-0 items-baseline">
+          <span data-chip-label-head="" className="min-w-0 truncate">{fileLabelParts.head}</span>
+          <span data-chip-label-tail="" className="shrink-0 whitespace-pre">{fileLabelParts.tail}</span>
+        </span>
+      ) : (
+        <span className="min-w-0 truncate">{chip.label}</span>
+      )}
       {chip.description ? (
         <span className="shrink-0 whitespace-nowrap text-zinc-500">{chip.description}</span>
       ) : null}
