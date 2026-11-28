@@ -24,7 +24,8 @@ export interface WorkspaceGroup {
    *  until Project metadata loads; the fallback bucket uses the caller-supplied
    *  uncategorizedName (i18n, 禁硬编码). */
   name: string;
-  /** Primary workspace path, usually the most recently active session's path. */
+  /** Primary workspace path, usually the most recently active session's path
+   *  (may be a Neo-made task folder, which `paths` leaves out). */
   path?: string;
   /** Workspace paths listed for the group (hover tip, drawer), newest activity
    *  first. Neo-made task folders are left out. */

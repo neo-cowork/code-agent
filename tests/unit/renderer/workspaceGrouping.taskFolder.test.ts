@@ -5,9 +5,11 @@ import {
   UNCATEGORIZED_WORKSPACE_KEY,
   type WorkspaceGroup,
 } from '../../../src/renderer/utils/workspaceGrouping';
+import { mergeEmptyCollaborationSpaces } from '../../../src/renderer/utils/emptyCollaborationSpaces';
+import { buildSidebarSessionTierSections } from '../../../src/renderer/utils/sidebarSessionTiers';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
-import { UNSORTED_PROJECT_ID } from '../../../src/shared/contract/project';
+import { UNSORTED_PROJECT_ID, type ProjectWithActivity } from '../../../src/shared/contract/project';
 
 // Owner decision B: a chat started without picking a folder lives in a Neo-made task
 // folder (任务_MMDD_… / Task_MMDD_…) but sits in Quick chats under its own title.
@@ -149,5 +151,81 @@ describe('workspaceGrouping: chats in a Neo-made task folder', () => {
     expect(groupOf(groups, 'win')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
     expect(groupOf(groups, 'slash')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
     expect(groupOf(groups, 'parent')).toMatchObject({ key: '/x/Neo/任务_1101_create-role/assets', name: 'assets' });
+  });
+});
+
+// A task-folder project the user promoted to a space (space page promote, or createSpace on that
+// folder) is still a space: once the space catalog says so, its chats leave Quick chats again.
+describe('sidebar tiers: a space whose own folder is a Neo-made task folder', () => {
+  const taskFolder = '/x/Neo/任务_1104_family-budget';
+
+  function space(overrides: Partial<ProjectWithActivity> & Pick<ProjectWithActivity, 'id'>): ProjectWithActivity {
+    return {
+      name: 'Family budget',
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: 10,
+      activeTopicCount: 0,
+      lastActivityAt: null,
+      visibleSessionCount: 0,
+      spacePromotedAt: 5,
+      workspacePath: taskFolder,
+      ...overrides,
+    };
+  }
+
+  function tiersOf(sections: ReturnType<typeof buildSidebarSessionTierSections>) {
+    return Object.fromEntries(sections.map((section) => [
+      section.tier,
+      section.groups.map((item) => ({ key: item.key, sessions: item.sessions.map((s) => s.id) })),
+    ]));
+  }
+
+  const promotedChats = [
+    session({ id: 'budget', projectId: 'proj_t', workingDirectory: taskFolder, updatedAt: 300 }),
+    session({ id: 'plain', projectId: UNSORTED_PROJECT_ID, updatedAt: 200 }),
+  ];
+
+  it('keeps the chats in Quick chats until the space catalog arrives, then returns them to the space', () => {
+    const groups = group(promotedChats);
+
+    expect(tiersOf(buildSidebarSessionTierSections(groups, {}))).toEqual({
+      quick: [{ key: UNCATEGORIZED_WORKSPACE_KEY, sessions: ['budget', 'plain'] }],
+    });
+    expect(tiersOf(buildSidebarSessionTierSections(groups, { proj_t: { name: 'Family budget', spacePromotedAt: 5 } }))).toEqual({
+      space: [{ key: 'project:proj_t', sessions: ['budget'] }],
+      quick: [{ key: UNCATEGORIZED_WORKSPACE_KEY, sessions: ['plain'] }],
+    });
+  });
+
+  it('merges returned chats into the group the space already has for its pinned chats', () => {
+    const groups = group([
+      ...promotedChats,
+      session({ id: 'pinned', projectId: 'proj_t', workingDirectory: '/x/Neo/任务_1105_receipts', metadata: { projectPinned: true }, updatedAt: 100 }),
+    ]);
+
+    const sections = buildSidebarSessionTierSections(groups, { proj_t: { name: 'Family budget', spacePromotedAt: 5 } });
+    expect(tiersOf(sections)).toEqual({
+      space: [{ key: 'project:proj_t', sessions: ['budget', 'pinned'] }],
+      quick: [{ key: UNCATEGORIZED_WORKSPACE_KEY, sessions: ['plain'] }],
+    });
+    expect(sections[0].groups[0]).toMatchObject({ projectId: 'proj_t', latestActivityAt: 300, paths: [] });
+  });
+
+  it('keys an empty space on a task folder as the space, not as Quick chats', () => {
+    const groups = mergeEmptyCollaborationSpaces(group([session({ id: 'plain', projectId: UNSORTED_PROJECT_ID })]), [space({ id: 'proj_e' })]);
+
+    expect(tiersOf(buildSidebarSessionTierSections(groups, { proj_e: { name: 'Family budget', spacePromotedAt: 5 } }))).toEqual({
+      space: [{ key: 'project:proj_e', sessions: [] }],
+      quick: [{ key: UNCATEGORIZED_WORKSPACE_KEY, sessions: ['plain'] }],
+    });
+  });
+
+  it('does not bring back the chats of an archived space', () => {
+    const sections = buildSidebarSessionTierSections(group(promotedChats), {
+      proj_t: { name: 'Family budget', spacePromotedAt: 5, status: 'archived' },
+    });
+
+    expect(tiersOf(sections)).toEqual({ quick: [{ key: UNCATEGORIZED_WORKSPACE_KEY, sessions: ['plain'] }] });
   });
 });
