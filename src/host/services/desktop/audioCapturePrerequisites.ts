@@ -1,6 +1,4 @@
-import { execFileSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import type {
   AudioCaptureMode,
@@ -8,32 +6,15 @@ import type {
   AudioCapturePrerequisites,
   AudioCaptureVoiceDetectionState,
 } from '@shared/contract/audioCapture';
-import { getUserConfigDir } from '../../config/configPaths';
+import { getHomeDir, getUserConfigDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { loadVadRuntime, type VadRuntimeLoadResult } from './audioVadRuntime';
 import { findWhisperBinary, hasWhisperModel } from '../media/whisperBinary';
+import { findMicrophoneRecorder } from './microphoneRecorder';
 
 const logger = createLogger('AudioCapturePrerequisites');
 
-const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
-const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
 const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
-
-function isCommandOnPath(command: string): boolean {
-  try {
-    const resolved = execFileSync('which', [command], { encoding: 'utf-8' }).trim();
-    return Boolean(resolved) && fs.existsSync(resolved);
-  } catch {
-    return false;
-  }
-}
-
-function hasMicrophoneRecorder(): boolean {
-  for (const candidate of [...FFMPEG_PATHS, ...REC_PATHS]) {
-    if (fs.existsSync(candidate)) return true;
-  }
-  return isCommandOnPath('ffmpeg') || isCommandOnPath('rec');
-}
 
 function hasSystemAudioRecorder(moduleDir = __dirname): boolean {
   const scriptDir = path.join(moduleDir, '..', '..', '..', 'scripts');
@@ -92,12 +73,12 @@ function detectVoiceDetectionState(moduleDir = __dirname): AudioCaptureVoiceDete
 export function getAudioCapturePrerequisites(
   activeMode: AudioCaptureMode = 'microphone',
 ): AudioCapturePrerequisites {
-  const homeDir = process.env.CODE_AGENT_HOME || os.homedir();
-  const microphoneReady = hasMicrophoneRecorder();
+  const homeDir = getHomeDir();
+  const microphoneReady = findMicrophoneRecorder() !== null;
   const systemAudioReady = hasSystemAudioRecorder();
   // 有 whisper 程序还得有模型才转得了字；两者缺哪个提示不同（程序 vs 模型）
   const whisperBinary = findWhisperBinary() !== null;
-  const transcriptionReady = (whisperBinary && hasWhisperModel(homeDir)) || hasQwenEngine(homeDir);
+  const transcriptionReady = (whisperBinary && hasWhisperModel()) || hasQwenEngine(homeDir);
   const voiceDetection = detectVoiceDetectionState();
 
   const missing: AudioCaptureMissingPrerequisiteCode[] = [];

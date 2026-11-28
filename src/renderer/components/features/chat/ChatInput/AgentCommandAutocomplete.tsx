@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { UserPlus } from 'lucide-react';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
@@ -6,6 +6,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import type { AgentCommandOption } from './agentCommand';
 import { interpolatePlural } from '../../../../i18n/interpolate';
+import { useComposerPopoverMaxHeight } from './useComposerPopoverMaxHeight';
 
 /** /agent autocomplete list. Extracted from ChatInput so the god file does not grow. */
 export function AgentCommandAutocomplete({
@@ -23,10 +24,17 @@ export function AgentCommandAutocomplete({
 }): React.ReactElement {
   const { t } = useI18n();
   const localizeRole = useLocalizeRole();
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const popoverMaxHeight = useComposerPopoverMaxHeight(popoverRef, 240);
   const shown = (option: AgentCommandOption) =>
     localizeRole(option.id ?? '', { name: option.name, profession: option.profession });
   return (
-    <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg elevation-l2 popover-enter">
+    <div
+      ref={popoverRef}
+      data-agent-command-autocomplete
+      style={{ maxHeight: popoverMaxHeight }}
+      className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-y-auto rounded-lg elevation-l2 popover-enter"
+    >
       <div className="border-b border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
         /agent
       </div>

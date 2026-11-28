@@ -13,7 +13,8 @@ import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
 import { getAudioCapturePrerequisites } from './audioCapturePrerequisites';
-import { findWhisperBinary, whisperLanguageArgs } from '../media/whisperBinary';
+import { findWhisperBinary, findWhisperModel, whisperLanguageArgs } from '../media/whisperBinary';
+import { findMicrophoneRecorder } from './microphoneRecorder';
 import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import { dropMicEchoes } from './audioCrossEcho';
 import { AudioStreamClock } from './audioStreamClock';
@@ -81,15 +82,10 @@ function parseJsonArray(raw: string): unknown[] {
   }
 }
 
-// ffmpeg paths — 使用 AVFoundation 采集（sox CoreAudio 在 Tauri 子进程中无法获取 TCC 权限）
-const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
-// sox/rec paths — 仅用于 soxAvailable 检测（实际采集改用 ffmpeg）
-const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
 // system-audio-capture Swift tool (ScreenCaptureKit)
 const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
 
-// Whisper-cpp paths
-const WHISPER_MODEL_DIR = path.join(os.homedir(), '.cache', 'whisper');
+// Whisper-cpp 首选模型（目录与查找在 media/whisperBinary）
 const WHISPER_DEFAULT_MODEL = 'ggml-large-v3-turbo.bin';
 
 // Qwen3-ASR paths
@@ -134,25 +130,9 @@ let powerCheckTimer: ReturnType<typeof setInterval> | null = null;
 let audioRetentionTimer: ReturnType<typeof setInterval> | null = null;
 let totalSegments = 0;
 const asrQueue: Array<{ wavPath: string; startMs: number; endMs: number; speakerId: number }> = [];
-let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
-let ffmpegBinaryPath: string | null = null; // 缓存 ffmpeg 二进制路径
 let systemAudioBinaryPath: string | null = null; // 缓存 system-audio-capture 路径
 let asrProcessing = 0; // number of concurrent ASR workers
 const ASR_MAX_CONCURRENCY = 3; // run up to 3 ASR processes in parallel
-
-/** 查找 ffmpeg 二进制 */
-function findFfmpegBinary(): string | null {
-  if (ffmpegBinaryPath) return ffmpegBinaryPath;
-  for (const p of FFMPEG_PATHS) {
-    if (fs.existsSync(p)) { ffmpegBinaryPath = p; return p; }
-  }
-  try {
-    ffmpegBinaryPath = execFileSync('which', ['ffmpeg'], { encoding: 'utf-8' }).trim();
-    return ffmpegBinaryPath;
-  } catch {
-    return null;
-  }
-}
 
 /** 查找或编译 system-audio-capture（ScreenCaptureKit 系统音频采集工具） */
 function findSystemAudioCaptureBinary(): string | null {
@@ -195,20 +175,6 @@ function findSystemAudioCaptureBinary(): string | null {
   }
 
   return null;
-}
-
-/** 查找 rec 二进制 — 仅用于兼容性检查 */
-function findRecBinary(): string | null {
-  if (recBinaryPath) return recBinaryPath;
-  for (const p of REC_PATHS) {
-    if (fs.existsSync(p)) { recBinaryPath = p; return p; }
-  }
-  try {
-    recBinaryPath = execFileSync('which', ['rec'], { encoding: 'utf-8' }).trim();
-    return recBinaryPath;
-  } catch {
-    return null;
-  }
 }
 
 export { VadStateMachine };
@@ -380,17 +346,6 @@ function saveWavFile(pcm: Int16Array, startMs: number, speakerId: number): strin
 // ASR (Transcription)
 // ============================================================================
 
-function findWhisperModel(): string | null {
-  const modelPath = path.join(WHISPER_MODEL_DIR, WHISPER_DEFAULT_MODEL);
-  if (fs.existsSync(modelPath)) return modelPath;
-  // Check for any ggml model
-  if (fs.existsSync(WHISPER_MODEL_DIR)) {
-    const files = fs.readdirSync(WHISPER_MODEL_DIR).filter(f => f.startsWith('ggml-') && f.endsWith('.bin'));
-    if (files.length > 0) return path.join(WHISPER_MODEL_DIR, files[0]);
-  }
-  return null;
-}
-
 function findQwenAsrModel(): string | null {
   for (const p of QWEN_ASR_PATHS) {
     if (fs.existsSync(p)) {
@@ -407,7 +362,7 @@ function findQwenAsrModel(): string | null {
 
 async function transcribeWithWhisperCpp(wavPath: string): Promise<string | null> {
   const binary = findWhisperBinary();
-  const model = findWhisperModel();
+  const model = findWhisperModel(WHISPER_DEFAULT_MODEL);
   if (!binary || !model) return null;
 
   try {
@@ -703,10 +658,7 @@ function checkPowerState(): 'full' | 'reduced' | 'paused' {
 // ============================================================================
 
 /** 自动检测可用的 AVFoundation 音频输入设备索引（跳过虚拟设备和断开的蓝牙） */
-function detectAudioDeviceIndex(): string {
-  const ffmpegBin = findFfmpegBinary();
-  if (!ffmpegBin) return ':0';
-
+function detectAudioDeviceIndex(ffmpegBin: string): string {
   try {
     // ffmpeg -list_devices 输出在 stderr
     const result = execFileSync(ffmpegBin, [
@@ -765,11 +717,11 @@ function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null
     return spawn(sysAudioBin, [], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
   // 麦克风：优先使用 ffmpeg + AVFoundation（macOS TCC 兼容），fallback 到 sox rec
-  const ffmpegBin = findFfmpegBinary();
-  if (ffmpegBin) {
-    const audioDevice = detectAudioDeviceIndex();
+  const recorder = findMicrophoneRecorder();
+  if (recorder?.kind === 'ffmpeg') {
+    const audioDevice = detectAudioDeviceIndex(recorder.path);
     logger.info('[音频采集] 使用 ffmpeg AVFoundation 模式', { device: audioDevice });
-    return spawn(ffmpegBin, [
+    return spawn(recorder.path, [
       '-f', 'avfoundation', '-i', audioDevice,
       // avfoundation 会丢帧（11-14 本机实测只出实时的 0.88 倍），段落时间按样本数推算会越录越早；
       // 按时间戳把缺口补成静音，样本数才和墙钟对得上（N-MEETING-DUALTRACK-FU1）
@@ -779,8 +731,7 @@ function spawnSource(source: 'microphone' | 'system-audio'): ChildProcess | null
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
   logger.warn('[音频采集] ffmpeg 不可用，fallback 到 sox rec');
-  const recBin = findRecBinary() || 'rec';
-  return spawn(recBin, [
+  return spawn(recorder?.path || 'rec', [
     '-q', '-t', 'raw', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-e', 'signed-integer', '-',
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
@@ -1023,7 +974,7 @@ export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureM
 
   // Check audio capture tool availability
   // 传了 FIFO 就由 Tauri 端录麦克风，不查本机 ffmpeg/sox（与改造前一致）
-  if (needsMicrophone && !fifoPath && !findFfmpegBinary() && !findRecBinary()) {
+  if (needsMicrophone && !fifoPath && !findMicrophoneRecorder()) {
     logger.warn('[音频采集] ffmpeg/sox 均未安装，跳过音频采集。安装: brew install ffmpeg');
     return;
   }

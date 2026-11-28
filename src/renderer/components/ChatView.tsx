@@ -71,9 +71,18 @@ import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
 import {
-  ensureModelConfigured as checkModelConfigured,
-  hasConfiguredSessionRuntimeModel,
+  ensureModelConfiguredForSend,
+  readSessionRuntimeModelState,
+  validateOfflineRetry,
 } from '../utils/ensureModelConfigured';
+import {
+  finishOfflineAutoReplayAttempt,
+  getOfflineAutoReplaySurface,
+  isOfflineSendFailureCode,
+  markLastSendOfflineFailure,
+  offlinePreflightError,
+} from '../utils/offlineSend';
+import { useOfflineOutboxReplay } from '../hooks/agent/useOfflineOutboxReplay';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
@@ -243,14 +252,27 @@ export const ChatView: React.FC = () => {
         attachments?: MessageAttachment[];
         clientMessageId?: string;
       }) => {
-        const envelope = buildEnvelope(content, context?.attachments, context?.clientMessageId);
+        const retryId = context?.clientMessageId;
+        const isOfflineRetry = retryId && (
+          getOfflineAutoReplaySurface(retryId) === 'outbox' || messagesRef.current.some((message) =>
+            message.metadata?.retryClientMessageId === retryId
+            && isOfflineSendFailureCode(message.metadata?.sendFailureCode ?? ''),
+          )
+        );
+        const envelope = buildEnvelope(content, context?.attachments, retryId);
+        if (isOfflineRetry) envelope.sessionId = useSessionStore.getState().currentSessionId ?? undefined;
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
-        void sendMessage(
+        void Promise.resolve(sendMessage(
           context?.localityAnchor
             ? { ...envelope, context: { ...envelope.context, localityAnchor: context.localityAnchor } }
             : envelope,
-        );
+          isOfflineRetry ? { validateRetry: validateOfflineRetry } : undefined,
+        )).finally(() => {
+          if (context?.clientMessageId && getOfflineAutoReplaySurface(context.clientMessageId) === 'outbox') {
+            finishOfflineAutoReplayAttempt(context.clientMessageId);
+          }
+        });
       },
       () => messagesRef.current,
       (draft) => {
@@ -602,11 +624,13 @@ export const ChatView: React.FC = () => {
     onDropStart: clearGlobalDragState,
     onAttachments: (attachments) => chatInputRef.current?.addAttachments(attachments),
   });
-  const ensureModelConfigured = useCallback((sessionId: string | null) => checkModelConfigured(t, language, { currentSessionId: sessionId }), [t, language]);
+  const checkModelForSend = useCallback((sessionId: string | null) => ensureModelConfiguredForSend(t, language, sessionId), [t, language]);
+  useOfflineOutboxReplay({ currentSessionId, effectiveIsProcessing });
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
     const outboundEnvelope = { ...envelope, clientMessageId };
+    const isBlankOrNewSession = !feedbackSessionId || messagesRef.current.length === 0;
     const sent = await sendWithImmediateAssistantFeedback({
       showFeedback: () => {
         if (!feedbackSessionId) return;
@@ -623,10 +647,11 @@ export const ChatView: React.FC = () => {
         sessionId: feedbackSessionId ?? undefined,
       })),
       send: async () => {
-        const sendConfiguredMessage = async () => {
-          const modelReady = await ensureModelConfigured(feedbackSessionId);
-          if (!modelReady) return false;
-          const delivery = await sendMessage(outboundEnvelope);
+        const dispatchToAgent = async (preflightError?: Error) => {
+          if (preflightError && useSessionStore.getState().currentSessionId !== feedbackSessionId) return false;
+          const delivery = preflightError
+            ? await sendMessage({ ...outboundEnvelope, sessionId: feedbackSessionId ?? undefined }, { preflightError })
+            : await sendMessage(outboundEnvelope);
           if (delivery?.outcome === 'queued' && feedbackSessionId) {
             setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
               type: 'enqueue_succeeded',
@@ -641,22 +666,40 @@ export const ChatView: React.FC = () => {
               clientMessageId,
               sessionId: feedbackSessionId ?? undefined,
             }));
+            if (getOfflineAutoReplaySurface(clientMessageId) === 'composer') {
+              return false;
+            }
           }
-          // 🔴 这里**照改前一样返回 true**（只要真的调到了 sendMessage）。
-          // 这个返回值同时被 composer 当作「要不要回滚草稿」的信号。把它改成真实投递
-          // 结果，等于把一条改前根本走不到的回滚路径接通了 —— 于是「回滚会覆盖用户在
-          // 这期间新做的任何操作」变成实际问题，而"用户可能动过的项"是**没有边界的
-          // 枚举**：文本、附件、appshot、会话引用、产物引用、命令 chip、团队预选……
-          // ai-review 连着九轮各点出一项，每轮补一个判据都只是把边界往外挪一格。
-          // 收口方式：投递失败不回滚草稿。失败用户气泡留在时间线上，恢复靠气泡上的
-          // 「编辑重发」（原文+附件填回 composer，复用原 clientMessageId）和错误卡
-          // 重试锚点（retryPrompt / retryAttachments / retryClientMessageId /
-          // retrySessionId）。真正没发出去的情况（未登录且模型没配、模型不可用）仍然返回 false、
-          // 照旧回滚，那条路改前就在，行为不变。
           return true;
         };
-        const localModelReady = !isAuthenticated && await hasConfiguredSessionRuntimeModel(feedbackSessionId, { allowCloudManaged: false });
-        return (await (localModelReady ? sendConfiguredMessage() : requireAuthAsync(sendConfiguredMessage))) === true;
+        const sendConfiguredMessage = async () => {
+          const modelState = await checkModelForSend(feedbackSessionId);
+          if (modelState === 'unconfigured') return false;
+          if (modelState === 'offline') {
+            if (isBlankOrNewSession) {
+              markLastSendOfflineFailure(clientMessageId);
+              return false;
+            }
+            return dispatchToAgent(offlinePreflightError());
+          }
+          return dispatchToAgent();
+        };
+        if (!isAuthenticated) {
+          const localModelState = await readSessionRuntimeModelState(feedbackSessionId, { allowCloudManaged: false });
+          if (localModelState === 'offline') {
+            // 离线不误判为「未登录 / 未配模型」：新会话走 Surface A 回滚挂起，已有会话进 sendMessage 走 Surface B。
+            if (isBlankOrNewSession) {
+              markLastSendOfflineFailure(clientMessageId);
+              return false;
+            }
+            return dispatchToAgent(offlinePreflightError());
+          }
+          if (localModelState === 'ready') {
+            return (await sendConfiguredMessage()) === true;
+          }
+          return (await requireAuthAsync(sendConfiguredMessage)) === true;
+        }
+        return (await requireAuthAsync(sendConfiguredMessage)) === true;
       },
     });
     // 跳过提问后的 placeholder 出口（R5 帧 8）：下一条普通消息真的发出去了才恢复常规文案。
@@ -666,7 +709,7 @@ export const ChatView: React.FC = () => {
     return sent;
   }, [
     currentSessionId,
-    ensureModelConfigured, isAuthenticated,
+    checkModelForSend, isAuthenticated,
     requireAuthAsync,
     sendMessage,
     skippedQuestionSessionId,
@@ -825,6 +868,7 @@ export const ChatView: React.FC = () => {
   return (
     <div
         ref={globalDropZoneRef}
+        data-composer-popover-boundary
         className="flex-1 min-h-0 flex overflow-hidden relative"
         onDragEnter={handleGlobalDragEnter}
         onDragOver={handleGlobalDragOver}
