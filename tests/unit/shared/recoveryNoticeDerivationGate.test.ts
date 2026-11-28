@@ -56,6 +56,7 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'src/host/agent/checkpointWriterService.ts': 'withTelemetryRecoveryNoticeForModel 有意加回模型专属提示',
   'src/web/routes/agent.ts': 'buildSessionTitle 的输入是当次请求的 live prompt，不是落库的还原消息',
   'src/host/tools/modules/delegation/delegatedSessionTitle.ts': 'deriveDelegatedSessionTitle 的直接输入是模型写的委派任务文本；读库内 user 消息的调用方 parkedApprovalTaskTitle.ts 在 REQUIRED 里',
+  'src/host/session/pendingSessionTitle.ts': '只追踪异步自动命名 Promise 的在途状态，不读原文也不派生标题（两处命名生产方 sessionManager.ts / src/cli/session.ts 均在 REQUIRED 里）',
   'src/host/session/sessionTitleHostPrompt.ts': '组装小模型标题指令；正文由调用方传清洗后的 titleSource',
   'src/shared/sessionTitlePrompt.ts': '同上，标题指令模板，不读原文',
   'src/host/services/infra/sessionFolderName.ts': '包装 deriveInitMemorySessionTitle，输入是清洗后的 titleSource',
