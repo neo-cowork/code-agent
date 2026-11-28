@@ -45,6 +45,8 @@ export interface ToolStatusLineInput {
    * 终态说在等什么，连接器名只在这里出现一次，动作不再带连接器前缀。
    */
   envWaitingTarget?: string;
+  /** 停在等运行时准备（runtime_missing），文案说「正在准备…」而非「等你允许…」。 */
+  envWaitingRuntime?: boolean;
 }
 
 export interface ToolStatusLineCopy {
@@ -123,7 +125,8 @@ export function buildToolStatusLineCopy(
   t: Translations,
 ): ToolStatusLineCopy {
   if (input.status === 'interrupted' && input.envWaitingTarget) {
-    const terminal = t.durableStopped.envWaitingStep.replace('{target}', input.envWaitingTarget);
+    const template = input.envWaitingRuntime ? t.durableStopped.envPreparingStep : t.durableStopped.envWaitingStep;
+    const terminal = template.replace('{target}', input.envWaitingTarget);
     const action = humanizeInterruptedToolAction(input.toolCall, t, { connectorPrefixRendered: true });
     return { terminalKey: 'env-waiting', terminal, action, line: `${terminal} · ${action}` };
   }

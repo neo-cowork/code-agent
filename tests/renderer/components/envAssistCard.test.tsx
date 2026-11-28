@@ -146,6 +146,82 @@ describe('EnvAssistCard', () => {
     useSessionStore.setState({ sessions: [] });
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalled());
   });
+  it.each(['zh', 'en'] as const)('runtime_missing card shows preparing progress (no button) → resolved, and offline retry works without desktop settings (%s)', async (language) => {
+    mocks.language = language;
+    const t = language === 'zh' ? zh : en;
+    mocks.invoke.mockImplementation(async (_domain, action) => (
+      action === 'getAvailability' ? { available: false }
+        : action === 'act' ? { status: 'checked', notice: { ...runtimePreparing, phase: 'fixing', progress: { percent: 5 }, sentenceParams: { percent: 5 }, updatedAt: 4 } }
+          : { status: 'checked' }
+    ));
+    const runtimePreparing: EnvAssistNotice = {
+      id: 'run|runtime_missing|libreoffice', sessionId: 'session', runId: 'run', class: 'runtime_missing',
+      target: { id: 'libreoffice', labelKey: 'env.target.libreoffice' }, phase: 'fixing',
+      sentenceKey: 'env.sentence.libreofficePreparing', sentenceParams: { percent: 42 }, progress: { percent: 42 },
+      resume: { mode: 'auto' }, parkedToolCallId: 'call-1', updatedAt: 1,
+    };
+    const parked = { runId: 'run', mode: 'continue', interruptCause: 'env_blocked', autoResumeCount: 0, maxAutoResumeCount: 3, canContinue: true,
+      envBlocked: { class: 'runtime_missing', target: 'libreoffice', toolCallId: 'call-1' } };
+    useSessionStore.setState({ sessions: [{ id: 'session', title: 't', createdAt: 1, updatedAt: 1, durableResume: parked }] as never });
+    const { container } = render(<EnvAssistCard notice={runtimePreparing} />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: runtimePreparing.id }));
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(container.querySelector('progress')?.getAttribute('value')).toBe('42');
+    expect(screen.getByTestId('env-assist-card').textContent).toContain(t.env.sentence.libreofficePreparing.replace('{percent}', '42'));
+    expect(screen.getByTestId('env-assist-card').textContent).toContain(t.env.autoResumeRuntime.trim());
+    expect(screen.getByTestId('env-assist-card').textContent).not.toContain(t.env.autoResume);
+
+    // Offline failure shows plain copy + one Retry install button even when desktop settings availability is false.
+    const offlineNotice: EnvAssistNotice = {
+      ...runtimePreparing, phase: 'needs_user', sentenceKey: 'env.sentence.libreofficeOffline',
+      sentenceParams: undefined, progress: undefined, action: { kind: 'recheck', labelKey: 'env.retry.libreoffice' }, updatedAt: 2,
+    };
+    act(() => useEnvAssistStore.getState().report(offlineNotice));
+    const retryBtn = await screen.findByRole('button', { name: t.env.retry.libreoffice });
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByTestId('env-assist-card').textContent).toContain(t.env.sentence.libreofficeOffline);
+    expect(screen.getByTestId('env-assist-card').textContent).not.toContain(t.env.autoResumeRuntime.trim());
+    expect(screen.getByTestId('env-assist-card').textContent).not.toMatch(/ENOENT|LIBREOFFICE_RUNTIME|Error:|soffice/i);
+
+    fireEvent.click(retryBtn);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'act', { noticeId: offlineNotice.id, actionKind: 'recheck', payload: undefined }));
+    await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
+    expect(container.querySelector('progress')?.getAttribute('value')).toBe('5');
+
+    // Resolved card turns into the plain ready copy with no button or progress bar.
+    act(() => useEnvAssistStore.getState().report({
+      ...runtimePreparing, phase: 'resolved', sentenceKey: 'env.sentence.libreofficeReady', doneKey: 'env.done.libreoffice',
+      sentenceParams: undefined, progress: undefined, action: undefined, updatedAt: 5,
+    }));
+    await waitFor(() => expect(screen.getByTestId('env-assist-card').textContent).toBe(t.env.done.libreoffice));
+    expect(container.querySelector('progress')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+    useSessionStore.setState({ sessions: [] });
+  });
+  it('an offline runtime card asks the host again on mount, when the computer comes back online and on focus; a stalled one does not', async () => {
+    mocks.invoke.mockImplementation(async (_domain, action) => (action === 'getAvailability' ? { available: false } : { status: 'checked' }));
+    const offline: EnvAssistNotice = {
+      id: 'run|runtime_missing|libreoffice', sessionId: 'session', runId: 'run', class: 'runtime_missing',
+      target: { id: 'libreoffice', labelKey: 'env.target.libreoffice' }, phase: 'needs_user', sentenceKey: 'env.sentence.libreofficeOffline',
+      action: { kind: 'recheck', labelKey: 'env.retry.libreoffice' }, resume: { mode: 'auto' }, parkedToolCallId: 'call-1', updatedAt: 1,
+    };
+    const { unmount } = render(<EnvAssistCard notice={offline} />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: offline.id }));
+    mocks.invoke.mockClear();
+    window.dispatchEvent(new Event('online'));
+    expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: offline.id });
+    mocks.invoke.mockClear();
+    window.dispatchEvent(new Event('focus'));
+    expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: offline.id });
+    unmount();
+
+    // Only the offline failure is retried by itself: a stalled download keeps the button only.
+    mocks.invoke.mockClear();
+    render(<EnvAssistCard notice={{ ...offline, id: 'run2|runtime_missing|libreoffice', sentenceKey: 'env.sentence.libreofficeStalled' }} />);
+    await screen.findByRole('button');
+    window.dispatchEvent(new Event('online'));
+    expect(mocks.invoke).not.toHaveBeenCalledWith('domain:envAssist', 'recheck', expect.anything());
+  });
 });
 
 

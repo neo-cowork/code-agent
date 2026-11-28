@@ -926,7 +926,7 @@ export class SubagentExecutor {
                   subagentPolicy,
                 },
               ).finally(markToolEnd);
-              await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
+              await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data), signal: effectiveSignal });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               bashSteps = markBashStepNotRun(bashSteps, toolCall.id, result) ?? bashSteps;
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡

@@ -10,10 +10,11 @@ const EnvAssistRequest = z.object({
 export const EnvAssistSchemas = {
   REQUEST: channelSchema({ channel: IPC_DOMAINS.ENV_ASSIST, payload: EnvAssistRequest }),
   ACTIONS: EnvAssistRequest.shape.action.options,
+  /** `recheck` (a runtime card's retry button) carries no pane; the host still checks it is the card's own current action. */
   act: z.object({
     noticeId: z.string().min(1),
-    actionKind: z.enum(['open_settings_pane', 'request_grant']),
-    payload: z.object({ pane: z.enum(['automation', 'calendars', 'accessibility', 'screenCapture', 'inputMonitoring', 'filesAndFolders']) }).strict(),
+    actionKind: z.enum(['open_settings_pane', 'request_grant', 'recheck']),
+    payload: z.object({ pane: z.enum(['automation', 'calendars', 'accessibility', 'screenCapture', 'inputMonitoring', 'filesAndFolders']) }).strict().optional(),
   }).strict(),
   recheck: z.object({ noticeId: z.string().min(1) }).strict(),
   /** Whitelist: only settings that are gated by a permission grant. */

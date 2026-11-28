@@ -183,6 +183,21 @@ async function runInstall(options: EnsureLibreOfficeOptions, root: string): Prom
   }
 }
 
+/**
+ * Does either download source answer right now? The installer's own probe (and timeout), read-only: nothing is
+ * downloaded and no install starts. Used to retry an install that failed because both sources were unreachable.
+ */
+export async function libreOfficeSourcesReachable(options: Pick<EnsureLibreOfficeOptions, 'probe' | 'arch'> = {}): Promise<boolean> {
+  const build = buildForArch(options.arch);
+  const probe = options.probe ?? defaultProbe;
+  for (const url of [build.officialUrl, build.mirrorUrl]) {
+    try {
+      if ((await probe(url, LIBREOFFICE_PROBE_TIMEOUT_MS)).ok) return true;
+    } catch { /* next source */ }
+  }
+  return false;
+}
+
 function finish(root: string, result: EnsureLibreOfficeResult, resolve: (result: EnsureLibreOfficeResult) => void): void {
   if (result.ok) forgetError(root);
   else rememberError(root, result.error);

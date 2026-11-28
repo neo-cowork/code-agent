@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { LIBREOFFICE_PATH_ENV, LIBREOFFICE_SEARCH_PATHS } from '../../tools/media/ppt/constants';
+import { LIBREOFFICE_MANAGED_ONLY_ENV } from './constants';
 import { managedLibreOfficePath, resolveLibreOfficeRoot } from './layout';
 import type { LibreOfficeLookupOptions } from './types';
 
@@ -24,17 +25,20 @@ export function getLibreOfficeCandidates(options: LibreOfficeLookupOptions = {})
   const existsSync = options.existsSync ?? fs.existsSync;
   const which = options.which ?? whichSync;
   const candidates: string[] = [];
+  const managedOnly = env[LIBREOFFICE_MANAGED_ONLY_ENV] === '1';
   const envPath = env[LIBREOFFICE_PATH_ENV]?.trim();
-  if (envPath && existsSync(envPath)) candidates.push(path.resolve(envPath));
+  if (!managedOnly && envPath && existsSync(envPath)) candidates.push(path.resolve(envPath));
   const managed = getManagedLibreOfficePath(options.dataDir);
   if (existsSync(managed)) candidates.push(managed);
-  for (const candidate of LIBREOFFICE_SEARCH_PATHS) {
-    if (existsSync(candidate)) candidates.push(candidate);
+  if (!managedOnly) {
+    for (const candidate of LIBREOFFICE_SEARCH_PATHS) {
+      if (existsSync(candidate)) candidates.push(candidate);
+    }
+    const soffice = which('soffice');
+    if (soffice) candidates.push(soffice);
+    const libreoffice = which('libreoffice');
+    if (libreoffice) candidates.push(libreoffice);
   }
-  const soffice = which('soffice');
-  if (soffice) candidates.push(soffice);
-  const libreoffice = which('libreoffice');
-  if (libreoffice) candidates.push(libreoffice);
   return [...new Set(candidates)];
 }
 

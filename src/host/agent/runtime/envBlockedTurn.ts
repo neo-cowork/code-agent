@@ -10,10 +10,9 @@ import { isQuotaWaitParkableRun } from '../../runtime/quotaWaitParkability';
 import { recordParkedCallApproval } from '../../permissions/parkedCallApproval';
 import { createLogger } from '../../services/infra/logger';
 
-const notes = new Map<string, NonNullable<RunEnvelope['envBlocked']>>();
+import { envBlockedNotes as notes } from './envBlockedNotes';
+export { peekEnvBlockedNote, clearEnvBlockedNote } from './envBlockedNotes';
 const logger = createLogger('EnvBlockedTurn');
-export function peekEnvBlockedNote(runId: string | undefined): RunEnvelope['envBlocked'] { return runId ? notes.get(runId) : undefined; }
-export function clearEnvBlockedNote(runId: string): void { notes.delete(runId); }
 
 export function settleEnvBlockedTool(error: unknown, input: {
   runId?: string; toolCallId: string; markCancelled: () => void; toolName?: string; args?: unknown; sessionId?: string;

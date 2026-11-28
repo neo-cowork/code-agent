@@ -41,6 +41,7 @@ import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { findChangedOfficeFiles, snapshotOfficeFiles } from './newOfficeFiles';
 import { createEvalSafeShellEnv } from './evalSafeShellEnv';
+import { parkMissingRuntime } from '../../../agent/runtime/runtimeMissingTurn';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
 import { checkCommandPolicy } from './commandPolicy';
@@ -504,6 +505,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       });
       if (!childEnv.ok) {
         cleanupSandbox();
+        parkMissingRuntime(childEnv, ctx);
         return {
           ok: false,
           error: childEnv.error,
@@ -655,6 +657,7 @@ Use process_kill to terminate the session.`;
       });
       if (!childEnv.ok) {
         cleanupSandbox();
+        parkMissingRuntime(childEnv, ctx);
         return {
           ok: false,
           error: childEnv.error,
@@ -797,6 +800,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
     });
     if (!childEnvFg.ok) {
       cleanupSandbox();
+      parkMissingRuntime(childEnvFg, ctx);
       return {
         ok: false,
         error: childEnvFg.error,

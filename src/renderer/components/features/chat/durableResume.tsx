@@ -123,7 +123,7 @@ export const DurableParkedNotice: React.FC<{ interruptCause?: string; envBlocked
   const target = useEnvTargetLabel(envBlocked);
   const s = t.durableStopped;
   const text = interruptCause === 'env_blocked'
-    ? s.envWaiting.replace('{target}', target ?? s.envTargetFallback)
+    ? (envBlocked?.class === 'runtime_missing' ? s.envPreparing : s.envWaiting).replace('{target}', target ?? s.envTargetFallback)
     : interruptCause === 'user_stop' ? s.userStop
       : interruptCause === 'budget_exhausted' ? s.budgetExhausted
         : interruptCause === 'guard_halt' ? s.guardHalt

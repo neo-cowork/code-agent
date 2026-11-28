@@ -7,6 +7,9 @@
 // + 注入的空候选表钉住该契约，零网络。模块级标志用 vi.resetModules + 动态 import 隔离。
 // ============================================================================
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -69,5 +72,19 @@ describe('isLibreOfficeAvailable 后台自动安装触发（每进程一次）',
 
     expect(isLibreOfficeAvailable()).toBe(false);
     expect(h.ensure).not.toHaveBeenCalled();
+  });
+
+  it('N-ENV-ASSIST-S5-RUNTIME ⑥: asked before the managed copy exists ⇒ typed not-ready blocker, not an English sentence', async () => {
+    h.ensure.mockResolvedValue({ ok: false, root: '/tmp/neo-libreoffice-root', error: { code: 'LIBREOFFICE_RUNTIME_OFFLINE', message: 'offline', retryable: true, logPath: '/x' } });
+    const { convertOfficeToPdf } = await importOfficeRaster();
+    const input = path.join(os.tmpdir(), `neo-raster-${process.pid}.pptx`);
+    fs.writeFileSync(input, 'not a real deck');
+
+    let thrown: unknown;
+    try { await convertOfficeToPdf(input, path.join(os.tmpdir(), `neo-raster-out-${process.pid}`)); } catch (error) { thrown = error; }
+    console.log('NOT_READY_THROWN', JSON.stringify({ name: (thrown as Error)?.name, class: (thrown as { class?: string })?.class, target: (thrown as { target?: string })?.target, code: (thrown as { code?: string })?.code, message: (thrown as Error)?.message }));
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).toMatchObject({ name: 'LibreOfficeNotReadyError', class: 'runtime_missing', target: 'libreoffice', code: 'LIBREOFFICE_RUNTIME_INSTALLING' });
+    expect((thrown as Error).message).not.toMatch(/preview is being prepared|Retry in a moment/);
   });
 });

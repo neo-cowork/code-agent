@@ -18,7 +18,7 @@ export function useEnvTargetLabel(block: Pick<EnvBlock, 'target'> | undefined): 
  * 本会话停在等环境授权上的那一步（env_blocked 停车，envBlocked.toolCallId）与人话授权目标。
  * 只有这一步的工具行改说「等你允许…」，其余行不受影响。
  */
-export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string } | undefined {
+export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string; isRuntime: boolean } | undefined {
   const block = useSessionStore(useShallow((state) => {
     const session = sessionId ? state.sessions?.find((candidate) => candidate.id === sessionId) : undefined;
     const resume = session?.durableResume;
@@ -28,19 +28,20 @@ export function useEnvParkedStep(sessionId: string | null | undefined): { toolCa
     if (session || state.currentSessionId !== sessionId) return undefined;
     const message = state.messages?.findLast(candidate => candidate.metadata?.envAssist?.parkedToolCallId);
     const notice = message?.metadata?.envAssist;
-    if (!message || !notice?.parkedToolCallId || !notice.target || notice.phase !== 'needs_user') return undefined;
+    const openPhase = notice?.class === 'runtime_missing' ? (notice.phase === 'fixing' || notice.phase === 'needs_user') : notice?.phase === 'needs_user';
+    if (!message || !notice?.parkedToolCallId || !notice.target || !openPhase) return undefined;
     if (state.messages.some(candidate => candidate.timestamp > message.timestamp && !candidate.metadata?.envAssist
       && (candidate.role === 'user' || candidate.role === 'assistant'
         || candidate.toolResults?.some(result => result.toolCallId === notice.parkedToolCallId)))) return undefined;
     return { class: notice.class, target: notice.target.id, toolCallId: notice.parkedToolCallId };
   }));
   const target = useEnvTargetLabel(block);
-  return block?.toolCallId && target ? { toolCallId: block.toolCallId, target } : undefined;
+  return block?.toolCallId && target ? { toolCallId: block.toolCallId, target, isRuntime: block.class === 'runtime_missing' } : undefined;
 }
 
-export function useEnvParkedTarget(sessionId: string | null | undefined, toolCallId: string): string | undefined {
+export function useEnvParkedTarget(sessionId: string | null | undefined, toolCallId: string): { target: string; isRuntime: boolean } | undefined {
   const step = useEnvParkedStep(sessionId);
-  return step?.toolCallId === toolCallId ? step.target : undefined;
+  return step?.toolCallId === toolCallId ? { target: step.target, isRuntime: step.isRuntime } : undefined;
 }
 
 /**

@@ -1,6 +1,21 @@
 import { installLogPath } from './layout';
 import type { LibreOfficeRuntimeError, LibreOfficeRuntimeErrorCode } from './types';
 
+/**
+ * Typed blocker for callers that run inside another tool (preview, render review) and cannot park: the binary was asked
+ * for before the managed copy finished installing. Carries the ADR-090 blocker identity; it is not an EnvBlockedError,
+ * so the enclosing tool keeps its ordinary failure path and nothing is re-issued.
+ */
+export class LibreOfficeNotReadyError extends Error {
+  readonly class = 'runtime_missing' as const;
+  readonly target = 'libreoffice' as const;
+  readonly code = 'LIBREOFFICE_RUNTIME_INSTALLING' as const;
+  constructor() {
+    super('The PPT converter is still being prepared, so nothing was converted. Ask again once it is ready.');
+    this.name = 'LibreOfficeNotReadyError';
+  }
+}
+
 function runtimeError(
   root: string,
   code: LibreOfficeRuntimeErrorCode,

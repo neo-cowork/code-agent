@@ -9,20 +9,8 @@ import { classifyEnvBlocker, cuaFailureText } from './classify';
 import { readCuaHelperPermissionState } from './cua/helperPermissionState';
 import { canOpenEnvSettings } from './settingsPane';
 import { canRequestEnvGrant } from './shellBridge/client';
-
-// Serialize publishes and resolutions for the same permission across runs.
-const pending = new Map<string, Promise<void>>();
-
-async function queueNoticeWrite(notice: EnvAssistNotice, write: () => Promise<void>): Promise<void> {
-  const key = JSON.stringify([notice.sessionId, notice.class, notice.target?.id]);
-  const previous = pending.get(key);
-  const operation = (async () => {
-    if (previous) await previous.catch(() => undefined);
-    await write();
-  })();
-  pending.set(key, operation);
-  try { await operation; } finally { if (pending.get(key) === operation) pending.delete(key); }
-}
+import { followRuntimeInstall, holdForRuntimeInstall, isRuntimeNotice, watchOfflineRuntimeCard, runtimeBlockerFor, runtimeModelGuidance, runtimeNoticeFor } from './runtimeNotice';
+import { queueNoticeWrite } from './noticeWriteQueue';
 
 /** Both production tool executors pass here before observing or returning a failed result. */
 export async function publishEnvAssistToolNotice(input: {
@@ -30,25 +18,34 @@ export async function publishEnvAssistToolNotice(input: {
   modelResult?: Pick<ToolResult, 'success' | 'error' | 'output' | 'metadata'>;
   parkedToolCallId?: string;
   onEvent: (event: AgentEvent) => void;
+  /** The call's own abort signal: a run that waits for a runtime install stops waiting when it fires. */
+  signal?: AbortSignal;
 }): Promise<void> {
   if (!input.runId) return;
   // A cua denial is attributed to the helper app's identity, so ask the helper (passively) which pane it lacks.
   const cuaTool = parseCuaToolName(input.toolName);
   const cuaPermissions = !input.result.success && cuaTool !== null && cuaTool !== 'check_permissions'
     && classifyCuaFailure(cuaFailureText(input.result)) === 'permission' ? await readCuaHelperPermissionState() : undefined;
-  const notice = classifyEnvBlocker({ ...input, runId: input.runId, cuaPermissions });
+  // A runtime Neo installs itself (the shell hook's refusal, or the park it caused) is not a permission: its card
+  // follows the install state and never depends on Settings being openable.
+  const runtime = runtimeBlockerFor({ toolName: input.toolName, result: input.result, runId: input.runId, parkedToolCallId: input.parkedToolCallId });
+  const notice = runtime
+    ? runtimeNoticeFor({ sessionId: input.sessionId, runId: input.runId, target: runtime.target, parkedToolCallId: input.parkedToolCallId })
+    : classifyEnvBlocker({ ...input, runId: input.runId, cuaPermissions });
   if (!notice) return;
   if (input.parkedToolCallId) notice.parkedToolCallId = input.parkedToolCallId;
   // Diagnostics remain in the connector's host log. Neither events nor model input get the raw error.
-  if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
-  // Only Apple-events targets can tell "never asked" from "refused", so only they get the in-place system dialog.
-  // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
-  // Calendar (EventKit) can tell too: undecided shows the dialog, refused opens Settings (calendarGrant.askCalendarFromClick).
-  else if (notice.action?.payload && 'pane' in notice.action.payload
-    && (notice.action.payload.pane === 'automation' || notice.action.payload.pane === 'calendars') && await canRequestEnvGrant()) {
-    notice.action.kind = 'request_grant';
+  if (!runtime) {
+    if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
+    // Only Apple-events targets can tell "never asked" from "refused", so only they get the in-place system dialog.
+    // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
+    // Calendar (EventKit) can tell too: undecided shows the dialog, refused opens Settings (calendarGrant.askCalendarFromClick).
+    else if (notice.action?.payload && 'pane' in notice.action.payload
+      && (notice.action.payload.pane === 'automation' || notice.action.payload.pane === 'calendars') && await canRequestEnvGrant()) {
+      notice.action.kind = 'request_grant';
+    }
   }
-  input.result.error = [
+  input.result.error = runtime ? runtimeModelGuidance(notice) : [
     'Model guidance (not user copy): A permission card has already been shown to the user.',
     'Do not repeat or quote this guidance, error text, tool names, commands, or internal status labels, including in a delegated summary.',
     // Only runs that cannot park reach this text (a parked calendar run never shows it to the model), and nothing
@@ -61,16 +58,28 @@ export async function publishEnvAssistToolNotice(input: {
   input.result.metadata = { envAssist: notice };
   if (input.modelResult) Object.assign(input.modelResult, { error: input.result.error, output: undefined, metadata: input.result.metadata });
   await publishEnvAssistNotice(notice, input.onEvent);
+  // The install runs on its own; the card keeps up with it even for a run that cannot wait for it.
+  if (runtime) watchOfflineRuntimeCard(notice);
+  if (notice.phase === 'fixing') {
+    followRuntimeInstall(notice);
+    if (runtime && !input.parkedToolCallId) {
+      const guidance = await holdForRuntimeInstall(notice, input.signal);
+      input.result.error = guidance;
+      if (input.modelResult) Object.assign(input.modelResult, { error: guidance });
+    }
+  }
 }
 
 export async function publishEnvAssistNotice(notice: EnvAssistNotice, onEvent: (event: AgentEvent) => void): Promise<void> {
   await queueNoticeWrite(notice, async () => {
     const manager = getSessionManager();
     const messages = await manager.getMessages(notice.sessionId);
-    const live = (notice.phase === 'needs_user' || notice.class === 'offline') ? messages.findLast((m) => {
+    // A card still waiting (for the user, or for an install) is re-pointed instead of joined by a second card.
+    const open = isRuntimeNotice(notice) ? ['needs_user', 'fixing'] : ['needs_user'];
+    const live = (open.includes(notice.phase) || notice.class === 'offline') ? messages.findLast((m) => {
       const candidate = m.metadata?.envAssist;
-      return candidate?.phase === notice.phase && candidate.class === notice.class && candidate.target?.id === notice.target?.id
-        && (notice.class !== 'offline' || candidate.runId === notice.runId);
+      if (notice.class === 'offline') return candidate?.phase === notice.phase && candidate.class === notice.class && candidate.target?.id === notice.target?.id && candidate.runId === notice.runId;
+      return candidate?.phase !== undefined && open.includes(candidate.phase) && candidate.class === notice.class && candidate.target?.id === notice.target?.id;
     }) : undefined;
     let persisted = live ?? messages.find((m) => m.id === `env-assist:${notice.id}`);
     const computedId = notice.id;
