@@ -17,6 +17,7 @@ import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
 import { RoleAvatarTile } from './RoleAvatarTile';
 import { interpolatePlural } from '../../../i18n/interpolate';
+import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
 
 export interface RolePackHealthNoticeProps {
   /** 缺省表示该角色不是云下发包，直接不渲染（省掉调用方的 has + 非空断言） */
@@ -124,6 +125,11 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
             const busy = busyRoleId === entry.roleId;
             const localized = localizeRole(entry.roleId, { name: entry.displayName ?? '', profession: entry.visual.profession });
             const shownName = localized.name || entry.roleId;
+            const toolAbilities = getRoleToolCapabilities({
+              toolNames: item.tools,
+              capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
+              humanToolLabels: t.receiptPresentation.humanToolLabels,
+            });
             return (
               <article key={entry.roleId} data-testid={`role-pack-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
                 <div>
@@ -150,7 +156,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                 ) : null}
                 <div className="space-y-1 text-[11px] text-zinc-500">
                   <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join('、')}</p>
-                  <p><span className="text-zinc-400">{text.tools}</span>{': '}{item.tools.join('、')}</p>
+                  <p data-testid={`role-pack-tools-${entry.roleId}`}><span className="text-zinc-400">{text.tools}</span>{': '}{toolAbilities.join(t.receiptPresentation.roleCapabilityLabels.separator)}</p>
                   <p><span className="text-zinc-400">{text.publisher}</span>{': '}{entry.publisher}</p>
                   <p><span className="text-zinc-400">{text.version}</span>{': '}{entry.packVersion}</p>
                 </div>
