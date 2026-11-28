@@ -49,6 +49,7 @@ import { SkillCautionDisclosureModal } from './SkillCautionDisclosureModal';
 import { getSkillCautionSourceLabel, useSkillCautionFlow } from './useSkillCautionFlow';
 import { isSkillCautionConfirmationRequired } from '../../../../services/skillInstallCaution';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
+import { requestConfirm } from '../../../../services/confirmPrompt';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -455,7 +456,12 @@ export const SkillsSettings: React.FC = () => {
 
   // 删除仓库
   const handleRemoveLibrary = async (repoId: string) => {
-    if (!confirm(skillsText.removeConfirm)) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.deleteSkillLibrary,
+      message: skillsText.removeConfirm,
+      confirmText: t.common.delete,
+      variant: 'danger',
+    })) return;
     setActionLoading(`remove-${repoId}`);
     setMessage(null);
     try {

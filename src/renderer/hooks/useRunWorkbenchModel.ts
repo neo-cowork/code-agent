@@ -31,7 +31,7 @@ import type {
 import type { ScriptRunAgentSnapshot, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import type { Task } from '@shared/contract/backgroundTask';
-import { describeTaskBlockedReason } from '@shared/taskReasonLanguage';
+import { describeBackgroundFailure } from '@shared/taskReasonLanguage';
 import type { TaskBlockedCategory } from '@shared/contract/planning';
 import {
   getLongTaskStatusLabel,
@@ -332,6 +332,8 @@ interface BackgroundTaskResume {
   hint?: string;
   /** 失败原因是 raw 日志、被语义化清洗掉时的类别；渲染层用 taskBlockedReason[category] 兜底 */
   blockedCategory?: TaskBlockedCategory;
+  /** 失败原因的类别（无论原因是否被清洗掉都给）；渲染层据此给「下一步」 */
+  failureCategory?: TaskBlockedCategory;
 }
 
 function backgroundTaskResumeHint(
@@ -362,9 +364,9 @@ function backgroundTaskResumeHint(
     // 失败原因先过语义化清洗（ADR-050 / FB-746）：「Cannot read properties of …」这类
     // raw JS 异常清洗为空时不进行，改走 blockedCategory 的 i18n 类别文案；
     // 原始 message 仍留在 task.failure 里供排错，不在这一行露出。
-    const { reason, category } = describeTaskBlockedReason(task.failure.message);
-    if (reason) return { hint: reason };
-    return { blockedCategory: category };
+    const { reason, category } = describeBackgroundFailure(task.failure.message, language);
+    if (reason) return { hint: reason, failureCategory: category };
+    return { blockedCategory: category, failureCategory: category };
   }
   if (task.status === 'stalled' && task.progress?.label) return { hint: task.progress.label };
 
@@ -405,6 +407,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
       const outputRefs = task.status === 'completed' ? [] : buildTaskOutputRefs(task, t);
       const duration = formatBackgroundTaskDuration(task.durationMs);
       const resume = backgroundTaskResumeHint(task, outputRefs, language);
+      const failureMessage = status === 'blocked' && typeof task.failure?.message === 'string' ? task.failure.message.trim() : undefined;
       return {
         id: `background:${task.id}`,
         scope: 'global' as const,
@@ -431,6 +434,8 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         sourceThreadId: task.sessionId ?? null,
         resumeHint: resume.hint,
         ...(resume.blockedCategory ? { resumeHintCategory: resume.blockedCategory } : {}),
+        ...(resume.failureCategory ? { failureCategory: resume.failureCategory } : {}),
+        ...(failureMessage && failureMessage !== resume.hint ? { failureDetail: failureMessage } : {}),
         outputRefs,
       };
     });

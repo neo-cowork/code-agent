@@ -15,27 +15,13 @@ import { Input } from '../../primitives/Input';
 import { useI18n } from '../../../hooks/useI18n';
 import { pickNativeDirectory } from '../../../services/tauriPluginFacade';
 import { isTauriMode } from '../../../utils/platform';
+import { foldHomePrefixForDisplay, formatPathForDisplay } from '../../../utils/formatPathForDisplay';
 
 /** 路径最后一段，用作展示名（完整路径放 tooltip）。 */
 export function cronFolderDisplayName(folder: string): string {
   const trimmed = folder.replace(/[/\\]+$/, '');
   const name = trimmed.slice(Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\')) + 1);
   return name || folder;
-}
-
-/**
- * 展示用：把家目录前缀折成 `~`（web 输入框未聚焦时的值，以及状态行悬停）。
- * 认 `/Users/<name>`、`/home/<name>`、`<盘>:\Users\<name>`；后面还有路径时保留。
- * 恰好是家目录本身时折成 `~`。不改 metadata；另一账户的家目录也会被折掉。
- */
-export function foldHomePrefixForDisplay(path: string): string {
-  const unixHome = /^(?:\/Users|\/home)\/[^/]+\/(.*)$/.exec(path);
-  if (unixHome) return `~/${unixHome[1]}`;
-  if (/^(?:\/Users|\/home)\/[^/]+$/.test(path)) return '~';
-  const windowsHome = /^[A-Za-z]:\\Users\\[^\\]+\\(.*)$/.exec(path);
-  if (windowsHome) return `~\\${windowsHome[1]}`;
-  if (/^[A-Za-z]:\\Users\\[^\\]+$/.test(path)) return '~';
-  return path;
 }
 
 /** 把选中的文件夹写回 metadata（清除时删键；其余键原样保留）。 */
@@ -93,7 +79,7 @@ export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runs
           <FolderOpen className="h-4 w-4 shrink-0 text-zinc-500" />
           <span
             className={`min-w-0 flex-1 truncate text-sm ${folder ? 'text-zinc-200' : 'text-zinc-500'}`}
-            title={folder}
+            title={folder ? formatPathForDisplay(folder) : undefined}
             data-testid="cron-working-folder-name"
           >
             {folder ? cronFolderDisplayName(folder) : copy.notSelected}

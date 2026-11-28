@@ -351,6 +351,18 @@ export const LSP_TIMEOUTS = {
   COMMAND_CHECK: 5_000,
 } as const;
 
+/** 事件循环卡顿诊断（watchdog）与 SkillWatcher 项目级目录轮询 */
+export const EVENT_LOOP_DIAG_TIMEOUTS = {
+  /** 单次事件循环停顿超过这个值就打 stall 警告（env CODE_AGENT_LOOP_WATCHDOG_MS 覆盖） */
+  STALL_THRESHOLD: 1_000,
+  /** 每个统计窗口的长度（env CODE_AGENT_LOOP_WATCHDOG_WINDOW_MS 覆盖） */
+  WINDOW: 5_000,
+  /** 事件循环延迟采样分辨率 */
+  SAMPLE_RESOLUTION: 20,
+  /** SkillWatcher 项目级 skills 目录的异步轮询间隔（取代 FSEvents 目录监听） */
+  SKILL_PROJECT_POLL_INTERVAL: 2_000,
+} as const;
+
 /** Live Preview dev server 管理超时 */
 export const LIVE_PREVIEW_TIMEOUTS = {
   /** dev server 启动到 ready 的最长等待时间 */
