@@ -372,7 +372,7 @@ export const ScreenMemorySettings: React.FC = () => {
           provider={openchronicleProvider}
           fallbackKind="daemon"
         />
-        <OpenchronicleSettings embedded />
+        <OpenchronicleSettings embedded onInstalledChange={refreshActivityContext} />
         {/* 会前提醒放在显眼处（真机反馈：藏在默认折叠的诊断区里找不到） */}
         {tauri && <MeetingCalendarReminderToggle />}
       </SettingsSection>

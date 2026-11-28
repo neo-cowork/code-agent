@@ -8,7 +8,7 @@
 // ============================================================================
 import React from 'react';
 import fs from 'node:fs';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { DEFAULT_OPENCHRONICLE_SETTINGS, type OpenchronicleSettings, type OpenchronicleStatus } from '../../../src/shared/contract/openchronicle';
@@ -26,6 +26,8 @@ import { ScreenMemorySettings } from '../../../src/renderer/components/features/
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const NOW = 1_795_000_000_000;
+// 与 settingsRenderedJargon 同一预算：整页（含 Tauri 下的桌面活动区）在负载高的机器上首屏可能超过默认 1 秒。
+const WAIT_MS = 10_000;
 
 // 宿主 activityProviderRegistry.ts 当前原样返回的 summary/detail（含「Tauri app」「provider」「daemon」）。
 const HOST_TEXT = {
@@ -230,8 +232,8 @@ async function renderPage(lang: Lang, previewText: string = COPY[lang].nothingYe
   await waitFor(() => {
     expect(calls.some(([domain, action]) => domain === IPC_DOMAINS.OPENCHRONICLE && action === 'getStatus')).toBe(true);
     expect(view.container.textContent).toContain(previewText);
-  });
-  await waitFor(() => expect(screen.getByRole('switch', { name: COPY[lang].toggle })).toBeTruthy());
+  }, { timeout: WAIT_MS });
+  await waitFor(() => expect(screen.getByRole('switch', { name: COPY[lang].toggle })).toBeTruthy(), { timeout: WAIT_MS });
   await new Promise((resolve) => setTimeout(resolve, 50));
   return view;
 }
@@ -321,7 +323,7 @@ describe('① web-mode branch of ScreenMemorySettings', () => {
     platform.web = true;
     useAppStore.setState({ language: lang, cloudUIStrings: null });
     const { container } = render(<ScreenMemorySettings />);
-    await waitFor(() => expect(container.textContent).toContain(COPY[lang].webBody));
+    await waitFor(() => expect(container.textContent).toContain(COPY[lang].webBody), { timeout: WAIT_MS });
 
     const strings = pageStrings(container);
     census.push({ scenario: `${lang} web`, strings });
@@ -358,6 +360,24 @@ describe('③ OpenChronicle not installed: one sentence, everything locked, no r
   });
 });
 
+describe('③ after installing, Refresh unlocks the section and the page status follows', () => {
+  it('zh: no 未安装 left anywhere once the host reports installed', async () => {
+    host.status = notInstalledStatus();
+    const { container } = await renderPage('zh');
+    // 顶部状态格、自动屏幕记忆标题旁的状态徽标、开关区的运行状态格
+    expect(screen.getAllByText(COPY.zh.tileNotInstalled)).toHaveLength(3);
+
+    host.status = { installed: true, state: 'stopped', mcpHealthy: false, bufferFiles: 0, memoryEntries: 0 };
+    const toggle = screen.getByRole('switch', { name: COPY.zh.toggle }) as HTMLButtonElement;
+    fireEvent.click(within(toggle.closest('section')!).getByRole('button', { name: /刷新/ }));
+
+    await waitFor(() => expect(toggle.disabled).toBe(false), { timeout: WAIT_MS });
+    await waitFor(() => expect(screen.queryAllByText(COPY.zh.tileNotInstalled)).toEqual([]), { timeout: WAIT_MS });
+    expect(container.textContent).not.toContain(COPY.zh.notInstalled);
+    expect(calls.filter(([domain, action]) => domain === IPC_DOMAINS.ACTIVITY && action === 'listProviders')).toHaveLength(2);
+  });
+});
+
 describe('④ Installed but start fails: locale sentence, raw host text stays out of the DOM', () => {
   it.each(['zh', 'en'] as const)('%s', async (lang) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -372,7 +392,7 @@ describe('④ Installed but start fails: locale sentence, raw host text stays ou
     expect(container.textContent).not.toContain(COPY[lang].notInstalled);
     fireEvent.click(toggle);
 
-    await screen.findByText(COPY[lang].runError);
+    await screen.findByText(COPY[lang].runError, {}, { timeout: WAIT_MS });
     expect(calls.filter(([domain, action]) => domain === IPC_DOMAINS.OPENCHRONICLE && action === 'setEnabled')).toEqual([
       [IPC_DOMAINS.OPENCHRONICLE, 'setEnabled', { enabled: true }],
     ]);

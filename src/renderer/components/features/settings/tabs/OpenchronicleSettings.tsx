@@ -5,7 +5,7 @@
 // 只显示一句未安装说明；宿主原始报错只进日志，界面上换成语言包里的一句话。
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Eye, EyeOff, AlertTriangle, Info, RefreshCw } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
@@ -46,6 +46,8 @@ function getOpenchronicleStateLabel(
 
 interface OpenchronicleSettingsProps {
   embedded?: boolean;
+  /** 装没装在本组件轮询里翻转时通知上层（屏幕记忆页据此重读顶部状态格）。 */
+  onInstalledChange?: () => void;
 }
 
 interface OpenchronicleToggleSwitchProps {
@@ -71,7 +73,7 @@ export const OpenchronicleToggleSwitch: React.FC<OpenchronicleToggleSwitchProps>
   );
 };
 
-export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false }) => {
+export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ embedded = false, onInstalledChange }) => {
   const { t } = useI18n();
   const openchronicleText = t.settings.openchronicle;
   const [settings, setSettings] = useState<OcSettings>(DEFAULT_OPENCHRONICLE_SETTINGS);
@@ -88,6 +90,14 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
   useEffect(() => {
     if (rawError) logger.warn('OpenChronicle reported a problem', { detail: rawError });
   }, [rawError]);
+
+  const lastInstalled = useRef<boolean | null>(null);
+  const installed = status?.installed;
+  useEffect(() => {
+    if (installed === undefined) return;
+    if (lastInstalled.current !== null && lastInstalled.current !== installed) onInstalledChange?.();
+    lastInstalled.current = installed;
+  }, [installed, onInstalledChange]);
 
   const refresh = useCallback(async () => {
     try {
