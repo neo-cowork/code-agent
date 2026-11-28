@@ -250,7 +250,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="min-w-0 truncate text-zinc-200" title={formatPathForDisplay(source.path)}>{formatPathForDisplay(source.path)}</span>
-                      {source.role === 'primary' && <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-badge-accent">Primary</span>}
+                      {source.role === 'primary' && <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-badge-accent">{copy.primaryBadge}</span>}
                     </div>
                     <span className={source.trustState === 'trusted' ? 'text-[10px] text-zinc-500' : 'text-[10px] text-badge-danger'}>
                       {source.trustState === 'trusted' ? copy.trusted : copy.blocked}

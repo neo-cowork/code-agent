@@ -32,44 +32,77 @@ function normalizedToolName(value: string): string {
   return value.trim().toLowerCase().replace(/[-_\s]/g, '');
 }
 
+interface RoleToolCapabilityGroup {
+  id: string;
+  label: string;
+  kind: 'capability' | 'connector';
+}
+
+export function getRoleToolCapabilityGroup(args: {
+  toolName: string;
+  capabilityLabels: RoleCapabilityLabels;
+  humanToolLabels: HumanToolLabels;
+}): RoleToolCapabilityGroup | null {
+  const toolName = args.toolName.trim();
+  if (!toolName) return null;
+
+  const connectorId = findConnectorIdForToolName(toolName);
+  if (connectorId) {
+    const connectorLabel = getHumanToolLabel({
+      connector: connectorId,
+      toolName,
+      labels: args.humanToolLabels,
+    });
+    if (!connectorLabel) return null;
+    return {
+      id: `connector:${connectorId}`,
+      label: connectorLabel,
+      kind: 'connector',
+    };
+  }
+
+  const normalizedName = normalizedToolName(toolName);
+  const capabilityKey = TOOL_CAPABILITY_KEYS[normalizedName];
+  if (capabilityKey) {
+    const label = args.capabilityLabels[capabilityKey];
+    if (!label) return null;
+    return {
+      id: capabilityKey,
+      label,
+      kind: 'capability',
+    };
+  }
+
+  return null;
+}
+
 export function getRoleToolCapabilities(args: {
   toolNames: readonly string[];
   capabilityLabels: RoleCapabilityLabels;
   humanToolLabels: HumanToolLabels;
 }): string[] {
   const capabilities: string[] = [];
-  const seenCapabilities = new Set<string>();
+  const seenGroupIds = new Set<string>();
   const unknownToolNames = new Set<string>();
-
-  const addCapability = (label: string): void => {
-    if (!label || seenCapabilities.has(label)) return;
-    seenCapabilities.add(label);
-    capabilities.push(label);
-  };
 
   for (const rawToolName of args.toolNames) {
     const toolName = rawToolName.trim();
     if (!toolName) continue;
 
-    const connectorId = findConnectorIdForToolName(toolName);
-    if (connectorId) {
-      const connectorLabel = getHumanToolLabel({
-        connector: connectorId,
-        toolName,
-        labels: args.humanToolLabels,
-      });
-      addCapability(connectorLabel);
+    const group = getRoleToolCapabilityGroup({
+      toolName,
+      capabilityLabels: args.capabilityLabels,
+      humanToolLabels: args.humanToolLabels,
+    });
+    if (group) {
+      if (!seenGroupIds.has(group.id)) {
+        seenGroupIds.add(group.id);
+        capabilities.push(group.label);
+      }
       continue;
     }
 
-    const normalizedName = normalizedToolName(toolName);
-    const capabilityKey = TOOL_CAPABILITY_KEYS[normalizedName];
-    if (capabilityKey) {
-      addCapability(args.capabilityLabels[capabilityKey]);
-      continue;
-    }
-
-    unknownToolNames.add(normalizedName);
+    unknownToolNames.add(normalizedToolName(toolName));
   }
 
   if (unknownToolNames.size > 0) {

@@ -6,6 +6,7 @@ import { estimateScheduleRuns } from '@shared/cronScheduleEstimate';
 import type { CronJobExecution } from '@shared/contract/cron';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
 import { formatCronScheduleLabelWithZone } from '../../../../utils/formatCronJobTime';
+import { mailboxDisplayName } from '../../../../utils/mailboxDisplayName';
 import { languages } from '../../../../i18n';
 import { formatScheduleRunCount } from '../../../../i18n/cronScheduleEstimate';
 import { formatRunCostUsd, redactCronDisplayText } from '../../cron/types';
@@ -266,7 +267,7 @@ export function buildScheduleConfirmRows(
   // CronMailEventFields 渲染，行值只做当前状态陈述。
   if (schedule?.type === 'event' && schedule.source === 'connector') {
     const accountId = asTrimmedString(schedule.accountId);
-    const mailbox = asTrimmedString(schedule.mailbox) || CRON_EVENT_TRIGGER.DEFAULT_MAILBOX;
+    const mailbox = mailboxDisplayName(asTrimmedString(schedule.mailbox) || CRON_EVENT_TRIGGER.DEFAULT_MAILBOX, lang);
     const mailValue = accountId
       ? `${eventLabels?.mailTrigger || ''} · ${accountId} · ${mailbox}`
       : (eventLabels?.mailFallback || '');
