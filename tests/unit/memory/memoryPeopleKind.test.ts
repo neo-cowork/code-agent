@@ -38,6 +38,8 @@ function fakeDb() {
   return {
     rows,
     listMemories: vi.fn(() => rows),
+    findMemoryByEntryId: vi.fn(() => null as MemoryRecord | null),
+    listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
     createMemory: vi.fn((data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>) => {
       const next = {
         id: `mem-${rows.length + 1}`, ...data, accessCount: 0, createdAt: 1, updatedAt: 1,

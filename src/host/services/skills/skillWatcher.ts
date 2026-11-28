@@ -3,11 +3,14 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import { promises as fsp } from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { createLogger } from '../infra/logger';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { getSkillsDir, getUserConfigDir } from '../../config';
+import { EVENT_LOOP_DIAG_TIMEOUTS } from '../../../shared/constants';
+import { beginSkillWatcherOp } from '../infra/loopBreadcrumbs';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SkillWatcher');
@@ -28,24 +31,42 @@ export interface SkillWatcherConfig {
   debounceMs?: number;
 }
 
+/** 项目级 skills 目录的一份快照：存在性 + 每个 <skill>/SKILL.md 的 mtime */
+interface ProjectDirSnapshot {
+  exists: boolean;
+  skills: Map<string, string>;
+}
+
+interface ProjectPoller {
+  timer: NodeJS.Timeout | null;
+  stopped: boolean;
+}
+
 /**
  * Skill 文件监听服务
  *
  * 监听以下目录的变化（支持新旧路径）：
  * - ~/.code-agent/skills/ (用户级，新格式)
  * - ~/.claude/skills/ (用户级，旧格式)
+ * - 库级 libraries 目录
+ * 以上三类与工作区无关：只建一次 fs.watch，工作区切换不碰它们。
  * - .code-agent/skills/ (项目级，新格式)
  * - .claude/skills/ (项目级，旧格式)
+ * 项目级不用 fs.watch：macOS 上目录 watch 都由 FSEvents 承载，close() 会在主线程
+ * 同步等 fseventsd，繁忙时一次几十秒甚至永远（2026-11-26 夜跑卡死）。改为异步、
+ * 不重叠、unref 的轮询，切换只清定时器。
  *
  * 变化后自动调用 SkillDiscoveryService.reload()
  */
 class SkillWatcher extends EventEmitter implements Disposable {
-  private watchers: fs.FSWatcher[] = [];
+  /** 用户级/库级监听，按目录去重，跨工作区切换存活 */
+  private staticWatchers = new Map<string, fs.FSWatcher>();
+  private projectPollers: ProjectPoller[] = [];
   private workingDirectory = '';
   private debounceMs: number;
   private reloadTimer: NodeJS.Timeout | null = null;
   private initialized = false;
-  /** stop() 自增：让过期的「等目录出现」回调失效 */
+  /** 项目级轮询换代：让过期的 tick 失效 */
   private watchGeneration = 0;
 
   constructor(config: SkillWatcherConfig = {}) {
@@ -57,84 +78,45 @@ class SkillWatcher extends EventEmitter implements Disposable {
    * 初始化监听器
    */
   async initialize(workingDirectory: string): Promise<void> {
-    // 先停止现有的监听器
-    this.stop();
-
+    this.stopProjectPolling();
     this.workingDirectory = workingDirectory;
 
     const skillsDirs = getSkillsDir(workingDirectory);
 
-    // 用户级 Skills 目录（监听新旧两个路径）
-    this.watchDirectory(skillsDirs.user.new, 'user');
-    this.watchDirectory(skillsDirs.user.legacy, 'user');
+    // 用户级 + 库级：目录集合不变就原样保留，不 close 也不重建
+    this.syncStaticWatchers([
+      { dir: skillsDirs.user.new, source: 'user' },
+      { dir: skillsDirs.user.legacy, source: 'user' },
+      { dir: path.join(getUserConfigDir(), 'libraries'), source: 'library' },
+    ]);
 
-    // 库级 Skills 目录
-    const librarySkillsDir = path.join(getUserConfigDir(), 'libraries');
-    this.watchDirectory(librarySkillsDir, 'library');
-
-    // 项目级 Skills 目录（监听新旧两个路径）。无文件夹会话的工作目录可能只是规划值，
-    // 尚未落盘；这里不能用递归 mkdir 把它提前物化。等真实写入创建工作目录后，下一次
-    // workspace service 更新再挂项目级监听即可。
-    if (skillsDirs.project && this.projectDirectoryExists()) {
-      this.watchProjectDirectoryWhenAvailable(skillsDirs.project.new);
-      this.watchProjectDirectoryWhenAvailable(skillsDirs.project.legacy);
+    // 项目级 Skills 目录（新旧两个路径）。无文件夹会话的工作目录可能只是规划值，
+    // 尚未落盘；这里只读不建，绝不替用户 mkdir。目录（或其祖先）之后才出现也由
+    // 轮询里的「存在性」变化发现，不需要祖先 watcher。
+    if (skillsDirs.project && await this.projectDirectoryExists()) {
+      await Promise.all([
+        this.pollProjectDirectory(skillsDirs.project.new),
+        this.pollProjectDirectory(skillsDirs.project.legacy),
+      ]);
     }
 
     this.initialized = true;
     logger.info('SkillWatcher initialized', {
       workingDirectory,
-      watchCount: this.watchers.length,
+      watchCount: this.getWatchCount(),
     });
   }
 
-  /**
-   * 项目级 skills 目录不存在时不替用户建，改为逐级等它出现（只对已存在的祖先做非递归监听），
-   * 出现后挂上原来的递归监听并补一次重扫——skill_create 一次性建好整条路径时，
-   * 新 SKILL.md 可能早于监听落盘，不补扫就会漏。
-   */
-  private watchProjectDirectoryWhenAvailable(target: string): void {
-    const root = this.workingDirectory;
-    const generation = this.watchGeneration;
-    const ensure = (dir: string, onReady: () => void): void => {
-      if (fs.existsSync(dir)) return onReady();
-      const parent = path.dirname(dir);
-      if (parent === dir || !dir.startsWith(root + path.sep)) return;
-      ensure(parent, () => awaitChild(parent, path.basename(dir), onReady));
-    };
-    const awaitChild = (parent: string, name: string, onReady: () => void): void => {
-      if (fs.existsSync(path.join(parent, name))) return onReady();
-      try {
-        const watcher = fs.watch(parent, (_event, filename) => {
-          if (filename && filename.toString() !== name) return;
-          if (!fs.existsSync(path.join(parent, name))) return;
-          try { watcher.close(); } catch { /* ignore */ }
-          this.watchers = this.watchers.filter((w) => w !== watcher);
-          if (generation === this.watchGeneration) onReady();
-        });
-        watcher.on('error', (error) => logger.debug('Pending project skills watcher error', { parent, error: String(error) }));
-        this.watchers.push(watcher);
-      } catch (error) {
-        logger.debug('Could not watch for project skills dir', { parent, error: String(error) });
-      }
-    };
-    let attachedSynchronously = true;
-    ensure(target, () => {
-      this.watchDirectory(target, 'project');
-      if (!attachedSynchronously) this.scheduleReload();
-    });
-    attachedSynchronously = false;
-  }
-
-  private projectDirectoryExists(): boolean {
+  private async projectDirectoryExists(): Promise<boolean> {
     try {
-      return fs.statSync(this.workingDirectory).isDirectory();
+      return (await fsp.stat(this.workingDirectory)).isDirectory();
     } catch {
       return false;
     }
   }
 
   /**
-   * 更新项目目录（工作目录切换时调用）
+   * 更新项目目录（工作目录切换时调用）：只重挂项目级轮询，不 close 任何 FSWatcher
    */
   async updateProjectDirectory(newWorkingDirectory: string): Promise<void> {
     if (this.workingDirectory === newWorkingDirectory) {
@@ -146,25 +128,45 @@ class SkillWatcher extends EventEmitter implements Disposable {
       new: newWorkingDirectory,
     });
 
-    // 重新初始化
     await this.initialize(newWorkingDirectory);
   }
 
+  /** 让 staticWatchers 与期望的目录集合一致；只对「不再需要」的目录 close。 */
+  private syncStaticWatchers(wanted: Array<{ dir: string; source: 'user' | 'library' }>): void {
+    const endOp = beginSkillWatcherOp('sync-static-watchers');
+    const wantedDirs = new Set(wanted.map((w) => w.dir));
+    for (const [dir, watcher] of this.staticWatchers) {
+      if (wantedDirs.has(dir)) continue;
+      this.closeWatcher(watcher, dir);
+      this.staticWatchers.delete(dir);
+    }
+    for (const { dir, source } of wanted) {
+      if (!this.staticWatchers.has(dir)) this.watchDirectory(dir, source);
+    }
+    endOp();
+  }
+
+  private closeWatcher(watcher: fs.FSWatcher, dir: string): void {
+    const endOp = beginSkillWatcherOp(`close-watcher ${dir}`);
+    try {
+      watcher.close();
+    } catch {
+      // 忽略关闭错误
+    } finally {
+      endOp();
+    }
+  }
+
   /**
-   * 监听指定目录
+   * 监听用户级/库级目录（应用自己的配置目录，按需创建；只调用一次，之后常驻）
    */
-  private watchDirectory(dir: string, source: 'user' | 'project' | 'library'): void {
-    // 项目级目录属于用户文件夹：只监听已存在的，绝不替用户创建 .claude / .code-agent。
-    // 用户级/库级目录在应用自己的配置目录下，仍按需创建。
-    if (source !== 'project') {
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-      } catch (error) {
-        logger.debug('Could not create directory', { dir, error: String(error) });
-      }
+  private watchDirectory(dir: string, source: 'user' | 'library'): void {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (error) {
+      logger.debug('Could not create directory', { dir, error: String(error) });
     }
 
-    // 检查目录是否存在且可访问
     try {
       fs.accessSync(dir, fs.constants.R_OK);
     } catch {
@@ -195,11 +197,92 @@ class SkillWatcher extends EventEmitter implements Disposable {
         logger.warn('Watcher error', { dir, error: String(error) });
       });
 
-      this.watchers.push(watcher);
+      this.staticWatchers.set(dir, watcher);
       logger.debug('Watching directory', { dir, source });
     } catch (error) {
       logger.warn('Failed to watch directory', { dir, error: String(error) });
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // 项目级轮询
+  // --------------------------------------------------------------------------
+
+  private async readProjectSnapshot(target: string): Promise<ProjectDirSnapshot | null> {
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(target, { withFileTypes: true });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return { exists: false, skills: new Map() };
+      logger.debug('Project skills dir not readable', { target, error: String(error) });
+      return null;
+    }
+    const skills = new Map<string, string>();
+    await Promise.all(entries.map(async (entry) => {
+      const mtime = await fsp.stat(path.join(target, entry.name, 'SKILL.md')).then((st) => String(st.mtimeMs), () => '-');
+      skills.set(entry.name, mtime);
+    }));
+    return { exists: true, skills };
+  }
+
+  private diffProjectSnapshot(target: string, prev: ProjectDirSnapshot, next: ProjectDirSnapshot): SkillChangeEvent | null {
+    const make = (type: SkillChangeEvent['type'], p: string): SkillChangeEvent => ({ type, path: p, source: 'project' });
+    if (prev.exists !== next.exists) return make(next.exists ? 'add' : 'unlink', target);
+    for (const [name, mtime] of next.skills) {
+      const before = prev.skills.get(name);
+      if (before === undefined) return make('add', path.join(target, name, 'SKILL.md'));
+      if (before !== mtime) return make('change', path.join(target, name, 'SKILL.md'));
+    }
+    for (const name of prev.skills.keys()) {
+      if (!next.skills.has(name)) return make('unlink', path.join(target, name, 'SKILL.md'));
+    }
+    return null;
+  }
+
+  /**
+   * 对一个项目级 skills 目录建基线并开始轮询。每轮 await 完才排下一轮（不重叠），
+   * 定时器 unref。目录还不存在也照轮询（存在性本身就是签名的一部分）。
+   */
+  private async pollProjectDirectory(target: string): Promise<void> {
+    const generation = this.watchGeneration;
+    const poller: ProjectPoller = { timer: null, stopped: false };
+    this.projectPollers.push(poller);
+
+    let snapshot = await this.readProjectSnapshot(target);
+    if (poller.stopped || generation !== this.watchGeneration) return;
+
+    const schedule = (): void => {
+      if (poller.stopped) return;
+      poller.timer = setTimeout(() => { void tick(); }, EVENT_LOOP_DIAG_TIMEOUTS.SKILL_PROJECT_POLL_INTERVAL);
+      poller.timer.unref();
+    };
+    const tick = async (): Promise<void> => {
+      poller.timer = null;
+      const next = await this.readProjectSnapshot(target);
+      if (poller.stopped || generation !== this.watchGeneration) return;
+      if (next) {
+        const event = snapshot ? this.diffProjectSnapshot(target, snapshot, next) : null;
+        snapshot = next;
+        if (event) {
+          logger.debug('Project skill changed', { path: event.path, type: event.type });
+          this.emit('change', event);
+          this.scheduleReload();
+        }
+      }
+      schedule();
+    };
+    schedule();
+  }
+
+  private stopProjectPolling(): void {
+    this.watchGeneration++;
+    for (const poller of this.projectPollers) {
+      poller.stopped = true;
+      if (poller.timer) clearTimeout(poller.timer);
+      poller.timer = null;
+    }
+    this.projectPollers = [];
   }
 
   /**
@@ -238,23 +321,22 @@ class SkillWatcher extends EventEmitter implements Disposable {
     this.removeAllListeners();
   }
 
+  /** 完整停止（dispose / 测试复位）：这里才会 close 用户级与库级 watcher */
   stop(): void {
-    this.watchGeneration++;
+    const endOp = beginSkillWatcherOp('stop');
+    this.stopProjectPolling();
     if (this.reloadTimer) {
       clearTimeout(this.reloadTimer);
       this.reloadTimer = null;
     }
 
-    for (const watcher of this.watchers) {
-      try {
-        watcher.close();
-      } catch {
-        // 忽略关闭错误
-      }
+    for (const [dir, watcher] of this.staticWatchers) {
+      this.closeWatcher(watcher, dir);
     }
 
-    this.watchers = [];
+    this.staticWatchers.clear();
     this.initialized = false;
+    endOp();
     logger.debug('SkillWatcher stopped');
   }
 
@@ -269,7 +351,7 @@ class SkillWatcher extends EventEmitter implements Disposable {
    * 获取当前监听的目录数量
    */
   getWatchCount(): number {
-    return this.watchers.length;
+    return this.staticWatchers.size + this.projectPollers.length;
   }
 }
 

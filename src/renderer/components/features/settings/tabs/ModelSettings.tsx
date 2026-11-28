@@ -73,7 +73,8 @@ import {
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ModelKeyGuide } from './ModelKeyGuide';
-import { ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { hasSavedProviderKey, isStagedApiKeyUnsaved, ProviderSettingsHeader } from './ProviderSettingsHeader';
+import { ProviderSaveBar } from './ProviderSaveBar';
 import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
@@ -235,12 +236,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
   const hasStoredApiKey = Boolean(currentProviderConfig?.apiKey || currentProviderConfig?.apiKeyConfigured);
   const hasApiKey = !needsApiKey || hasInputApiKey || hasStoredApiKey;
 
-  // Master-Detail：按「是否已配置 Key」给左侧列表分组（local 等无需 Key 的视为已配置）
-  const providerHasKey = useCallback((providerId: ModelProvider) => {
-    if (!providerRequiresApiKey(providerId)) return true;
-    const providerConfig = providerConfigs[providerId];
-    return Boolean(providerConfig?.apiKeyConfigured || providerConfig?.apiKey);
-  }, [providerConfigs]);
+  // Master-Detail：按「是否已配置 Key」给左侧列表分组（local 等无需 Key 的视为已配置）；
+  // 以最后一次 host settings get 为准——粘贴未保存的草稿不算「已有 Key」。
+  const providerHasKey = useCallback(
+    (providerId: ModelProvider) => hasSavedProviderKey(providerId, appSettings?.models.providers),
+    [appSettings],
+  );
+  const keySaved = providerHasKey(config.provider);
   const configuredRows = useMemo(
     () => orderedProviderRows.filter((row) => providerHasKey(row.id)),
     [orderedProviderRows, providerHasKey],
@@ -248,6 +250,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
   const unconfiguredRows = useMemo(
     () => orderedProviderRows.filter((row) => !providerHasKey(row.id)),
     [orderedProviderRows, providerHasKey],
+  );
+  // 已粘贴未保存草稿的 provider：未配置组行尾改显「密钥尚未保存」
+  const unsavedKeyProviderIds = useMemo(
+    () => new Set(unconfiguredRows.filter((row) => isStagedApiKeyUnsaved(providerConfigs[row.id], true, false)).map((row) => row.id)),
+    [unconfiguredRows, providerConfigs],
   );
 
   const patchCurrentProviderConfig = useCallback((patch: Partial<ModelProviderSettings>) => {
@@ -858,7 +865,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       title={modelText.title}
       description={modelText.description}
     >
-      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <WebModeBanner />
 
       {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
@@ -890,10 +896,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           </Button>
         }
       >
+      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <div className="grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
         <ProviderListPanel
           configuredRows={configuredRows}
           unconfiguredRows={unconfiguredRows}
+          unsavedKeyProviderIds={unsavedKeyProviderIds}
           keylessReachability={keylessReachability}
           selectedProviderId={config.provider}
           defaultProviderId={defaultSelection.provider}
@@ -920,7 +928,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
               <ProviderSettingsHeader
                 title={providerTitle} providerConfig={currentProviderConfig}
                 protocol={effectiveProtocol} baseUrl={effectiveBaseUrl}
-                needsApiKey={needsApiKey} hasApiKey={hasApiKey}
+                needsApiKey={needsApiKey} hasApiKey={hasApiKey} keySaved={keySaved}
                 onEnabledChange={(enabled) => { markDirty(); patchCurrentProviderConfig({ enabled }); }}
               />
 
@@ -997,33 +1005,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   }}
                 />
               )}
-
-              {/* ── 保存 ── */}
-              <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
-                {providerFormDirty && (
-                  <span className="inline-flex w-fit items-center rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning">
-                    {modelText.header.unsavedBadge}
-                  </span>
-                )}
-                <Button
-                  disabled={isWebMode()} title={webNote}
-                  onClick={handleSave}
-                  loading={isSaving}
-                  size="lg"
-                  variant="primary"
-                  className="w-full"
-                >
-                  {isSaving ? t.common.saving : modelText.header.saveConfig}
-                </Button>
-                <span className="text-xs text-zinc-500">
-                  {modelText.header.saveHintPrefix}{providerTitle}{modelText.header.saveHintSuffix}
-                </span>
-              </div>
             </>
           )}
         </div>
       </div>
       </SettingsSection>
+
+      {/* 吸底的包含块必须从视口内开始。窄屏下列表面板叠在表单上方，
+          表单列的顶边会落到折叠线附近，sticky 拉不出那一列。 */}
+      {!isAddingProvider && (
+        <ProviderSaveBar
+          dirty={providerFormDirty}
+          apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, keySaved)}
+          saving={isSaving}
+          disabled={isWebMode()}
+          disabledTitle={webNote}
+          providerTitle={providerTitle}
+          onSave={handleSave}
+        />
+      )}
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}

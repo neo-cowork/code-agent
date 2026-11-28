@@ -455,12 +455,15 @@ export async function initializeAuthStore(): Promise<void> {
   try {
     const status = await invokeDomain<AuthStatus>(IPC_DOMAINS.AUTH, 'getStatus');
     if (status) {
+      const wasResolved = useAuthStore.getState().hasResolvedStatus;
       const prevUserId = useAuthStore.getState().user?.id ?? null;
       store.setUser(status.user);
       store.setAuthStatusMeta(status);
       if (status.user) {
         if (status.analyticsDistinctId) identifyRenderer(status.analyticsDistinctId);
-        void reloadSessionsForAuthenticatedUser({ principalChanged: prevUserId !== status.user.id });
+        void reloadSessionsForAuthenticatedUser({
+          principalChanged: wasResolved ? prevUserId !== status.user.id : false,
+        });
       } else {
         resetRendererIdentity();
       }

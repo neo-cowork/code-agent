@@ -19,6 +19,11 @@ export interface RmCommandTargets {
   exact: boolean;
   /** 命令带 -r/-R/--recursive。递归删目录时目标数≠文件数，上层不得拿目标数当文件数。 */
   recursive: boolean;
+  /**
+   * 其中由 `rmdir` 指定的空目录目标数（仅在 > 0 时写入）。
+   * `rmdir` 只移除空目录、不删任何文件：点名清单照列该目录，上层算文件数时扣除。
+   */
+  emptyDirTargets?: number;
 }
 
 // 通配与展开字符：目标命中任意一个就算不出确切清单。`$` 覆盖变量展开，反引号覆盖命令替换。
@@ -142,23 +147,51 @@ function consumeRmArgs(tokens: string[], result: RmCommandTargets, collect: bool
   }
 }
 
+const DELETE_COMMANDS = new Set(['rm', 'rmdir', 'unlink']);
+const INDIRECT_DELETE_RUNNERS = new Set(['xargs', 'find']);
+
 function parseSegment(segment: CommandSegment, result: RmCommandTargets): void {
   const tokens = tokenize(segment.text);
   if (tokens.length === 0) return;
-  // 只有段首的 rm（含 sudo rm）才可能解析出确切目标。
+  // 只有段首的 rm/rmdir/unlink（含 sudo）才可能解析出确切目标。
   const leading = tokens[0] === 'sudo' ? 1 : 0;
-  if (tokens[leading] === 'rm') {
-    // 管道喂进来的 rm 操作数可能来自上游输出；命令替换里的目标同样数不清。
+  const head = tokens[leading] ?? '';
+  if (DELETE_COMMANDS.has(head)) {
+    // 管道喂进来的删除操作数可能来自上游输出；命令替换里的目标同样数不清。
     if (segment.fedByPipe || segment.text.includes('$(')) result.exact = false;
+    const before = result.targets.length;
     consumeRmArgs(tokens.slice(leading + 1), result, true);
+    const added = result.targets.length - before;
+    if (head === 'rmdir' && added > 0) {
+      result.emptyDirTargets = (result.emptyDirTargets ?? 0) + added;
+    }
     return;
   }
-  const rmIndex = tokens.indexOf('rm');
+  const rmIndex = tokens.findIndex((token) => DELETE_COMMANDS.has(token));
   if (rmIndex > 0) {
-    // xargs / find -exec 喂进来的 rm：操作数来自上游输出，标记不确切、不猜目标。
+    // xargs / find -exec 喂进来的删除：操作数来自上游输出，标记不确切、不猜目标。
     result.exact = false;
     consumeRmArgs(tokens.slice(rmIndex + 1), result, false);
   }
+}
+
+/**
+ * 判断 shell 命令是否包含真实文件/目录删除命令（rm / rmdir / unlink，含 sudo 与 &&/; 链式调用，
+ * 以及 xargs/find -exec 间接调用）。不把 echo/grep 参数里的同名词误判为删除。
+ */
+export function isDeleteShellCommand(command: string): boolean {
+  if (typeof command !== 'string' || command.trim() === '') return false;
+  for (const segment of splitSegments(command)) {
+    const tokens = tokenize(segment.text);
+    if (tokens.length === 0) continue;
+    const leading = tokens[0] === 'sudo' ? 1 : 0;
+    const head = tokens[leading] ?? '';
+    if (DELETE_COMMANDS.has(head)) return true;
+    if (INDIRECT_DELETE_RUNNERS.has(head) && tokens.slice(leading + 1).some((token) => DELETE_COMMANDS.has(token))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

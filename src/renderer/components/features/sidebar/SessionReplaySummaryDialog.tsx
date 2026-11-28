@@ -433,7 +433,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       ))}
                       {focusedBackgroundTask.outputRefs.length > 6 && (
                         <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
-                          {labels.dialog.moreOutputs.replace('{count}', String(focusedBackgroundTask.outputRefs.length - 6))}
+                          {interpolatePlural(labels.dialog.moreOutputs, focusedBackgroundTask.outputRefs.length - 6)}
                         </span>
                       )}
                     </div>
@@ -460,7 +460,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     ))}
                     {focusedBackgroundTask.events.length > 5 && (
                       <div className="px-1 text-[10px] text-zinc-600">
-                        {labels.dialog.moreTaskEvents.replace('{count}', String(focusedBackgroundTask.events.length - 5))}
+                        {interpolatePlural(labels.dialog.moreTaskEvents, focusedBackgroundTask.events.length - 5)}
                       </div>
                     )}
                   </div>
@@ -562,7 +562,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               );
             })}
             {hiddenWorkflowRunCount > 0 && (
-              <div className="px-1 text-[10px] text-zinc-600">{labels.dialog.moreWorkflowRuns.replace('{count}', String(hiddenWorkflowRunCount))}</div>
+              <div className="px-1 text-[10px] text-zinc-600">{interpolatePlural(labels.dialog.moreWorkflowRuns, hiddenWorkflowRunCount)}</div>
             )}
 
             {visibleBackgroundTasks.map((task) => {
@@ -644,7 +644,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               );
             })}
             {hiddenBackgroundTaskCount > 0 && (
-              <div className="px-1 text-[10px] text-zinc-600">{labels.dialog.moreBackgroundTasks.replace('{count}', String(hiddenBackgroundTaskCount))}</div>
+              <div className="px-1 text-[10px] text-zinc-600">{interpolatePlural(labels.dialog.moreBackgroundTasks, hiddenBackgroundTaskCount)}</div>
             )}
 
             {visibleEvidence.length > 0 && (
@@ -667,7 +667,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950/60 p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="text-xs font-medium text-zinc-300">{labels.timeline}</div>
-          {hiddenTurnCount > 0 && <div className="text-[10px] text-zinc-600">{labels.dialog.moreTurnsHidden.replace('{count}', String(hiddenTurnCount))}</div>}
+          {hiddenTurnCount > 0 && <div className="text-[10px] text-zinc-600">{interpolatePlural(labels.dialog.moreTurnsHidden, hiddenTurnCount)}</div>}
         </div>
         {visibleTurns.length === 0 ? (
           <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-500">
@@ -691,7 +691,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                   <div className="mt-2 grid gap-1">
                     {turn.blocks.slice(0, 6).map((block, index) => {
                       const label = formatBlockLabel(block, labels);
-                      const detail = formatBlockDetail(block, labels);
+                      const detail = formatBlockDetail(block, labels, t, language);
                       return (
                         <div
                           key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}
@@ -708,7 +708,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       );
                     })}
                     {turn.blocks.length > 6 && (
-                      <div className="px-2 text-[10px] text-zinc-600">{labels.dialog.moreBlocks.replace('{count}', String(turn.blocks.length - 6))}</div>
+                      <div className="px-2 text-[10px] text-zinc-600">{interpolatePlural(labels.dialog.moreBlocks, turn.blocks.length - 6)}</div>
                     )}
                   </div>
                 )}

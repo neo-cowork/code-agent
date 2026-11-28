@@ -9,6 +9,7 @@ import type {
   SwarmTimelineEvent,
 } from '../../../stores/swarmStore';
 import type { Translations } from '../../../i18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 const phaseClassName: Record<SwarmExecutionPhase, string> = {
   idle: 'bg-zinc-700/60 text-zinc-300',
@@ -153,7 +154,7 @@ export function buildContextTimeline(
       id: `commit-${commit.timestamp}-${commit.layer}-${commit.operation}`,
       title: formatCommitLabel(commit.operation, commit.layer, t),
       summary: commit.targetCount > 0
-        ? o.timelineAffectedMessages.replace('{count}', String(commit.targetCount))
+        ? interpolatePlural(o.timelineAffectedMessages, commit.targetCount)
         : o.timelineSystemAdjustment,
       timestamp: commit.timestamp,
       tone: commit.operation === 'reset' ? 'neutral' : 'warning',
@@ -170,7 +171,7 @@ export function buildContextTimeline(
       entries.push({
         id: `attachment-${message.id}`,
         title: o.timelineAttachmentTitle,
-        summary: o.timelineAttachmentSummary.replace('{count}', String(attachmentCount)),
+        summary: interpolatePlural(o.timelineAttachmentSummary, attachmentCount),
         timestamp,
         tone: 'neutral',
       });

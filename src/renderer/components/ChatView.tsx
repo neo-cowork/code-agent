@@ -121,6 +121,7 @@ import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedback
 import { DurableParkedNotice, DurableResumeNotice, isParkedForUser, shouldShowParkedNotice, useParkedNoticeYields, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
+import { interpolatePlural } from '../i18n/interpolate';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
 const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
@@ -894,10 +895,7 @@ export const ChatView: React.FC = () => {
               && result.done.length === 0
               && result.restoredMessageCount === 0
             ) return;
-            const restored = t.chat.rewindRestored.replace(
-              '{count}',
-              String(result.restoredMessageCount),
-            );
+            const restored = interpolatePlural(t.chat.rewindRestored, result.restoredMessageCount);
             const message = `${restored} ${t.chat.turnCheckoutExternalEffects}`;
             if (result.state === 'success') toast.success(message);
             else toast.warning(`${t.chat.turnCheckoutNoteRedoPartial} ${message}`);
@@ -1073,7 +1071,7 @@ export const ChatView: React.FC = () => {
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} canAbandonParked={isParkedForUser(durableResume, effectiveIsProcessing)} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} canAbandonParked={durableResume?.envBlocked?.class !== 'offline' && isParkedForUser(durableResume, effectiveIsProcessing)} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 

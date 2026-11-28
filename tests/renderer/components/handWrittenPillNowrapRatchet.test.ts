@@ -14,14 +14,27 @@ function listTsx(dir: string): string[] {
   });
 }
 
-/** 一行 className 看起来像手写 pill：rounded(-full|-sm|-md|-lg|-xl) + text-xs|[10px]|[11px] + px-，且没有任何防折行类。 */
+/**
+ * pill 的 padding，只认不带变体前缀的类名（md:px-3、placeholder:px-2、peer-focus:px-2 不算，变体前缀不在本闸范围）：
+ *   - 横向 padding px- / pl- / pr- / ps- / pe-，任意值（含 px-[14px] 这类方括号值）；
+ *   - 小号均匀 padding p-0.5 / p-1 / p-1.5。
+ * 原先只认 px-：把 px-3 改写成 pl-3 pr-3，这一行就从闸门里消失，一个防折行类都不用加
+ * （907b57bf7 的 member-bash-step 行就是这样把闸门改绿的）。
+ * 裸 p- 不全收（N-FIX-PILL-NOWRAP-RATCHET-PADDING-BYPASS）：pill 是短的行内标签，p-2 及以上的均匀 padding 是块。
+ * 离线量过 src/renderer（main 5cc9364849）：裸 p- 全算是 700 → 805，多出的 105 行里 102 行是 p-2～p-6 的
+ * <pre>、卡片、空状态，加了 nowrap 反而错；只收到 p-1.5 为止一行不多。
+ */
+function hasPillPadding(tokens: string[]): boolean {
+  return tokens.some((t) => /^(px|pl|pr|ps|pe)-/.test(t) || /^p-(0\.5|1|1\.5)$/.test(t));
+}
+
+/** 一行 className 看起来像手写 pill：rounded(-full|-sm|-md|-lg|-xl) + text-xs|[10px]|[11px] + pill padding，且没有任何防折行类。 */
 function isUnprotectedPillLine(line: string): boolean {
   if (!line.includes('className') || line.includes('<Badge')) return false;
   const tokens = line.split(/[\s"'`{}=]+/);
   const rounded = tokens.some((t) => /^rounded(-(full|sm|md|lg|xl))?$/.test(t));
   const small = tokens.some((t) => t === 'text-xs' || t === 'text-[10px]' || t === 'text-[11px]');
-  const padded = tokens.some((t) => t.startsWith('px-'));
-  if (!rounded || !small || !padded) return false;
+  if (!rounded || !small || !hasPillPadding(tokens)) return false;
   return !tokens.some((t) => t === 'whitespace-nowrap' || t === 'shrink-0' || t === 'truncate');
 }
 
@@ -56,6 +69,43 @@ describe('hand-written pill nowrap ratchet', () => {
     expect(isUnprotectedPillLine('<span className="rounded-full px-2 py-1 text-xs">x</span>')).toBe(true);
     expect(isUnprotectedPillLine('<span className="whitespace-nowrap rounded-full px-2 py-1 text-xs">x</span>')).toBe(false);
     expect(isUnprotectedPillLine('<Badge className="rounded-full px-2 text-xs">x</Badge>')).toBe(false);
+  });
+
+  // N-FIX-PILL-NOWRAP-RATCHET-PADDING-BYPASS：横向 padding 换一种拼法也算 padding，不许靠改写绕过闸门。
+  it.each(['px-3', 'pl-3', 'pr-3', 'ps-3', 'pe-3', 'px-[14px]', 'p-0.5', 'p-1', 'p-1.5'])('counts %s as pill padding', (padding) => {
+    expect(isUnprotectedPillLine(`<span className="rounded-full text-xs ${padding}">x</span>`)).toBe(true);
+  });
+
+  it('a pill written with pl- pr- is flagged, and whitespace-nowrap protects it', () => {
+    expect(isUnprotectedPillLine('<span className="rounded-full pl-3 pr-3 text-xs">x</span>')).toBe(true);
+    expect(isUnprotectedPillLine('<span className="rounded-full pl-3 pr-3 text-xs whitespace-nowrap">x</span>')).toBe(false);
+  });
+
+  it('small uniform padding is flagged; block padding and lines without padding are not', () => {
+    expect(isUnprotectedPillLine('<span className="rounded-full p-1 text-xs">x</span>')).toBe(true);
+    expect(isUnprotectedPillLine('<span className="rounded-full py-1 text-xs">x</span>')).toBe(false);
+    expect(isUnprotectedPillLine('<span className="mt-1 rounded text-xs">x</span>')).toBe(false);
+    // p-3 是块容器的 padding，故意不算。
+    expect(isUnprotectedPillLine('<div className="rounded p-3 text-xs">x</div>')).toBe(false);
+  });
+
+  it.each([
+    'py-1',
+    'pt-1',
+    'pb-1',
+    'my-1',
+    'mx-1',
+    // 块容器的均匀 padding。
+    'p-2',
+    'p-3',
+    'p-4',
+    'p-10',
+    // 变体前缀不在本闸范围：带前缀的 padding 不算。
+    'md:px-3',
+    'placeholder:px-2',
+    'peer-focus:px-2',
+  ])('does not count %s as pill padding', (padding) => {
+    expect(isUnprotectedPillLine(`<span className="rounded-full text-xs ${padding}">x</span>`)).toBe(false);
   });
 });
 

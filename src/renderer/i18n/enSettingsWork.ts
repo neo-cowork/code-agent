@@ -2,6 +2,7 @@ import { hooksLoadStateEn } from './hooksLoadState';
 // Settings namespace translations (en/Work) — 纯平移拆分（债务门）
 import { enAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsEn } from './permissionGrants';
+import { memoryInjectionPauseEn } from './memoryInjectionPause';
 export const enSettingsWork = {
     workspace: {
       description: 'Manage the current working directory, recent directories, local bridge status, and default browser-tool behavior.',
@@ -634,14 +635,7 @@ export const enSettingsWork = {
         loadFailed: 'Failed to load unified memory',
         updateSuccess: 'Memory updated',
         updateFailed: 'Update failed',
-        injectionPaused: {
-          badge: 'Auto-include paused',
-          neverUsed: 'This memory was never used, so since {date} it is no longer added to conversations automatically. It is still saved and can be searched and read.',
-          staleUsed: 'This memory has not been used for a long time, so since {date} it is no longer added to conversations automatically. It is still saved and can be searched and read.',
-          resume: 'Resume auto-include',
-          resumeSuccess: 'Resumed. Future conversations will include this memory again.',
-          resumeFailed: 'Resume failed',
-        },
+        injectionPaused: memoryInjectionPauseEn,
         deleteSuccess: 'Memory deleted',
         deleteFailed: 'Delete failed',
         statusLabels: {
@@ -696,7 +690,7 @@ export const enSettingsWork = {
         confirmDelete: 'Confirm delete',
         delete: 'Delete',
         evidence: 'Evidence',
-        noEvidence: 'No evidence records', evidenceCount: '{count} source record(s)',
+        noEvidence: 'No evidence records', evidenceCount: { one: '{count} source record', other: '{count} source records' },
         sourceSession: {
           open: 'Open source session',
           missing: 'Source session no longer exists',

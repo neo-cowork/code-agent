@@ -10,7 +10,6 @@ import { useToastStore } from '../../../src/renderer/hooks/useToast';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { DEFAULT_PROVIDER } from '../../../src/shared/constants';
 import { resolveConfiguredDefaultProvider } from '../../../src/shared/modelDefaults';
-import { getLocalizedProviderDisplayName } from '../../../src/renderer/i18n/providerDisplay';
 import { languages } from '../../../src/renderer/i18n';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({ default: { invoke: vi.fn(), invokeDomain: vi.fn() } }));
@@ -56,12 +55,7 @@ describe('signed-out settings entries', () => {
     await waitFor(() => expect(useAppStore.getState().showSettings).toBe(true));
     expect(useAppStore.getState().settingsInitialTab).toBe('model');
     expect(useAppStore.getState().settingsModelFocus?.provider).toBe(expectedProvider);
-    const providerName = getLocalizedProviderDisplayName(expectedProvider, language)!;
-    const message = useToastStore.getState().toasts[0]?.message;
-    expect(message).toBe(languages[language].modelSetup.missingApiKey.replace('{provider}', providerName));
-    expect(message).toContain(providerName);
-    if (language === 'en') expect(message).not.toMatch(/[\u3400-\u9fff]/);
-    if (language === 'zh') expect(message?.replace(providerName, '')).not.toMatch(/[A-Za-z]/);
+    expect(useToastStore.getState().toasts).toEqual([]);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
@@ -81,7 +75,7 @@ describe('signed-out settings entries', () => {
   it.each([
     ['zh', '先不登录，去配置模型/通道'],
     ['en', 'Skip sign-in and set up a model or channel'],
-  ] as const)('names a custom default provider in the missing-key toast in %s', async (language, label) => {
+  ] as const)('focuses the custom provider without a duplicate prompt in %s', async (language, label) => {
     vi.mocked(ipcService.invokeDomain).mockResolvedValue(customGlm());
     useAppStore.setState({ language });
     useAuthStore.setState({ showAuthModal: true });
@@ -89,9 +83,7 @@ describe('signed-out settings entries', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: label })); });
     await waitFor(() => expect(useAppStore.getState().showSettings).toBe(true));
     expect(useAppStore.getState().settingsModelFocus?.provider).toBe('custom-glm-coding');
-    const message = useToastStore.getState().toasts[0]?.message;
-    expect(message).toBe(languages[language].modelSetup.missingApiKey.replace('{provider}', 'GLM Coding Plan'));
-    expect(message).not.toContain('custom-glm-coding');
+    expect(useToastStore.getState().toasts).toEqual([]);
   });
 
   it('shows no toast when another provider already has a key (by-design suppression on the skip path)', async () => {

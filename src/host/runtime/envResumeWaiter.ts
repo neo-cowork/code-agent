@@ -1,6 +1,8 @@
+import type { Message } from '../../shared/contract';
 import type { RunEnvelope } from '../../shared/contract/durableRun';
 import { getRunInterruptCause } from '../../shared/contract/durableRun';
-import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_RUNTIME_STALL_MS, ENV_RESUME_TIMEOUT_MS } from '../../shared/constants/envResume';
+import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_RUNTIME_STALL_MS, ENV_RESUME_TIMEOUT_MS, OFFLINE_RESUME_POLL_INTERVAL_MS } from '../../shared/constants/envResume';
+import { probeOfflineNetwork } from '../permissions/envAssist/probes/offlineProbe';
 import { createLogger } from '../services/infra/logger';
 import type { RunRegistry } from './runRegistry';
 
@@ -8,7 +10,7 @@ type EnvResumeProbeStatus = 'green' | 'red' | 'unavailable' | 'failed';
 /** `progress` (runtime installs): each new value restarts the stall window; `failed` ends the wait without resuming. */
 export type EnvResumeProbe = () => Promise<EnvResumeProbeStatus | { status: EnvResumeProbeStatus; progress?: number }>;
 type Block = NonNullable<RunEnvelope['envBlocked']>;
-type Continuer = (input: { sessionId: string; runId: string }) => Promise<unknown>;
+type Continuer = (input: { sessionId: string; runId: string; onResumeStarted?: () => void }) => Promise<unknown>;
 /** `scope` (when the run is known): lets a runtime probe find the card it keeps current. */
 export type EnvResumeProbeFactory = (block: Block, scope?: { runId: string; sessionId: string }) => EnvResumeProbe;
 /** A runtime install is bounded by lack of progress, not by the fixed window a permission grant gets. */
@@ -16,6 +18,7 @@ const progressBounded = (block: Block): boolean => block.class === 'runtime_miss
 const logger = createLogger('EnvResumeWaiter');
 let continuer: Continuer | null = null;
 let probeFactory: EnvResumeProbeFactory | undefined;
+const pendingReclaims = new Map<string, ReturnType<typeof setTimeout>>();
 const loops = new Map<string, { poll?: ReturnType<typeof setTimeout>; deadline?: ReturnType<typeof setTimeout> }>();
 
 /** Registered once by the continue route; arming happens on session return (armEnvResumeOnSessionReturn), never at startup recovery. */
@@ -25,6 +28,9 @@ export function registerEnvResumeContinuer(next: Continuer | null, probe?: EnvRe
 }
 
 export function clearEnvResumeWaiter(runId: string): void {
+  const reclaim = pendingReclaims.get(runId);
+  if (reclaim) clearTimeout(reclaim);
+  pendingReclaims.delete(runId);
   const loop = loops.get(runId);
   if (loop?.poll) clearTimeout(loop.poll);
   if (loop?.deadline) clearTimeout(loop.deadline);
@@ -37,6 +43,8 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
   const loop: { poll?: ReturnType<typeof setTimeout>; deadline?: ReturnType<typeof setTimeout> } = {};
   loops.set(input.runId, loop);
   const stalled = progressBounded(input.envBlocked);
+  const offline = input.envBlocked.class === 'offline' ? input.envBlocked : undefined;
+  const interval = offline ? OFFLINE_RESUME_POLL_INTERVAL_MS : ENV_RESUME_POLL_INTERVAL_MS;
   const active = () => loops.get(input.runId) === loop;
   const stop = (reason: string, error?: unknown) => {
     if (!active()) return;
@@ -49,9 +57,11 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
   // A permission wait is bounded by one fixed window; a runtime install only by lack of progress (re-armed below on each change).
   const armDeadline = () => {
     if (loop.deadline) clearTimeout(loop.deadline);
-    loop.deadline = setTimeout(() => stop(stalled ? 'stalled' : 'timeout'), stalled ? ENV_RESUME_RUNTIME_STALL_MS : ENV_RESUME_TIMEOUT_MS);
+    const window = offline ? offline.deadlineAt - Date.now() : stalled ? ENV_RESUME_RUNTIME_STALL_MS : ENV_RESUME_TIMEOUT_MS;
+    loop.deadline = setTimeout(() => stop(stalled ? 'stalled' : 'timeout'), window);
     loop.deadline.unref?.();
   };
+  if (offline && offline.deadlineAt - Date.now() <= 0) { stop('timeout'); return; }
   armDeadline();
   let probe: EnvResumeProbe;
   try {
@@ -84,13 +94,28 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
         }
         return;
       }
-      loop.poll = setTimeout(() => { void poll(); }, ENV_RESUME_POLL_INTERVAL_MS);
+      loop.poll = setTimeout(() => { void poll(); }, interval);
       loop.poll.unref?.();
     } catch (error) { stop('probe_unavailable', error); }
   };
   // Defer until finalization has unloaded the parked handle.
-  loop.poll = setTimeout(() => { void poll(); }, ENV_RESUME_POLL_INTERVAL_MS);
+  loop.poll = setTimeout(() => { void poll(); }, interval);
   loop.poll.unref?.();
+}
+
+/** A click after the polling deadline checks the same parked run before entering Continue. */
+export async function recheckOfflineRun(sessionId: string, runId: string, registry: RunRegistry): Promise<boolean> {
+  const run = registry.findRecoveredWaitingRun({ sessionId });
+  const block = run?.runId === runId ? registry.getDurableEnvelope(runId)?.envBlocked : undefined;
+  const resume = continuer;
+  if (!resume || block?.class !== 'offline' || Date.now() < block.deadlineAt || !await probeOfflineNetwork(block)) return false;
+  return new Promise<boolean>((resolve, reject) => {
+    const onResumeStarted = () => resolve(true);
+    void resume({ sessionId, runId, onResumeStarted }).then(onResumeStarted, (error: unknown) => {
+      logger.warn('Offline continuation failed', { runId, sessionId, error });
+      reject(error);
+    });
+  });
 }
 
 /** Session-return arming needs only the recovered-run lookup of the full registry. */
@@ -104,13 +129,29 @@ export type SessionReturnRunRegistry = Pick<RunRegistry, 'findRecoveredWaitingRu
  * loop for the run is left untouched, so a repeated return adds no second poll and
  * does not extend the ENV_RESUME_TIMEOUT_MS window; a fresh return restarts it.
  */
-export function armEnvResumeOnSessionReturn(sessionId: string, registry: SessionReturnRunRegistry, entry: string): void {
+export function armEnvResumeOnSessionReturn(
+  sessionId: string, registry: SessionReturnRunRegistry, entry: string, messages?: readonly Message[],
+): void {
   try {
+    const latestCard = messages?.findLast(({ metadata }) => metadata?.envAssist?.class === 'offline');
+    const notice = latestCard?.metadata?.envAssist;
     const recovered = registry.findRecoveredWaitingRun({ sessionId });
-    if (!recovered) return;
+    if (!recovered) {
+      // An immediate visit after a crash can precede fenced lease reclaim.
+      if (notice?.phase === 'fixing' && (notice.resume.deadlineAt ?? 0) > Date.now() && !pendingReclaims.has(notice.runId)) {
+        const timer = setTimeout(() => {
+          pendingReclaims.delete(notice.runId);
+          armEnvResumeOnSessionReturn(sessionId, registry, entry, latestCard ? [latestCard] : []);
+        }, OFFLINE_RESUME_POLL_INTERVAL_MS);
+        timer.unref?.();
+        pendingReclaims.set(notice.runId, timer);
+      }
+      return;
+    }
     if (loops.has(recovered.runId)) return;
     const envelope = registry.getDurableEnvelope(recovered.runId);
     if (!envelope || getRunInterruptCause(envelope) !== 'env_blocked' || !envelope.envBlocked) return;
+    if (envelope.envBlocked.class === 'offline' && envelope.envBlocked.deadlineAt <= Date.now()) return;
     armEnvResumeOnPark({ runId: recovered.runId, sessionId: recovered.sessionId, envBlocked: envelope.envBlocked });
     logger.info('Environment auto-continue armed on session return', { runId: recovered.runId, sessionId: recovered.sessionId, entry });
   } catch (error) {

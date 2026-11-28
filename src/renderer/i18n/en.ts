@@ -61,6 +61,7 @@ import { roleFirstWakeEn } from './roleFirstWake';
 import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
 import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { toolResultSummaryEn } from './toolResultSummary'; import { codeBlockEn } from './codeBlock';
+import { confirmPromptsEn } from './confirmPrompts';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
@@ -85,8 +86,7 @@ export const en = {
   ...connectorRequiredEn,
   ...roleFirstWakeEn,
   ...roleWakeProposalsEn,
-  ...permissionRuleNlEn,
-  ...sessionTaskPresentationEn, ...toolResultSummaryEn, ...codeBlockEn,
+  ...permissionRuleNlEn, ...sessionTaskPresentationEn, ...toolResultSummaryEn, ...codeBlockEn, ...confirmPromptsEn,
   // Common
   common: {
     save: 'Save',
@@ -185,7 +185,7 @@ export const en = {
     slidesAiOutline: 'AI-enhanced outline (topic-specific, higher quality)',
     slidesAiCostHint: 'paid, billed to your BYOK key',
     slidesIllustrate: 'AI illustrations (generate art for content slides, paid)',
-    slidesIllustrateCount: '~{n} images',
+    slidesIllustrateCount: { one: '~{n} image', other: '~{n} images' },
     slidesIllustrateEst: 'est.',
     slidesIllustrateSpent: 'illustration cost',
     slidesAiFellBack: 'No text-model key configured — fell back to the template outline (free). Configure a key in settings and retry.',
@@ -588,7 +588,7 @@ export const en = {
       // Engine rows
       remoteDefaultLabel: 'Remote default: ',
       localDefaultLabel: 'Local default selection',
-      modelSelectableSummary: '{enabled}/{total} models available',
+      modelSelectableSummary: { one: '{enabled}/{total} model available', other: '{enabled}/{total} models available' },
       loading: 'Loading model catalog...',
       // toast
       defaultUpdated: '{engine} default model updated',
@@ -712,7 +712,7 @@ export const en = {
       unknown: 'Hit an obstacle it could not work around',
     },
     taskDependencySummaryWaiting: '{count} waiting on dependencies',
-    taskDependencySummaryUnlocking: '{count} unlocking follow-ups',
+    taskDependencySummaryUnlocking: { one: '{count} unlocking follow-up', other: '{count} unlocking follow-ups' },
     taskDependencySummarySeparator: ' · ',
     showMore: 'Show {count} more',
     phaseThinking: 'Understanding request',
@@ -726,7 +726,7 @@ export const en = {
     phaseExecute: 'Running commands',
     phaseSearch: 'Searching',
     phaseMcp: 'Tool calls',
-    phaseOps: '{count} ops',
+    phaseOps: { one: '{count} op', other: '{count} ops' },
     taskProgressTool: 'Tool: {tool}',
     taskProgressToolPosition: 'tool {index}/{total}',
     toolActivity: 'Tool activity',
@@ -735,7 +735,7 @@ export const en = {
     toolActivityExecute: 'Command activity',
     toolActivitySearch: 'Search activity',
     toolActivityMcp: 'External tool activity',
-    toolActivityOps: '{count} tool ops',
+    toolActivityOps: { one: '{count} tool op', other: '{count} tool ops' },
     // StatusRail
     runtimeApprovalsBadge: 'Approvals',
     sectionContext: 'Context',
@@ -886,7 +886,7 @@ export const en = {
     roleTitle: 'Create role',
     teamPlaceholder: 'Describe in one sentence what the team should solve',
     rolePlaceholder: 'Describe in one sentence what the role should handle',
-    availableExpertsHint: '{count} local experts available',
+    availableExpertsHint: { one: '{count} local expert available', other: '{count} local experts available' },
     cancel: 'Cancel',
     start: 'Start',
   },

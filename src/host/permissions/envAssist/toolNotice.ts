@@ -57,13 +57,28 @@ export async function publishEnvAssistToolNotice(input: {
   input.result.output = undefined;
   input.result.metadata = { envAssist: notice };
   if (input.modelResult) Object.assign(input.modelResult, { error: input.result.error, output: undefined, metadata: input.result.metadata });
+  await publishEnvAssistNotice(notice, input.onEvent);
+  // The install runs on its own; the card keeps up with it even for a run that cannot wait for it.
+  if (runtime) watchOfflineRuntimeCard(notice);
+  if (notice.phase === 'fixing') {
+    followRuntimeInstall(notice);
+    if (runtime && !input.parkedToolCallId) {
+      const guidance = await holdForRuntimeInstall(notice, input.signal);
+      input.result.error = guidance;
+      if (input.modelResult) Object.assign(input.modelResult, { error: guidance });
+    }
+  }
+}
+
+export async function publishEnvAssistNotice(notice: EnvAssistNotice, onEvent: (event: AgentEvent) => void): Promise<void> {
   await queueNoticeWrite(notice, async () => {
     const manager = getSessionManager();
-    const messages = await manager.getMessages(input.sessionId);
+    const messages = await manager.getMessages(notice.sessionId);
     // A card still waiting (for the user, or for an install) is re-pointed instead of joined by a second card.
     const open = isRuntimeNotice(notice) ? ['needs_user', 'fixing'] : ['needs_user'];
-    const live = open.includes(notice.phase) ? messages.findLast((m) => {
+    const live = (open.includes(notice.phase) || notice.class === 'offline') ? messages.findLast((m) => {
       const candidate = m.metadata?.envAssist;
+      if (notice.class === 'offline') return candidate?.phase === notice.phase && candidate.class === notice.class && candidate.target?.id === notice.target?.id && candidate.runId === notice.runId;
       return candidate?.phase !== undefined && open.includes(candidate.phase) && candidate.class === notice.class && candidate.target?.id === notice.target?.id;
     }) : undefined;
     let persisted = live ?? messages.find((m) => m.id === `env-assist:${notice.id}`);
@@ -80,22 +95,12 @@ export async function publishEnvAssistToolNotice(input: {
       id: messageId, role: 'assistant', content: '', timestamp: persisted?.timestamp ?? notice.updatedAt,
       metadata: { ...persisted?.metadata, envAssist: notice },
     };
-    await manager.addMessageToSession(input.sessionId, message);
-    if (!persisted || (live && notice.id !== computedId)) {
-      input.onEvent({ type: 'env_assist_notice', data: notice });
+    await manager.addMessageToSession(notice.sessionId, message);
+    if (!persisted || notice.class === 'offline' || (live && notice.id !== computedId)) {
+      onEvent({ type: 'env_assist_notice', data: notice });
     }
-    if (!persisted) input.onEvent({ type: 'message', data: message });
+    if (!persisted) onEvent({ type: 'message', data: message });
   });
-  // The install runs on its own; the card keeps up with it even for a run that cannot wait for it.
-  if (runtime) watchOfflineRuntimeCard(notice);
-  if (notice.phase === 'fixing') {
-    followRuntimeInstall(notice);
-    if (runtime && !input.parkedToolCallId) {
-      const guidance = await holdForRuntimeInstall(notice, input.signal);
-      input.result.error = guidance;
-      if (input.modelResult) Object.assign(input.modelResult, { error: guidance });
-    }
-  }
 }
 
 /** Once a probe reads granted: the card's persisted copy becomes "done" (survives reload) and open windows update live. */
@@ -109,9 +114,9 @@ async function writeResolved(notice: EnvAssistNotice, now: number): Promise<void
   const persisted = (await manager.getMessages(notice.sessionId)).find((m) => m.id === messageId);
   if (!persisted) return;
   const current = persisted.metadata?.envAssist;
-  if (current?.phase !== 'needs_user') return;
+  if (!current || (current.class === 'offline' ? current.phase !== 'fixing' : current.phase !== 'needs_user')) return;
   const { action: _action, ...rest } = current;
-  const resolved: EnvAssistNotice = { ...rest, phase: 'resolved', doneKey: `env.done.${current.target?.id ?? ''}`, updatedAt: now };
+  const resolved: EnvAssistNotice = { ...rest, phase: 'resolved', doneKey: current.class === 'offline' ? 'env.offline.resolved' : `env.done.${current.target?.id ?? ''}`, updatedAt: now };
   await manager.addMessageToSession(notice.sessionId, { ...persisted, metadata: { ...persisted.metadata, envAssist: resolved } });
   emitExternalAgentEvent(notice.sessionId, { type: 'env_assist_notice', data: resolved });
 }

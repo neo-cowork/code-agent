@@ -11,7 +11,7 @@
 import type { Message } from '../../../shared/contract';
 import type { EnvAssistNotice } from '../../../shared/contract/envAssist';
 import { ENV_RESUME_RUNTIME_STALL_MS, ENV_RUNTIME_OFFLINE_RECHECK_INTERVAL_MS, ENV_RUNTIME_PROGRESS_INTERVAL_MS } from '../../../shared/constants/envResume';
-import { peekEnvBlockedNote } from '../../agent/runtime/envBlockedTurn';
+import { peekEnvBlockedNote } from '../../agent/runtime/envBlockedNotes';
 import { emitExternalAgentEvent } from '../../services/agentEngine/agentEngineEventSink';
 import { getSessionManager } from '../../services/infra/sessionManager';
 import { createLogger } from '../../services/infra/logger';

@@ -5,6 +5,7 @@ import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { invokeDomain } from '../../../services/ipcService';
 import { useEnvAssistStore } from '../../../stores/envAssistStore';
+import { OfflineEnvAssistCard } from './OfflineEnvAssistCard';
 import { useEnvCardResumesAutomatically } from '../../../hooks/useEnvParkedTarget';
 
 function lookupKey(catalogue: Record<string, string>, fullKey: string | undefined, prefix: string): string {
@@ -22,9 +23,15 @@ function formatPercent(notice: EnvAssistNotice): string {
 }
 
 export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice }): React.ReactElement {
-  const { t } = useI18n();
   const live = useEnvAssistStore((state) => state.notices[snapshot.id]);
   const notice = live && live.updatedAt >= snapshot.updatedAt ? live : snapshot;
+  return notice.class === 'offline'
+    ? <OfflineEnvAssistCard notice={notice} />
+    : <PermissionEnvAssistCard notice={notice} />;
+}
+
+function PermissionEnvAssistCard({ notice }: { notice: EnvAssistNotice }): React.ReactElement {
+  const { t } = useI18n();
   const isRuntime = notice.class === 'runtime_missing';
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -63,7 +70,8 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
     };
   }, [shouldRecheck, offlineRuntime, notice.id]);
   // Resolve only our own copy catalogue. Arbitrary host strings/params never become visible copy.
-  const rawSentence = notice.phase === 'resolved'
+  const rawSentence = notice.phase === 'resolved' && notice.sentenceKey === 'env.reused.mail' ? t.env.reused
+    : notice.phase === 'resolved'
     ? lookupKey(t.env.done, notice.doneKey, 'env.done.')
     : lookupKey(t.env.sentence, notice.sentenceKey, 'env.sentence.');
   const sentence = rawSentence.includes('{percent}') ? rawSentence.replace('{percent}', formatPercent(notice)) : rawSentence;

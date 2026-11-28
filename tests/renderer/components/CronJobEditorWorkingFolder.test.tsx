@@ -80,7 +80,7 @@ describe('编辑器工作文件夹行（桌面壳）', () => {
     expect(screen.getByTestId('cron-working-folder-name').textContent).toBe('未选择');
     fireEvent.click(screen.getByTestId('cron-working-folder-pick'));
     await waitFor(() => expect(screen.getByTestId('cron-working-folder-name').textContent).toBe('notes'));
-    expect(screen.getByTestId('cron-working-folder-name').getAttribute('title')).toBe('/Users/me/notes');
+    expect(screen.getByTestId('cron-working-folder-name').getAttribute('title')).toBe('~/notes');
 
     const input = await saveEdit();
     expect(input.metadata).toEqual({ sourceSessionId: 'src-1', workingDirectory: '/Users/me/notes' });
@@ -119,7 +119,7 @@ describe('编辑器工作文件夹行（桌面壳）', () => {
     render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
     fireEvent.click(await screen.findByText('执行动作'));
     expect(screen.getByTestId('cron-working-folder-name').textContent).toBe('My Notes');
-    expect(screen.getByTestId('cron-working-folder-name').getAttribute('title')).toBe('/Users/me/Documents/My Notes');
+    expect(screen.getByTestId('cron-working-folder-name').getAttribute('title')).toBe('~/Documents/My Notes');
     expect(screen.queryByTestId('cron-working-folder-input')).toBeNull();
   });
 });

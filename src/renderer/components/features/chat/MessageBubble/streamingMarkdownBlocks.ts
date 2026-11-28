@@ -2,8 +2,8 @@ import remend from 'remend';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 import type { Nodes, Root } from 'mdast';
+import { remarkMathPandoc } from './remarkMathPandoc';
 
 interface StreamingMarkdownBlock {
   key: string;
@@ -21,7 +21,7 @@ export interface StreamingMarkdownBlockState {
 const markdownParser = unified()
   .use(remarkParse)
   .use(remarkGfm)
-  .use(remarkMath);
+  .use(remarkMathPandoc);
 
 const CROSS_BLOCK_REFERENCE_NODES = new Set([
   'definition',

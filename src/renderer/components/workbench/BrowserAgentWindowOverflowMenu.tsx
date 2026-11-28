@@ -8,6 +8,9 @@ import {
 import { humanizeBrowserCookieImportFailure } from '../../utils/browserCookieImportMessages';
 import { ConfirmDialog } from '../composites/ConfirmDialog';
 import { GhostButton, IconButton } from '../primitives';
+import { interpolatePlural, type PluralTemplates } from '../../i18n/interpolate';
+import { useI18n } from '../../hooks/useI18n';
+import { requestConfirm } from '../../services/confirmPrompt';
 
 export type BrowserAgentWindowCopy = {
   moreActions: string;
@@ -24,7 +27,7 @@ export type BrowserAgentWindowCopy = {
   importCookiesScanning: string;
   importCookiesEmpty: string;
   importCookiesBusy: string;
-  importCookiesSuccess: string;
+  importCookiesSuccess: PluralTemplates;
   importCookiesFailed: string;
   importCookiesCookieDbLocked: string;
   importCookiesKeychainDenied: string;
@@ -74,6 +77,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
   onOpenLocalOps,
   onImportNotice,
 }) => {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [profiles, setProfiles] = useState<BrowserProfileDescriptor[]>([]);
@@ -147,8 +151,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
       }
       setImportOpen(false);
       onImportNotice(
-        formatTemplate(copy.importCookiesSuccess, {
-          count: result.importedCookieCount,
+        interpolatePlural(copy.importCookiesSuccess, result.importedCookieCount, {
           domains: result.domainCount,
         }),
         'success',
@@ -172,9 +175,14 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
 
   const confirmImportAll = useCallback(async () => {
     if (domainOptions.length === 0) return;
-    if (!window.confirm(copy.importCookiesImportAllConfirm)) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.importAllCookies,
+      message: copy.importCookiesImportAllConfirm,
+      confirmText: t.confirmPrompts.importAll,
+      variant: 'warning',
+    })) return;
     await importWithDomains(domainOptions.map((entry) => entry.domain));
-  }, [copy.importCookiesImportAllConfirm, domainOptions, importWithDomains]);
+  }, [copy.importCookiesImportAllConfirm, domainOptions, importWithDomains, t.confirmPrompts]);
 
   return (
     <div ref={wrapperRef} className="relative shrink-0">

@@ -28,6 +28,7 @@ import {
 } from '../../utils/overviewRunHeader';
 import { summarizeTodoProgress } from './TaskWorkspaceOverview';
 import { GhostButton } from '../primitives';
+import { interpolatePlural } from '../../i18n/interpolate';
 
 const ELAPSED_TICK_MS = 1000;
 
@@ -132,7 +133,7 @@ export const OverviewRunHeader: React.FC = () => {
                 total: model.steps.total,
               })
               : model.terminal === 'completed' || !terminalWord
-                ? formatTemplate(wt.overviewRunStepsDone, { total: model.steps.total })
+                ? interpolatePlural(wt.overviewRunStepsDone, model.steps.total, { total: model.steps.total })
                 : terminalWord.label}
           </span>
         )}

@@ -97,13 +97,17 @@ afterEach(() => {
 });
 
 describe('ModelSwitcher 显示 host 实际调用的模型', () => {
-  it('keeps the task model in the closed picker until the user opens the unconfigured picker', async () => {
+  it('shows setup in the closed picker as soon as the host confirms there are no usable models', async () => {
     installDomainApi({ models: { providers: {} } });
-    await act(async () => { render(<Harness />); });
+    const { configureModel, openModelSettings } = zh.settings.model.models.switcherPanel;
+    render(<Harness />);
 
-    expect(trigger().textContent).toMatch(/longcat/i);
-    fireEvent.click(trigger());
-    await waitFor(() => expect(trigger().textContent).toBe(zh.settings.model.models.switcherPanel.configureModel));
+    const setup = await screen.findByRole('button', { name: configureModel });
+    expect(setup.textContent).toBe(configureModel);
+    expect(setup.title).not.toMatch(/longcat/i);
+    expect(setup.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(setup);
+    expect(await screen.findByRole('button', { name: openModelSettings })).toBeTruthy();
   });
 
   it('loads provider names and duplicate source labels before the picker is ever opened', async () => {

@@ -21,7 +21,8 @@ import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
 import { isRuntimeNotice, libreOfficeResumeProbe, recheckRuntimeNotice, retryRuntimeInstall } from '../permissions/envAssist/runtimeNotice';
 import { createLogger } from '../services/infra/logger';
 import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
-import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
+import { armEnvResumeOnSessionReturn, recheckOfflineRun, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
+import { probeOfflineNetwork } from '../permissions/envAssist/probes/offlineProbe';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 const logger = createLogger('EnvAssistIpc');
@@ -175,6 +176,15 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     if (!probe) return { status: 'rejected' };
     return settle(deps, notice, { status: 'checked', outcome: await probe() });
   },
+  recheckOffline: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
+    const parsed = EnvAssistSchemas.recheck.safeParse(payload);
+    if (!parsed.success) return { status: 'rejected' };
+    const notice = await deps.findNotice(parsed.data.noticeId);
+    if (notice?.class !== 'offline') return { status: 'rejected' };
+    if (notice.phase === 'resolved') return { status: 'checked', notice };
+    if (!await recheckOfflineRun(notice.sessionId, notice.runId, getApplicationRunRegistry())) return { status: 'checked' };
+    return withResolvedNotice(deps, notice.id, { status: 'checked' });
+  },
   /** Settings switch off→on (the click): passive check → one-shot dialog → poll; the host writes the setting only when granted. */
   enableSettingGrant: async (deps: EnvAssistDependencies, payload: unknown): Promise<CalendarSettingResult> => {
     if (!EnvAssistSchemas.settingGrant.safeParse(payload).success) return { on: false, reason: 'unavailable' };
@@ -320,6 +330,7 @@ registerEnvAssistHandlers.routes = routes;
  * Distinguishable degrade reasons are logged; 'unavailable' stops the waiter (manual Continue still works).
  */
 export const envResumeProbeFactory: EnvResumeProbeFactory = (block, scope) => {
+  if (block.class === 'offline') return async () => await probeOfflineNetwork(block) ? 'green' : 'red';
   // A runtime Neo installs itself resumes on the install state (passive, in-process).
   if (block.class === 'runtime_missing' && block.target === 'libreoffice') return libreOfficeResumeProbe(scope);
   // Calendar runs (perm_calendars, and perm_automation runs parked before the switch) resume on the EventKit truth.

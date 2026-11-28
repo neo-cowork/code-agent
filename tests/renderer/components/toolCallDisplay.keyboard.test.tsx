@@ -84,16 +84,16 @@ describe('ToolCallDisplay keyboard interaction', () => {
       <ToolCallDisplay toolCall={makeToolCall()} index={0} total={1} />,
     );
 
-    expect(container.textContent).toContain('Read 1 lines');
+    expect(container.textContent).toContain('Read 1 line');
     expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeNull();
     expect(container.querySelector('.opacity-0')).toBeNull();
   });
 
-  it('collapses AskUserQuestion answers to one summary line and expands the existing Q&A', () => {
+  it.each(['AskUserQuestion', 'ask_user_question'])('renders %s as a question step and expands only the answer record', (name) => {
     const view = render(
       <ToolCallDisplay
         toolCall={makeToolCall({
-          name: 'AskUserQuestion',
+          name,
           arguments: {
             questions: [
               { header: 'Scope', question: 'Which scope?', options: [{ label: 'A', description: '' }] },
@@ -116,6 +116,10 @@ describe('ToolCallDisplay keyboard interaction', () => {
     });
     expect(summary.getAttribute('aria-expanded')).toBe('false');
     expect(view.queryByText('Which scope?')).toBeNull();
+    const row = view.getByTestId(`tool-call-row-${name}`);
+    expect(row.getAttribute('role')).toBeNull();
+    fireEvent.click(row);
+    expect(view.container.textContent).not.toMatch(/User responses:|AskUserQuestion|ask_user_question|"questions"/);
 
     fireEvent.click(summary);
     expect(summary.getAttribute('aria-expanded')).toBe('true');

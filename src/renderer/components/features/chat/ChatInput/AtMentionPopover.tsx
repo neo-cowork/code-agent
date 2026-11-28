@@ -23,6 +23,7 @@ import {
   type AtMentionTab,
   libraryRowSubtitle,
 } from './atMentionPanelModel';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 interface AtMentionPopoverProps {
   query: string;
@@ -72,7 +73,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
       {/* 任务 15：搜索可见性 —— query 非空回显结果数，空 query 提示可搜索 */}
       <div className="sticky top-0 z-10 elevation-l2 border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-500">
         {query.trim()
-          ? t.mentionPanel.searchEcho.replace('{query}', query).replace('{count}', String(totalCount))
+          ? interpolatePlural(t.mentionPanel.searchEcho, totalCount, { query })
           : t.mentionPanel.emptyHint}
       </div>
 
@@ -136,7 +137,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
             const Icon = row.isDirectory ? Folder : FileIcon;
             return (
               <button /* ds-allow:button: 面板候选行是图标+双行文字的整行热区，Button primitive 不适配 */
-                key={`file:${row.path}`}
+                key={row.source === 'attachment' ? `file:attachment:${row.name}` : `file:${row.path}`}
                 type="button"
                 data-selected={index === selectedIndex}
                 onClick={() => onSelect(row)}
@@ -146,7 +147,9 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                 <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs">{row.name}</span>
-                  {row.dir && <span className="block truncate text-[10px] text-zinc-500">{row.dir}</span>}
+                  {row.source === 'attachment'
+                    ? <span className="block truncate text-[10px] text-zinc-500">{t.mentionPanel.sessionAttachment}</span>
+                    : row.dir && <span className="block truncate text-[10px] text-zinc-500">{row.dir}</span>}
                 </span>
               </button>
             );
@@ -174,10 +177,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs">{getDisplaySessionTitle(row.title, language)}</span>
                   <span className="block truncate text-[10px] text-zinc-500">
-                    {t.mentionPanel.sessionMeta
-                      .replace('{time}', formatRelativeTime(t, row.updatedAt))
-                      .replace('{count}', String(row.messageCount))
-                      .replace('{project}', row.projectName || t.mentionPanel.unknownProject)}
+                    {interpolatePlural(t.mentionPanel.sessionMeta, row.messageCount, { time: formatRelativeTime(t, row.updatedAt), project: row.projectName || t.mentionPanel.unknownProject })}
                   </span>
                 </span>
               </button>

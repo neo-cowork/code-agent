@@ -1,4 +1,11 @@
 export const envAssistZh = {
+  offline: {
+    waiting: '网络断了，恢复后我会自动继续。',
+    timedOut: '仍未联网。连上网络后，点「继续」接着做。',
+    resolved: '网络已恢复。',
+    continue: '继续',
+    recheckFailed: '暂时无法继续，请稍后再试。',
+  },
   sentence: {
     calendar: '要看你的日程，需要你允许 Neo 访问「日历」。',
     mail: '要读写你的邮件，需要你允许 Neo 控制「邮件」。',
@@ -20,10 +27,18 @@ export const envAssistZh = {
   done: { calendar: '已允许 Neo 访问「日历」。', mail: '已允许 Neo 控制「邮件」。', reminders: '已允许 Neo 控制「提醒事项」。', screen: '已允许 Neo 录制屏幕。', computer: '已允许 Neo 使用辅助功能。', files: '已允许 Neo 访问「文件和文件夹」。', helperScreen: '已允许电脑控制助手录制屏幕。', helperComputer: '已允许电脑控制助手使用辅助功能。', libreoffice: 'PPT 转换组件已就绪。' },
   autoResume: '允许后会自动接着做。',
   autoResumeRuntime: '准备好后会自动接着做。',
+  reused: '已按你刚才的确认保存草稿。',
   target: { calendar: '日历', mail: '邮件', reminders: '提醒事项', screen: '屏幕', computer: '电脑', files: '文件和文件夹', helperScreen: '屏幕', helperComputer: '电脑', libreoffice: 'PPT 转换组件' },
 };
 
 export const envAssistEn: typeof envAssistZh = {
+  offline: {
+    waiting: 'The network is down. I’ll continue automatically when it’s back.',
+    timedOut: 'Still offline. Connect and tap Continue to pick up where I left off.',
+    resolved: 'Network connection restored.',
+    continue: 'Continue',
+    recheckFailed: 'Couldn’t continue. Please try again.',
+  },
   sentence: {
     calendar: 'To read your schedule, Neo needs your OK to access Calendar.',
     mail: 'To read and write your email, Neo needs your OK to control Mail.',
@@ -45,5 +60,6 @@ export const envAssistEn: typeof envAssistZh = {
   done: { calendar: 'Neo can now access Calendar.', mail: 'Neo can now control Mail.', reminders: 'Neo can now control Reminders.', screen: 'Neo can now record your screen.', computer: 'Neo can now use accessibility features.', files: 'Neo can now access Files and Folders.', helperScreen: 'The computer-control helper can now record your screen.', helperComputer: 'The computer-control helper can now use accessibility features.', libreoffice: 'The PPT conversion component is ready.' },
   autoResume: 'Neo picks the task back up once you allow it.',
   autoResumeRuntime: ' Neo picks the task back up once it is ready.',
+  reused: 'Saved the draft as you confirmed a moment ago.',
   target: { calendar: 'Calendar', mail: 'Mail', reminders: 'Reminders', screen: 'Screen', computer: 'Computer', files: 'Files and Folders', helperScreen: 'Screen', helperComputer: 'Computer', libreoffice: 'PPT conversion component' },
 };

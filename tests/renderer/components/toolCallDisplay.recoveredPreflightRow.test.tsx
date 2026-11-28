@@ -47,7 +47,7 @@ for (const locale of ['zh', 'en'] as const) {
       const verb = c.verbs[idx];
       const recovered = render(<ToolCallDisplay toolCall={failedCall(c.name, c.args, { ...c.metadata, recovered: true })} index={0} total={1} />);
       expect(recovered.container.textContent).not.toContain(verb);
-      expect(recovered.container.querySelector('[data-testid="tool-call-recovered-note"]')).not.toBeNull();
+      expect(Boolean(recovered.container.querySelector('[data-testid="tool-call-recovered-note"]'))).toBe(c.kind === 'edit');
       cleanup();
       const plain = render(<ToolCallDisplay toolCall={failedCall(c.name, c.args, c.metadata)} index={0} total={1} />);
       expect(plain.container.textContent).toContain(verb);

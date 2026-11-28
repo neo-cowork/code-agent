@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useI18n } from '../hooks/useI18n';
+import { interpolatePlural, type PluralTemplates } from '../i18n/interpolate';
 
 export interface FolderTrustDangerousItem {
   kind: string;
@@ -15,9 +16,10 @@ function riskText(risk: string, labels: Record<string, string>): string {
 }
 
 /** 每项说清「会发生什么」。host 只给 kind/count，人话在 i18n 里（不出现 hook/MCP/Agent 这类工程词）。 */
-function itemText(item: FolderTrustDangerousItem, texts: Record<string, string>): string {
+function itemText(item: FolderTrustDangerousItem, texts: Record<string, string | PluralTemplates>): string {
   const template = texts[item.kind] ?? texts['other-project-config'];
-  return template.replace('{count}', String(item.count ?? 1));
+  if (typeof template === 'string') return template;
+  return interpolatePlural(template, item.count ?? 1);
 }
 
 /** 目录危险项清单展示：FolderTrustDialog 与新建空间确认步共用同一份（禁复制两份） */

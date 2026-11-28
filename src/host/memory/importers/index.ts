@@ -31,6 +31,8 @@ interface MemoryImporterDatabase {
   }): MemoryRecord[];
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
+  findMemoryByEntryId(entryId: string): MemoryRecord | null;
+  listMemoriesWithInjectionFeedback(): MemoryRecord[];
 }
 
 const ADAPTERS: MemoryImporterAdapter[] = [

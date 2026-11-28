@@ -5,7 +5,6 @@
 import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
-import { formatFilePath } from './utils';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
@@ -16,18 +15,22 @@ import { Button } from '../primitives/Button';
 import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
 import { describeApproval } from './describeApproval';
+import { formatFilePath, resolveApprovalWorkspaceRoot, type ApprovalPathContext } from './utils';
 import { describeRoleSettingChange } from './roleSettingRows';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
 import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
+import { interpolatePlural } from '../../i18n/interpolate';
 
 interface RequestDetailsProps {
   hideConsequence?: boolean;
+  pathContext?: ApprovalPathContext;
   request: PermissionRequest;
 }
 
@@ -100,13 +103,25 @@ function sandboxStatusCopy(
   return labels.sandboxDegraded;
 }
 
-export function RequestDetails({ request, hideConsequence = false }: RequestDetailsProps) {
+export function RequestDetails({ request, hideConsequence = false, pathContext }: RequestDetailsProps) {
   const { language, t } = useI18n();
-  const developerMode = useAppStore().developerMode === true;
+  const appStore = useAppStore();
+  const developerMode = appStore.developerMode === true;
+  const currentSessionId = useSessionStore((state) => state?.currentSessionId);
+  const sessions = useSessionStore((state) => state?.sessions);
+  const resolvedPathContext: ApprovalPathContext = pathContext ?? {
+    workspaceRoot: resolveApprovalWorkspaceRoot({
+      requestSessionId: request.sessionId,
+      currentSessionId,
+      sessions,
+      appWorkingDirectory: appStore.workingDirectory,
+    }),
+    homeDir: appStore.hostHomeDir ?? null,
+  };
   const { type, details } = request;
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
-  const { kind, consequence, dedicatedBrowserCard } = describeApproval(request, t, language);
+  const { kind, consequence, dedicatedBrowserCard } = describeApproval(request, t, language, resolvedPathContext);
 
   const browser = details.browserSessionGrant;
   if (browser && dedicatedBrowserCard) {
@@ -196,7 +211,15 @@ export function RequestDetails({ request, hideConsequence = false }: RequestDeta
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath pathDisplay={details.pathDisplay} />}
+      {filePath && type !== 'directory_access' && (
+        <DetailItem
+          label={labels.detailFile}
+          value={filePath}
+          isPath
+          pathDisplay={details.pathDisplay}
+          pathContext={resolvedPathContext}
+        />
+      )}
 
       {/* 命令 */}
       {details.command && (
@@ -360,7 +383,7 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
       >
         <span>{expanded ? '\u25BC' : '\u25B6'}</span>
         <span>{t.decisionCard.permission.traceToggle}</span>
-        <span className="text-zinc-600">({t.decisionCard.permission.traceSteps.replace('{count}', String(trace.steps.length))})</span>
+        <span className="text-zinc-600">({interpolatePlural(t.decisionCard.permission.traceSteps, trace.steps.length)})</span>
       </button>
       {expanded && (
         <div className="mt-1.5 space-y-1">
@@ -416,10 +439,7 @@ function MediaPriceNotice({ request }: { request: PermissionRequest }) {
   } else if (estimate.kind === 'music') {
     text = labels.mediaPriceMusic.replace('{price}', formatCny(estimate.totalCny));
   } else if (estimate.count > 1) {
-    text = labels.mediaPriceImageBatch
-      .replace('{count}', String(estimate.count))
-      .replace('{unitPrice}', formatCny(estimate.unitPriceCny))
-      .replace('{total}', formatCny(estimate.totalCny));
+    text = interpolatePlural(labels.mediaPriceImageBatch, estimate.count, { unitPrice: formatCny(estimate.unitPriceCny), total: formatCny(estimate.totalCny) });
   } else {
     text = labels.mediaPriceImage.replace('{price}', formatCny(estimate.unitPriceCny));
   }
@@ -437,6 +457,7 @@ interface DetailItemProps {
   value: string;
   isPath?: boolean;
   pathDisplay?: NonNullable<PermissionRequest['details']['pathDisplay']>;
+  pathContext?: ApprovalPathContext;
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
@@ -484,7 +505,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
-function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
+function DetailItem({ label, value, isPath, pathDisplay, pathContext, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
   const { t, language } = useI18n();
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -493,7 +514,10 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
   const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
-  const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatFilePath(visibleValue)) : visibleValue;
+  // 审批卡：工作区内 ./相对；宿主真实家目录下 ~/…（未知时不折）；其余完整绝对路径，可见文字与 title 保持同口径。
+  const isPlainPath = isPath && humanPath === visibleValue;
+  const fullPathText = isPlainPath ? formatFilePath(visibleValue, pathContext) : humanPath;
+  const rawDisplayValue = fullPathText;
 
   const lines = rawDisplayValue.split('\n');
   const shouldFold = Boolean(
@@ -509,9 +533,7 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
     : foldedByLines;
   const displayValue = shouldFold && !expanded ? foldedValue : rawDisplayValue;
   const shownLinesCount = Math.min(lines.length, COMMAND_FOLD_MAX_LINES);
-  const foldHint = t.decisionCard.permission.commandFoldLineHint
-    .replace('{total}', String(lines.length))
-    .replace('{shown}', String(shownLinesCount));
+  const foldHint = interpolatePlural(t.decisionCard.permission.commandFoldLineHint, lines.length, { total: lines.length, shown: String(shownLinesCount) });
 
   return (
     <div>
@@ -531,7 +553,7 @@ function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDanger
           ${isUrl ? 'bg-zinc-800 text-badge-info' : ''}
           ${!isCode && !isPath && !isUrl ? 'bg-zinc-800 text-zinc-400' : ''}
         `}
-        title={isCode ? undefined : (isPath && humanPath !== visibleValue ? humanPath : redactedValue)}
+        title={isCode ? undefined : (isPath ? fullPathText : redactedValue)}
       >
         {displayValue}
       </div>

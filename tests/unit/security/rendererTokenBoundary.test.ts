@@ -103,6 +103,7 @@ const ALLOWLIST: AllowlistEntry[] = [
   { file: 'src/renderer/components/features/settings/tabs/ProviderDetailSections.tsx', name: 'hasStoredApiKey', reason: '布尔存在标志，不承载 key 值' },
   { file: 'src/renderer/components/features/settings/tabs/ProviderDetailSections.tsx', name: 'onApiKeyChange', reason: '表单变更回调 prop，不承载存量凭据' },
   { file: 'src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx', name: 'hasApiKey', reason: '布尔存在标志，不承载 key 值' },
+  { file: 'src/renderer/components/features/settings/tabs/ProviderSaveBar.tsx', name: 'apiKeyUnsaved', reason: '布尔状态：用户手输的密钥草稿尚未点保存，不承载密钥值' },
   { file: 'src/renderer/components/features/settings/tabs/ProviderSettingsHeader.tsx', name: 'hasApiKey', reason: '模型服务详情头部是否已有密钥的布尔状态；host 回传 configured/source 元数据，不回传已存密钥值' },
   { file: 'src/renderer/components/features/settings/tabs/ProviderSettingsHeader.tsx', name: 'needsApiKey', reason: '模型服务详情头部是否需要密钥的布尔要求，用于区分本地服务和远端服务，不承载凭据' },
   { file: 'src/renderer/components/features/settings/tabs/SearchSettings.tsx', name: 'apiKey', reason: '搜索 service key 表单态：setServiceApiKey 只写，回显走 maskApiKey' },

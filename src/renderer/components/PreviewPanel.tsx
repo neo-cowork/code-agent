@@ -23,12 +23,12 @@ import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 import { htmlLocalityLocationLabel } from '../utils/htmlLocality';
 import {
   ARTIFACT_PREVIEW_SANDBOX,
-  capturePreviewFrame,
   clearPreviewFrameSelection,
   createPreviewFrameDocument,
   readPreviewFrameSelection,
   sendPreviewFrameSelectionMode,
 } from '../utils/previewFrameBridge';
+import { usePreviewLongScreenshotExport } from '../hooks/usePreviewLongScreenshotExport';
 import { loadPreviewFrameCaptureSource } from '../utils/previewFrameCaptureSource';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
 import { ArtifactStandingRefresh, type ArtifactStandingRefreshHandle } from './ArtifactStandingRefresh';
@@ -61,6 +61,7 @@ import {
   PreviewFallbackCard,
   TextPreviewView,
 } from './previewFormatViews';
+import { interpolatePlural } from '../i18n/interpolate';
 
 // 模块级常量：写成内联字面量的话每次渲染都是新引用，ReactMarkdown 整棵重建。
 const REPORT_MARKDOWN_COMPONENTS = {
@@ -109,7 +110,7 @@ function ArchivePreview({ content, onOpenDefault }: { content: string; onOpenDef
           <Archive className="h-3.5 w-3.5" />
           {pv.archiveKind.replace('{format}', inspection.format.toUpperCase())}
         </span>
-        <span>{pv.entries.replace('{count}', String(inspection.entryCount))}</span>
+        <span>{interpolatePlural(pv.entries, inspection.entryCount)}</span>
         {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
       </div>
       <div className="overflow-hidden rounded-lg border border-white/[0.08]">
@@ -178,7 +179,7 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
           <Presentation className="h-3.5 w-3.5" />
           {pv.pptPreview}
         </span>
-        <span>{pv.slides.replace('{count}', String(artifact.slidesCount || screenshots.length))}</span>
+        <span>{interpolatePlural(pv.slides, artifact.slidesCount || screenshots.length)}</span>
       </div>
       <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950">
         <img src={resolveFileUrl(active)} alt={pv.slideN.replace('{n}', String(selected + 1))} className="w-full bg-zinc-950 object-contain" />
@@ -275,7 +276,7 @@ export function PresentationPreview({ content }: { content: string }) {
           <Presentation className="h-3.5 w-3.5" />
           {pv.pptxOutline}
         </span>
-        <span>{pv.slides.replace('{count}', String(inspection.slideCount))}</span>
+        <span>{interpolatePlural(pv.slides, inspection.slideCount)}</span>
         {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
       </div>
       <div className="space-y-2">
@@ -464,7 +465,6 @@ export const PreviewPanel: React.FC = () => {
   const [artifactFlash, setArtifactFlash] = useState(false);
   const lastLoadedRef = useRef<LoadedSnapshot | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [publishInfo, setPublishInfo] = useState<DeliverablePublishInfo | null>(null);
@@ -653,35 +653,12 @@ export const PreviewPanel: React.FC = () => {
     }
   };
 
-  const handleExportLongScreenshot = async () => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-
-    setIsExporting(true);
-    setErrorState(null);
-    try {
-      const blob = await capturePreviewFrame(iframe);
-      if (iframeRef.current !== iframe) return;
-
-      const url = URL.createObjectURL(blob);
-      const fileName = (previewFilePath?.split('/').pop() || 'preview').replace(/\.[^.]+$/, '');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${fileName}-long-screenshot.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      if (iframeRef.current !== iframe) return;
-      logger.error('Long screenshot export failed', err);
-      setErrorState(err instanceof DOMException && err.name === 'SecurityError'
-        ? pv.crossOriginScreenshot
-        : pv.screenshotFailed);
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const { isExporting, handleExportLongScreenshot } = usePreviewLongScreenshotExport({
+    iframeRef,
+    previewFilePath,
+    isHtml,
+    mode,
+  });
 
   const handleOpenWithDefault = () => {
     if (!previewFilePath) return;

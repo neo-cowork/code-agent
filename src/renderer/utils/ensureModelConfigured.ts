@@ -54,15 +54,18 @@ export async function ensureModelConfigured(
   try {
     const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
     if (!configured) {
+      const noModels = !hasConfiguredRuntimeModels(settings);
+      if (noModels) {
+        openModelSettings(provider);
+        return false;
+      }
       const providerName = settings?.models?.providers?.[provider]?.displayName?.trim()
         || getLocalizedProviderDisplayName(provider, language)
         || t.modelSetup.thisModel;
       if (isWebMode()) {
         toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
-      } else if (hasConfiguredRuntimeModels(settings)) {
-        if (!openSettingsWhenReady) toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
-      } else {
-        toast.info(t.modelSetup.missingApiKey.replace('{provider}', providerName));
+      } else if (!openSettingsWhenReady) {
+        toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
       }
       openModelSettings(provider);
       return false;

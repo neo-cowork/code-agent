@@ -39,6 +39,7 @@ import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
 import { stopSessionAgent } from '../../../utils/stopSessionAgent';
+import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 
 /** 轨迹只回看最近这几条：成员视图是「他现在在干嘛」，不是全量审计日志。 */
 const RUN_TRAIL_LIMIT = 12;
@@ -51,6 +52,70 @@ type MemberDurationCopy = {
   durationMinutes: string;
   durationMinutesSeconds: string;
 };
+
+type RunTrailEventCopy = {
+  started: string;
+  agentAdded: string;
+  agentUpdated: string;
+  agentCompleted: string;
+  agentFailed: string;
+  completed: string;
+  cancelled: string;
+  contextUpdate: string;
+  agentMessage: string;
+  userMessage: string;
+  fallback: string;
+  completedCounts: string;
+};
+
+function readCompletedStatistics(payload: unknown): { completed: number; failed: number } | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const stats = (payload as { statistics?: unknown }).statistics;
+  if (!stats || typeof stats !== 'object') return null;
+  const { completed, failed } = stats as { completed?: unknown; failed?: unknown };
+  if (
+    typeof completed === 'number' && Number.isFinite(completed)
+    && typeof failed === 'number' && Number.isFinite(failed)
+  ) {
+    return { completed, failed };
+  }
+  return null;
+}
+
+function formatRunTrailEvent(
+  event: { eventType: string; payload: unknown },
+  copy: RunTrailEventCopy,
+): { title: string; detail: string | null } {
+  switch (event.eventType) {
+    case 'swarm:started':
+      return { title: copy.started, detail: null };
+    case 'swarm:agent:added':
+      return { title: copy.agentAdded, detail: null };
+    case 'swarm:agent:updated':
+      return { title: copy.agentUpdated, detail: null };
+    case 'swarm:agent:completed':
+      return { title: copy.agentCompleted, detail: null };
+    case 'swarm:agent:failed':
+      return { title: copy.agentFailed, detail: null };
+    case 'swarm:completed': {
+      const stats = readCompletedStatistics(event.payload);
+      return {
+        title: copy.completed,
+        detail: stats ? interpolate(copy.completedCounts, stats) : null,
+      };
+    }
+    case 'swarm:cancelled':
+      return { title: copy.cancelled, detail: null };
+    case 'swarm:context:update':
+      return { title: copy.contextUpdate, detail: null };
+    case 'swarm:agent:message':
+      return { title: copy.agentMessage, detail: null };
+    case 'swarm:user:message':
+      return { title: copy.userMessage, detail: null };
+    default:
+      return { title: copy.fallback, detail: null };
+  }
+}
 
 function formatMemberDuration(ms: number | null | undefined, copy: MemberDurationCopy): string | null {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
@@ -364,7 +429,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <section data-testid="member-usage" className="flex items-center gap-3 text-[11px] text-zinc-500">
             {typeof toolCalls === 'number' && (
               <span className="inline-flex items-center gap-1">
-                <Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(toolCalls))}
+                <Wrench className="h-3.5 w-3.5" />{interpolatePlural(text.tools, toolCalls)}
               </span>
             )}
             {durationText && (
@@ -465,19 +530,22 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <section data-testid="member-run-trail">
             <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.runTrail}</h3>
             <ul className="max-h-48 space-y-1 overflow-y-auto">
-              {runTrail.map((event) => (
-                <li
-                  key={event.id}
-                  data-testid="member-run-trail-event"
-                  className="rounded-md bg-zinc-950/40 px-3 py-1.5 text-xs text-zinc-400"
-                >
-                  <span className="mr-2 font-mono text-[10px] text-zinc-500">{timeLabel(event.timestamp)}</span>
-                  <span className="text-zinc-300">{event.title}</span>
-                  {event.summary && event.summary !== event.title && (
-                    <p className="mt-0.5 truncate text-[11px] text-zinc-500">{event.summary}</p>
-                  )}
-                </li>
-              ))}
+              {runTrail.map((event) => {
+                const { title: rowTitle, detail: rowDetail } = formatRunTrailEvent(event, memberText.runTrailEvents);
+                return (
+                  <li
+                    key={event.id}
+                    data-testid="member-run-trail-event"
+                    className="rounded-md bg-zinc-950/40 px-3 py-1.5 text-xs text-zinc-400"
+                  >
+                    <span className="mr-2 font-mono text-[10px] text-zinc-500">{timeLabel(event.timestamp)}</span>
+                    <span className="text-zinc-300">{rowTitle}</span>
+                    {rowDetail && (
+                      <p className="mt-0.5 truncate text-[11px] text-zinc-500">{rowDetail}</p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -504,7 +572,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </section>
 
         <section data-testid="member-usage" className="flex items-center gap-3 text-[11px] text-zinc-500">
-          <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{text.tools.replace('{count}', String(agent.toolCalls ?? 0))}</span>
+          <span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{interpolatePlural(text.tools, agent.toolCalls ?? 0)}</span>
           {durationText && (
             <span data-testid="member-usage-duration" className="inline-flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" aria-hidden />{durationText}

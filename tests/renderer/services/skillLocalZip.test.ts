@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
+import { requestConfirm } from '../../../src/renderer/services/confirmPrompt';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/renderer/services/confirmPrompt', () => ({ requestConfirm: vi.fn() }));
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 const invokeSkillIPCOrThrow = vi.hoisted(() => vi.fn());
@@ -21,7 +24,7 @@ describe('divertDroppedSkillZips', () => {
   });
 
   it('leaves the zip as an attachment when the user declines install', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(requestConfirm).mockResolvedValue(false);
     const zip = new File(['PK'], 'demo.zip', { type: 'application/zip' });
 
     const leftover = await divertDroppedSkillZips([zip], {
@@ -31,14 +34,13 @@ describe('divertDroppedSkillZips', () => {
       confirmPrompt: 'Install {name}?',
     });
 
-    expect(confirm).toHaveBeenCalledWith('Install demo.zip?');
+    expect(requestConfirm).toHaveBeenCalledWith(expect.objectContaining({ message: 'Install demo.zip?', variant: 'info' }));
     expect(invokeSkillIPCOrThrow).not.toHaveBeenCalled();
     expect(leftover).toEqual([zip]);
-    confirm.mockRestore();
   });
 
   it('installs and mounts after the user confirms', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(requestConfirm).mockResolvedValue(true);
     invokeSkillIPCOrThrow.mockResolvedValue({
       success: true,
       skillName: 'demo',
@@ -57,11 +59,10 @@ describe('divertDroppedSkillZips', () => {
     expect(invokeSkillIPC).toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledWith('ok demo');
     expect(leftover).toEqual([]);
-    confirm.mockRestore();
   });
 
   it('falls back to an attachment when install throws MISSING_SKILL_MD', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(requestConfirm).mockResolvedValue(true);
     invokeSkillIPCOrThrow.mockRejectedValueOnce(
       new Error('"SKILL_ZIP_MISSING_SKILL_MD: zip has no SKILL.md"'),
     );
@@ -76,11 +77,10 @@ describe('divertDroppedSkillZips', () => {
 
     expect(leftover).toEqual([zip]);
     expect(toast.error).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 
   it('fail-closed on a caution confirmation-required answer: error toast, no attachment, no mount', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(requestConfirm).mockResolvedValue(true);
     // 拖拽路径没有确认面可弹：SKILL_CAUTION_CONFIRMATION_REQUIRED 按失败收口
     invokeSkillIPCOrThrow.mockResolvedValueOnce({
       success: false,
@@ -105,7 +105,6 @@ describe('divertDroppedSkillZips', () => {
     expect(toast.success).not.toHaveBeenCalled();
     const mountCalls = invokeSkillIPC.mock.calls.filter(([channel]) => channel === SKILL_CHANNELS.SESSION_MOUNT);
     expect(mountCalls).toEqual([]);
-    confirm.mockRestore();
   });
 });
 

@@ -8,6 +8,7 @@ import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { TurnArtifactOwnershipItem } from '../../../src/shared/contract/turnTimeline';
 import type { FileChange } from '../../../src/renderer/utils/turnDiffSummary';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 function makeNode(items: TurnArtifactOwnershipItem[]): TraceNode {
   return {
@@ -134,6 +135,6 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     // copy.generatedLines="已生成 · N 行"——这条 fixture 本来就是 isNewFile:true，新文案更诚实。
     expect(html).toContain('简报.md');
     expect(html).toContain(zh.deliveryExperience.changes);
-    expect(html).toContain(zh.deliveryExperience.generatedLines.replace('{count}', '1'));
+    expect(html).toContain(interpolatePlural(zh.deliveryExperience.generatedLines, 1));
   });
 });

@@ -1,4 +1,5 @@
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { formatPathForDisplay } from '../../../utils/formatPathForDisplay';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React from 'react';
 import {
@@ -29,6 +30,7 @@ import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import type { Language, Translations } from '../../../i18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { projectArtifactKindLabel } from '../../../utils/projectArtifactKind';
 
 export interface SidebarProjectDrawerSession {
@@ -117,7 +119,7 @@ function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translation
 
 function getPrimaryPath(paths: string[], t: Translations): string {
   const primary = paths.find((path) => path.trim());
-  return primary || t.sidebarProject.unboundWorkspace;
+  return primary ? formatPathForDisplay(primary) : t.sidebarProject.unboundWorkspace;
 }
 
 export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
@@ -472,7 +474,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     </div>
                     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-zinc-600">
                       <span className="min-w-0 flex-1 truncate">
-                        {session.summary || session.workingDirectory || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
+                        {session.summary || (session.workingDirectory ? formatPathForDisplay(session.workingDirectory) : '') || interpolatePlural(p.messageCount, session.messageCount ?? 0)}
                       </span>
                     </div>
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
@@ -507,7 +509,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   </button>
                 ))}
                 {sessions.length > 12 && (
-                  <div className="px-1 text-[10px] text-zinc-600">{p.moreSessionsHidden.replace('{count}', String(sessions.length - 12))}</div>
+                  <div className="px-1 text-[10px] text-zinc-600">{interpolatePlural(p.moreSessionsHidden, sessions.length - 12)}</div>
                 )}
               </div>
             ) : (
@@ -528,7 +530,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   <div className="text-[10px] font-medium text-zinc-500">{p.workspace}</div>
                   <div className="mt-1 grid gap-1">
                     {paths.slice(0, 6).map((path) => (
-                      <div key={path} className="truncate text-[11px] text-zinc-400">{path}</div>
+                      <div key={path} className="truncate text-[11px] text-zinc-400">{formatPathForDisplay(path)}</div>
                     ))}
                   </div>
                 </div>

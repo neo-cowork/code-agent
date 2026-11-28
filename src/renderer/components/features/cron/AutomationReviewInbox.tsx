@@ -358,6 +358,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {groupParkedWrites(parked).filter((item) => item.status !== 'voided').map((item) => {
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
+                  // 团队启动审批：复用会话卡的问句，只有批准 / 拒绝（没有「本次运行都允许」之类的铸权入口）。
+                  const isLaunch = item.kind === 'launch';
                   const isExternal = item.riskClass === 'external';
                   // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
                   // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
@@ -395,10 +397,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
-                          {isPairing
+                          {isLaunch
+                            ? interpolatePlural(t.decisionCard.swarm.question, item.launchMemberCount ?? 1)
+                            : isPairing
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
-                              ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
+                              ? interpolatePlural(cc.parkedWriteGroupTitle, item.groupIds.length, { folder: folderDisplayName(item.writeGrantFolder) })
                               : (parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh'))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
@@ -504,7 +508,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 })}
                 {foldVoided && (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-500" data-testid="parked-approval-voided-summary">
-                    <span>{cc.parkedVoided.summary.replace('{count}', String(voided.length))}</span>
+                    <span>{interpolatePlural(cc.parkedVoided.summary, voided.length)}</span>
                     <Button variant="ghost" size="sm" aria-expanded={voidedExpanded} data-testid="parked-approval-voided-toggle" onClick={() => setVoidedExpanded((expanded) => !expanded)}>
                       {voidedExpanded ? cc.parkedVoided.collapse : cc.parkedVoided.expand}
                     </Button>
@@ -608,7 +612,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             )}
                             {maxRunsReached && (
                               <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
-                                {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
+                                {maxRunsReached.summary ?? interpolatePlural(cc.inboxMaxRunsReached, maxRunsReached.maxRuns)}
                               </div>
                             )}
                             {record.config?.pendingReview?.connectorLost?.summary && (
@@ -624,10 +628,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             {record.config?.missedNotice ? (
                               <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
                                 {record.config.missedNotice.reason === 'webhook-expired'
-                                  ? cc.inboxWebhookExpired.replace(
-                                    '{count}',
-                                    String(record.config.missedNotice.count ?? 0),
-                                  )
+                                  ? interpolatePlural(cc.inboxWebhookExpired, record.config.missedNotice.count ?? 0)
                                   : cc.inboxMissedAt.replace(
                                     '{time}',
                                     formatDateTime(record.config.missedNotice.scheduledAt, language),

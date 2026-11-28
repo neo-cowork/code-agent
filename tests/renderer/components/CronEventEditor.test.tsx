@@ -9,8 +9,9 @@
 //    （目录没有回落 id），详情页可停用（enabled=false）/删除。
 // 「停用后不再触发」的 host 侧行为在 tests/unit/cron/cronEventTrigger.test.ts。
 // ============================================================================
+import { ConfirmPromptHost } from '../../../src/renderer/components/ConfirmPromptHost';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { ChannelAccount } from '../../../src/shared/contract/channel';
 import { validateEventScheduleConstraints } from '../../../src/shared/cronEventValidation';
@@ -366,7 +367,6 @@ describe('② 列表/详情可见 + 停用/删除', () => {
   });
 
   it('详情页摘要显示账号名/群名；停用走 updateJob(enabled=false)，删除走 deleteJob', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     useCronStore.setState({
       jobs: [makeEventJob()],
       loadExecutions: vi.fn(),
@@ -376,7 +376,7 @@ describe('② 列表/详情可见 + 停用/删除', () => {
       updateJob: vi.fn(async () => null),
       deleteJob: vi.fn(async () => true),
     });
-    render(<CronJobDetail job={makeEventJob()} />);
+    render(<><CronJobDetail job={makeEventJob()} /><ConfirmPromptHost /></>);
 
     expect(screen.getByText('盯群消息')).toBeTruthy();
     await waitFor(() => expect(screen.getByText('通道消息 · 工作飞书 · 林晨, 苏三')).toBeTruthy());
@@ -386,8 +386,9 @@ describe('② 列表/详情可见 + 停用/删除', () => {
       expect(useCronStore.getState().updateJob).toHaveBeenCalledWith('job-event', { enabled: false }));
 
     fireEvent.click(screen.getByText('删除'));
+    const dialog = await screen.findByRole('dialog', { name: '删除定时任务' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(useCronStore.getState().deleteJob).toHaveBeenCalledWith('job-event'));
-    expect(confirmSpy).toHaveBeenCalled();
   });
 });
 
@@ -706,5 +707,21 @@ describe('② 列表/详情（formatScheduleSummary 档）', () => {
     expect(formatScheduleSummary(makeEventJob(), 'zh')).toBe('通道消息 · account-feishu · oc_group');
     const anyChat = makeEventJob({ schedule: { type: 'event', source: 'channel', accountId: 'a1', eventName: 'message' } });
     expect(formatScheduleSummary(anyChat, 'en', { accountName: 'A1' })).toBe('Channel message · A1 · any chat');
+  });
+
+  it('formatScheduleSummary 的邮件档：中文界面把系统邮箱说成中文，自建文件夹和英文界面保持原名', () => {
+    const mailJob = (mailbox?: string) => makeEventJob({
+      schedule: {
+        type: 'event', source: 'connector', connector: 'mail', accountId: '163', eventName: 'message',
+        ...(mailbox ? { mailbox } : {}),
+      },
+    });
+    expect(formatScheduleSummary(mailJob('Junk'), 'zh')).toBe('邮件消息 · 163 · 垃圾邮件');
+    expect(formatScheduleSummary(mailJob('Deleted Messages'), 'zh')).toBe('邮件消息 · 163 · 已删除');
+    expect(formatScheduleSummary(mailJob(), 'zh')).toBe('邮件消息 · 163 · 收件箱');
+    expect(formatScheduleSummary(mailJob('Receipts'), 'zh')).toBe('邮件消息 · 163 · Receipts');
+    expect(formatScheduleSummary(mailJob('广告邮件'), 'zh')).toBe('邮件消息 · 163 · 广告邮件');
+    expect(formatScheduleSummary(mailJob('Junk'), 'en')).toBe('Mail message · 163 · Junk');
+    expect(formatScheduleSummary(mailJob(), 'en')).toBe('Mail message · 163 · INBOX');
   });
 });
