@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +13,7 @@ import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../src/host/sec
 import { resolveCanonicalRunPath } from '../../../../src/host/runtime/runContext';
 import { approvedSingleFileRmGrantForToolApproval } from '../../../../src/host/tools/shell/approvedRmGrant';
 import { isApprovedRmVerifyProbe } from '../../../../src/host/tools/shell/approvedRmVerifyProbe';
+import { createSanitizedEnv } from '../../../../src/host/utils/sanitizeEnv';
 
 type Input = Parameters<typeof approvedSingleFileRmGrantForToolApproval>[0];
 
@@ -88,6 +90,98 @@ describe('approved rm production approval boundary', () => {
     input.params.command = command;
     expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(count === 1 ? files[0] : files.slice(0, count));
     expect(logs.warn).not.toHaveBeenCalled();
+  });
+
+  describe('"$HOME/…" operand: the one variable spelling accepted', () => {
+    const originalHome = process.env.HOME;
+    beforeEach(() => { process.env.HOME = cwd; });
+    afterEach(() => {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+    });
+
+    it.each([
+      'rm -f -- "$HOME/cache-0.tmp"',
+      'rm -- "${HOME}/cache-0.tmp"',
+      'rm -v "$HOME"/cache-0.tmp',
+    ])('mints the same single file as the ~/ spelling for %s', (command) => {
+      input.params.command = 'rm -f -- ~/cache-0.tmp';
+      const tildeGrant = approvedSingleFileRmGrantForToolApproval(input);
+      expect(tildeGrant).toBe(files[0]);
+      vi.clearAllMocks();
+      input.params.command = command;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBe(tildeGrant);
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_GRANT_MINTED'));
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('"conditions":[]'));
+      expect(logs.warn).not.toHaveBeenCalled();
+    });
+
+    it('grants the very path a child shell with the production env expands the operand to', () => {
+      const shellPath = execFileSync('/bin/sh', ['-c', 'printf %s "$HOME/cache-0.tmp"'], { env: createSanitizedEnv(), encoding: 'utf8' });
+      input.params.command = 'rm -f -- "$HOME/cache-0.tmp"';
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBe(shellPath);
+    });
+
+    it('mints an absolute operand and a "$HOME/…" operand in one rm, then the status suffix', () => {
+      input.params.command = `rm -f -- '${files[1]}' "$HOME/cache-0.tmp"; echo "rm_exit=$?"`;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual([files[1], files[0]]);
+      expect(logs.warn).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['rm -- "$TMPDIR/cache-0.tmp"', 'literal_operand'],
+      ['rm -- "$PWD/cache-0.tmp"', 'literal_operand'],
+      ['rm -- "${HOME}cache-0.tmp"', 'literal_operand'],
+      ['rm -- "$HOMEX/cache-0.tmp"', 'literal_operand'],
+      ['rm -- "$HOME"', 'literal_operand'],
+      ['rm -- "$HOME/"', 'literal_operand'],
+      ['rm -- "$HOME/*.tmp"', 'literal_operand'],
+      ['rm -- "$HOME/sub/../cache-0.tmp"', 'literal_operand'],
+      ['rm -- "$HOME/$USER.tmp"', 'literal_operand'],
+      ['rm -- $HOME/cache-0.tmp', 'expansion'],
+      ["rm -- '$HOME/cache-0.tmp'", 'expansion'],
+      ['rm -- "$HOME/$(id)"', 'expansion'],
+      ['HOME=/tmp; rm -- "$HOME/cache-0.tmp"', 'assignment_control'],
+      ['for HOME in /tmp; do\nrm -f -- "$HOME/cache-0.tmp"\ndone', 'loop_shape'],
+      ['for HOME in /tmp; do\nrm -f -- "${HOME}/cache-0.tmp"\ndone', 'loop_shape'],
+      ['for PATH in ABS; do\nrm -f -- "$PATH"\ndone', 'loop_shape'],
+      ['rm -f -- "ABS"; rm -f -- "$HOME/cache-1.tmp"', 'operand_not_absolute_literal'],
+      ['rm -f -- "$HOME/cache-0.tmp" 2>&1', 'operand_not_absolute_literal'],
+    ])('still refuses %s', (command, reason) => {
+      input.params.command = command.replaceAll('ABS', files[0]);
+      refused(reason);
+    });
+
+    it('never mints when HOME is set for the rm command itself', () => {
+      input.params.command = 'HOME=/tmp rm -- "$HOME/cache-0.tmp"';
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.info).not.toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_GRANT_MINTED'));
+    });
+
+    it.each([
+      ['unset', undefined],
+      ['relative', 'relative/home'],
+      ['a value the child shell would not receive verbatim', 'CWD\u0007'],
+    ])('refuses when HOME is %s: the host must expand to exactly what the child shell reads', (_label, home) => {
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home.replace('CWD', cwd);
+      input.params.command = 'rm -f -- "$HOME/cache-0.tmp"';
+      refused('home_env');
+    });
+
+    it('runs the expanded path through the same class and policy checks as a literal path', () => {
+      mkdirSync(join(cwd, 'directory'));
+      input.params.command = 'rm -f -- "$HOME/directory"';
+      refused('path_class:operand_1');
+      vi.clearAllMocks();
+      symlinkSync(files[1], join(cwd, 'link.tmp'));
+      input.params.command = 'rm -f -- "$HOME/link.tmp"';
+      refused('path_class:operand_1');
+      vi.clearAllMocks();
+      getPolicyEngine().loadUserRules({ deny: [`Edit(${files[0]})`] }, 'user-ui');
+      input.params.command = 'rm -f -- "$HOME/cache-0.tmp"';
+      refused('path_policy:operand_1');
+    });
   });
 
   it('mints both literal files for explicitly approved attended background Bash', () => {
