@@ -3,13 +3,28 @@
 // 走真实生产组件 MemoryTab，只 mock IPC、语言与平台判断。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { IPC_DOMAINS } from '../../../src/shared/ipc/domains';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
-const state = vi.hoisted(() => ({ lang: 'zh' as 'zh' | 'en', web: true, archiveOk: true }));
+interface MockLightFile {
+  filename: string;
+  name: string;
+  description: string;
+  type: string;
+  content: string;
+  updatedAt: string;
+  status?: 'active' | 'archived';
+}
+
+const state = vi.hoisted(() => ({
+  lang: 'zh' as 'zh' | 'en',
+  web: true,
+  archiveOk: true,
+  files: [] as MockLightFile[],
+}));
 const invoke = vi.hoisted(() => vi.fn());
 const invokeDomain = vi.hoisted(() => vi.fn());
 
@@ -36,15 +51,30 @@ const file = {
 };
 
 function installIpc() {
-  const handle = (action: string) => {
-    if (action === 'lightList') return [file];
-    if (action === 'lightDelete') return state.archiveOk;
+  const handle = (action: string, payload?: { filename?: string }) => {
+    if (action === 'lightList') return state.files.map((item) => ({ ...item }));
+    if (action === 'lightStats') {
+      return {
+        totalFiles: state.files.length,
+        byType: {},
+        sessionStats: null,
+        recentConversations: [],
+      };
+    }
+    if (action === 'lightDelete') {
+      if (!state.archiveOk) return false;
+      const target = state.files.find((item) => item.filename === payload?.filename);
+      if (target) target.status = 'archived';
+      return true;
+    }
     return undefined;
   };
-  invokeDomain.mockImplementation((_d: string, action: string) => Promise.resolve(handle(action)));
-  invoke.mockImplementation((channel: string, req?: { action?: string }) => {
+  invokeDomain.mockImplementation((_d: string, action: string, payload?: { filename?: string }) => (
+    Promise.resolve(handle(action, payload))
+  ));
+  invoke.mockImplementation((channel: string, req?: { action?: string; filename?: string }) => {
     if (channel === IPC_CHANNELS.MEMORY) {
-      const data = handle(req?.action ?? '');
+      const data = handle(req?.action ?? '', req);
       return Promise.resolve({ success: data !== false, data });
     }
     return Promise.resolve(undefined);
@@ -55,6 +85,7 @@ beforeEach(() => {
   state.lang = 'zh';
   state.web = true;
   state.archiveOk = true;
+  state.files = [{ ...file }];
   installIpc();
 });
 afterEach(() => {
@@ -114,5 +145,78 @@ describe.each([
     await waitFor(() => expect(calls().length).toBeGreaterThan(0));
     await screen.findByText(files.deleteFailed);
     expect(files.deleteFailed).toBe(lang === 'zh' ? '归档失败' : 'Archive failed');
+  });
+});
+
+describe('记忆文件管理列表归档过滤与就近反馈', () => {
+  const filesText = zh.settings.memory.files;
+
+  function getManagementSection(): HTMLElement {
+    const heading = screen.getByText(filesText.managementTitle);
+    const section = heading.closest('section');
+    expect(section).not.toBeNull();
+    return section as HTMLElement;
+  }
+
+  it('(a) lightList 含已归档文件时，列表只渲染未归档行、页面不含已归档名称、记忆文件数卡片显示 1', async () => {
+    state.files = [
+      { ...file, status: 'active' },
+      {
+        filename: 'archived-note.md',
+        name: '已归档周报规则',
+        description: 'archived desc',
+        type: 'user',
+        content: 'archived body',
+        updatedAt: '2026-11-09T08:00:00.000Z',
+        status: 'archived',
+      },
+    ];
+    render(<MemoryTab />);
+
+    await screen.findByText(file.name);
+    expect(screen.getAllByTestId('memory-file-row')).toHaveLength(1);
+    expect(screen.queryByText('已归档周报规则')).toBeNull();
+
+    const section = getManagementSection();
+    const tileLabel = within(section).getByText(filesText.stats.memoryFiles);
+    const tileCard = tileLabel.parentElement;
+    expect(tileCard?.children[1]?.textContent).toBe('1');
+  });
+
+  it('(b) 行内归档成功后重载返回 status=archived，该行立即消失并在管理区显示带名称的成功提示', async () => {
+    state.files = [{ ...file, status: 'active' }];
+    render(<MemoryTab />);
+
+    const row = await screen.findByTestId('memory-file-row');
+    fireEvent.click(within(row).getByRole('button', { name: filesText.delete }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: filesText.delete }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('memory-file-row')).toBeNull();
+    });
+    expect(screen.queryByText(file.name, { selector: 'td span' })).toBeNull();
+
+    const section = getManagementSection();
+    const msg = within(section).getByTestId('memory-file-archive-message');
+    expect(msg.getAttribute('role')).toBe('status');
+    expect(msg.textContent).toBe(`${filesText.deleteSuccessPrefix}${file.name}`);
+  });
+
+  it('(c) lightDelete 返回 false 时，行保留并在管理区显示归档失败提示', async () => {
+    state.archiveOk = false;
+    state.files = [{ ...file, status: 'active' }];
+    render(<MemoryTab />);
+
+    const row = await screen.findByTestId('memory-file-row');
+    fireEvent.click(within(row).getByRole('button', { name: filesText.delete }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: filesText.delete }));
+
+    const section = getManagementSection();
+    const msg = await within(section).findByTestId('memory-file-archive-message');
+    expect(msg.getAttribute('role')).toBe('status');
+    expect(msg.textContent).toBe(filesText.deleteFailed);
+    expect(screen.getAllByTestId('memory-file-row')).toHaveLength(1);
   });
 });
