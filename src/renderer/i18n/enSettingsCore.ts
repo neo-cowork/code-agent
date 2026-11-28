@@ -67,6 +67,7 @@ export const enSettingsCore = {
     },
     searchIndex: {
       permissionMode: 'Safety mode',
+      osSandbox: 'OS sandbox',
       modelRoutingStrategy: 'Model routing strategy',
       voiceInput: 'Voice input',
       voiceLive: 'Live Voice',
@@ -291,10 +292,18 @@ export const enSettingsCore = {
         },
         sandbox: {
           title: 'OS sandbox',
-          available: 'Bash runs inside the OS sandbox by default in Default and Accept edits modes.',
-          unavailable: 'OS sandbox is unavailable on this machine. Bash will run with an explicit degradation mark instead of a silent naked fallback.',
-          disabled: 'OS sandbox is turned off. OS_SANDBOX_ENABLED=false is an emergency opt-out only.',
-          installHint: 'On Linux, install bubblewrap (bwrap). macOS uses the built-in sandbox-exec.',
+          available: {
+            description: 'On. Commands that run in the sandbox can change files only in the current work folder and temporary folders. Internet access is blocked by default, with exceptions for some commands.',
+            hint: 'This is an extra layer of protection. You do not need to set anything up.',
+          },
+          disabled: {
+            description: 'Off. Commands Neo runs may change files outside the work folder. When Neo needs your approval, the confirmation card will say the command will run without isolation.',
+            hint: 'The sandbox was turned off in Neo’s startup settings. This is intended for short troubleshooting sessions. If you did not turn it off on purpose, ask the person who installed Neo to restore the default settings.',
+          },
+          unavailable: {
+            description: 'The sandbox is unavailable on this computer. Neo may still run commands that can change files outside the work folder. When Neo needs your approval, the confirmation card will say the command will run without isolation.',
+            hint: 'On macOS, restart your computer and check this page again. On Linux, install bubblewrap first.',
+          },
         },
         controlPlane: {
           title: 'Permission control plane',
@@ -327,6 +336,8 @@ export const enSettingsCore = {
           recommended: 'Recommended',
         },
         userRules: {
+          kindLabels: { deny: 'Deny', ask: 'Ask', allow: 'Allow' },
+          savedKindLabels: { deny: 'deny', ask: 'ask', allow: 'allow' },
           title: 'User-level permission rules',
           description: 'One Tool(glob) rule per line. These affect the main Agent and all sub-agents.',
           denyCaption: 'Deny, highest priority',
