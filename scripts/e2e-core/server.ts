@@ -1,9 +1,40 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DbSnapshot, ServerInfo } from './types';
 
 const START_TIMEOUT_MS = 300_000;
+const SAMPLE_SECONDS = 3;
+const SAMPLE_TIMEOUT_MS = 30_000;
+
+function findOnPath(command: string): string | null {
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, command);
+    try {
+      if (fs.statSync(candidate).isFile()) { fs.accessSync(candidate, fs.constants.X_OK); return candidate; }
+    } catch { /* 不在这一格 */ }
+  }
+  return null;
+}
+
+/**
+ * kill9 之前给卡住的服务抓一份原生栈（macOS `sample`）：kill9 之后现场就没了。
+ * 失败只记原因、不拦重启；返回采样文件路径，失败返回 null。
+ */
+function sampleHungServer(pid: number, serverDir: string): string | null {
+  const bin = findOnPath('sample');
+  if (!bin) { console.log(`sample: 跳过，PATH 里找不到 sample（pid ${pid}）`); return null; }
+  const file = path.join(serverDir, `hang-sample-${pid}-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
+  const res = spawnSync(bin, [String(pid), String(SAMPLE_SECONDS), '-file', file], { encoding: 'utf8', timeout: SAMPLE_TIMEOUT_MS });
+  if (res.error || res.status !== 0 || !fs.existsSync(file)) {
+    const why = res.error?.message ?? (res.status !== 0 ? `退出码 ${res.status} ${String(res.stderr ?? '').trim()}` : '没有产出文件');
+    console.log(`sample: pid ${pid} 采样失败，继续重启：${why}`);
+    return null;
+  }
+  console.log(`sample saved ${file}`);
+  return file;
+}
 
 /** 独立进程组里跑 neo-realrun（kill9/restart 前后 runner 曾被整组 SIGKILL，退出码 137；隔开进程组以免连累 runner）。 */
 function runRealrunDetached(bin: string, args: string[], timeoutMs: number): Promise<string> {
@@ -65,6 +96,7 @@ export function stopServer(bin: string, server: ServerInfo): void {
   if (alive) {
     // SIGTERM 后服务还在收尾后台任务：只对自己起的这个进程组升级到 SIGKILL，再核对
     console.log(`pid ${state.pid} 收到 SIGTERM 后仍在，升级 kill9`);
+    sampleHungServer(state.pid, server.dir);
     console.log(runRealrun(bin, ['kill9', '--out', server.dir]).trim());
     try { process.kill(state.pid, 0); } catch { alive = false; }
   }
@@ -123,7 +155,8 @@ export async function ensureServerAlive(bin: string, server: ServerInfo): Promis
   const pid = readServerPid(server.dir);
   const hung = pid !== null && isPidAlive(pid);
   if (hung) {
-    console.log(`ensureServerAlive: pid ${pid} alive but /api/health unresponsive, kill9 + restart`);
+    console.log(`ensureServerAlive: pid ${pid} alive but /api/health unresponsive, sample + kill9 + restart`);
+    const sampleFile = sampleHungServer(pid, server.dir);
     try {
       const killOut = (await runRealrunDetached(bin, ['kill9', '--out', server.dir], 60_000)).trim();
       if (killOut) console.log(killOut);
@@ -132,7 +165,7 @@ export async function ensureServerAlive(bin: string, server: ServerInfo): Promis
     } catch (e) {
       throw new Error(`服务卡死（pid ${pid} 存活但 /api/health 无响应）且 kill9 + restart 失败：${(e as Error).message}`, { cause: e });
     }
-    return `服务在上一轮后卡死（pid ${pid} 存活但 /api/health 无响应），已 kill9 + restart 拉起（日志见 ${path.join(server.dir, 'server-1.log')}）`;
+    return `服务在上一轮后卡死（pid ${pid} 存活但 /api/health 无响应），已 kill9 + restart 拉起（日志见 ${path.join(server.dir, 'server-1.log')}；${sampleFile ? `卡死时的原生栈采样见 ${sampleFile}` : '原生栈采样未取到，原因见控制台 sample: 行'}）`;
   }
   try {
     const restartOut = (await runRealrunDetached(bin, ['restart', '--out', server.dir], START_TIMEOUT_MS)).trim();

@@ -14,6 +14,7 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { getLanguageId } from './languages';
 import { ensureInstalled, LSPInstallError, type LSPInstallSource } from './installer';
+import { adjustLspPendingRequests, setLspInitializingWorkspace } from '../services/infra/loopBreadcrumbs';
 
 // ============================================================================
 // Types
@@ -370,12 +371,14 @@ export class LSPServer extends EventEmitter {
       const pending = this.pendingRequests.get(message.id);
       if (pending) {
         this.pendingRequests.delete(message.id);
+        adjustLspPendingRequests(-1);
         pending.resolve(message.result);
       }
     } else if (message.kind === 'error') {
       const pending = this.pendingRequests.get(message.id);
       if (pending) {
         this.pendingRequests.delete(message.id);
+        adjustLspPendingRequests(-1);
         pending.reject(new Error(message.message));
       }
     } else {
@@ -400,11 +403,13 @@ export class LSPServer extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
+      adjustLspPendingRequests(1);
       this.sendMessage(message);
 
       setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
+          adjustLspPendingRequests(-1);
           reject(new Error('Request timeout'));
         }
       }, 30000);
@@ -796,7 +801,12 @@ export async function initializeLSPManager(
     globalManager.registerServer(config);
   }
 
-  await globalManager.initialize();
+  setLspInitializingWorkspace(workspaceRoot);
+  try {
+    await globalManager.initialize();
+  } finally {
+    setLspInitializingWorkspace(null);
+  }
 
   return globalManager;
 }
