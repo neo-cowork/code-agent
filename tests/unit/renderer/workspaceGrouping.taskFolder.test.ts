@@ -152,6 +152,22 @@ describe('workspaceGrouping: chats in a Neo-made task folder', () => {
     expect(groupOf(groups, 'slash')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
     expect(groupOf(groups, 'parent')).toMatchObject({ key: '/x/Neo/任务_1101_create-role/assets', name: 'assets' });
   });
+
+  it('only counts the shape directly under a Neo work root, so a user folder named like it keeps its group', () => {
+    const groups = group([
+      session({ id: 'slot', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/Neo-dev/Task_1116_init-memory' }),
+      session({ id: 'custom', projectId: UNSORTED_PROJECT_ID, workingDirectory: '/x/neo-data-work/任务_1101_create-role' }),
+      session({ id: 'picked', projectId: 'proj_u', workingDirectory: '/x/Documents/Task_2025_budget' }),
+    ]);
+
+    expect(groupOf(groups, 'slot')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
+    expect(groupOf(groups, 'custom')?.key).toBe(UNCATEGORIZED_WORKSPACE_KEY);
+    expect(groupOf(groups, 'picked')).toMatchObject({
+      key: 'project:proj_u',
+      name: 'Task_2025_budget',
+      paths: ['/x/Documents/Task_2025_budget'],
+    });
+  });
 });
 
 // A task-folder project the user promoted to a space (space page promote, or createSpace on that

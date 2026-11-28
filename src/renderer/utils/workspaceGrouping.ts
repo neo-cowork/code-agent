@@ -47,14 +47,24 @@ interface SidebarGroupKeySource {
 }
 
 // Same shape as the host's PLANNED_FOLDER_NAME_PATTERN in
-// src/host/config/sessionWorkDirectory.ts (任务_MMDD_… / Task_MMDD_…). The
-// renderer does not know the default work root, so only the last segment counts.
+// src/host/config/sessionWorkDirectory.ts (任务_MMDD_… / Task_MMDD_…).
 const TASK_FOLDER_NAME_PATTERN = /^(任务|Task)_\d{4}_/;
+// The host plans those folders directly under its default work root
+// (getDefaultWorkDirectory in src/host/config/configPaths.ts: ~/Neo, ~/Neo-<slot>,
+// or <dataDir>-work). The renderer does not know the exact root, so it checks the
+// parent's name; a folder the user named like that elsewhere keeps its group.
+const WORK_ROOT_NAME_PATTERN = /^Neo(-.+)?$|-work$/;
 
 function isTaskFolderPath(path: string): boolean {
   const segments = path.split(/[\\/]/).filter(Boolean);
   const lastSegment = segments[segments.length - 1];
-  return Boolean(lastSegment && TASK_FOLDER_NAME_PATTERN.test(lastSegment));
+  const parentSegment = segments[segments.length - 2];
+  return Boolean(
+    lastSegment
+    && parentSegment
+    && TASK_FOLDER_NAME_PATTERN.test(lastSegment)
+    && WORK_ROOT_NAME_PATTERN.test(parentSegment),
+  );
 }
 
 function basenameOf(path: string): string {
