@@ -118,7 +118,6 @@ export function useOfflineOutboxReplay(params: {
 
     const dispatched = useMessageActionStore.getState().regenerateMessage(pendingError.id);
     if (dispatched) {
-      clearFailedSend(currentSessionId, clientMessageId);
       const live = useSessionStore.getState();
       if (live.currentSessionId === currentSessionId) {
         live.setMessages(live.messages.filter((message) => message.id !== pendingError.id));

@@ -62,7 +62,7 @@ const initialSession = useSessionStore.getState();
 const initialServer = useServerConnectionStore.getState();
 const initialTask = useTaskStore.getState();
 
-type TransportMode = 'online' | 'offline' | 'run-500';
+type TransportMode = 'online' | 'offline' | 'settings-offline' | 'signed-out-unconfigured' | 'run-500';
 let transportMode: TransportMode = 'online';
 let runPayloads: Array<{ prompt?: string; clientMessageId?: string; sessionId?: string }> = [];
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -143,6 +143,8 @@ describe('Offline send auto-replay (Surface A + Surface B)', { timeout: 60_000 }
         throw new TypeError('Failed to fetch');
       }
       if (url.includes('/api/domain/settings/get')) {
+        if (transportMode === 'settings-offline') throw new TypeError('Failed to fetch');
+        if (transportMode === 'signed-out-unconfigured') return jsonOk({ models: { providers: {} } });
         return jsonOk({
           models: {
             default: 'xiaomi',
@@ -328,6 +330,29 @@ describe('Offline send auto-replay (Surface A + Surface B)', { timeout: 60_000 }
       expect(users[1]?.metadata?.sendFailed).toBeUndefined();
     });
     expect(screen.queryByTestId('offline-send-card')).toBeNull();
+  });
+
+  it('an offline preflight and a missing signed-out model cannot dispatch an existing chat send', async () => {
+    seedExistingSession('sess-existing');
+    render(<ChatView />);
+    await screen.findByTestId('chat-composer-textarea');
+    const editor = typeIntoComposer('Turn the meeting notes into a short checklist');
+
+    transportMode = 'settings-offline';
+    await act(async () => {
+      fireEvent.keyDown(editor, { key: 'Enter', code: 'Enter' });
+    });
+    const card = await screen.findByTestId('offline-send-card');
+    expect(card.getAttribute('data-offline-card-state')).toBe('waiting');
+    expect(runPayloads).toHaveLength(0);
+    expect(useAuthStore.getState().showAuthModal).toBe(false);
+
+    transportMode = 'signed-out-unconfigured';
+    act(() => useServerConnectionStore.getState().markEventStreamConnected());
+    await waitFor(() => {
+      expect(screen.getByTestId('offline-send-card').getAttribute('data-offline-card-state')).toBe('failed');
+    });
+    expect(runPayloads).toHaveLength(0);
   });
 
   it('(c) clientMessageId already in restored history -> no send (Surface A & Surface B)', async () => {

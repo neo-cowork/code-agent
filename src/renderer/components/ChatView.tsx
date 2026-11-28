@@ -73,11 +73,14 @@ import { toast } from '../hooks/useToast';
 import {
   ensureModelConfiguredForSend,
   readSessionRuntimeModelState,
+  validateOfflineRetry,
 } from '../utils/ensureModelConfigured';
 import {
   finishOfflineAutoReplayAttempt,
   getOfflineAutoReplaySurface,
+  isOfflineSendFailureCode,
   markLastSendOfflineFailure,
+  offlinePreflightError,
 } from '../utils/offlineSend';
 import { useOfflineOutboxReplay } from '../hooks/agent/useOfflineOutboxReplay';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
@@ -249,13 +252,22 @@ export const ChatView: React.FC = () => {
         attachments?: MessageAttachment[];
         clientMessageId?: string;
       }) => {
-        const envelope = buildEnvelope(content, context?.attachments, context?.clientMessageId);
+        const retryId = context?.clientMessageId;
+        const isOfflineRetry = retryId && (
+          getOfflineAutoReplaySurface(retryId) === 'outbox' || messagesRef.current.some((message) =>
+            message.metadata?.retryClientMessageId === retryId
+            && isOfflineSendFailureCode(message.metadata?.sendFailureCode ?? ''),
+          )
+        );
+        const envelope = buildEnvelope(content, context?.attachments, retryId);
+        if (isOfflineRetry) envelope.sessionId = useSessionStore.getState().currentSessionId ?? undefined;
         // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
         // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
         void Promise.resolve(sendMessage(
           context?.localityAnchor
             ? { ...envelope, context: { ...envelope.context, localityAnchor: context.localityAnchor } }
             : envelope,
+          isOfflineRetry ? { validateRetry: validateOfflineRetry } : undefined,
         )).finally(() => {
           if (context?.clientMessageId && getOfflineAutoReplaySurface(context.clientMessageId) === 'outbox') {
             finishOfflineAutoReplayAttempt(context.clientMessageId);
@@ -635,8 +647,12 @@ export const ChatView: React.FC = () => {
         sessionId: feedbackSessionId ?? undefined,
       })),
       send: async () => {
-        const dispatchToAgent = async () => {
-          const delivery = await sendMessage(outboundEnvelope);
+        const dispatchToAgent = async (preflightError?: Error) => {
+          if (preflightError && useSessionStore.getState().currentSessionId !== feedbackSessionId) return false;
+          const delivery = await sendMessage(
+            preflightError ? { ...outboundEnvelope, sessionId: feedbackSessionId ?? undefined } : outboundEnvelope,
+            preflightError ? { preflightError } : undefined,
+          );
           if (delivery?.outcome === 'queued' && feedbackSessionId) {
             setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
               type: 'enqueue_succeeded',
@@ -665,7 +681,7 @@ export const ChatView: React.FC = () => {
               markLastSendOfflineFailure(clientMessageId);
               return false;
             }
-            return dispatchToAgent();
+            return dispatchToAgent(offlinePreflightError());
           }
           return dispatchToAgent();
         };
@@ -677,7 +693,7 @@ export const ChatView: React.FC = () => {
               markLastSendOfflineFailure(clientMessageId);
               return false;
             }
-            return dispatchToAgent();
+            return dispatchToAgent(offlinePreflightError());
           }
           if (localModelState === 'ready') {
             return (await sendConfiguredMessage()) === true;

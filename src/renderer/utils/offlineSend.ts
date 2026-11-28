@@ -18,6 +18,10 @@ export type OfflineAutoReplaySurface = 'composer' | 'outbox';
 
 const NETWORK_TYPE_ERROR_RE = /failed to fetch|load failed|networkerror|fetch failed/i;
 
+export function offlinePreflightError(): Error {
+  return Object.assign(new Error('Network unavailable at send preflight'), { code: 'NETWORK_ERROR' });
+}
+
 function safeServerReconnectingMessage(): string | null {
   try {
     return getServerReconnectingMessage() || null;
@@ -153,6 +157,9 @@ export function resolveOfflineSendFailureCode(params: {
 }): string {
   const { error, hasAttachments, replaySurface, fallbackCode } = params;
   if (replaySurface === 'outbox') return OFFLINE_SEND_FAILED_CODE;
+  if (error instanceof Error && 'code' in error && error.code === OFFLINE_SEND_FAILED_CODE) {
+    return OFFLINE_SEND_FAILED_CODE;
+  }
   if (isOfflineTransportError(error) && !hasAttachments) return OFFLINE_SEND_PENDING_CODE;
   return fallbackCode;
 }

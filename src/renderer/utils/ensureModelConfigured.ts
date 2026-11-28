@@ -8,8 +8,9 @@ import { getLocalizedProviderDisplayName } from '../i18n/providerDisplay';
 import { toast } from '../hooks/useToast';
 import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
+import { useAuthStore } from '../stores/authStore';
 import { createLogger } from './logger';
-import { isOfflineTransportError } from './offlineSend';
+import { isOfflineTransportError, OFFLINE_SEND_FAILED_CODE } from './offlineSend';
 import { isWebMode } from './platform';
 
 const logger = createLogger('modelSetup');
@@ -18,7 +19,7 @@ export type PreSendModelReadiness = 'ready' | 'unconfigured' | 'offline';
 
 async function readModelReadiness(
   currentSessionId: string | null,
-  options: { allowCloudManaged?: boolean },
+  options: { allowCloudManaged?: boolean; propagateOffline?: boolean },
 ): Promise<{ settings: AppSettings; provider: ModelProvider; configured: boolean }> {
   const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
   const defaultProvider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
@@ -30,6 +31,7 @@ async function readModelReadiness(
       );
       if (effective?.provider && effective.adaptive !== true && effective.model !== 'auto') provider = effective.provider;
     } catch (error) {
+      if (options.propagateOffline && isOfflineTransportError(error)) throw error;
       logger.debug('Effective model read failed; using the default provider', { error });
     }
   }
@@ -41,10 +43,17 @@ export async function readSessionRuntimeModelState(
   options: { allowCloudManaged?: boolean } = {},
 ): Promise<PreSendModelReadiness> {
   try {
-    return (await readModelReadiness(currentSessionId, options)).configured ? 'ready' : 'unconfigured';
+    return (await readModelReadiness(currentSessionId, { ...options, propagateOffline: true })).configured ? 'ready' : 'unconfigured';
   } catch (error) {
     return isOfflineTransportError(error) ? 'offline' : 'unconfigured';
   }
+}
+
+export async function validateOfflineRetry(sessionId: string | null): Promise<Error | undefined> {
+  const allowCloudManaged = useAuthStore.getState().isAuthenticated;
+  const modelState = await readSessionRuntimeModelState(sessionId, { allowCloudManaged });
+  if (modelState === 'ready' && (!allowCloudManaged || useAuthStore.getState().isAuthenticated)) return;
+  return Object.assign(new Error('Offline retry preflight failed'), { code: OFFLINE_SEND_FAILED_CODE });
 }
 
 function notifyUnconfiguredModel(
@@ -96,7 +105,7 @@ export async function ensureModelConfiguredForSend(
   currentSessionId: string | null,
 ): Promise<PreSendModelReadiness> {
   try {
-    const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
+    const { settings, provider, configured } = await readModelReadiness(currentSessionId, { propagateOffline: true });
     if (!configured) {
       notifyUnconfiguredModel(settings, provider, t, language, false);
       return 'unconfigured';
