@@ -25,23 +25,47 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 const copy = { zh: zh.settings.general.permissions, en: en.settings.general.permissions };
-const diagnosticItems = {
-  available: {
-    status: 'pass',
-    message: 'available · seatbelt',
-    details: 'Writes are confined to the workspace, TMPDIR.\nrollout: default, acceptEdits',
+const diagnosticCases: {
+  name: string;
+  state: 'available' | 'disabled' | 'unavailable';
+  item: Pick<DoctorItem, 'status' | 'message' | 'details' | 'suggestion'>;
+}[] = [
+  {
+    name: 'available',
+    state: 'available',
+    item: {
+      status: 'pass',
+      message: 'available · seatbelt',
+      details: 'Writes are confined to the workspace, TMPDIR.\nrollout: default, acceptEdits',
+    },
   },
-  disabled: {
-    status: 'warn',
-    message: 'disabled by OS_SANDBOX_ENABLED=false',
-    suggestion: 'Unset OS_SANDBOX_ENABLED to restore the default-on OS sandbox.',
+  {
+    name: 'turned off',
+    state: 'disabled',
+    item: {
+      status: 'warn',
+      message: 'disabled by OS_SANDBOX_ENABLED=false',
+      suggestion: 'Unset OS_SANDBOX_ENABLED to restore the default-on OS sandbox.',
+    },
   },
-  unavailable: {
-    status: 'warn',
-    message: 'unavailable · darwin',
-    suggestion: 'sandbox-exec unavailable; Bash in default/acceptEdits runs without the OS sandbox.',
+  {
+    name: 'unavailable',
+    state: 'unavailable',
+    item: {
+      status: 'warn',
+      message: 'unavailable · darwin',
+      suggestion: 'sandbox-exec unavailable; Bash in default/acceptEdits runs without the OS sandbox.',
+    },
   },
-} satisfies Record<string, Pick<DoctorItem, 'status' | 'message' | 'details' | 'suggestion'>>;
+  {
+    name: 'failed',
+    state: 'unavailable',
+    item: {
+      status: 'fail',
+      message: 'sandbox probe failed · unexpectedly disabled',
+    },
+  },
+];
 
 function renderedCopy(container: HTMLElement) {
   const page = container.cloneNode(true) as HTMLElement;
@@ -68,17 +92,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe.each(['zh', 'en'] as const)('Permissions & Safety copy (%s)', (language) => {
-  it.each(Object.entries(diagnosticItems))('renders the %s sandbox pack copy', async (state, diagnostic) => {
+  it.each(diagnosticCases)('renders the sandbox pack copy when $name', async ({ state, item }) => {
     useDoctorStore.setState({
       report: {
         timestamp: 0,
         durationMs: 0,
-        items: [{ category: 'environment', name: OS_SANDBOX_DOCTOR_ITEM_NAME, ...diagnostic }],
-        summary: { pass: Number(diagnostic.status === 'pass'), warn: Number(diagnostic.status === 'warn'), fail: 0, skip: 0 },
+        items: [{ category: 'environment', name: OS_SANDBOX_DOCTOR_ITEM_NAME, ...item }],
+        summary: { pass: 0, warn: 0, fail: 0, skip: 0, [item.status]: 1 },
       },
     });
     const { container } = await renderPermissions(language);
-    const sandbox = copy[language].sandbox[state as keyof typeof diagnosticItems];
+    const sandbox = copy[language].sandbox[state];
     expect(screen.getByTestId('os-sandbox-settings-hint').textContent).toBe(sandbox.hint);
     expect(screen.getByText(sandbox.description)).toBeTruthy();
 

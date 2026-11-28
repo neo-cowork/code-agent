@@ -304,8 +304,10 @@ export const GeneralSettings: React.FC = () => {
     state.report?.items.find((item) => item.name === OS_SANDBOX_DOCTOR_ITEM_NAME),
   );
   const sandboxWarning = sandboxDoctor?.status === 'warn' || sandboxDoctor?.status === 'fail';
-  const sandboxCopy = !sandboxWarning ? generalText.sandbox.available
-    : sandboxDoctor.message.includes('disabled') ? generalText.sandbox.disabled : generalText.sandbox.unavailable;
+  const sandbox = generalText.sandbox;
+  const sandboxCopy = !sandboxWarning ? sandbox.available
+    : sandboxDoctor.status === 'warn' && sandboxDoctor.message.includes('disabled')
+      ? sandbox.disabled : sandbox.unavailable;
   const budgetText = t.settings.general.budget;
   const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
