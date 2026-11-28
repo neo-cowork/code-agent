@@ -1,10 +1,28 @@
 import type { Message } from '@shared/contract';
+import { ASK_USER_QUESTION_TOOL_NAMES } from '@shared/constants/tools';
 import { isRecord } from './streamEventNormalizers';
 import type { AssistantMessagePayload } from './streamEventTypes';
 
 /** 主机封住一批工具调用后合成的工具结果消息（sealBouncedToolCalls、forceFinalSeal 等）。 */
 export function isSealedToolResultsMessage(data: unknown): data is Message {
   return isRecord(data) && data.role === 'tool' && typeof data.id === 'string';
+}
+
+const questionToolNames = new Set<string>(ASK_USER_QUESTION_TOOL_NAMES);
+
+/** A visible question commit can arrive without a draft from turn_start. */
+export function resolveUndraftedQuestionMessage(data: unknown, messages: readonly Message[]): Message | undefined {
+  if (!isRecord(data) || data.role !== 'assistant' || data.isMeta
+    || typeof data.id !== 'string' || typeof data.content !== 'string' || typeof data.timestamp !== 'number'
+    || !Array.isArray(data.toolCalls)
+    || !data.toolCalls.some((call) => isRecord(call) && typeof call.name === 'string' && questionToolNames.has(call.name))) return;
+
+  const message = data as unknown as Message;
+  if (messages.some((existing) => existing.id === message.id)) return message;
+  const turnId = message.metadata?.correlation?.turnId ?? data.turnId;
+  if (turnId && messages.some((draft) => draft.role === 'assistant'
+    && (draft.id === turnId || draft.metadata?.correlation?.turnId === turnId))) return;
+  return message;
 }
 
 /**

@@ -104,7 +104,7 @@ describe('PluginsSettings helpers', () => {
       'design-tools@community',
     ]);
     expect(visibility.adminOnly.map((item) => item.kind)).toEqual(['installed', 'installed', 'available']);
-    expect(visibility.adminOnly.find((item) => item.spec === 'codex-auth@core')?.reason).toContain('adapter');
+    expect(visibility.adminOnly.find((item) => item.spec === 'codex-auth@core')?.reason).toContain('适配器');
   });
 
   it('separates plugin lifecycle enablement from runtime visibility', () => {

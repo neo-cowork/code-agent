@@ -61,7 +61,11 @@ function isActiveState(state: RoleFirstWakeSnapshot['state'] | undefined): boole
   return state === 'pending' || state === 'running';
 }
 
-export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
+export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = (props) => (
+  <RoleFirstWakeCardBody key={props.roleId} {...props} />
+);
+
+const RoleFirstWakeCardBody: React.FC<RoleFirstWakeCardProps> = ({
   roleId,
   framed = false,
   expectLive = false,
@@ -72,7 +76,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const [snapshot, setSnapshot] = useState<RoleFirstWakeSnapshot | null | undefined>(undefined);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [displayName, setDisplayName] = useState(roleId);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [pollEpoch, setPollEpoch] = useState(0);
   // 醒来会话（后台隐藏会话）停车等批准的那一条：用户只会看见这张卡，批准必须能在这里点。
   const [pendingApproval, setPendingApproval] = useState<{ id: string; tool: string } | null>(null);
@@ -87,9 +91,9 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     void listRoles().then((entries) => {
       if (cancelled) return;
       const name = entries.find((entry) => entry.roleId === roleId)?.displayName?.trim();
-      if (name) setDisplayName(localizeBuiltinRole(roleId, { name }, language).name);
+      setDisplayName(name ? localizeBuiltinRole(roleId, { name }, language).name : roleId);
     }).catch(() => {
-      // 展示名只用于头像与无障碍标签，失败就用 roleId
+      if (!cancelled) setDisplayName(roleId);
     });
     return () => { cancelled = true; };
   }, [roleId, language]);
@@ -305,11 +309,11 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     >
       <div
         role="img"
-        aria-label={displayName}
-        title={displayName}
+        aria-label={displayName ?? roleId}
+        title={displayName ?? roleId}
         className="flex size-7 items-center justify-center rounded-full bg-badge-accent text-sm font-semibold text-badge-accent"
       >
-        {displayName.trim().charAt(0) || '·'}
+        {displayName?.trim().charAt(0) || '·'}
       </div>
       <div className="col-start-2 min-w-0 pt-[3px]">
         {showRunning && (

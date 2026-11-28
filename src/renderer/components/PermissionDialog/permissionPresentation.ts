@@ -8,7 +8,7 @@ import { redactCredentialText } from '@shared/security/secretPatterns';
 import { humanizeToolPath } from '@shared/utils/humanizeToolPath';
 import { PermissionRequestReason } from '@shared/contract';
 import type { RmCommandTargets } from '@shared/rmCommandTargets';
-import { parseRmTargets } from '@shared/rmCommandTargets';
+import { isDeleteShellCommand, parseRmTargets } from '@shared/rmCommandTargets';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
@@ -55,11 +55,16 @@ function isOutsideWorkspace(request: PermissionRequest): boolean {
   return request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write';
 }
 
-function isDeletionRequest(request: PermissionRequest): boolean {
+function isFlaggedOrRecursiveDeletionRequest(request: PermissionRequest): boolean {
   const flags = request.details.commandSecurityFlags ?? [];
   return request.type === 'file_delete'
     || flags.some((flag) => /delete|sudo_rm/u.test(flag))
     || /\brm\s+-(?:[^\s]*r[^\s]*f|[^\s]*f[^\s]*r)\b/u.test(request.details.command ?? '');
+}
+
+function isDeletionRequest(request: PermissionRequest): boolean {
+  return isFlaggedOrRecursiveDeletionRequest(request)
+    || isDeleteShellCommand(request.details.command ?? '');
 }
 
 /**
@@ -130,7 +135,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   const qualifier = isOutsideWorkspace(request) ? p.workspaceOutsideQualifier : '';
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
-    && !isDeletionRequest(request)
+    && !isFlaggedOrRecursiveDeletionRequest(request)
   ) {
     return p.questionUncertainWriteTarget;
   }
@@ -186,11 +191,13 @@ function fileCountText(count: number | undefined, t: Translations): string {
 function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets, t: Translations): string {
   const hostCount = request.details.affectedFileCount;
   if (hostCount !== undefined) return fileCountText(hostCount, t);
+  const emptyDirCount = parsed.emptyDirTargets ?? 0;
+  const fileTargetCount = Math.max(0, parsed.targets.length - emptyDirCount);
   if (parsed.exact && !parsed.recursive && parsed.targets.length > 0) {
-    return fileCountText(parsed.targets.length, t);
+    return fileTargetCount > 0 ? fileCountText(fileTargetCount, t) : '';
   }
   if (request.type === 'file_delete' && request.details.affectedPath) return fileCountText(1, t);
-  if (parsed.targets.length > 1 || (!parsed.exact && parsed.targets.length > 0)) {
+  if (fileTargetCount > 1 || (!parsed.exact && fileTargetCount > 0)) {
     return t.decisionCard.permission.fileCountMany;
   }
   return '';
@@ -230,6 +237,20 @@ function multiTargetDeletionConsequence(
     .replace('{count}', deletionCountText(request, parsed, t));
 }
 
+function formatDeletionConsequence(
+  request: PermissionRequest,
+  parsedRmTargets: RmCommandTargets,
+  safeTarget: string | undefined,
+  t: Translations,
+  pathContext?: ApprovalPathContext,
+): string {
+  const p = t.decisionCard.permission;
+  return multiTargetDeletionConsequence(request, parsedRmTargets, t, pathContext)
+    ?? p.consequenceDelete
+      .replace('{target}', safeTarget ?? p.targetFallback)
+      .replace('{count}', deletionCountText(request, parsedRmTargets, t));
+}
+
 export function permissionConsequence(
   request: PermissionRequest,
   t: Translations,
@@ -256,16 +277,11 @@ export function permissionConsequence(
   const humanTarget = redactedTarget ? humanizeToolPath(redactedTarget, language, request.details.pathDisplay) : undefined;
   const isHumanized = Boolean(humanTarget && redactedTarget && humanTarget !== redactedTarget);
   const writeTarget = isHumanized ? humanTarget : safeTarget;
-  const deletion = isDeletionRequest(request);
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
-  if (deletion) {
-    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t, pathContext);
-    if (multiTarget) return multiTarget;
-    return p.consequenceDelete
-      .replace('{target}', safeTarget ?? p.targetFallback)
-      .replace('{count}', deletionCountText(request, parsedRmTargets, t));
+  if (isFlaggedOrRecursiveDeletionRequest(request)) {
+    return formatDeletionConsequence(request, parsedRmTargets, safeTarget, t, pathContext);
   }
   if (
     request.details.targetKind === 'device'
@@ -285,7 +301,8 @@ export function permissionConsequence(
     return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target, p) : p.targetFallback);
   }
   if (request.boundary?.id === 'file.external_write') {
-    return p.consequenceOutside
+    const template = request.details.targetKind === 'absent' ? p.consequenceOutsideNew : p.consequenceOutside;
+    return template
       .replace('{target}', writeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
@@ -313,11 +330,12 @@ export function permissionConsequence(
     const classifierRules = request.decisionTrace?.steps.map((step) => step.rule) ?? [];
     if (classifierRules.includes('B1: sensitive_credential_read')) return p.consequenceCredentialReadCommand;
     if (classifierRules.includes('B1: git_remote_or_credential_write')) return p.consequenceGitRemoteWriteCommand;
-    // 不带 -rf 的多目标 rm（模型最常发的 `rm a.log b.log c.log`）宿主不打删除旗标，
-    // isDeletionRequest 认不出；放在高危/凭据/Git 远端三条之后，确保组合命令
-    // （如 `git push && rm a b`）不顶掉原有风险警告。
-    const multiTarget = multiTargetDeletionConsequence(request, parsedRmTargets, t, pathContext);
-    if (multiTarget) return multiTarget;
+    // 不带 -rf 的删除命令（plain rm / rm -v / rm *.log / rmdir / unlink，含 &&/; 链式调用）
+    // 宿主不打删除旗标；放在高危/凭据/Git 远端三条之后，确保组合命令（如 `git push && rm a b`）
+    // 不顶掉原有风险警告。
+    if (isDeleteShellCommand(request.details.command ?? '')) {
+      return formatDeletionConsequence(request, parsedRmTargets, safeTarget, t, pathContext);
+    }
     // 其余命令（含宿主标 unknown 的——那只表示「不在已知安全名单里」，不是风险结论）不套泛泛的警告。
   }
   return undefined;
