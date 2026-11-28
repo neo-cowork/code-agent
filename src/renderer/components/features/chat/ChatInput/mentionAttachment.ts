@@ -64,10 +64,23 @@ export interface BuildMentionAttachmentInput {
   /** 文件名（面板行展示名） */
   name: string;
   workingDirectory: string | null;
+  isDirectory?: boolean;
 }
 
 export async function buildMentionAttachment(input: BuildMentionAttachmentInput): Promise<MessageAttachment> {
   const absolutePath = resolveMentionAbsolutePath(input.path, input.workingDirectory);
+  if (input.isDirectory) {
+    return {
+      id: generateAttachmentId(),
+      type: 'file',
+      category: 'folder',
+      name: input.name,
+      path: absolutePath,
+      data: '',
+      size: 0,
+      mimeType: 'inode/directory',
+    };
+  }
   const { category, language } = getFileCategoryByName(input.name);
 
   let data = '';

@@ -389,7 +389,11 @@ export function buildMultimodalContent(
 
 // Helper functions for attachment processing
 function canProcessAttachmentWithoutData(category: MessageAttachment['category']): boolean {
-  return category === 'audio' || category === 'video' || category === 'presentation' || category === 'archive';
+  return category === 'audio'
+    || category === 'video'
+    || category === 'presentation'
+    || category === 'archive'
+    || category === 'folder';
 }
 
 function parseAttachmentJson<T>(value: string | undefined): T | undefined {

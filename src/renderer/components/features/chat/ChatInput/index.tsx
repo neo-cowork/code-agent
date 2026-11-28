@@ -868,26 +868,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   // @ 触发面板（任务 14：资料库 pin + 工作区文件分组；任务 15：query echo + 键盘导航）
-  // 文件行选中 = 触发词原位变文件 chip + 构建附件（文本类内联内容，二进制只带路径）；
-  // 目录行保留旧行为（@path 文本）；资料库行只清掉尾部 @query，chip 由 pin 对账补到末尾。
+  // 文件/目录行选中 = 触发词原位变 chip + 构建附件（文本类内联内容，二进制/目录只带路径）；
+  // 资料库行只清掉尾部 @query，chip 由 pin 对账补到末尾。
   const handleAtFileSelect = useCallback((row: AtMentionFileRow) => {
     const editor = inputAreaRef.current;
-    const caret = editor?.getCaretOffset() ?? latestValueRef.current.length;
-    const beforeCaret = latestValueRef.current.slice(0, caret);
-    const triggerMatch = beforeCaret.match(/@([^\s@]*)$/);
-    const triggerStart = triggerMatch ? caret - triggerMatch[0].length : caret;
-
-    if (row.isDirectory || !editor) {
-      editor?.replaceRangeWithText(triggerStart, caret, `@${row.path} `);
-      editor?.focus();
-      return;
-    }
+    if (!editor) return;
 
     const workingDirectory = useAppStore.getState().workingDirectory
       ?? useSessionStore.getState().sessions.find((session) => session.id === currentSessionId)?.workingDirectory
       ?? null;
     void (async () => {
-      const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
+      const attachment = await buildMentionAttachment({
+        path: row.path,
+        name: row.name,
+        workingDirectory,
+        isDirectory: row.isDirectory,
+      });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
       const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS);
       const freshCaret = editor.getCaretOffset();

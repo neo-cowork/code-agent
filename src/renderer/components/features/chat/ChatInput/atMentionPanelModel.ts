@@ -122,7 +122,12 @@ export function libraryRowSubtitle(item: LibraryItem, t: Translations): string {
   return label;
 }
 
-/** 资料库组：pin 候选（本项目 ∪ 全局）按 query 过滤（空 query 全量），封顶 limit 条。 */
+/** 空 query（只输 `@`）默认收起点开头条目（.code-agent/.claude 等）；非空 query 放行交给各组搜索。 */
+function isHiddenOnEmptyQuery(name: string, normalizedQuery: string): boolean {
+  return !normalizedQuery && name.startsWith('.');
+}
+
+/** 资料库组：pin 候选（本项目 ∪ 全局）按 query 过滤（空 query 跳过点开头标题），封顶 limit 条。 */
 export function buildLibraryRows(
   items: LibraryItem[],
   projectId: string | null,
@@ -132,9 +137,8 @@ export function buildLibraryRows(
 ): AtMentionLibraryRow[] {
   const candidates = filterPinCandidates(items, projectId);
   const trimmed = query.trim();
-  const filtered = trimmed
-    ? candidates.filter((item) => matchesLibraryItemSearch(item, trimmed))
-    : candidates;
+  const filtered = candidates.filter((item) => !isHiddenOnEmptyQuery(item.title, trimmed)
+    && (!trimmed || matchesLibraryItemSearch(item, trimmed)));
   return filtered.slice(0, limit).map((item) => ({
     kind: 'library',
     item,
@@ -156,9 +160,8 @@ export function buildFileRows(
 ): AtMentionFileRow[] {
   const normalized = query.trim().toLowerCase();
   return files
-    .filter((file) => (normalized
-      ? file.name.toLowerCase().includes(normalized)
-      : !file.name.startsWith('.')))
+    .filter((file) => !isHiddenOnEmptyQuery(file.name, normalized)
+      && (!normalized || file.name.toLowerCase().includes(normalized)))
     .slice(0, limit)
     .map((file) => ({
       kind: 'file',
@@ -203,7 +206,8 @@ export function mergeSessionAttachmentRows(
       if (attachment.category === 'folder' || typeof path !== 'string' || !ABSOLUTE_FILE_PATH_RE.test(path)) continue;
       const name = attachment.name || path.split(/[\\/]/).pop() || '';
       if (!name || taken.has(name)) continue;
-      if (normalized ? !name.toLowerCase().includes(normalized) : name.startsWith('.')) continue;
+      if (isHiddenOnEmptyQuery(name, normalized)) continue;
+      if (normalized && !name.toLowerCase().includes(normalized)) continue;
       taken.add(name);
       attachmentRows.push({ kind: 'file', path, name, dir: '', isDirectory: false, source: 'attachment' });
     }

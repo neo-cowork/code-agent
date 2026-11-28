@@ -177,6 +177,26 @@ describe('atMentionPanelModel', () => {
     expect(buildFileRows(files, '.').map((row) => row.name)).toEqual(['.claude', '.code-agent', 'README.md']);
     expect(buildFileRows(files, 'claude').map((row) => row.name)).toEqual(['.claude']);
   });
+
+  it('资料库组与工作区文件组共用空 query 隐藏点开头条目规则，.code 与 claude 仍可命中', () => {
+    const libraryItems = [
+      libraryItem('dot-ca', 'proj-1', '.code-agent'),
+      libraryItem('dot-cl', null, '.claude'),
+      libraryItem('vis', 'proj-1', '发布 checklist'),
+    ];
+    expect(buildLibraryRows(libraryItems, 'proj-1', new Set(), '').map((row) => row.item.title)).toEqual(['发布 checklist']);
+    expect(buildLibraryRows(libraryItems, 'proj-1', new Set(), '.code').map((row) => row.item.title)).toEqual(['.code-agent']);
+    expect(buildLibraryRows(libraryItems, 'proj-1', new Set(), 'claude').map((row) => row.item.title)).toEqual(['.claude']);
+
+    const files = [
+      { name: '.code-agent', path: '/w/.code-agent', isDirectory: true },
+      { name: '.claude', path: '/w/.claude', isDirectory: true },
+      { name: 'reports', path: '/w/reports', isDirectory: true },
+    ];
+    expect(buildFileRows(files, '').map((row) => row.name)).toEqual(['reports']);
+    expect(buildFileRows(files, '.code').map((row) => row.name)).toEqual(['.code-agent']);
+    expect(buildFileRows(files, 'claude').map((row) => row.name)).toEqual(['.claude']);
+  });
 });
 
 // ============================================================================

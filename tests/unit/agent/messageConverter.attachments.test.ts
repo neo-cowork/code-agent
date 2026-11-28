@@ -260,4 +260,14 @@ describe('message attachment conversion', () => {
     expect(serialized).toContain('📍 路径: /tmp/ws/archive/notes.txt');
     expect(serialized).toContain('hello world');
   });
+
+  it('mention-built folder attachment keeps folder name and absolute path without files or folderStats', () => {
+    const attachment: MessageAttachment = {
+      id: 'att-dir', type: 'file', category: 'folder', name: 'reports', size: 0,
+      mimeType: 'inode/directory', data: '', path: '/tmp/at-proj/reports',
+    };
+    const serialized = JSON.stringify(buildMultimodalContent('Summarize', [attachment]));
+    expect(serialized).toContain('文件夹: reports');
+    expect(serialized).toContain('📍 绝对路径: /tmp/at-proj/reports');
+  });
 });
