@@ -1,18 +1,21 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const lang = vi.hoisted(() => ({ current: 'zh' as 'zh' | 'en' }));
+const readWorkspaceFileMock = vi.hoisted(() => vi.fn(async () => 'hello'));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   const { en } = await import('../../../src/renderer/i18n/en');
   return { useI18n: () => ({ t: lang.current === 'zh' ? zh : en, language: lang.current }) };
 });
 vi.mock('../../../src/renderer/components/design/designFiles', () => ({
-  readWorkspaceFile: vi.fn(async () => 'hello'),
+  readWorkspaceFile: readWorkspaceFileMock,
 }));
 
+import { ChatInput } from '../../../src/renderer/components/features/chat/ChatInput';
+import { extractComposerPlainText } from '../../../src/renderer/components/features/chat/ChatInput/composerRichTextModel';
 import { buildMentionAttachment } from '../../../src/renderer/components/features/chat/ChatInput/mentionAttachment';
 import {
   getAttachmentDisplayName,
@@ -20,15 +23,147 @@ import {
 } from '../../../src/renderer/components/features/chat/ChatInput/attachmentDisplayName';
 import { InlineComposerChip } from '../../../src/renderer/components/features/chat/ChatInput/InlineComposerChip';
 import { AttachmentDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/AttachmentPreview';
+import ipcService from '../../../src/renderer/services/ipcService';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 import type { MessageAttachment } from '../../../src/shared/contract/message';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  readWorkspaceFileMock.mockClear();
+  useAppStore.setState({ workingDirectory: null });
+  useSessionStore.setState({ sessions: [], currentSessionId: null, messages: [] });
+});
 
 describe('buildMentionAttachment name', () => {
   it('name is the file name, path stays absolute', async () => {
     const att = await buildMentionAttachment({ path: '/tmp/x/y/a.txt', name: 'a.txt', workingDirectory: '/tmp/x' });
     expect(att.name).toBe('a.txt');
     expect(att.path).toBe('/tmp/x/y/a.txt');
+  });
+
+  it('builds a path-only folder attachment without reading file contents when isDirectory is true', async () => {
+    const att = await buildMentionAttachment({
+      path: '/tmp/at-proj/reports',
+      name: 'reports',
+      workingDirectory: '/tmp/at-proj',
+      isDirectory: true,
+    });
+    expect(readWorkspaceFileMock).not.toHaveBeenCalled();
+    expect(att).toMatchObject({
+      type: 'file',
+      category: 'folder',
+      name: 'reports',
+      path: '/tmp/at-proj/reports',
+      data: '',
+      size: 0,
+      mimeType: 'inode/directory',
+    });
+  });
+});
+
+describe('ChatInput @ popover folder selection', () => {
+  it('picks a folder row as an inline chip and folder attachment without inserting its absolute path', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    useBundledCapabilityStore.setState({
+      installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+      states: [],
+      loaded: true,
+      error: null,
+    });
+    useAppStore.setState({ workingDirectory: '/tmp/at-proj' });
+    useSessionStore.setState({
+      sessions: [{
+        id: 's-at-dir',
+        title: 's-at-dir',
+        workingDirectory: '/tmp/at-proj',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 1,
+        messageCount: 0,
+        turnCount: 0,
+      } as SessionWithMeta],
+      currentSessionId: 's-at-dir',
+      messages: [],
+    });
+    const invokeDomain = ipcService.invokeDomain.bind(ipcService);
+    vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain, action, payload) => {
+      if (domain === IPC_DOMAINS.QUEUED_INPUT && action === 'list') return Promise.resolve([]);
+      return invokeDomain(domain, action, payload);
+    });
+    const prevDomainAPI = (window as { domainAPI?: { invoke: (...args: unknown[]) => Promise<unknown> } }).domainAPI;
+    (window as { domainAPI?: unknown }).domainAPI = {
+      invoke: vi.fn().mockImplementation((domain: string, action: string, payload?: unknown) => {
+        if (domain === IPC_DOMAINS.WORKSPACE && action === 'listFiles') {
+          return Promise.resolve({
+            success: true,
+            data: [{ name: 'reports', path: '/tmp/at-proj/reports', isDirectory: true }],
+          });
+        }
+        if (prevDomainAPI?.invoke) return prevDomainAPI.invoke(domain, action, payload);
+        return Promise.resolve({ success: false });
+      }),
+    };
+
+    try {
+      const onSend = vi.fn(async (_envelope: ConversationEnvelope) => true);
+      const { container, getByTestId } = render(<ChatInput onSend={onSend} />);
+      const editor = getByTestId('chat-composer-textarea');
+
+      editor.replaceChildren(document.createTextNode('@'));
+      const selection = window.getSelection()!;
+      selection.selectAllChildren(editor);
+      selection.collapseToEnd();
+      fireEvent.input(editor);
+
+      const folderButton = await waitFor(() => {
+        const popover = container.querySelector('[data-at-mention-popover]');
+        expect(popover).toBeTruthy();
+        const btn = Array.from(popover!.querySelectorAll('button')).find((el) => el.textContent?.includes('reports'));
+        expect(btn).toBeTruthy();
+        return btn!;
+      });
+
+      await act(async () => {
+        fireEvent.click(folderButton);
+      });
+
+      await waitFor(() => {
+        const chip = editor.querySelector('[data-inline-chip="file"]');
+        expect(chip).toBeTruthy();
+        expect(chip?.getAttribute('aria-label')).toBe('reports');
+        expect(chip?.textContent).toContain('reports');
+      });
+
+      const plainText = extractComposerPlainText(editor);
+      expect(plainText).not.toContain('/tmp/at-proj');
+      expect(plainText).not.toContain('/Users/');
+      expect(editor.textContent ?? '').not.toContain('/tmp/at-proj');
+      expect(editor.textContent ?? '').not.toContain('/Users/');
+
+      await act(async () => {
+        fireEvent.submit(container.querySelector('form')!);
+      });
+
+      expect(onSend).toHaveBeenCalledTimes(1);
+      const envelope = onSend.mock.calls[0]?.[0];
+      expect(envelope?.content ?? '').not.toContain('/tmp/at-proj');
+      expect(envelope?.content ?? '').not.toContain('/Users/');
+      expect(envelope?.attachments).toEqual([
+        expect.objectContaining({
+          category: 'folder',
+          name: 'reports',
+          path: '/tmp/at-proj/reports',
+          mimeType: 'inode/directory',
+        }),
+      ]);
+    } finally {
+      (window as { domainAPI?: unknown }).domainAPI = prevDomainAPI;
+    }
   });
 });
 
