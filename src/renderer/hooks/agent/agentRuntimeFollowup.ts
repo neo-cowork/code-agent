@@ -20,11 +20,23 @@ export function isRuntimeCancellingStatus(status: TaskSessionStatus | undefined)
   return status === 'cancelling';
 }
 
+export function getLatestNonMetaUserMessageId(
+  messages: readonly { id: string; role: string; isMeta?: boolean }[],
+): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user' && !message.isMeta) {
+      return message.id;
+    }
+  }
+  return null;
+}
+
 export function markLatestUserMessageRunCancelled(cancelledAt: number): void {
   const sessionStore = useSessionStore.getState();
-  const latestUser = [...sessionStore.messages]
-    .reverse()
-    .find((message) => message.role === 'user' && !message.isMeta);
+  const latestUserId = getLatestNonMetaUserMessageId(sessionStore.messages);
+  if (!latestUserId) return;
+  const latestUser = sessionStore.messages.find((message) => message.id === latestUserId);
   if (!latestUser) return;
 
   sessionStore.updateMessage(latestUser.id, {
@@ -215,11 +227,16 @@ export interface CancelSettlementResponse {
  */
 export async function requestCancelUntilSettled(input: {
   sessionId: string;
+  runId?: string;
+  onRunId?: (runId: string) => void;
   requestCancel: (selector: { runId?: string; sessionId?: string }) => Promise<CancelSettlementResponse | undefined>;
   isCancellationActive: () => boolean;
   wait: () => Promise<void>;
 }): Promise<boolean> {
-  let selector: { runId?: string; sessionId?: string } = { sessionId: input.sessionId };
+  let selector: { runId?: string; sessionId?: string } = {
+    sessionId: input.sessionId,
+    ...(input.runId ? { runId: input.runId } : {}),
+  };
 
   while (true) {
     const result = await input.requestCancel(selector);
@@ -232,6 +249,7 @@ export async function requestCancelUntilSettled(input: {
     if (!result.runId) {
       return false;
     }
+    input.onRunId?.(result.runId);
     selector = {
       runId: result.runId,
       sessionId: result.sessionId ?? input.sessionId,
