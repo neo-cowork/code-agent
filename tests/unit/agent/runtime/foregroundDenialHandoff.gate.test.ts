@@ -5,7 +5,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelResponse } from '../../../../src/host/agent/loopTypes';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
-import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
+import { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
+import { ContextEventLedger } from '../../../../src/host/context/contextEventLedger';
 import type { RunFinalizer } from '../../../../src/host/agent/runtime/runFinalizer';
 import type { Message, ToolCall, ToolResult } from '../../../../src/shared/contract';
 import type { AgentEvent } from '../../../../src/shared/contract';
@@ -686,5 +687,58 @@ describe('foreground narrowing gate', () => {
       expect(logState.warn.mock.calls).toContainEqual(['Foreground denial handoff failed', expect.objectContaining({ code: 'TASK_NOT_CREATED' })]);
       expect(ledgerEvents.filter((row) => row.toolName === 'delegate_task')).toHaveLength(0);
     });
+  });
+});
+
+describe('background question visibility', () => {
+  it.each([
+    ['AskUserQuestion', true],
+    ['ask_user_question', true],
+    ['Read', false],
+  ])('persists and emits %s with the expected visibility before dispatch', async (name, visible) => {
+    const persisted: Message[] = [];
+    const ctx = buildCtx({
+      historyVisibility: 'meta',
+      persistMessage: async (message: Message) => { persisted.push(structuredClone(message)); },
+    });
+    const runtime = ctx as unknown as RuntimeContext;
+    const { contextAssembly, runFinalizer } = buildDeps(ctx);
+    const assembly = new ContextAssembly(runtime);
+    using _ledgerWrite = vi.spyOn(ContextEventLedger.prototype, 'upsertEvents').mockImplementation(() => {});
+    contextAssembly.addAndPersistMessage = vi.fn(assembly.addAndPersistMessage.bind(assembly));
+
+    const call = { id: 'call-1', name, arguments: { question: 'Which cover?' } };
+    const content = 'Here are the cover options. ![Warm](warm.png) ![Cool](cool.png)';
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async (): Promise<ToolResult[]> => {
+        expect(persisted).toHaveLength(1);
+        expect(persisted[0]).toMatchObject({ role: 'assistant', content, toolCalls: [call] });
+        expect(persisted[0].isMeta).toBe(visible ? undefined : true);
+        const messageEvent = ctx.onEvent.mock.calls.find(([event]) => event.type === 'message')?.[0];
+        expect(messageEvent?.data).toEqual(persisted[0]);
+        return [{ toolCallId: call.id, success: true, output: 'Warm' }];
+      }),
+    };
+    const processor = new MessageProcessor(
+      runtime,
+      contextAssembly as unknown as ContextAssembly,
+      runFinalizer as unknown as RunFinalizer,
+      toolEngine as unknown as ToolExecutionEngine,
+    );
+
+    await processor.handleToolResponse({ ...responseOf([call]), content }, false, 1, EVENT_PROC);
+
+    expect(toolEngine.executeToolsWithHooks).toHaveBeenCalledOnce();
+    expect(persisted).toHaveLength(2);
+    expect(persisted[1]).toMatchObject({ role: 'tool', toolResults: [{ toolCallId: call.id, output: 'Warm' }] });
+    expect(persisted[1].isMeta).toBe(visible ? undefined : true);
+    await assembly.addAndPersistMessage({
+      id: 'unrelated',
+      role: 'tool',
+      timestamp: 3,
+      content: 'An unrelated result',
+      toolResults: [{ toolCallId: 'other-call', success: true, output: 'An unrelated result' }],
+    });
+    expect(persisted[2].isMeta).toBe(true);
   });
 });
