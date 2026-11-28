@@ -81,13 +81,13 @@ function sessionStatusKindToTaskStatus(kind: SessionStatusKind): TaskRecord['sta
 }
 
 export function buildGlobalTaskRecords(args: {
-  language?: Language;
+  language: Language;
   currentSessionId: string | null;
   sessionStates: ReturnType<typeof useTaskStore.getState>['sessionStates'];
   /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */
   sessions?: ReadonlyArray<Pick<SessionWithMeta, 'id' | 'title' | 'status'>>;
 }): TaskRecord[] {
-  const t = languages[args.language ?? 'zh'];
+  const t = languages[args.language];
   return Object.entries(args.sessionStates)
     .filter(([sessionId, state]) => (
       sessionId !== args.currentSessionId
@@ -393,7 +393,7 @@ function backgroundTaskResumeHint(
   return task.summary && !isShellBackgroundTask(task) ? { hint: task.summary } : {};
 }
 
-export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null, language: Language = 'zh'): TaskRecord[] {
+export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null, language: Language): TaskRecord[] {
   if (!currentSessionId) return [];
   const t = languages[language];
 
@@ -445,9 +445,9 @@ export function buildDurableSubagentViews(args: {
   runId: string | null;
   agents: SwarmRunAgentRecord[];
   selectedAgentId: string | null;
-  language?: Language;
+  language: Language;
 }): SubagentRunView[] {
-  const t = languages[args.language ?? 'zh'];
+  const t = languages[args.language];
   return args.agents.map((agent) => {
     const status = normalizeLongTaskStatus(agent.status);
     return {

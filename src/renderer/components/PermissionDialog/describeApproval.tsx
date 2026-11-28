@@ -210,7 +210,7 @@ function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactEle
 export function describeApproval(
   request: PermissionRequest,
   t: Translations,
-  language: Language = 'zh',
+  language: Language,
   pathContext?: ApprovalPathContext,
 ): ApprovalDescription {
   const described = describeKind(request, t, language, pathContext);

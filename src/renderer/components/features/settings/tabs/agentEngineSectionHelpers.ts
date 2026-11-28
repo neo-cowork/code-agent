@@ -20,6 +20,7 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import type { Translations } from '../../../../i18n/zh';
+import { getEngineRecommendation, getEngineSummary } from '../../../../utils/engineManifestCopy';
 import { buildEngineBillingSummary, type EngineBillingSummary } from '../../../StatusBar/modelSwitcherHelpers';
 
 /** 安装状态徽标的视觉色板（与 ModelSwitcher 引擎徽标同语义：内置/已装=正向，未装=中性灰）。 */
@@ -185,10 +186,10 @@ function sourceStatusPresentation(
       };
     case 'recommended':
       return {
-        // 优先用 manifest recommendation 文案（contract 字段），否则 i18n 兜底。
-        statusLabel: source.recommendation?.label || statusCopy.recommended,
+        // 推荐语按清单 id 取语言包（getEngineRecommendation），清单没给推荐语时用通用兜底。
+        statusLabel: getEngineRecommendation(source, t.engineManifest)?.label || statusCopy.recommended,
         statusBadgeClass: SOURCE_STATUS_BADGE_CLASS.recommended,
-        statusDetail: source.recommendation?.reason || detailCopy.recommended,
+        statusDetail: getEngineRecommendation(source, t.engineManifest)?.reason || detailCopy.recommended,
       };
     case 'unavailable':
     default:
@@ -272,7 +273,7 @@ export function buildEngineSectionRowFromSource(
     manifestId: source.manifestId,
     ...(source.kind ? { kind: source.kind } : {}),
     label: source.label,
-    summary: source.summary,
+    summary: getEngineSummary(source, t.engineManifest),
     statusKey,
     ...status,
     version: source.version ?? descriptor?.version,

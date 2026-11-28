@@ -15,7 +15,7 @@ describe.each(['Pacific/Auckland', 'Asia/Shanghai'])('machine timezone %s', (tim
   it.each(['daily-lookahead', 'daily-review', 'weekly-review', 'morning-triage'])(
     'template %s carries the machine timezone', (id) => {
       mockMachineZone();
-      const draft = CRON_TEMPLATES.find((template) => template.id === id)!.generate({});
+      const draft = CRON_TEMPLATES.find((template) => template.id === id)!.generate({}, 'zh');
       expect(draft.cronTimezone).toBe(timeZone);
       expect(buildCronJobInput(draft).schedule).toMatchObject({ type: 'cron', timezone: timeZone });
     },
@@ -43,7 +43,7 @@ describe.each(['Pacific/Auckland', 'Asia/Shanghai'])('machine timezone %s', (tim
     for (const id of ['web-change-watch', 'feishu-calendar-conflict', 'feishu-table-change']) {
       const draft = CRON_TEMPLATES.find((template) => template.id === id)!.generate({
         url: 'https://example.com/updates', calendarId: 'calendar', schedule,
-      });
+      }, 'zh');
       expect(draft).toMatchObject({ scheduleType: 'cron', cronTimezone: timeZone, cronExpression: expression });
     }
   });
@@ -52,7 +52,7 @@ describe.each(['Pacific/Auckland', 'Asia/Shanghai'])('machine timezone %s', (tim
     'interval %s remains independent of timezone', (schedule, unit, interval) => {
       mockMachineZone();
       const template = CRON_TEMPLATES.find((item) => item.id === 'web-change-watch')!;
-      expect(buildCronJobInput(template.generate({ url: 'https://example.com', schedule })).schedule)
+      expect(buildCronJobInput(template.generate({ url: 'https://example.com', schedule }, 'zh')).schedule)
         .toEqual({ type: 'every', interval, unit });
     },
   );

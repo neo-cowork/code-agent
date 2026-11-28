@@ -1,4 +1,5 @@
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
+import { defaultLanguage } from '../i18n';
 import { classifyToolSteps, type DelegationLedgerTask } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
@@ -108,7 +109,7 @@ function humanTaskStep(progress: TaskProgressData | null | undefined, language: 
   return step;
 }
 
-function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string {
+function phaseFromStatus(status: RunUiStatus, taskProgress: TaskProgressData | null | undefined, language: 'zh' | 'en'): string {
   const humanStep = humanTaskStep(taskProgress, language);
   if (humanStep) return humanStep;
   if (taskProgress?.tool?.trim()) return toolProgressLabel(taskProgress.tool, language);
@@ -190,7 +191,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     },
     title: userInstructionTitle(turn),
     status,
-    phase: phaseFromStatus(status, args.taskProgress, args.language),
+    phase: phaseFromStatus(status, args.taskProgress, args.language ?? defaultLanguage),
     activeToolName: toolCall?.name,
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
@@ -729,11 +730,11 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     steps,
     ownerRunId: args.runId,
     sourceThreadId: args.sessionId,
-    resumeHint: taskProgressHint(args.taskProgress, args.language),
+    resumeHint: taskProgressHint(args.taskProgress, args.language ?? defaultLanguage),
   };
 }
 
-function taskProgressHint(progress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string | undefined {
+function taskProgressHint(progress: TaskProgressData | null | undefined, language: 'zh' | 'en'): string | undefined {
   if (!progress) return undefined;
   const details: string[] = [];
   if (progress.toolTotal && progress.toolTotal > 1) {
@@ -792,6 +793,6 @@ export function buildSessionTaskRecord(args: {
     })),
     ownerRunId: args.runId,
     sourceThreadId: args.sessionId,
-    resumeHint: taskProgressHint(args.taskProgress, args.language),
+    resumeHint: taskProgressHint(args.taskProgress, args.language ?? defaultLanguage),
   };
 }

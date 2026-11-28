@@ -80,7 +80,7 @@ function statusLabel(status: TaskRecord['status']): string {
   }
 }
 
-function runStatusLabel(run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): string | null {
+function runStatusLabel(run: RunUiState | null | undefined, language: 'zh' | 'en'): string | null {
   if (!run) return null;
   switch (run.status) {
     case 'completed':
@@ -102,7 +102,7 @@ function runStatusLabel(run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): 
   }
 }
 
-function simpleTitle(title: string, task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): string {
+function simpleTitle(title: string, task: TaskRecord, run: RunUiState | null | undefined, language: 'zh' | 'en'): string {
   // 有明确标题优先显示标题（行内已单独展示状态标签，无需用状态词顶替标题）——
   // 否则终态的后台任务（如"循环 · …"失败）会丢掉名字、只剩"已阻塞/已取消"。
   if (title) return title;
@@ -126,7 +126,7 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
     .filter((step) => step.title && !isUtilityStepTitle(step.title));
 }
 
-export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): TaskRailView {
+export function deriveTaskRailView(task: TaskRecord, run: RunUiState | null | undefined, language: 'zh' | 'en'): TaskRailView {
   const title = task.displayTitle ?? backgroundTaskLabel(task, languages[language]);
   const taskSteps = toStepViews(task);
   const waitingCount = taskSteps.filter((step) => (step.blockedByTitles?.length ?? 0) > 0).length;

@@ -19,7 +19,7 @@ describe('deriveTaskRailView', () => {
       title: '生成回复中',
       steps: [{ title: '生成回复中', status: 'in_progress' }],
       resumeHint: '工具：Read · 第 1/3 个工具',
-    }));
+    }), null, 'zh');
 
     expect(view.mode).toBe('simple');
     expect(view.title).toBe('生成回复中');
@@ -43,7 +43,7 @@ describe('deriveTaskRailView', () => {
         { title: '跑 typecheck', status: 'pending' },
         { title: '回读结果', status: 'pending' },
       ],
-    }));
+    }), null, 'zh');
 
     expect(view.mode).toBe('checklist');
     expect(view.visibleSteps.map((step) => step.title)).toEqual([
@@ -74,7 +74,7 @@ describe('deriveTaskRailView', () => {
         { title: '检查多个子任务', status: 'completed' },
         { title: '验证完成态', status: 'completed' },
       ],
-    }));
+    }), null, 'zh');
 
     expect(view.mode).toBe('checklist');
     expect(view.status).toBe('completed');
@@ -105,7 +105,7 @@ describe('deriveTaskRailView', () => {
         { title: '待办六', status: 'pending' },
         { title: '已完成项', status: 'completed' },
       ],
-    }));
+    }), null, 'zh');
 
     expect(view.visibleSteps.map((step) => step.status)).toEqual([
       'blocked',
@@ -131,7 +131,7 @@ describe('deriveTaskRailView', () => {
         { title: '渲染依赖状态', status: 'blocked', blockedByTitles: ['准备数据源'] },
         { title: '验证解除阻塞', status: 'pending' },
       ],
-    }));
+    }), null, 'zh');
 
     expect(view.dependencySummary).toEqual({ waitingCount: 1, unlockingCount: 1 });
     expect(view.visibleSteps.map((step) => ({
@@ -155,7 +155,7 @@ describe('deriveTaskRailView', () => {
         { title: '调用工具', status: 'completed' },
         { title: '给出推荐结论', status: 'in_progress' },
       ],
-    }));
+    }), null, 'zh');
 
     expect(view.mode).toBe('simple');
     expect(view.visibleSteps).toEqual([]);
@@ -174,7 +174,7 @@ describe('deriveTaskRailView', () => {
         { title: '19s', status: 'blocked' },
       ],
       resumeHint: 'Unauthorized',
-    }));
+    }), null, 'zh');
 
     expect(view.mode).toBe('simple');
     expect(view.visibleSteps).toEqual([]);
@@ -191,7 +191,7 @@ describe('deriveTaskRailView', () => {
         { title: '放弃旧路径', status: 'cancelled' },
         { title: '继续验证', status: 'in_progress' },
       ],
-    }));
+    }), null, 'zh');
 
     expect(view.visibleSteps.map((step) => step.title)).toEqual(['保留路径', '放弃旧路径', '继续验证']);
     expect(view.completedSteps).toEqual([]);
@@ -203,7 +203,7 @@ describe('deriveTaskRailView', () => {
   it('waiting_approval label follows UI language via the shared copy source', () => {
     const run = { identity: { sessionId: 's', turnId: 't', runId: 'r', streamRunId: null, status: 'waiting_approval' }, status: 'waiting_approval', phase: '' } as unknown as RunUiState;
     const task = makeTask({ title: '' });
-    expect(deriveTaskRailView(task, run).title).toBe('等你确认');
+    expect(deriveTaskRailView(task, run, 'zh').title).toBe('等你确认');
     expect(deriveTaskRailView(task, run, 'en').title).toBe('Needs your approval');
   });
 });
@@ -214,24 +214,24 @@ describe('background task title localisation', () => {
 
   it('zh: English delegate_task title becomes 助手 in simple mode and checklist mode', () => {
     const task = bg('a', 'Summarize contract_q3.pdf into a weekly report');
-    expect(deriveTaskRailView(task, null).title).toBe('助手');
+    expect(deriveTaskRailView(task, null, 'zh').title).toBe('助手');
     const checklist = makeTask({
       title: 'Summarize contract_q3.pdf into a report', source: 'delegate_task', scope: 'session',
       steps: [{ title: 's1', status: 'pending' }, { title: 's2', status: 'pending' }],
     });
-    const view = deriveTaskRailView(checklist, null);
+    const view = deriveTaskRailView(checklist, null, 'zh');
     expect(view.mode).toBe('checklist');
     expect(view.title).toBe('助手');
   });
 
   it('zh: a ledger-numbered displayTitle wins; a lone task is plain 助手', () => {
-    expect(deriveTaskRailView({ ...bg('a', 'Summarize the first report now'), displayTitle: '助手 2' }, null).title).toBe('助手 2');
-    expect(deriveTaskRailView(bg('a', 'Summarize the first report now'), null).title).toBe('助手');
+    expect(deriveTaskRailView({ ...bg('a', 'Summarize the first report now'), displayTitle: '助手 2' }, null, 'zh').title).toBe('助手 2');
+    expect(deriveTaskRailView(bg('a', 'Summarize the first report now'), null, 'zh').title).toBe('助手');
   });
 
   it('en: Chinese delegate_task title becomes Background assistant; other sources keep title', () => {
     expect(deriveTaskRailView(bg('a', '提炼合同关键条款'), null, 'en').title).toBe('Background assistant');
-    expect(deriveTaskRailView(bg('a', 'Summarize the report now', 'user'), null).title).toBe('Summarize the report now');
+    expect(deriveTaskRailView(bg('a', 'Summarize the report now', 'user'), null, 'zh').title).toBe('Summarize the report now');
     expect(deriveTaskRailView(bg('a', '提炼合同关键条款', 'user'), null, 'en').title).toBe('提炼合同关键条款');
   });
 });

@@ -61,6 +61,7 @@ import {
   removeTrailingSlashToken,
 } from '../../../src/renderer/components/features/chat/ChatInput/slashPickerModel';
 import type { SlashCommand } from '../../../src/renderer/components/features/chat/ChatInput/SlashCommandPopover';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 // insertInlineChip 的测试替身：编辑器侧「触发词原位变 chip」在这里等价于摘掉尾 token
 // （chip 挂载点 / 内联位置的验证在 chatInput.inlineChips.test.tsx）。
@@ -139,7 +140,7 @@ describe('useChatInputSlashCommands', () => {
     const { result } = renderHook(() => useChatInputSlashCommands(makeParams(inputValue, setValue, insertInlineChip)));
 
     const goalCommand: SlashCommand = {
-      ...createCommandCandidate({ id: 'goal', label: '设定目标', description: '直接输入目标', actionKind: 'prefill-leading-command' }),
+      ...createCommandCandidate({ id: 'goal', label: '设定目标', description: '直接输入目标', actionKind: 'prefill-leading-command' }, zh.slashCommands.picker),
       icon: null,
       action: vi.fn(),
     };
@@ -163,7 +164,7 @@ describe('useChatInputSlashCommands', () => {
     const { result } = renderHook(() => useChatInputSlashCommands(makeParams(inputValue, setValue)));
 
     const newCommand: SlashCommand = {
-      ...createCommandCandidate({ id: 'new', label: '新建会话', description: '创建会话' }),
+      ...createCommandCandidate({ id: 'new', label: '新建会话', description: '创建会话' }, zh.slashCommands.picker),
       icon: null,
       action: vi.fn(),
     };

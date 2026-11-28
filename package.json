@@ -26,6 +26,8 @@
     "lint:host-chinese-error-ratchet": "node scripts/host-chinese-error-ratchet.mjs",
     "lint:host-user-copy-cjk-ratchet": "node scripts/ci/host-user-copy-cjk-ratchet.mjs",
     "lint:renderer-cjk-literal-ratchet": "node scripts/renderer-cjk-literal-ratchet.mjs",
+    "lint:renderer-zh-default-ratchet": "node scripts/ci/renderer-zh-default-ratchet.mjs",
+    "verify:en-cjk-sweep": "node scripts/verification/en-ui-cjk-sweep.mjs",
     "lint:host-esm-cjs": "node scripts/ci/host-esm-cjs-lint.mjs",
     "lint:shared-host-boundary": "node scripts/ci/shared-host-boundary.mjs",
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",

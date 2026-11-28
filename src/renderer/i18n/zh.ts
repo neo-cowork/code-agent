@@ -53,7 +53,7 @@ import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
 import { renderHumanPipeZh } from './renderHumanPipe';
 import { outcomeWordsZh } from './outcomeWords'; import { delegationFailedActionsZh } from './delegationFailedActions';
-import { engineModelPanelZh } from './engineModelPanel';
+import { catalogCopyZh } from './catalogCopy';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
 import { connectorRequiredZh } from './connectorRequired';
@@ -79,7 +79,7 @@ export const zh = {
   ...receiptPresentationZh,
   ...renderHumanPipeZh,
   ...outcomeWordsZh, ...delegationFailedActionsZh,
-  ...engineModelPanelZh,
+  ...catalogCopyZh,
   ...jevAdvisoryZh,
   ...workflowStallZh,
   ...connectorRequiredZh,

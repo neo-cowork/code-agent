@@ -384,11 +384,11 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                 <div className="space-y-2 text-xs">
                   <div>
                     <span className="text-badge-success">{r.prosLabel}</span>
-                    <span className="text-zinc-400">{method.pros.join('、')}</span>
+                    <span className="text-zinc-400">{method.pros.join(t.punctuation.listSeparator)}</span>
                   </div>
                   <div>
                     <span className="text-badge-danger">{r.consLabel}</span>
-                    <span className="text-zinc-400">{method.cons.join('、')}</span>
+                    <span className="text-zinc-400">{method.cons.join(t.punctuation.listSeparator)}</span>
                   </div>
                   <div className="pt-2 border-t border-zinc-800">
                     <span className="text-badge-warning">{r.useCaseLabel}</span>

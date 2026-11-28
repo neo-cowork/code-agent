@@ -12,13 +12,15 @@
 
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { languages } from '../i18n';
 
 export async function startCreateRoleChat(): Promise<void> {
   const app = useAppStore.getState();
   // 从设置页触发时先关闭设置弹层，回到聊天
   app.setShowSettings(false);
 
-  const session = await useSessionStore.getState().createSession('新建角色');
+  // 标题按当前界面语言写入；展示层（getDisplaySessionTitle）再按语言换回，存量行同样生效
+  const session = await useSessionStore.getState().createSession(languages[app.language].settings.roles.newRole);
   if (!session) return;
 
   window.dispatchEvent(new CustomEvent('app:openSeedComposer', { detail: { kind: 'role' } }));

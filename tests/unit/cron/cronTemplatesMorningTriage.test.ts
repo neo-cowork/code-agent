@@ -42,7 +42,7 @@ describe('晨间分诊模板（morning-triage）', () => {
     const t = template('morning-triage');
     expect(t.fields.some((field) => field.required === true)).toBe(false);
 
-    const draft = t.generate({});
+    const draft = t.generate({}, 'zh');
     expect(draft.actionType).toBe('agent');
     expect(draft.agentType).toBe('default');
     expect(draft.scheduleType).toBe('cron');
@@ -60,7 +60,7 @@ describe('晨间分诊模板（morning-triage）', () => {
   });
 
   it('提示词要求三档分组、每档最多 5 条', () => {
-    const prompt = template('morning-triage').generate({}).agentPrompt;
+    const prompt = template('morning-triage').generate({}, 'zh').agentPrompt;
     expect(prompt).toContain('今天必须处理');
     expect(prompt).toContain('可等');
     expect(prompt).toContain('只需知道');
@@ -68,20 +68,20 @@ describe('晨间分诊模板（morning-triage）', () => {
   });
 
   it('提示词要求没有内容时明说「今早没有需要处理的」，不硬凑、不空产物', () => {
-    const prompt = template('morning-triage').generate({}).agentPrompt;
+    const prompt = template('morning-triage').generate({}, 'zh').agentPrompt;
     expect(prompt).toContain('今早没有需要处理的');
     expect(prompt).toMatch(/不要硬凑/);
     expect(prompt).toMatch(/空/);
   });
 
   it('失败腿：没有可用邮箱/IM/日历连接时产出说明缺什么连接，不报错', () => {
-    const prompt = template('morning-triage').generate({}).agentPrompt;
+    const prompt = template('morning-triage').generate({}, 'zh').agentPrompt;
     expect(prompt).toMatch(/不要报错/);
     expect(prompt).toMatch(/缺少哪些连接/);
   });
 
   it('已连接但读取失败的来源逐一点名「未读取」，不得当成「今早没有需要处理的」（N-CRON-MORNING-TRIAGE-URGENCY-RULE）', () => {
-    const prompt = template('morning-triage').generate({}).agentPrompt;
+    const prompt = template('morning-triage').generate({}, 'zh').agentPrompt;
     expect(prompt).toContain('「未读取：<来源>」');
     expect(prompt).toMatch(/逐一点名/);
     expect(prompt).toMatch(/读取失败绝不能被当成「今早没有需要处理的」上报/);
@@ -91,9 +91,9 @@ describe('晨间分诊模板（morning-triage）', () => {
   });
 
   it('没选角色时草稿与改动前逐字节相同；选了角色才绑定并追加起草规则', () => {
-    const unbound = template('morning-triage').generate({});
-    const empty = template('morning-triage').generate({ roleId: '' });
-    const blank = template('morning-triage').generate({ roleId: '  \n  ' });
+    const unbound = template('morning-triage').generate({}, 'zh');
+    const empty = template('morning-triage').generate({ roleId: '' }, 'zh');
+    const blank = template('morning-triage').generate({ roleId: '  \n  ' }, 'zh');
     expect(JSON.stringify(unbound)).toBe(JSON.stringify(empty));
     expect(JSON.stringify(unbound)).toBe(JSON.stringify(blank));
     expect(unbound.agentPrompt).toBe(PREVIOUS_UNBOUND_PROMPT);
@@ -103,7 +103,7 @@ describe('晨间分诊模板（morning-triage）', () => {
     expect(unbound.agentPrompt).toContain('「未读取：<来源>」');
     expect(unbound.agentPrompt).toContain('今早没有需要处理的');
 
-    const bound = template('morning-triage').generate({ roleId: ' assistant-lin ' });
+    const bound = template('morning-triage').generate({ roleId: ' assistant-lin ' }, 'zh');
     expect(bound.agentRoleId).toBe('assistant-lin');
     expect(bound.agentPrompt.startsWith(`${PREVIOUS_UNBOUND_PROMPT}\n`)).toBe(true);
     expect(bound.agentPrompt).toContain('「草稿 N（未发送）」');

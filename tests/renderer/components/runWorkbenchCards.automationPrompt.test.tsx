@@ -37,7 +37,7 @@ describe('background task Automation prompt reason row', () => {
       outputRefs: [],
       metadata: { recoveryPlan },
     };
-    const records = buildLedgerTaskRecords([task], 'session-1');
+    const records = buildLedgerTaskRecords([task], 'session-1', 'zh');
     const fullText = `原因：${recoveryPlan.summary}`;
 
     render(<TaskDashboardSummary tasks={records} run={null} />);

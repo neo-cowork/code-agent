@@ -44,6 +44,8 @@ export function useTurnExecutionClarity(
       : null,
   );
 
+  const hookCopy = useI18n().t.turnHooks;
+
   return useMemo(
     () => buildTurnExecutionClarityProjection({
       projection: projectBackgroundReceipts(projection, tasks, snapshot?.nodes ?? [], t),
@@ -54,7 +56,8 @@ export function useTurnExecutionClarity(
       hookEvents,
       hookRunning,
       workingDirectory,
+      hookCopy,
     }),
-    [capabilities, hookEvents, hookRunning, launchRequests, projection, routingEvents, snapshot, swarmEvents, t, tasks, workingDirectory],
+    [capabilities, hookCopy, hookEvents, hookRunning, launchRequests, projection, routingEvents, snapshot, swarmEvents, t, tasks, workingDirectory],
   );
 }

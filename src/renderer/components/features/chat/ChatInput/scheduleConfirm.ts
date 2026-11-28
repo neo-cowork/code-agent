@@ -241,7 +241,7 @@ function formatScheduleWhenLabel(
 export function buildScheduleConfirmRows(
   draft: Pick<PendingScheduleDraft, 'input' | 'restatement' | 'eventGroupName' | 'eventBindingNames'>,
   labels: ScheduleConfirmLabels,
-  lang: CronHumanLang = 'zh',
+  lang: CronHumanLang,
   eventLabels?: ScheduleEventConfirmLabels,
   estimateHistory?: readonly CronJobExecution[],
 ): readonly ScheduleConfirmRow[] {

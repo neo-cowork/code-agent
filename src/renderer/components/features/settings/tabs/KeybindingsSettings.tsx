@@ -86,6 +86,9 @@ export const KeybindingsSettings: React.FC = () => {
     (state) => state.installed['builtin.voice-live'],
   );
   const platform = useMemo(() => getCurrentKeybindingPlatform(), []);
+  // 未绑定时的「未设置」按界面语言出（FB-1293）；shared 的格式化函数只管按键符号
+  const shortcutLabelOf = (accelerator: string | null | undefined) =>
+    formatShortcutForDisplay(accelerator, platform) || t.settings.conversation.notSet;
   const [keybindings, setKeybindings] = useState<KeybindingsSettingsContract>(() =>
     createDefaultKeybindingsSettings(platform)
   );
@@ -301,7 +304,7 @@ export const KeybindingsSettings: React.FC = () => {
               .join(' / ');
             return (
               <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-badge-warning/80">
-                {keybindingsText.scopes[conflict.scope]} · {formatShortcutForDisplay(conflict.shortcut, platform)}：{conflictLabels}
+                {keybindingsText.scopes[conflict.scope]} · {shortcutLabelOf(conflict.shortcut)}{t.punctuation.colon}{conflictLabels}
               </div>
             );
           })}
@@ -316,7 +319,7 @@ export const KeybindingsSettings: React.FC = () => {
           </div>
           {systemWarnings.map((warning) => (
             <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-badge-info/80">
-              {keybindingsText.actions[warning.actionId].label} · {formatShortcutForDisplay(warning.shortcut, platform)}：
+              {keybindingsText.actions[warning.actionId].label} · {shortcutLabelOf(warning.shortcut)}{t.punctuation.colon}
               {getSystemReservedReason(keybindingsText, platform, warning.normalizedShortcut, warning.reason)}
             </div>
           ))}
@@ -361,7 +364,7 @@ export const KeybindingsSettings: React.FC = () => {
                   : null;
                 const shortcutLabel = recordingActionId === definition.id
                   ? keybindingsText.recording
-                  : formatShortcutForDisplay(binding.accelerator, platform);
+                  : shortcutLabelOf(binding.accelerator);
                 return (
                   <div
                     key={definition.id}
@@ -393,7 +396,7 @@ export const KeybindingsSettings: React.FC = () => {
                       </div>
                       <p className="mt-1 text-xs text-zinc-500">{actionText.description}</p>
                       <p className="mt-1 text-[11px] text-zinc-600">
-                        {keybindingsText.defaultPrefix}{formatShortcutForDisplay(defaultBinding?.accelerator, platform)}
+                        {keybindingsText.defaultPrefix}{shortcutLabelOf(defaultBinding?.accelerator)}
                       </p>
                       {isModifierOnly && (
                         <p className="mt-1 text-[11px] text-zinc-500">

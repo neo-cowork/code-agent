@@ -135,7 +135,7 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
     } catch (error) {
       setResyncFeedback({
         kind: 'error',
-        text: `${ps.cloudCardsResyncFailed}：${error instanceof Error ? error.message : String(error)}`,
+        text: `${ps.cloudCardsResyncFailed}${t.punctuation.colon}${error instanceof Error ? error.message : String(error)}`,
       });
     } finally {
       setResyncBusy(false);

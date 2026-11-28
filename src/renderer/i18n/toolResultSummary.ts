@@ -1,4 +1,9 @@
 export const toolResultSummaryZh = {
+  toolSummaryCopy: {
+    spawnParallel: (count: number) => `创建 ${count} 个代理`,
+    spawn: '创建代理',
+    messageAgent: '发送消息给代理',
+  },
   toolResultSummary: {
     lineCount: { one: '{count} 行', other: '{count} 行' },
     addedLines: { one: '+{count} 行', other: '+{count} 行' },
@@ -9,6 +14,11 @@ export const toolResultSummaryZh = {
 };
 
 export const toolResultSummaryEn: typeof toolResultSummaryZh = {
+  toolSummaryCopy: {
+    spawnParallel: (count: number) => `Create ${count} agents`,
+    spawn: 'Create agent',
+    messageAgent: 'Send message to agent',
+  },
   toolResultSummary: {
     lineCount: { one: '{count} line', other: '{count} lines' },
     addedLines: { one: '+{count} line', other: '+{count} lines' },

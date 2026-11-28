@@ -136,7 +136,7 @@ describe('cron 模板 en 档 agent 提示词', () => {
     expect(en.agentPrompt).toBe('summarize release mentions');
     expect(en.name).toBe('Group listen');
     expect(en.description).toBe('Listen to group messages: summarize release mentions');
-    expect(groupListen.generate({ task: '总结发布相关' }).agentPrompt).toBe('总结发布相关');
+    expect(groupListen.generate({ task: '总结发布相关' }, 'zh').agentPrompt).toBe('总结发布相关');
   });
 
   // ── rework r2：en 档标签 + 无 i18n 词条模板的 en 名称/描述 ────────────────────
@@ -185,9 +185,9 @@ describe('cron 模板 en 档 agent 提示词', () => {
   it('zh 档与缺省档逐字节相同；en 只改 name/description/agentPrompt，schedule 等字段不动', () => {
     for (const id of [...EN_TEMPLATE_IDS, 'group-listen']) {
       const t = template(id);
-      expect(JSON.stringify(t.generate({}, 'zh'))).toBe(JSON.stringify(t.generate({})));
+      expect(JSON.stringify(t.generate({}, 'zh'))).toBe(JSON.stringify(t.generate({}, 'zh')));
     }
-    const zh = template('daily-review').generate({});
+    const zh = template('daily-review').generate({}, 'zh');
     const en = template('daily-review').generate({}, 'en');
     // en 只改 name/description/agentPrompt/tagsText，schedule 等其余字段不动
     const { name: _n, description: _d, agentPrompt: _p, tagsText: _t, ...zhRest } = zh;

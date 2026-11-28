@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useI18n } from '../../../hooks/useI18n';
+import { translateCatalogText } from '../../../utils/catalogText';
 
 type PluginCardStatusTone = 'active' | 'inactive' | 'warning';
 
@@ -45,6 +47,7 @@ export const PluginCard: React.FC<PluginCardProps> = ({
   notice,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const { language } = useI18n();
   const detailsId = `${testId}-details`;
 
   return (
@@ -69,7 +72,7 @@ export const PluginCard: React.FC<PluginCardProps> = ({
               </span>
               {meta}
             </div>
-            <p className="mt-1 text-xs leading-5 text-zinc-500">{description}</p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">{translateCatalogText(description, language)}</p>
             <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`${testId}-permissions`}>
               {permissions.map((permission) => (
                 <PluginCardPill key={permission}>

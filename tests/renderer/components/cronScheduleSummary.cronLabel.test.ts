@@ -23,7 +23,7 @@ function cronJob(expression: string, timezone?: string): CronJobDefinition {
 
 describe('formatScheduleSummary cron 档（与通知同源的人话文案）', () => {
   it('常见形态翻人话：17 8 * * * → 每天 08:17（不再裸 cron）', () => {
-    expect(formatScheduleSummary(cronJob('17 8 * * *', 'Asia/Shanghai'))).toBe('每天 08:17');
+    expect(formatScheduleSummary(cronJob('17 8 * * *', 'Asia/Shanghai'), 'zh')).toBe('每天 08:17');
   });
 
   it('复杂表达式带「自定义时间」前缀：0 9 1,15 * * · Asia/Shanghai（zh/en）', () => {

@@ -12,6 +12,7 @@ import { AlertTriangle, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { RolePackListItem } from '../../../services/rolesClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
+import { localizeCatalogObject } from '../../../utils/catalogText';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
@@ -42,7 +43,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
             <span>{interpolatePlural(text.degraded, missingSkills.length)}</span>
           </div>
           <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
-            {text.missingSkills.replace('{skills}', missingSkills.join('、'))}
+            {text.missingSkills.replace('{skills}', missingSkills.join(t.punctuation.listSeparator))}
           </p>
           <Button
             variant="secondary"
@@ -94,7 +95,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
   onRetryMissingSkills,
   hideWhenEmpty = false,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.rolePack;
   const localizeRole = useLocalizeRole();
 
@@ -121,7 +122,8 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
       {!loading && !error && items.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => {
-            const { entry } = item;
+            // 说明/标签按界面语言显示（FB-1301）；花名/职业走 FU4 的 useLocalizeRole。
+            const entry = localizeCatalogObject(item.entry, language);
             const busy = busyRoleId === entry.roleId;
             const localized = localizeRole(entry.roleId, { name: entry.displayName ?? '', profession: entry.visual.profession });
             const shownName = localized.name || entry.roleId;
@@ -155,7 +157,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                   </div>
                 ) : null}
                 <div className="space-y-1 text-[11px] text-zinc-500">
-                  <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join('、')}</p>
+                  <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join(t.punctuation.listSeparator)}</p>
                   <p data-testid={`role-pack-tools-${entry.roleId}`}><span className="text-zinc-400">{text.tools}</span>{': '}{toolAbilities.join(t.receiptPresentation.roleCapabilityLabels.separator)}</p>
                   <p><span className="text-zinc-400">{text.publisher}</span>{': '}{entry.publisher}</p>
                   <p><span className="text-zinc-400">{text.version}</span>{': '}{entry.packVersion}</p>

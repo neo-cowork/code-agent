@@ -36,7 +36,7 @@ import { MemoryEntryHistoryList } from './MemoryEntryHistoryList';
 import { MemoryEntryAddForm } from './MemoryEntryAddForm';
 import { MEMORY_ENTRY_ADD_COPY } from '../../../../i18n/memoryEntryAdd';
 import { getMemoryConfirmWords } from '../../../../i18n/memoryConfirm';
-import type { Language } from '../../../../i18n';
+import { languages, type Language } from '../../../../i18n';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -131,9 +131,10 @@ export function buildMemoryEntryRows({
   kindFilter,
   sourceFilter,
   now = Date.now(),
-  labels = zh.settings.memory,
-  language = 'zh',
-  locale = localeForLanguage('zh'),
+  // language 必填：labels / locale 的缺省值都从它推导，不再各自写死中文
+  language,
+  labels = languages[language].settings.memory,
+  locale = localeForLanguage(language),
 }: {
   entries: MemoryEntry[];
   selectedEntryId: string | null;
@@ -144,7 +145,7 @@ export function buildMemoryEntryRows({
   sourceFilter: EntrySourceFilter;
   now?: number;
   labels?: MemorySettingsText;
-  language?: Language;
+  language: Language;
   locale?: string;
 }): MemoryEntryManagerRow[] {
   const query = searchQuery.trim().toLowerCase();

@@ -27,7 +27,7 @@ import { EvalHarvestDialog } from './EvalHarvestDialog';
 type LoadState = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
 
 export const EvalReplayExplorer: React.FC = () => {
-  const { t } = useEvaluationI18n();
+  const { t, language } = useEvaluationI18n();
   const r = t.evalCenter.replay;
   const h = t.evalCenter.harvest;
   const sessions = useSessionStore((state) => state.sessions);
@@ -151,7 +151,7 @@ export const EvalReplayExplorer: React.FC = () => {
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
                     <Eye className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-                    <span className="min-w-0 flex-1 truncate">{getDisplaySessionTitle(session.title)}</span>
+                    <span className="min-w-0 flex-1 truncate">{getDisplaySessionTitle(session.title, language)}</span>
                     {session.id === currentSessionId && (
                       <span className="shrink-0 rounded border border-badge-info/30 bg-sky-500/10 px-1 py-0.5 text-[10px] text-badge-info">
                         {r.currentSessionBadge}
@@ -169,7 +169,7 @@ export const EvalReplayExplorer: React.FC = () => {
         {selectedSessionId ? (
           <ReplayAuditPanelView
             replay={replay}
-            sessionTitle={selectedSession ? getDisplaySessionTitle(selectedSession.title) : selectedSessionId}
+            sessionTitle={selectedSession ? getDisplaySessionTitle(selectedSession.title, language) : selectedSessionId}
             loading={status === 'loading'}
             error={error}
             onRefresh={() => setRefreshToken((value) => value + 1)}

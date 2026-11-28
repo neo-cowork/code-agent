@@ -9,7 +9,7 @@ function template(id: string) {
 }
 
 describe('飞书日程冲突监听模板', () => {
-  const draft = template('feishu-calendar-conflict').generate({ calendarId: 'cal-xyz', schedule: '' });
+  const draft = template('feishu-calendar-conflict').generate({ calendarId: 'cal-xyz', schedule: '' }, 'zh');
   const context = JSON.parse(draft.agentContextText) as Record<string, unknown>;
 
   it('是开了变化追踪的 agent 任务，且带 external_event 派生所需的 externalWatch 标志', () => {
@@ -40,7 +40,7 @@ describe('飞书表格行变更监听模板', () => {
     baseAppToken: 'app-tok',
     tableId: 'tblABC',
     schedule: '',
-  });
+  }, 'zh');
   const context = JSON.parse(draft.agentContextText) as Record<string, unknown>;
 
   it('是开了变化追踪的 agent 任务，externalWatch 带 base+table', () => {

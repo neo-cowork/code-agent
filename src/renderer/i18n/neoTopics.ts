@@ -1,6 +1,27 @@
-// @neo topic 目录 S1：排序/优先级/截止/续接（面板存量文案仍为硬编码中文，仅新增键走 i18n）
+// @neo topic 目录 S1：排序/优先级/截止/续接（面板本体文案已于 FB-1492 迁入本包；原注：仅新增键走 i18n）
 export const neoTopicsZh = {
   neoTopics: {
+    // 协作空间「任务」tab 面板本体（FB-1492）
+    phaseFilters: {
+      all: '全部',
+      running: '运行中',
+      needs_input: '待确认',
+      done: '已完成',
+      failed: '失败',
+      closed: '已结束',
+    },
+    loadFailed: '加载 Neo topic 失败',
+    refreshFailed: '刷新 Neo topic 失败',
+    cancelFeedback: '用户取消',
+    cancelFailed: '取消 topic 失败',
+    archiveFailed: '归档 topic 失败',
+    memoryWriteFailed: '写入记忆失败',
+    openSessionFailed: '打开会话失败',
+    loadingTopics: '正在加载 topic',
+    searchPlaceholder: '搜索 topic / 步骤 / 文件',
+    onlyMine: '只看我的',
+    detailAria: 'topic 详情',
+    closeDetailAria: '关闭详情',
     sortRecent: '最近活动',
     sortPriority: '优先级',
     sortDueAt: '截止',
@@ -32,6 +53,26 @@ export const neoTopicsZh = {
 
 export const neoTopicsEn = {
   neoTopics: {
+    phaseFilters: {
+      all: 'All',
+      running: 'Running',
+      needs_input: 'Needs confirmation',
+      done: 'Done',
+      failed: 'Failed',
+      closed: 'Closed',
+    },
+    loadFailed: 'Could not load Neo topics',
+    refreshFailed: 'Could not refresh Neo topics',
+    cancelFeedback: 'Cancelled by user',
+    cancelFailed: 'Could not cancel the topic',
+    archiveFailed: 'Could not archive the topic',
+    memoryWriteFailed: 'Could not save to memory',
+    openSessionFailed: 'Could not open the conversation',
+    loadingTopics: 'Loading topics',
+    searchPlaceholder: 'Search topics / steps / files',
+    onlyMine: 'Only mine',
+    detailAria: 'Topic details',
+    closeDetailAria: 'Close details',
     sortRecent: 'Recent activity',
     sortPriority: 'Priority',
     sortDueAt: 'Due date',

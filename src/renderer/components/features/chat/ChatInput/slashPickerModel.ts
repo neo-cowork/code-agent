@@ -3,6 +3,8 @@ import type { ParsedSkill } from '@shared/contract/agentSkill';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { getAgentCommandOptions } from './agentCommand';
+import type { Language } from '../../../../i18n';
+import { en } from '../../../../i18n/en';
 import { zh } from '../../../../i18n/zh';
 import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 
@@ -93,27 +95,25 @@ export interface SlashPickerCandidate {
   mcpConnected?: boolean;
 }
 
-/**
- * 候选装饰文案注入（i18n）：渲染层从 i18n 的 slashCommands.picker 传入；缺省回退中文保持既有行为。
- */
+/** 候选装饰文案由渲染层按当前界面语言完整传入。 */
 export interface SlashPickerLabels {
-  prefillCommand?: string;
-  executeNow?: string;
-  builtinCommand?: string;
-  paramsPrefix?: string;
-  noParams?: string;
-  mcpPromptFallback?: string;
-  filePromptFallback?: string;
-  prefillPromptWithArgs?: string;
-  prefillPrompt?: string;
-  setAgentForTurn?: string;
-  mountedSkillPrefix?: string;
-  selectForTurn?: string;
-  mountAndSelect?: string;
-  installAndSelect?: string;
-  localConnector?: string;
-  connectorNeedsConnection?: string;
-  mcpNeedsConnection?: string;
+  prefillCommand: string;
+  executeNow: string;
+  builtinCommand: string;
+  paramsPrefix: string;
+  noParams: string;
+  mcpPromptFallback: string;
+  filePromptFallback: string;
+  prefillPromptWithArgs: string;
+  prefillPrompt: string;
+  setAgentForTurn: string;
+  mountedSkillPrefix: string;
+  selectForTurn: string;
+  mountAndSelect: string;
+  installAndSelect: string;
+  localConnector: string;
+  connectorNeedsConnection: string;
+  mcpNeedsConnection: string;
 }
 
 export function getTrailingSlashToken(value: string): SlashTokenMatch | null {
@@ -167,7 +167,7 @@ export function createCommandCandidate(input: {
   emptyQueryVisible?: boolean;
   emptyQueryRank?: number;
   effectLabel?: string;
-}, labels?: SlashPickerLabels): SlashPickerCandidate {
+}, labels: SlashPickerLabels): SlashPickerCandidate {
   const slashText = `/${input.id}`;
   return {
     id: input.id,
@@ -178,8 +178,8 @@ export function createCommandCandidate(input: {
     description: input.description,
     slashText,
     effectLabel: input.effectLabel ?? (input.actionKind === 'prefill-leading-command'
-      ? (labels?.prefillCommand ?? zh.slashCommands.picker.prefillCommand)
-      : (labels?.executeNow ?? zh.slashCommands.picker.executeNow)),
+      ? labels.prefillCommand
+      : labels.executeNow),
     shortcut: input.shortcut,
     emptyQueryVisible: input.emptyQueryVisible,
     emptyQueryRank: input.emptyQueryRank,
@@ -190,24 +190,24 @@ export function createCommandCandidate(input: {
 
 export function createPromptCandidate(
   command: PromptCommandCandidateInput,
-  labels?: SlashPickerLabels,
+  labels: SlashPickerLabels,
 ): SlashPickerCandidate {
   const slashText = `/${command.name}`;
   const sourceLabel = command.source === 'mcp'
     ? `MCP${command.serverName ? `:${command.serverName}` : ''}`
     : command.source === 'builtin'
-      ? (labels?.builtinCommand ?? zh.slashCommands.picker.builtinCommand)
+      ? labels.builtinCommand
       : command.scope === 'project'
         ? 'Project command'
         : 'User command';
   const hintLabel = command.hints.length > 0
-    ? `${labels?.paramsPrefix ?? zh.slashCommands.picker.paramsPrefix}${command.hints.join(' ')}`
-    : (labels?.noParams ?? zh.slashCommands.picker.noParams);
+    ? `${labels.paramsPrefix}${command.hints.join(' ')}`
+    : labels.noParams;
   const contentPreview = command.contentPreview?.trim();
   const description = (
     command.description || (command.source === 'mcp'
-      ? (labels?.mcpPromptFallback ?? zh.slashCommands.picker.mcpPromptFallback)
-      : (labels?.filePromptFallback ?? zh.slashCommands.picker.filePromptFallback))
+      ? labels.mcpPromptFallback
+      : labels.filePromptFallback)
   ) + `（${sourceLabel} · ${hintLabel}）`;
 
   return {
@@ -220,8 +220,8 @@ export function createPromptCandidate(
     slashText,
     source: command.source,
     effectLabel: command.hints.length > 0
-      ? (labels?.prefillPromptWithArgs ?? zh.slashCommands.picker.prefillPromptWithArgs)
-      : (labels?.prefillPrompt ?? zh.slashCommands.picker.prefillPrompt),
+      ? labels.prefillPromptWithArgs
+      : labels.prefillPrompt,
     promptName: command.name,
     promptSource: command.source,
     promptHints: command.hints,
@@ -245,8 +245,9 @@ export function createPromptCandidate(
 
 export function createAgentCandidates(
   agents: AgentListEntry[],
-  labels?: SlashPickerLabels,
-  language = 'zh',
+  // labels/language 都是必填位置参数：漏传在 typecheck 就红；传 undefined 的 labels 按 language 取语言包，不回落中文
+  labels: SlashPickerLabels | undefined,
+  language: Language,
 ): SlashPickerCandidate[] {
   // 与 /agent 面板同源：无 Default 项（2026-07-29 起，去掉专家 chip 即恢复默认路由）
   return getAgentCommandOptions(agents).map((option) => {
@@ -260,7 +261,7 @@ export function createAgentCandidates(
     sublabel: shown.profession,
     description: option.description,
     slashText: `/agent ${option.token}`,
-    effectLabel: labels?.setAgentForTurn ?? zh.slashCommands.picker.setAgentForTurn,
+    effectLabel: labels?.setAgentForTurn ?? (language === 'en' ? en : zh).slashCommands.picker.setAgentForTurn,
     agentToken: option.token,
     agentId: option.id,
     searchText: buildSearchText([
@@ -289,7 +290,7 @@ export function createSkillCandidates(input: {
   mountedSkills: SessionSkillMount[];
   selectedSkillIds: string[];
   recommendations?: RecommendedSkillCandidateInput[];
-}, labels?: SlashPickerLabels): SlashPickerCandidate[] {
+}, labels: SlashPickerLabels): SlashPickerCandidate[] {
   const mountedByName = new Map(input.mountedSkills.map((mount) => [mount.skillName, mount]));
   const selected = new Set(input.selectedSkillIds);
   const recommendations = new Map((input.recommendations ?? []).map((item) => [item.skillName, item]));
@@ -312,8 +313,8 @@ export function createSkillCandidates(input: {
       skillDisabled: disabled,
       slashText: `/${skill.name}`,
       effectLabel: mounted
-        ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
-        : (labels?.mountAndSelect ?? zh.slashCommands.picker.mountAndSelect),
+        ? labels.selectForTurn
+        : labels.mountAndSelect,
       source: skill.source,
       suggested: Boolean(recommendation),
       emptyQueryVisible: true,
@@ -345,9 +346,9 @@ export function createSkillCandidates(input: {
       actionKind: 'select-skill',
       label: `/${mount.skillName}`,
       sublabel: mount.libraryId,
-      description: `${labels?.mountedSkillPrefix ?? zh.slashCommands.picker.mountedSkillPrefix} (${mount.libraryId})`,
+      description: `${labels.mountedSkillPrefix} (${mount.libraryId})`,
       slashText: `/${mount.skillName}`,
-      effectLabel: labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn,
+      effectLabel: labels.selectForTurn,
       source: mount.source,
       suggested: Boolean(recommendation),
       emptyQueryVisible: true,
@@ -380,8 +381,8 @@ export function createSkillCandidates(input: {
       description: recommendation.reason,
       slashText: `/${recommendation.skillName}`,
       effectLabel: recommendation.action === 'install'
-        ? (labels?.installAndSelect ?? zh.slashCommands.picker.installAndSelect)
-        : (labels?.mountAndSelect ?? zh.slashCommands.picker.mountAndSelect),
+        ? labels.installAndSelect
+        : labels.mountAndSelect,
       source: recommendation.repoId,
       suggested: true,
       emptyQueryVisible: false,
@@ -413,7 +414,7 @@ export function createSkillCandidates(input: {
 export function createWorkbenchCapabilityCandidates(
   capabilities: WorkbenchCapabilityRegistryItem[],
   suggestedKeys: string[] = [],
-  labels?: SlashPickerLabels,
+  labels: SlashPickerLabels,
 ): SlashPickerCandidate[] {
   const suggested = new Set(suggestedKeys);
   return capabilities.flatMap((capability): SlashPickerCandidate[] => {
@@ -426,11 +427,11 @@ export function createWorkbenchCapabilityCandidates(
         group: isSuggested ? 'suggested' : 'connector',
         actionKind: 'select-connector',
         label: capability.label,
-        description: capability.detail || capability.error || (labels?.localConnector ?? zh.slashCommands.picker.localConnector),
+        description: capability.detail || capability.error || labels.localConnector,
         slashText: `/connectors:${capability.id}`,
         effectLabel: capability.connected
-          ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
-          : (labels?.connectorNeedsConnection ?? zh.slashCommands.picker.connectorNeedsConnection),
+          ? labels.selectForTurn
+          : labels.connectorNeedsConnection,
         source: capability.readiness,
         suggested: isSuggested,
         emptyQueryVisible: false,
@@ -458,8 +459,8 @@ export function createWorkbenchCapabilityCandidates(
       description: capability.error || `${capability.status} · ${capability.toolCount} tools`,
       slashText: `/mcp:${capability.id}`,
       effectLabel: capability.status === 'connected' || capability.status === 'lazy'
-        ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
-        : (labels?.mcpNeedsConnection ?? zh.slashCommands.picker.mcpNeedsConnection),
+        ? labels.selectForTurn
+        : labels.mcpNeedsConnection,
       source: capability.transport,
       suggested: isSuggested,
       emptyQueryVisible: false,

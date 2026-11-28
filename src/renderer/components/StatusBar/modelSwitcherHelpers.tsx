@@ -20,7 +20,6 @@ import {
 import type { Translations } from '../../i18n';
 import { interpolate } from '../../i18n/interpolate';
 import { useI18n } from '../../hooks/useI18n';
-import { zh } from '../../i18n/zh';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import { getProviderLogoBadge, getProviderLogoMark } from './providerLogoCatalog';
 import { useProviderIconImageSource } from '../../utils/providerIconAssets';
@@ -81,8 +80,6 @@ const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string
 };
 
 export type ModelSwitcherPanelText = Translations['settings']['model']['models']['switcherPanel'];
-/** 未显式传文案的调用方（纯函数测试、验收脚本）按中文取；组件一律传当前界面语言的文案。 */
-const ZH_PANEL_TEXT: ModelSwitcherPanelText = zh.settings.model.models.switcherPanel;
 
 function formatEngineFailureAge(text: ModelSwitcherPanelText, occurredAt?: number, now = Date.now()): string | null {
   if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
@@ -293,8 +290,8 @@ function displayAvailabilityState(health: ProviderHealthSnapshot): ProviderAvail
 }
 
 export function buildProviderHealthSummary(
-  health?: ProviderHealthSnapshot | null,
-  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+  health: ProviderHealthSnapshot | null | undefined,
+  text: ModelSwitcherPanelText,
 ): ProviderHealthSummary {
   const state = health ? displayAvailabilityState(health) : 'unknown';
   const label = state === 'unknown' && health?.status ? text.healthUnknownReported : text.health[state];
@@ -321,7 +318,8 @@ export function compareProviderHealth(
   left?: ProviderHealthSnapshot | null,
   right?: ProviderHealthSnapshot | null,
 ): number {
-  return buildProviderHealthSummary(left).rank - buildProviderHealthSummary(right).rank;
+  const rank = (health?: ProviderHealthSnapshot | null) => PROVIDER_HEALTH_RANK[health ? displayAvailabilityState(health) : 'unknown'];
+  return rank(left) - rank(right);
 }
 
 export function healthSnapshotForProviderSort(snapshot?: ProviderHealthSnapshot | null): ProviderHealthSnapshot | null | undefined {
@@ -349,7 +347,7 @@ export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGr
 export function buildModelRowHealthSummary(
   snapshot: ProviderHealthSnapshot | undefined,
   modelId: string,
-  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+  text: ModelSwitcherPanelText,
 ): ProviderHealthSummary | null {
   const kind = snapshot?.providerMark?.kind ?? snapshot?.modelMarks?.[modelId]?.kind;
   if (kind) {
@@ -368,8 +366,8 @@ export function buildModelRowHealthSummary(
 }
 
 export function buildProviderBillingSummary(
-  mode?: BillingMode | null,
-  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+  mode: BillingMode | null | undefined,
+  text: ModelSwitcherPanelText,
 ): ProviderBillingSummary {
   const billingMode = mode ?? 'unknown';
   return {
@@ -547,7 +545,7 @@ export function buildProviderMetaTitle(group: {
   providerProtocol?: ModelProviderProtocol;
   providerTransportLabel?: string;
   providerEndpoint?: string;
-}, text: ModelSwitcherPanelText = ZH_PANEL_TEXT): string {
+}, text: ModelSwitcherPanelText): string {
   const protocolLabel = group.providerTransportLabel
     || (group.providerProtocol === 'claude' ? 'Claude-compatible'
       : group.providerProtocol === 'openai' ? 'OpenAI-compatible' : undefined);
@@ -563,7 +561,7 @@ export function buildProviderMetaTitle(group: {
 export function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,
-  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+  text: ModelSwitcherPanelText,
 ): string | null {
   if (needsWorkspace) return text.engine.needsWorkspace;
   if (!descriptor.executable) return descriptor.lastError || text.engine.cliNotExecutable;
@@ -586,7 +584,7 @@ export interface EngineReliabilitySummary {
 
 export function formatEngineReliabilityContract(
   descriptor: AgentEngineDescriptor,
-  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+  text: ModelSwitcherPanelText,
 ): string | null {
   const reliability = descriptor.reliability;
   if (!reliability) return null;
@@ -609,10 +607,9 @@ export function buildEngineReliabilitySummary(args: {
   selectedModel?: AgentEngineModelCatalogModel | null;
   sessionFailure?: AgentEngineFailureDiagnostics | null;
   now?: number;
-  text?: ModelSwitcherPanelText;
+  text: ModelSwitcherPanelText;
 }): EngineReliabilitySummary | null {
-  const { descriptor, needsWorkspace, selectedModel, sessionFailure, now } = args;
-  const text = args.text ?? ZH_PANEL_TEXT;
+  const { descriptor, needsWorkspace, selectedModel, sessionFailure, now, text } = args;
   if (!descriptor || descriptor.kind === 'native') return null;
 
   if (sessionFailure) {

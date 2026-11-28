@@ -5,6 +5,7 @@ import { resolveSkillName } from '@shared/resolveSkillName';
 import { catalogConnectorToolPhrase } from '@shared/utils/catalogConnectorToolLabel';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { agentRoleLabel } from './agentRoleLabel';
+import { toolStepPhraseZh } from '../i18n/toolStepPhraseCopy';
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
 // 消费方：ToolStepGroup 的步骤行主文案 + ToolHeader。原工具名/参数继续留在展开详情
@@ -316,7 +317,7 @@ function catalogConnectorStepPhrase(name: string, status: ToolStepStatus, langua
   if (!phrase) return undefined;
   const lowered = `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`;
   if (language === 'en') return status === 'pending-approval' ? `Request to ${lowered}` : status === 'failed' ? `Could not ${lowered}` : phrase;
-  return status === 'pending-approval' ? `请求${phrase}` : status === 'failed' ? `${phrase}未成功` : phrase;
+  return status === 'pending-approval' ? toolStepPhraseZh.connectorRequest(phrase) : status === 'failed' ? toolStepPhraseZh.connectorFailed(phrase) : phrase;
 }
 
 // 失败/中断行统一改成「准备做什么」的意图式。中文不能裸删任意一个「了」：
@@ -347,7 +348,7 @@ const EN_COMPLETED_PREFIX_TO_INTENT = new Map<string, string>([
 function toCompletedConnectorAction(action: string, t: Translations): string {
   if (CJK_PATTERN.test(t.toolStepHumanize.writeFallback)) {
     const verb = Array.from(action).slice(0, 2).join('');
-    return verb ? `${verb}了${action.slice(verb.length)}` : action;
+    return verb ? toolStepPhraseZh.connectorCompleted(verb, action.slice(verb.length)) : action;
   }
   const capitalized = action.charAt(0).toUpperCase() + action.slice(1);
   for (const [completed, intent] of EN_COMPLETED_PREFIX_TO_INTENT) {
@@ -674,7 +675,7 @@ function buildToolStep(
         if (parallelEntries.length === 1) {
           if (labels[0]) return h.subagentSpawn.replace('{description}', labels[0]);
         } else if (labels.length > 0) {
-          const shown = labels.slice(0, 3).join(CJK_PATTERN.test(h.writeFallback) ? '、' : ', ');
+          const shown = labels.slice(0, 3).join(t.punctuation.listSeparator);
           const names = labels.length > 3 ? `${shown}…` : shown;
           return h.subagentSpawnParallel
             .replace('{count}', String(parallelEntries.length))

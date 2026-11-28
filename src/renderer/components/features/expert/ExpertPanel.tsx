@@ -37,6 +37,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeCatalogObject } from '../../../utils/catalogText';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { Badge } from '../../primitives/Badge';
@@ -123,16 +124,20 @@ const ExpertCard: React.FC<{
   onRetryMissingSkills: (roleId: string) => void;
   onDetail: () => void;
   onInvite: (seed?: string) => void;
-}> = ({ entry, tab, text, sourceText, rolePacksByRoleId, busyRolePackId, onRetryMissingSkills, onDetail, onInvite }) => (
+}> = ({ entry, tab, text, sourceText, rolePacksByRoleId, busyRolePackId, onRetryMissingSkills, onDetail, onInvite }) => {
+  // 说明/标签/开场白只在渲染时按界面语言显示（FB-1301，按中文原句查表）；entry 本身与 seed 用原值。
+  const { language } = useI18n();
+  const shown = localizeCatalogObject(entry, language);
+  return (
   <div data-testid={`expert-card-${entry.roleId}`} className={SHELF_CARD_CLASS}>
     <div className="flex items-start justify-between gap-2">
       <ExpertCardHead entry={entry} professionFallback={text.professionFallback} />
       <Badge data-testid={`expert-source-${entry.roleId}`} className="flex-shrink-0 border-zinc-700 bg-zinc-800 text-[10px] text-zinc-400">{expertSourceLabel(entry, sourceText)}</Badge>
     </div>
-    {entry.description ? <p className="line-clamp-2 text-xs leading-relaxed text-zinc-400">{entry.description}</p> : null}
-    {entry.tags && entry.tags.length > 0 ? (
+    {shown.description ? <p className="line-clamp-2 text-xs leading-relaxed text-zinc-400">{shown.description}</p> : null}
+    {shown.tags && shown.tags.length > 0 ? (
       <div className="flex flex-wrap gap-1">
-        {entry.tags.map((tag) => <span key={tag} className={SHELF_TAG_CLASS}>{tag}</span>)}
+        {shown.tags.map((tag, index) => <span key={entry.tags?.[index] ?? tag} className={SHELF_TAG_CLASS}>{tag}</span>)}
       </div>
     ) : null}
     {/* truncate 只对块级生效：外层必须 flex + min-w-0，否则长履历会撑破卡片 */}
@@ -150,7 +155,7 @@ const ExpertCard: React.FC<{
             用边框 + 引号图标 + hover 提亮把「可点」做出来，不再伪装成灰底装饰。 */}
         <button /* ds-allow:button: quickPrompt 引导句列表行（左对齐引号文案），Button primitive 是居中动作按钮形状 */ type="button" data-testid="expert-quick-prompt" onClick={() => onInvite(entry.quickPrompts?.[0])} className="flex items-start gap-1.5 rounded-md border border-zinc-700/60 bg-zinc-800/40 px-2 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-700/60 hover:text-zinc-100">
           <Quote className="mt-0.5 h-3 w-3 flex-shrink-0 text-zinc-500" />
-          <span>{entry.quickPrompts[0]}</span>
+          <span>{shown.quickPrompts?.[0]}</span>
         </button>
       </div>
     ) : null}
@@ -159,15 +164,18 @@ const ExpertCard: React.FC<{
       <Button variant="primary" size="sm" data-testid={`expert-invite-${entry.roleId}`} onClick={() => onInvite()} leftIcon={<UserRound className="h-3.5 w-3.5" />}>{text.invite}</Button>
     </div>
   </div>
-);
+  );
+};
 
 export const ExpertPanel: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.expert;
   const openExpertRoleDetail = useAppStore((s) => s.openExpertRoleDetail);
   const tab = useAppStore((s) => s.expertPanelTab);
   const setTab = useAppStore((s) => s.setExpertPanelTab);
 
+  // entries 保持宿主下发的原值：roleId、邀请标题（goToExpertThread 的 title）、quickPrompt seed
+  // 都从这里取，不能经过任何本地化（FU4 的 canary）。上屏的说明/标签在 ExpertCard 里按语言查表。
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
   const localizeRole = useLocalizeRole();
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
@@ -318,7 +326,8 @@ export const ExpertPanel: React.FC = () => {
     : categoryGroups.find((group) => group.key === activeCategory)?.entries ?? [];
   const filteredShown = categoryFiltered.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels));
   const searchActive = searchQuery.trim().length > 0;
-  const filteredBuiltinRecipes = TEAM_RECIPES.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
+  const filteredBuiltinRecipes = localizeCatalogObject(TEAM_RECIPES, language)
+    .filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
   const filteredUserRecipes = userRecipes.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
   const filteredRolePacks = rolePacks.filter((item) => matchesRolePackSearch(item, searchQuery, categoryLabels));
   const discoverHasSearchMatch = filteredShown.length > 0
@@ -654,20 +663,20 @@ export const ExpertPanel: React.FC = () => {
                     : (pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)}</li>
                   {consentToolSummary.groups.map(({ group, effects }) => (
                     <li key={group} className="ml-3 text-zinc-400">
-                      {t.expert.rolePackConsent.toolGroups[group]}：
-                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join('、')}
+                      {t.expert.rolePackConsent.toolGroups[group]}{t.punctuation.colon}
+                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join(t.punctuation.listSeparator)}
                     </li>
                   ))}
                   {/* 映射表没收录的工具原样露出：漏显示一项能力等于骗用户，看不懂也好过看不见 */}
                   {consentToolSummary.unmapped.length > 0 ? (
                     <li className="ml-3 text-zinc-400">
-                      {t.expert.rolePackConsent.toolsOther}{consentToolSummary.unmapped.join('、')}
+                      {t.expert.rolePackConsent.toolsOther}{consentToolSummary.unmapped.join(t.punctuation.listSeparator)}
                     </li>
                   ) : null}
                   {pendingConsent.connectors.length > 0 ? (
                     <li>· {t.expert.rolePackConsent.connectors.replace(
                       '{connectors}',
-                      pendingConsent.connectors.map(describeConnector).join('、'),
+                      pendingConsent.connectors.map(describeConnector).join(t.punctuation.listSeparator),
                     )}</li>
                   ) : null}
                   {pendingConsent.permissionPreset ? (

@@ -10,6 +10,7 @@ import { formatShortcutForDisplay, getKeybindingAccelerator } from '@shared/keyb
 import { isTauriMode } from '../../../utils/platform';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useKeybindingsSettings } from '../../../hooks/useKeybindingsSettings';
+import { useI18n } from '../../../hooks/useI18n';
 import { listenTauriEvent } from '../../../services/tauriPluginFacade';
 import { Z_LAYERS } from '../../../styles/zLayers';
 
@@ -18,11 +19,12 @@ export const MemoFloater: React.FC = () => {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { keybindings, platform } = useKeybindingsSettings();
+  const { t } = useI18n();
 
   const quickAskShortcut = useMemo(() => {
     const accelerator = getKeybindingAccelerator(keybindings, 'app.quickAsk', platform);
-    return formatShortcutForDisplay(accelerator, platform);
-  }, [keybindings, platform]);
+    return formatShortcutForDisplay(accelerator, platform) || t.settings.conversation.notSet;
+  }, [keybindings, platform, t.settings.conversation.notSet]);
 
   const showMemo = useCallback(() => {
     setIsVisible(true);

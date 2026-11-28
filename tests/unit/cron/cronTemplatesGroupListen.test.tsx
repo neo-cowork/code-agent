@@ -28,7 +28,7 @@ describe('group-listen template', () => {
       accountId: 'account-feishu',
       chatId: 'oc_release',
       budget: '0.5',
-    });
+    }, 'zh');
     expect(draft).toBeDefined();
     const input = buildCronJobInput(draft!);
     expect(input.scheduleType).toBe('event');
@@ -49,7 +49,7 @@ describe('group-listen template', () => {
   });
 
   it('defaults the budget to the shared constant and omits an empty chatId', () => {
-    const draft = groupListen?.generate({ task: '总结群里提到的事', accountId: 'account-feishu' });
+    const draft = groupListen?.generate({ task: '总结群里提到的事', accountId: 'account-feishu' }, 'zh');
     const input = buildCronJobInput(draft!);
     expect(input.maxRunBudget).toBe(CRON_EVENT_TRIGGER.DEFAULT_RUN_BUDGET_USD);
     expect(input.maxRunBudget).toBe(0.5);
@@ -62,7 +62,7 @@ describe('group-listen template', () => {
   it('maps injected prefilter / maxRunsPerHour into the event schedule; blank stays out of the payload', () => {
     const withLimits = buildCronJobInput(groupListen!.generate({
       task: '总结', accountId: 'account-feishu', prefilter: '只处理催款的消息', maxRunsPerHour: '10',
-    }));
+    }, 'zh'));
     expect(withLimits.schedule).toEqual({
       type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu',
       prefilter: '只处理催款的消息', maxRunsPerHour: 10,
@@ -73,13 +73,13 @@ describe('group-listen template', () => {
     expect(readBack.eventMaxRunsPerHour).toBe('10');
     const blank = buildCronJobInput(groupListen!.generate({
       task: '总结', accountId: 'account-feishu', prefilter: '  ', maxRunsPerHour: '',
-    }));
+    }, 'zh'));
     expect(blank.schedule).not.toHaveProperty('prefilter');
     expect(blank.schedule).not.toHaveProperty('maxRunsPerHour');
   });
 
   it('still trips the shared validator without an account (belt and braces behind the editor gate)', () => {
-    const draft = groupListen?.generate({ task: '总结群里提到的事', accountId: '', chatId: '', budget: '0.5' });
+    const draft = groupListen?.generate({ task: '总结群里提到的事', accountId: '', chatId: '', budget: '0.5' }, 'zh');
     expect(() => buildCronJobInput(draft!)).toThrow(/accountId must be a non-empty string/);
   });
 

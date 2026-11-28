@@ -154,6 +154,7 @@ export const AgentEngineListSection: React.FC = () => {
     const unavailableReason = getEngineUnavailableReason(
       descriptor,
       descriptor.kind !== 'native' && !effectiveWorkingDirectory,
+      t.settings.model.models.switcherPanel,
     );
     if (unavailableReason) {
       toast.info(unavailableReason);
@@ -180,7 +181,7 @@ export const AgentEngineListSection: React.FC = () => {
     } finally {
       setSwitchingEngine(null);
     }
-  }, [currentSessionId, effectiveWorkingDirectory, engineDefaultModels, section, updateSessionEngine]);
+  }, [currentSessionId, effectiveWorkingDirectory, engineDefaultModels, section, t.settings.model.models.switcherPanel, updateSessionEngine]);
 
   return (
     <SettingsSection
@@ -213,6 +214,7 @@ export const AgentEngineListSection: React.FC = () => {
                 ? getEngineUnavailableReason(
                   descriptor,
                   descriptor.kind !== 'native' && !effectiveWorkingDirectory,
+                  t.settings.model.models.switcherPanel,
                 )
                 : row.switchable
                   ? section.unavailableHint
@@ -327,13 +329,13 @@ export const AgentEngineListSection: React.FC = () => {
 
                   {row.installHint ? (
                     <div className="mt-2 rounded border border-badge-warning/20 bg-amber-500/[0.06] px-2 py-1.5 text-[11px] text-badge-warning">
-                      <span className="font-medium">{section.installHintTitle}：</span>
+                      <span className="font-medium">{section.installHintTitle}{t.punctuation.colon}</span>
                       {row.installHint}
                     </div>
                   ) : null}
                   {row.loginHint ? (
                     <div className="mt-1.5 text-[11px] text-zinc-500">
-                      <span className="font-medium text-zinc-400">{section.loginHintTitle}：</span>
+                      <span className="font-medium text-zinc-400">{section.loginHintTitle}{t.punctuation.colon}</span>
                       {row.loginHint}
                     </div>
                   ) : null}

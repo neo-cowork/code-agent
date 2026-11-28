@@ -32,6 +32,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
+import { translateCatalogText } from "../../../utils/catalogText";
 import { useLocalizeRole } from "../../../hooks/useLocalizeRole";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
@@ -217,7 +218,7 @@ const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; re
   const [error, setError] = useState<string | null>(null);
   const save = async () => { setBusy(true); setError(null); try { await updateRoleDefinitionBody(roleId, body); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
   const restoreFactory = async () => { setBusy(true); setError(null); try { await restoreRoleFactory(roleId); setConfirmingRestore(false); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
-  return <SettingsSection title="人设正文" description="直接编辑专家的人设；保存只会替换正文，不会改动 frontmatter。">
+  return <SettingsSection title={text.definitionTitle} description={text.definitionDescription}>
     <div data-testid="role-definition-editor" className="space-y-3">
       <textarea data-testid="role-definition-body" value={body} onChange={(event) => setBody(event.target.value)} rows={14} disabled={!definition} className="w-full rounded border border-zinc-700 bg-zinc-950/70 p-2 font-mono text-xs text-zinc-200 focus:outline-none" />
       <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50">{text.saveDefinition}</button>
@@ -359,7 +360,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-zinc-200">
-            {memory.name}
+            {translateCatalogText(memory.name, language)}
             {memory.lastChange?.actor === 'role_wake' ? (
               <Badge title={t.expert.roleDetail.roleWakeTooltip.replace('{time}', memory.lastChange.timestamp ? formatLocalDateTime(memory.lastChange.timestamp, language) : '')} className="border-border-default bg-surface-hover text-[10px] text-text-secondary">
                 {t.expert.roleDetail.roleWakeLabel}
@@ -657,7 +658,7 @@ const TopicsEditor: React.FC<{
   current: RoleProactivityConfig;
   onChanged: () => void;
 }> = ({ roleId, current, onChanged }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.settings.roles.detail;
   const [includeText, setIncludeText] = useState(topicsToInput(current.topicsInclude));
   const [excludeText, setExcludeText] = useState(topicsToInput(current.topicsExclude));
@@ -743,12 +744,12 @@ const TopicsEditor: React.FC<{
       <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
         {includeActive ? (
           <div data-testid="role-topics-include-active">
-            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join("、"))}
+            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).map((topic) => translateCatalogText(topic, language)).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {excludeActive ? (
           <div data-testid="role-topics-exclude-active">
-            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join("、"))}
+            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).map((topic) => translateCatalogText(topic, language)).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {!includeActive && !excludeActive ? <div>{text.topicsInactive}</div> : null}

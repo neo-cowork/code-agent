@@ -12,6 +12,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TraceProjection } from '../../../src/shared/contract/trace';
+import { languages } from '../../../src/renderer/i18n';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { buildTurnExecutionClarityProjection } from '../../../src/renderer/utils/turnTimelineProjection';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
@@ -41,6 +42,7 @@ function projectionWithHook(): TraceProjection {
 
 function enrich() {
   return buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
     projection: projectionWithHook(),
     capabilities: { skills: [], connectors: [], mcpServers: [] },
     launchRequests: [],

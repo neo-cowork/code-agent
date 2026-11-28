@@ -90,7 +90,7 @@ function messages(): Message[] {
 
 describe('ExportModal Surface Execution projection', () => {
   it('exports semantic Markdown without raw Surface JSON, selector, or reasoning', () => {
-    const markdown = exportToMarkdown('Surface session', messages());
+    const markdown = exportToMarkdown('Surface session', messages(), 'zh');
 
     expect(markdown).toContain('## Surface Execution');
     expect(markdown).toContain('artifact · succeeded · 网站产物已生成并完成复验');

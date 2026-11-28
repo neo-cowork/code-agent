@@ -120,7 +120,7 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
   return 'compact';
 }
 
-export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
+export function permissionSummary(request: PermissionRequest, t: Translations, language: Language): string {
   const browser = request.details.browserSessionGrant;
   const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
   const action = copy.actions[request.details.action ?? ''];
@@ -254,7 +254,7 @@ function formatDeletionConsequence(
 export function permissionConsequence(
   request: PermissionRequest,
   t: Translations,
-  language: 'zh' | 'en' = 'zh',
+  language: Language,
   pathContext?: ApprovalPathContext,
 ): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。

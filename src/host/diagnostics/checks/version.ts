@@ -12,14 +12,15 @@ import {
 } from '../../services/cloud/updateService';
 import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import type { DoctorItem } from '../types';
+import { doctorCopy } from '../i18n/doctorCopy';
 
 export async function checkAppVersion(): Promise<DoctorItem> {
   if (!isUpdateServiceInitialized()) {
     return {
       category: 'version',
-      name: '应用版本',
+      name: doctorCopy().names.appVersion,
       status: 'skip',
-      message: 'UpdateService 未初始化（CLI 模式）',
+      message: doctorCopy().version.updateServiceMissing,
     };
   }
 
@@ -31,27 +32,27 @@ export async function checkAppVersion(): Promise<DoctorItem> {
     if (info.hasUpdate) {
       return {
         category: 'version',
-        name: '应用版本',
+        name: doctorCopy().names.appVersion,
         status: 'warn',
-        message: `有新版可更新：${currentVersion} → ${info.latestVersion ?? '?'}`,
-        suggestion: '在设置面板点"检查更新"或直接下载新版',
+        message: doctorCopy().version.updateAvailable(currentVersion, info.latestVersion ?? '?'),
+        suggestion: doctorCopy().version.updateSuggestion,
         details: info.releaseNotes,
         fix: { code: DOCTOR_FIX_CODES.OPEN_UPDATE_SETTINGS },
       };
     }
     return {
       category: 'version',
-      name: '应用版本',
+      name: doctorCopy().names.appVersion,
       status: 'pass',
-      message: `已是最新版本 v${currentVersion}`,
+      message: doctorCopy().version.upToDate(currentVersion),
     };
   } catch (err) {
     return {
       category: 'version',
-      name: '应用版本',
+      name: doctorCopy().names.appVersion,
       status: 'warn',
-      message: `更新检查失败：${err instanceof Error ? err.message : String(err)}`,
-      suggestion: '可能是网络问题，可忽略；当前版本 v' + currentVersion,
+      message: doctorCopy().version.checkFailed(err instanceof Error ? err.message : String(err)),
+      suggestion: doctorCopy().version.checkFailedSuggestion(currentVersion),
       fix: { code: DOCTOR_FIX_CODES.OPEN_PROXY_HELP },
     };
   }

@@ -21,6 +21,7 @@ import { Button, Input, Toggle } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { foldHomePrefixForDisplay } from '../../../../utils/formatPathForDisplay';
 import { useI18n } from '../../../../hooks/useI18n';
+import { translateCatalogText } from '../../../../utils/catalogText';
 import { zh } from '../../../../i18n/zh';
 
 // ============================================================================
@@ -315,6 +316,7 @@ const SkillRow: React.FC<SkillRowProps> = ({
   toggleDisabled,
   exportDisabled,
 }) => {
+  const { language } = useI18n();
   const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
   const missingDepsTitle = hasMissingDeps
     ? [
@@ -352,7 +354,7 @@ const SkillRow: React.FC<SkillRowProps> = ({
           )}
         </div>
         <p className={`mt-0.5 truncate text-xs ${effectiveEnabled ? 'text-zinc-500' : 'text-zinc-600'}`} title={skill.description}>
-          {skill.description}
+          {translateCatalogText(skill.description, language)}
         </p>
         {skill.officialConflict && (
           <div className="mt-2 text-xs text-badge-warning">
@@ -433,7 +435,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
   onUpdateLibrary,
   onRemoveLibrary,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const installedText = t.settings.skills.installed;
   const [query, setQuery] = useState('');
 
@@ -569,7 +571,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                     {groupBuiltinSkillsByCategory(group.skills, installedText).map((sub) => (
                       <div key={sub.key} data-skill-category={sub.key}>
                         <div className="border-b border-zinc-800/60 bg-zinc-900/40 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-                          {sub.label}{installedText.categoryCountPrefix}{sub.skills.length}{installedText.categoryCountSuffix}
+                          {translateCatalogText(sub.label, language)}{installedText.categoryCountPrefix}{sub.skills.length}{installedText.categoryCountSuffix}
                         </div>
                         <div className="divide-y divide-zinc-800/80">
                           {sub.skills.map((skill) => (

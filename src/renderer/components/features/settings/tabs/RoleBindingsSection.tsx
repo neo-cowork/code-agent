@@ -13,6 +13,7 @@ import ipcService from '../../../../services/ipcService';
 import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
 import { listLibraryItems } from '../../../../services/libraryClient';
 import { useI18n } from '../../../../hooks/useI18n';
+import { translateCatalogText } from '../../../../utils/catalogText';
 import { toast } from '../../../../hooks/useToast';
 import { IconButton } from '../../../primitives/IconButton';
 import { Button } from '../../../primitives/Button';
@@ -41,7 +42,7 @@ function resolveSkillDisplayName(skill: ParsedSkill): string | null {
 }
 
 export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.settings.roles.bindings;
 
   const [bindings, setBindings] = useState<ExpertContextBinding[]>([]);
@@ -131,7 +132,7 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
               >
                 {KIND_ICONS[binding.kind]}
                 <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={binding.target}>
-                  {binding.kind === 'skill' && skillLabel ? skillLabel : binding.title || binding.target}
+                  {translateCatalogText(binding.kind === 'skill' && skillLabel ? skillLabel : binding.title || binding.target, language)}
                 </span>
                 <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
                   {binding.mode === 'always' ? text.modeAlways : text.modeOnDemand}

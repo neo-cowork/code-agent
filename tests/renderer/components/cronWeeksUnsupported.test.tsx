@@ -49,7 +49,7 @@ describe('cron weeks unsupported in renderer', () => {
   });
 
   it('legacy weeks jobs are shown as unsupported instead of normal weekly schedules', () => {
-    expect(formatScheduleSummary(shellJob('weeks'))).toBe('不支持的周间隔 · 3 weeks');
+    expect(formatScheduleSummary(shellJob('weeks'), 'zh')).toBe('不支持的周间隔 · 3 weeks');
   });
 
   it('buildCronJobInput rejects weeks before sending payload to main', () => {
