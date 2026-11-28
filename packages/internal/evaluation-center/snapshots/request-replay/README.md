@@ -59,6 +59,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 
 ## 重录确认
 
+- 2026-11-28 / N-FIX-ATMENTION-HIDDEN-DIR-AND-ABS-PATH-INSERT（分支 mq/fix-atmention-hidden-dir-and-abs-path-insert，未开 PR）/ 敏感变更：src/host/agent/messageHandling/converter.ts（`canProcessAttachmentWithoutData` 纳入 `category === 'folder'`，使无内联 `data`、仅带绝对 `path` 的 `@` 目录附件进入既有 `processFolderAttachment`）。录制语料 7 会话 16 轮均不含 folder 类附件，该分支不触发；本机 `npm run acceptance:snapshot-replay` 对已提交快照回放 7 会话 16 轮逐字节一致、无 degraded 轮；本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮自验通过，与已提交快照的 39 文件差异全部为录制日锚点与本机 keyless 环境项，故保留已提交快照字节，以本行作为同 PR 快照目录更新。
 - 2026-11-24 / N-INVEST-IMAGE-VISION-PATHS-AND-ZHIPU-ENDPOINT-FU1: `npm run acceptance:snapshot-replay:record` re-recorded and self-verified 7 sessions / 16 turns. The committed corpus is byte-identical because its cases have no image turns. The production inference test and web-run request manifests cover the request changes after vision preflight and with a vision-capable main model.
 - 2026-11-25 / N-FIX-READ-IMAGE-HINT-STALE-IMAGE-ANALYZE（分支 mq/fix-read-image-hint-stale-image-analyze，未开 PR）/ 敏感变更：src/host/agent/runtime/contextAssembly/requestManifest.ts（仅把本次请求的工具名记到 TurnState，供 Read/Blob 读图拒绝文案按工具表选句；请求字节不变）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮自验通过，快照目录零差异。
 
