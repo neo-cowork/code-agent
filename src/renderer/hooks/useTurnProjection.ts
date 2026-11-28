@@ -1,4 +1,5 @@
 import { projectAgentErrorRuns } from '../utils/agentErrorRuns';
+import { isOfflineSendFailureCode } from '../utils/offlineSend';
 // ============================================================================
 // useTurnProjection - Project messages[] into TraceTurns
 // Pure derivation via useMemo, no new state or store
@@ -535,7 +536,11 @@ export function projectTurns(
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
       // 运行失败的结构化错误挂在 metadata 上（AgentErrorCard），content 可能为空——
       // 不能按"空消息"跳过，否则错误卡片投不出来。
-      const hasAgentError = Boolean(msg.metadata?.agentError || msg.metadata?.envAssist);
+      const hasAgentError = Boolean(
+        msg.metadata?.agentError
+        || msg.metadata?.envAssist
+        || (typeof msg.metadata?.sendFailureCode === 'string' && isOfflineSendFailureCode(msg.metadata.sendFailureCode)),
+      );
 
       // Skip empty assistant messages
       if (!hasContent && !hasReasoning && !hasToolCalls && !hasAgentError) continue;
