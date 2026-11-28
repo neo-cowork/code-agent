@@ -38,6 +38,7 @@ import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { isSessionFirstUserTurn } from './conversationRuntimePlanning';
 import { isStartupAborted, raceStartupStep } from './startupAssemblyGuard';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../../shared/telemetryRecovery';
 
 const logger = createLogger('AgentLoop');
 
@@ -475,9 +476,11 @@ export async function persistFailedRunContinuationContext(
   error: unknown,
 ): Promise<void> {
   const errorMessage = formatThrownError(error);
-  const truncatedUserMessage = userMessage.length > 2000
-    ? `${userMessage.slice(0, 2000)}\n...[truncated user request]...`
-    : userMessage;
+  // 还原消息整段以恢复提示开头时先剥掉：提示是宿主免责声明，不是失败轮的用户请求。
+  const cleanedUserMessage = stripTelemetryRecoveryNoticeOrResidue(userMessage);
+  const truncatedUserMessage = cleanedUserMessage.length > 2000
+    ? `${cleanedUserMessage.slice(0, 2000)}\n...[truncated user request]...`
+    : cleanedUserMessage;
   const truncatedError = errorMessage.length > 1200
     ? `${errorMessage.slice(0, 1200)}\n...[truncated runtime error]...`
     : errorMessage;
