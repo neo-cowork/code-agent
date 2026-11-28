@@ -7,6 +7,8 @@ import {
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
+import { formatSkillStatusText, isSkillStatusMessage } from '../chat/MessageBubble/SkillStatusMessage';
+import { filterSystemTags } from '../chat/MessageBubble/messageContentParts';
 
 function getRoleLabel(role: SidebarMessageSearchHit['role'], t: Translations): string {
   if (role === 'user') return t.chatSearch.roleUser;
@@ -30,7 +32,7 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
   hits,
   onSelectHit,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const roleLabels = useRoleLabels();
   const additionalHits = hits.slice(1, 4);
   if (additionalHits.length === 0) {
@@ -41,7 +43,9 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
     <div className="mt-1.5 space-y-1">
       {additionalHits.map((hit) => {
         const displaySnippet = hit.role === 'user'
-          ? formatEditRoleUserPrompt(hit.snippet, t.roleEditReceipt.userPrompt, roleLabels)
+          ? (isSkillStatusMessage({ role: 'user', content: hit.snippet })
+            ? (formatSkillStatusText(hit.snippet, t, language) ?? filterSystemTags(hit.snippet))
+            : filterSystemTags(formatEditRoleUserPrompt(hit.snippet, t.roleEditReceipt.userPrompt, roleLabels)))
           : hit.snippet;
         return (
         <button

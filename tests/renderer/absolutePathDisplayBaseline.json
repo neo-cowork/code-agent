@@ -1,0 +1,54 @@
+{
+  "src/renderer/components/FolderTrustFolderInfo.tsx": {
+    "count": 2,
+    "reason": "展示的是用户刚选的待授信文件夹，授信对话需要看到完整路径来核对；后续单评估"
+  },
+  "src/renderer/components/PermissionDialog/ConnectorWriteDisclosure.tsx": {
+    "count": 1,
+    "reason": "连接器写入披露的目标路径行，不在本单范围；后续单"
+  },
+  "src/renderer/components/PermissionDialog/PermissionCard.tsx": {
+    "count": 2,
+    "reason": "sandboxPath 来自 sandboxEscalationDeniedPath，已在源头走 formatPathForDisplay"
+  },
+  "src/renderer/components/RewindPanel.tsx": {
+    "count": 1,
+    "reason": "回退面板文件行，不在本单范围；后续单"
+  },
+  "src/renderer/components/features/chat/ChatInput/AtMentionPopover.tsx": {
+    "count": 1,
+    "reason": "row.dir 是相对工作区的目录，不含账户名"
+  },
+  "src/renderer/components/features/chat/DirectoryPickerModal.tsx": {
+    "count": 2,
+    "reason": "目录选择器正在选路径，需要完整路径核对；后续单评估"
+  },
+  "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolResultMediaDisplays.tsx": {
+    "count": 1,
+    "reason": "媒体结果卡路径行，不在本单范围；后续单"
+  },
+  "src/renderer/components/features/chat/MessageBubble/TurnDiffSummary.tsx": {
+    "count": 3,
+    "reason": "变量来自 formatDisplayPath（…/parent/file）或已有测试钉住的行，本单不改 formatDisplayPath 调用方"
+  },
+  "src/renderer/components/features/lab/gpt1/RealModePanel.tsx": {
+    "count": 1,
+    "reason": "实验室页面，不在本单范围；后续单"
+  },
+  "src/renderer/components/features/settings/tabs/ExternalImportSettings.tsx": {
+    "count": 1,
+    "reason": "外部会话导入源的目录，不在本单范围；后续单"
+  },
+  "src/renderer/components/features/voice/VoiceAuditDialog.tsx": {
+    "count": 1,
+    "reason": "语音审计录音目录，不在本单范围；后续单"
+  },
+  "src/renderer/components/features/workflow/TaskDetailPanel.tsx": {
+    "count": 1,
+    "reason": "工作流生成文件行，不在本单范围；后续单"
+  },
+  "src/renderer/components/workspacePreview/parts.tsx": {
+    "count": 1,
+    "reason": "预览面板路径行，现有测试钉住该字符串；后续单"
+  }
+}

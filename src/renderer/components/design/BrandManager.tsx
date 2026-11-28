@@ -21,6 +21,7 @@ import type { Translations } from '../../i18n';
 import { directionTokens, type DirectionTokens } from '../../../design/direction-tokens';
 import type { BrandContract, BrandMeta } from '../../../shared/contract/brandContract';
 import { listBrands, readBrand, saveBrand, deleteBrand, setActiveBrand, extractBrandFromImage } from './designFiles';
+import { requestConfirm } from '../../services/confirmPrompt';
 
 type BrandStrings = Translations['design']['brand'];
 
@@ -453,11 +454,16 @@ export const BrandManager: React.FC<BrandManagerProps> = ({
 
   const handleDelete = useCallback(
     async (id: string) => {
-      if (!window.confirm(s.deleteConfirm)) return;
+      if (!await requestConfirm({
+        title: t.confirmPrompts.deleteBrand,
+        message: s.deleteConfirm,
+        confirmText: t.common.delete,
+        variant: 'danger',
+      })) return;
       await deleteBrand(id);
       await refresh();
     },
-    [refresh, s.deleteConfirm],
+    [refresh, s.deleteConfirm, t.confirmPrompts.deleteBrand, t.common.delete],
   );
 
   const handleCreate = useCallback(() => {
