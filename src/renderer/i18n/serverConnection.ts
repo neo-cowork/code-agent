@@ -19,6 +19,12 @@ export const serverConnectionZh = {
     unavailableHintWeb: '也可以刷新页面再试。',
     // /api/run 网络失败时替代裸 `Load failed` 的发送反馈
     sendRetryHint: '正在重新连接后台服务，请稍后再试',
+    // 离线期间点击停止：记下意图、断线久/失败/已完成的人话反馈
+    stopPending: '连不上后台服务，已记下停止，恢复连接后会马上停下',
+    stopUnavailable: '停止还没送到：后台服务暂时连不上',
+    stopFailed: '停止没有成功',
+    stopRetry: '重试停止',
+    stopAlreadyFinished: '这次回复在连接恢复前已经完成，没来得及停下',
   },
 };
 
@@ -33,5 +39,10 @@ export const serverConnectionEn = {
     unavailableHintTauriMac: "Press Retry, or press ⌘R to reload; if that still doesn't help, quit and reopen Neo.",
     unavailableHintWeb: 'You can also refresh the page to try again.',
     sendRetryHint: 'Reconnecting to the background service — please try again in a moment',
+    stopPending: "Can't reach the background service — stop noted and will run as soon as the connection returns",
+    stopUnavailable: "Stop hasn't been delivered yet: the background service is temporarily unreachable",
+    stopFailed: 'Could not stop this run',
+    stopRetry: 'Retry stop',
+    stopAlreadyFinished: 'This reply finished before the connection returned, so it could not be stopped in time',
   },
 };
