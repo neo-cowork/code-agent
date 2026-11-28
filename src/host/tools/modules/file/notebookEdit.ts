@@ -21,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { notebookEditSchema as schema } from './notebookEdit.schema';
+import { guardBinaryNotText } from './binaryNotText';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getFileMutationActorId } from './fileMutationIdentity';
@@ -192,6 +193,11 @@ class NotebookEditHandler implements ToolHandler<Record<string, unknown>, string
     }
 
     try {
+
+    const binaryRefusal = await guardBinaryNotText(resolvedPath, '', ctx.requestToolNames);
+    if (binaryRefusal) {
+      return binaryRefusal;
+    }
 
     let raw: string;
     try {

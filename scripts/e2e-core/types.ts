@@ -49,8 +49,14 @@ export interface FlowDef {
   title: string;
   /** 在 neo-realrun 起好的工作目录里放用户会交给 Neo 的文件。 */
   prepare?: (server: ServerInfo) => Promise<void>;
-  /** 步骤跑完后（无论成败）执行的收尾：F17 靠它把界面语言恢复成 zh，失败也不能漏。 */
-  cleanup?: (server: ServerInfo) => Promise<void>;
+  /**
+   * step 0 探针（日历流程）：任何步骤都没跑、任何消息都没发之前执行。
+   * 抛错时 failedStep 记作 { n: 0, text: 错误消息 }，本尝试不再跑任何步骤；
+   * 详情（如连接器原始状态 JSON）先 env.note()，会进 result.json 的 reason。
+   */
+  probe?: (env: AttemptEnv) => Promise<void>;
+  /** 步骤跑完后（无论成败）执行的收尾：F17 恢复界面语言、日历流程清本标记的事件；失败也不能漏。 */
+  cleanup?: (server: ServerInfo, env: AttemptEnv) => Promise<void>;
   /** 首启流程（F18）要用首启弹层：true 时 run.ts 不点掉首启弹层（默认照旧点掉）。 */
   requiresFirstRun?: boolean;
   steps: FlowStep[];

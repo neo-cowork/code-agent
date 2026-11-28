@@ -656,3 +656,107 @@ describe('foreground wait validation copy', () => {
     expect(resolveToolTerminalOutcomeKey(exhausted)).toBe('failed-budget');
   });
 });
+
+describe('connector failure codes folded reason (mail / calendar / reminders)', () => {
+  it('surfaces authorization reason + next step for mail not_authorized in zh and en without leaking scripts or wrong language', () => {
+    const mailDeniedCall = makeToolCall({
+      name: 'mail',
+      result: {
+        toolCallId: 'mail-auth-1',
+        success: false,
+        error: 'Mail 未获授权：请在「系统设置 > 隐私与安全性 > 自动化」中允许 Neo 控制 Mail，然后重试。',
+        metadata: { code: 'not_authorized' },
+      },
+    });
+    const zhReason = humanizeToolFailureReason(mailDeniedCall, zh);
+    expect(zhReason).toBe(zh.toolStepHumanize.connectorFailureCodes.not_authorized.mail.folded);
+    expect(zhReason).toContain('未获授权');
+    expect(zhReason).toContain('自动化');
+    expect(zhReason).not.toBe(zh.toolStepHumanize.rawFailureCodeFallback);
+    expect(zhReason).not.toBe(zh.toolStepHumanize.failureReasonMissing);
+    expect(zhReason).not.toMatch(/osascript|-1743|not_authorized/i);
+    expect(resolveCollapsedFailureSummary(mailDeniedCall, zh)).toBeNull();
+
+    const enReason = humanizeToolFailureReason(mailDeniedCall, en);
+    expect(enReason).toBe(en.toolStepHumanize.connectorFailureCodes.not_authorized.mail.folded);
+    expect(enReason).toContain('not authorized');
+    expect(enReason).toContain('Automation');
+    expect(enReason).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(enReason).not.toBe(en.toolStepHumanize.rawFailureCodeFallback);
+    expect(enReason).not.toBe(en.toolStepHumanize.failureReasonMissing);
+    expect(resolveCollapsedFailureSummary(mailDeniedCall, en)).toBeNull();
+  });
+
+  it('surfaces not_found reason + next step for mail, calendar, and reminders in zh and en', () => {
+    for (const [toolName, domain] of [
+      ['mail', 'mail'],
+      ['calendar', 'calendar'],
+      ['reminders_create', 'reminders'],
+    ] as const) {
+      const call = makeToolCall({
+        name: toolName,
+        result: {
+          toolCallId: `${toolName}-not-found`,
+          success: false,
+          error: `${toolName} not found`,
+          metadata: { code: 'not_found' },
+        },
+      });
+      expect(humanizeToolFailureReason(call, zh), toolName)
+        .toBe(zh.toolStepHumanize.connectorFailureCodes.not_found[domain].folded);
+      expect(humanizeToolFailureReason(call, en), toolName)
+        .toBe(en.toolStepHumanize.connectorFailureCodes.not_found[domain].folded);
+      expect(humanizeToolFailureReason(call, en), toolName).not.toMatch(/[\u4e00-\u9fff]/);
+      expect(humanizeToolError(call.result?.error, toolName, zh, call.result?.metadata)).toEqual({
+        summary: zh.toolStepHumanize.connectorFailureCodes.not_found[domain].summary,
+        detail: zh.toolStepHumanize.connectorFailureCodes.not_found[domain].detail,
+      });
+    }
+  });
+
+  it('surfaces concrete reason for reminders_create unknown list (both structured code and legacy rows without code)', () => {
+    const legacyUnknownList = makeToolCall({
+      name: 'reminders_create',
+      result: {
+        toolCallId: 'rem-unknown-legacy',
+        success: false,
+        error: 'Reminders create failed: No reminder list named "不存在的清单". Available lists: Reminders. Omit list to use the default list.',
+        metadata: { action: 'create_reminder', connector: 'reminders', list: '不存在的清单' },
+      },
+    });
+    expect(humanizeToolFailureReason(legacyUnknownList, zh))
+      .toBe(zh.toolStepHumanize.connectorFailureCodes.not_found.reminders.folded);
+    expect(humanizeToolFailureReason(legacyUnknownList, en))
+      .toBe(en.toolStepHumanize.connectorFailureCodes.not_found.reminders.folded);
+    expect(humanizeToolFailureReason(legacyUnknownList, en)).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('surfaces concrete reason for calendar/reminders not_authorized without disturbing reminders accessProbeDenied', () => {
+    const calendarDenied = makeToolCall({
+      name: 'calendar',
+      result: {
+        toolCallId: 'cal-denied',
+        success: false,
+        error: 'Calendar access has not been allowed yet.',
+        metadata: { code: 'not_authorized' },
+      },
+    });
+    expect(humanizeToolFailureReason(calendarDenied, zh))
+      .toBe(zh.toolStepHumanize.connectorFailureCodes.not_authorized.calendar.folded);
+    expect(humanizeToolFailureReason(calendarDenied, en))
+      .toBe(en.toolStepHumanize.connectorFailureCodes.not_authorized.calendar.folded);
+
+    const remindersCreateDenied = makeToolCall({
+      name: 'reminders_create',
+      result: {
+        toolCallId: 'rem-create-denied',
+        success: false,
+        error: 'Reminders 未获授权 Do not work around this by running osascript',
+        metadata: { code: 'not_authorized', connector: 'reminders' },
+      },
+    });
+    expect(humanizeToolFailureReason(remindersCreateDenied, zh))
+      .toBe(zh.toolStepHumanize.connectorFailureCodes.not_authorized.reminders.folded);
+    expect(humanizeToolFailureReason(remindersCreateDenied, zh)).not.toContain('osascript');
+  });
+});

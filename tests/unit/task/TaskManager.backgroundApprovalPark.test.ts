@@ -2,14 +2,22 @@
 // 走生产入口：TaskManager.startBackgroundTask / getOrCreateOrchestrator → 真 AgentOrchestrator → 真岛 requestPermission。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type ApprovalRow = { id: string; kind: string; payload: Record<string, unknown> };
+type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+
 const h = vi.hoisted(() => ({
   ui: true,
-  rows: [] as Array<{ id: string; kind: string; payload: Record<string, unknown> }>,
+  rows: new Map<string, ApprovalRow & { status: ApprovalStatus }>(),
 }));
 
 const fakeRepo = {
-  insert: (r: { id: string; kind: string; payload: Record<string, unknown> }) => { h.rows.push(r); },
-  resolve: () => 1,
+  insert: vi.fn((row: ApprovalRow) => { h.rows.set(row.id, { ...row, status: 'pending' }); }),
+  resolve: ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => {
+    const row = h.rows.get(id);
+    if (row?.status !== 'pending') return 0;
+    row.status = status;
+    return 1;
+  },
 };
 
 vi.mock('../../../src/host/platform', async (orig) => ({
@@ -24,21 +32,19 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     isReady: true,
     updateSession: vi.fn(),
     getSession: () => null,
-    getPendingApprovalRepo: () => ({
-      insert: (r: { id: string; kind: string; payload: Record<string, unknown> }) => { h.rows.push(r); },
-      resolve: () => 1,
-    }),
+    getPendingApprovalRepo: () => fakeRepo,
   }),
 }));
 vi.mock('../../../src/host/task/backgroundTaskSessionContext', () => ({
   getBackgroundTaskSessionContext: async () => null,
 }));
 vi.mock('../../../src/host/services/infra/notificationService', () => ({
-  notificationService: { notifyNeedsInput: vi.fn() },
+  notificationService: { notifyNeedsInput: vi.fn(), retractNeedsInput: vi.fn() },
 }));
 
 import { TaskManager } from '../../../src/host/task/TaskManager';
 import { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
+import { approvalParkEvents } from '../../../src/host/agent/approvalParkEvents';
 import { getPermissionModeManager } from '../../../src/host/permissions/modes';
 
 type Asked = { orch?: AgentOrchestrator; result?: { approved: boolean; denialSource?: string }; settled: boolean };
@@ -74,7 +80,7 @@ function makeManager(): TaskManager {
 }
 
 describe('background task approval when nobody is on the page', () => {
-  beforeEach(() => { vi.useFakeTimers(); h.rows.length = 0; h.ui = true; });
+  beforeEach(() => { vi.useFakeTimers(); fakeRepo.insert.mockClear(); h.rows.clear(); h.ui = true; });
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
   async function runBackground(sessionId: string): Promise<Asked> {
@@ -89,26 +95,44 @@ describe('background task approval when nobody is on the page', () => {
     h.ui = false;
     const asked = await runBackground('s-bg-noui');
     await vi.advanceTimersByTimeAsync(90_000);
-    expect(h.rows).toHaveLength(1);
-    expect(h.rows[0].payload.tool).toBe('Bash');
+    expect([...h.rows.values()]).toMatchObject([{ payload: { tool: 'Bash' }, status: 'pending' }]);
     expect(asked.settled).toBe(false);
     expect(asked.result?.denialSource).not.toBe('timeout');
   });
 
-  it('UI present: card waits inline, nothing parked', async () => {
+  it('UI present: card waits inline with one pending mirror and settles it on allow', async () => {
+    const parkEvents = vi.spyOn(approvalParkEvents, 'emit');
     const asked = await runBackground('s-bg-ui');
     await vi.advanceTimersByTimeAsync(90_000);
-    expect(h.rows).toHaveLength(0);
+    expect([...h.rows.values()]).toMatchObject([{
+      kind: 'tool_approval',
+      status: 'pending',
+      payload: { argsRef: { sessionId: 's-bg-ui', toolCallId: 'tu-1' }, backgroundLane: true },
+    }]);
+    expect(fakeRepo.insert).toHaveBeenCalledTimes(1);
     expect(asked.settled).toBe(false);
+    const [id] = h.rows.keys();
+    expect(asked.orch?.handlePermissionResponse(id, 'allow')).toBe('delivered');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(asked.result).toMatchObject({ approved: true });
+    expect([...h.rows.values()]).toMatchObject([{ id, status: 'approved' }]);
+    expect(parkEvents).not.toHaveBeenCalled();
   });
 
   it('page closes after the card showed: watchdog moves the same request into the inbox', async () => {
+    const parkEvents = vi.spyOn(approvalParkEvents, 'emit');
     const asked = await runBackground('s-bg-late');
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(h.rows).toHaveLength(0);
+    expect([...h.rows.values()]).toMatchObject([{ status: 'pending' }]);
+    const [id] = h.rows.keys();
+    expect(fakeRepo.insert).toHaveBeenCalledTimes(1);
+    expect(parkEvents).not.toHaveBeenCalled();
     h.ui = false;
     await vi.advanceTimersByTimeAsync(90_000);
-    expect(h.rows).toHaveLength(1);
+    expect(fakeRepo.insert).toHaveBeenCalledTimes(2);
+    expect(fakeRepo.insert).toHaveBeenNthCalledWith(2, expect.objectContaining({ id }));
+    expect([...h.rows.values()]).toMatchObject([{ id, status: 'pending' }]);
+    expect(parkEvents).toHaveBeenCalledExactlyOnceWith('parked', expect.objectContaining({ id }));
     expect(asked.settled).toBe(false);
   });
 
@@ -132,10 +156,11 @@ describe('background task approval when nobody is on the page', () => {
     // 各自原有的停车/回退路径不变：unattended 与语音仍停车（行数 1），60s 终态会话不停车。
     if (how === 'markUnattendedApprovalTerminal') {
       await vi.advanceTimersByTimeAsync(90_000);
-      expect(h.rows).toHaveLength(0);
+      expect(h.rows.size).toBe(0);
+      expect(fakeRepo.insert).not.toHaveBeenCalled();
       expect(asked.result?.denialSource).toBe('timeout');
     } else {
-      expect(h.rows).toHaveLength(1);
+      expect([...h.rows.values()]).toMatchObject([{ status: 'pending' }]);
     }
   });
 

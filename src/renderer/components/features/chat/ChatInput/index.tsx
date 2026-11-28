@@ -102,7 +102,8 @@ import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useQuestionCardPlaceholder } from './questionCardAnswer';
 import { readComposerRoundtripText, useComposerDraftPersistence } from './useComposerDraftPersistence';
-import { UnsentDraftNotice } from './UnsentDraftNotice';
+import { ComposerDraftNotices } from './OfflinePendingSendNotice';
+import { useOfflinePendingSend, type OfflinePendingSendController } from './useOfflinePendingSend';
 import { PendingStopNotice } from './PendingStopNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraftRequest } from './useScheduleDraftRequest';
@@ -1073,7 +1074,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return questionCardPlaceholder ?? t.chatInputSubmit.runtimeInputPlaceholder;
   }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, questionCardPlaceholder, t]);
 
-  // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
+  const offlineSendRef = useRef<OfflinePendingSendController | null>(null);
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
     value,
     attachments,
@@ -1092,6 +1093,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSteer,
     onComposerDraftOptimisticClear: composerDraft.noteOptimisticClear,
     onComposerDraftSendSettled: composerDraft.noteSendSettled,
+    onOfflineSendFailed: (info) => offlineSendRef.current?.recordOfflineFailure(info),
     onDraftCleared: atMention.dismiss,
     onQueuedInputChanged: () => setQueuedInputRevision((value) => value + 1),
     agentEntries,
@@ -1133,7 +1135,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     replayRef: pendingUploadReplayRef,
   });
 
-  const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
+  const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string; clientMessageId?: string }) => {
     event?.preventDefault();
     if (editingQueuedInputId) {
       const content = (opts?.content ?? value).trim();
@@ -1186,6 +1188,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   handleVoiceTranscriptRef.current = handleVoiceTranscript;
   const handleSubmitRef = useRef(submitWithRuntimeChoice);
   handleSubmitRef.current = submitWithRuntimeChoice;
+  const offlineSend = useOfflinePendingSend({ sessionId: currentSessionId, sessionless, scopeProjectId, value, setValue, disabled, isProcessing: Boolean(isProcessing), replayRef: handleSubmitRef, onDiscardDraft: composerDraft.discard });
+  offlineSendRef.current = offlineSend;
   // 浏览器批注（N3）：appshotsStore 已写 pending 后，把 pin 文案塞进输入框并走主提交链路
   // （appshot 附件/XML 与用户手动发送同路径）；必须挂在 handleSubmitRef 之后。
   useEffect(() => {
@@ -1524,19 +1528,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         />
 
         <PendingStopNotice sessionId={currentSessionId} onRetryStop={onStop} />
-        {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
-          <UnsentDraftNotice
-            preview={composerDraft.notice.preview}
-            attachmentNames={composerDraft.notice.attachmentNames}
-            droppedNames={composerDraft.notice.droppedNames}
-            onPutBack={() => {
-              composerDraft.putBack();
-              // 点按钮把焦点留在随即卸载的提示条上，回车到不了编辑区；跟发送失败回滚一样把光标还给输入框
-              inputAreaRef.current?.focus();
-            }}
-            onDiscard={composerDraft.discard}
-          />
-        )}
+        <ComposerDraftNotices visible={!currentSessionReadOnly || cronRunFollowUpMode} offlineStatus={offlineSend.status} suppressGenericDraftNotice={offlineSend.suppressGenericDraftNotice} onCancelAutoSend={offlineSend.cancelAutoSend} draftNotice={composerDraft.notice} onPutBackDraft={() => { composerDraft.putBack(); inputAreaRef.current?.focus(); }} onDiscardDraft={offlineSend.discardWithDraft} />
         {!currentSessionReadOnly && importedSessionNotice && (
           <ImportedSessionNotice state={importedSessionNotice} />
         )}

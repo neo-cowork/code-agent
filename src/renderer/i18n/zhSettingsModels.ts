@@ -77,6 +77,7 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         addProvider: `新增${v.provider}`,
         doctor: '诊断',
         configuredPrefix: '已可用 · ',
+        notReadyPrefix: '暂不可用 · ', configuredEmpty: '还没有可用的模型服务',
         noMatch: `没有匹配的${v.provider}`,
         unconfiguredTooltip: `这些${v.provider}还没有保存${v.keyLabel}，添加后才会显示模型列表。`,
         unconfiguredPrefix: `待添加${v.keyLabel} · `,
