@@ -36,6 +36,13 @@ const REQUIRED: Readonly<Record<string, string>> = {
   'src/host/config/sessionWorkDirectory.ts': 'stripTelemetryRecoveryNoticeOrResidue',
   'src/host/services/sessionAutomation/parkedApprovalTaskTitle.ts': 'stripTelemetryRecoveryNoticeOrResidue',
   // ── 已修出口：钉住不许回退 ──
+  'src/host/agent/goalTracker.ts': 'stripTelemetryRecoveryNoticeOrResidue',
+  'src/host/agent/nudgeManager.ts': 'stripTelemetryRecoveryNoticeOrResidue',
+  'src/host/agent/sessionRecovery.ts': 'stripTelemetryRecoveryNoticeOrResidue',
+  'src/host/agent/runtime/conversationRuntimeContextBootstrap.ts': 'stripTelemetryRecoveryNoticeOrResidue',
+  'src/host/agent/runtime/foregroundDenialHandoff.ts': 'stripTelemetryRecoveryNoticeOrResidue',
+  'src/host/tools/modules/commandCenter/sessionCommandCenter.ts': 'stripTelemetryRecoveryNoticeOrResidue',
+  'src/host/session/completionSummaryService.ts': 'stripTelemetryRecoveryNoticeOrResidue',
   'src/host/lightMemory/conversationJudge.ts': 'stripTelemetryRecoveryNotice',
   'src/host/lightMemory/recentConversations.ts': 'isTelemetryRecoveryNoticeResidue',
   'src/host/services/core/promptSuggestions.ts': 'stripTelemetryRecoveryNotice',
