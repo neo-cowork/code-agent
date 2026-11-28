@@ -46,7 +46,7 @@ import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
 import type { AgentEvent, ConversationStreamEventActions } from './streamEventTypes';
-import { buildCloseAfterSealedTools, isSealedToolResultsMessage } from './hostSealedTurnMessage';
+import { buildCloseAfterSealedTools, isSealedToolResultsMessage, resolveUndraftedQuestionMessage } from './hostSealedTurnMessage';
 import {
   getBooleanField,
   isRecord,
@@ -554,6 +554,7 @@ export function applyConversationStreamEvent(
               role: 'user',
               content: userMessage.content,
               timestamp: userMessage.timestamp ?? now(),
+              ...(userMessage.source ? { source: userMessage.source } : {}),
               ...(userMessage.attachments ? { attachments: userMessage.attachments } : {}),
               ...(userMessage.metadata ? { metadata: userMessage.metadata } : {}),
             });
@@ -561,9 +562,9 @@ export function applyConversationStreamEvent(
           break;
         }
 
-        // System events and persisted park notices keep their own position and metadata.
-        // Committing them to the assistant draft would lose the park marker or duplicate system copy.
-        const standaloneMessage = normalizeStandaloneMessagePayload(event.data);
+        // Host-owned rows and questions without a draft keep their own position and metadata.
+        const standaloneMessage = normalizeStandaloneMessagePayload(event.data)
+          ?? resolveUndraftedQuestionMessage(event.data, getFreshMessages());
         if (standaloneMessage) {
           if (!getFreshMessages().some((message) => message.id === standaloneMessage.id)) actions.addMessage(standaloneMessage);
           break;

@@ -146,20 +146,65 @@ export async function ensureServerAlive(bin: string, server: ServerInfo): Promis
 /** 一次尝试结束后停掉它留下的会话（等批准 / 后台还在跑），免得下一次尝试的页面还看见「运行中」。 */
 export async function cancelSessions(server: ServerInfo, sessionIds: string[]): Promise<void> {
   for (const sessionId of sessionIds) {
-    await fetch(`http://127.0.0.1:${server.port}/api/agent/cancel`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, abandonParked: true }),
-      signal: AbortSignal.timeout(15_000),
-    }).catch(() => undefined);
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, abandonParked: true }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        const rawBody = await res.text().catch(() => '');
+        const body = rawBody.slice(0, 200).replace(/[\r\n]+/g, ' ').trim();
+        console.warn(`cancelSessions: session ${sessionId} failed with status ${res.status}${body ? `: ${body}` : ''}`);
+      }
+    } catch (e) {
+      const msg = (e instanceof Error ? e.message : String(e)).replace(/[\r\n]+/g, ' ').trim();
+      console.warn(`cancelSessions: session ${sessionId} request error: ${msg}`);
+    }
   }
 }
 
 const IDLE_CAP_MS = 45_000;
 
+function cleanSessionId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === 'undefined' || trimmed === 'null') return null;
+  return trimmed;
+}
+
 function busySessions(data: DbSnapshot): string[] {
-  const pending = new Set(data.pendingApprovals.filter((a) => String(a.status ?? 'pending') === 'pending').map((a) => String(a.session_id)));
-  return data.sessions.filter((s) => s.status === 'running' || pending.has(String(s.id))).map((s) => String(s.id));
+  const ids = new Set<string>();
+  for (const s of data.sessions) {
+    if (s.status !== 'running') continue;
+    const id = cleanSessionId(s.id);
+    if (id) ids.add(id);
+  }
+  for (const a of data.pendingApprovals) {
+    if (String(a.status ?? 'pending') !== 'pending') continue;
+    let payload: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(String(a.payload_json ?? '{}'));
+      if (!parsed || typeof parsed !== 'object') continue;
+      payload = parsed as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const argsRef = payload.argsRef && typeof payload.argsRef === 'object'
+      ? (payload.argsRef as Record<string, unknown>)
+      : undefined;
+    const id = cleanSessionId(payload.sessionId)
+      ?? cleanSessionId(argsRef?.sessionId)
+      ?? cleanSessionId(a.coordinator_id);
+    if (id) ids.add(id);
+  }
+  for (const e of data.cronExecutions) {
+    if (e.status !== 'running') continue;
+    const id = cleanSessionId(e.session_id);
+    if (id) ids.add(id);
+  }
+  return [...ids];
 }
 
 /**

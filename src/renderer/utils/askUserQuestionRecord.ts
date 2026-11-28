@@ -14,6 +14,7 @@
 import type { ToolCall } from '@shared/contract';
 import type { UserQuestion } from '@shared/contract';
 import { ASK_USER_QUESTION_DECLINED_OUTPUT } from '@shared/contract/askUserQuestion';
+import { ASK_USER_QUESTION_TOOL_NAMES } from '@shared/constants/tools';
 
 interface AskUserQuestionRecordItem {
   header: string;
@@ -65,7 +66,7 @@ function parseAnswers(output: string, headers: string[]): Map<string, string> {
 }
 
 export function buildAskUserQuestionRecord(toolCall: ToolCall): AskUserQuestionRecord | null {
-  if (toolCall.name !== 'AskUserQuestion') return null;
+  if (!ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === toolCall.name)) return null;
   const questions = readQuestions(toolCall);
   if (!questions) return null;
   const output = toolCall.result?.output;

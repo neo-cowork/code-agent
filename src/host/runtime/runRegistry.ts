@@ -54,6 +54,7 @@ import path from 'node:path';
 import { isNativeRecoveryDescriptor, type NativeRecoveryDescriptor } from './nativeRecoveryHost';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 import { createKeyedSerializer } from './keyedSerializer';
+import { assertCurrentDurableHandle, renewDurableLease, renewHeartbeatedLeasesBeforeSweep } from './durableLeaseGuards';
 import { findRecoveredWaitingRun as matchRecoveredWaitingRun, findSupersededSessionRoots, settleModelOpsForManualContinue, supersedeSessionRoots, terminalRecoveredWaitingRunOnce } from './recoveredWaitingRun';
 import { isDurableResumeQueued } from './durableRecoveryQueueState';
 import { agentTeamOperationIds, asNativeAgentTeamProjectionState, isDurableActiveSessionConstraint, isHeartbeatFencingError, isSqliteBusyError, mergeAgentTeamProjectionState } from './runRegistrySupport';
@@ -345,9 +346,9 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return { handle, launchOperation };
   }
 
-  async heartbeatDurable(runId: string, now = Date.now()): Promise<RunOwnerLease> {
+  async heartbeatDurable(runId: string, now = Date.now(), via: 'heartbeat' | 'sweep' = 'heartbeat'): Promise<RunOwnerLease> {
     const live = this.requireDurableOwner(runId);
-    const owner = await this.requireKernel().heartbeat(runId, live.owner, now);
+    const owner = await renewDurableLease(this.requireKernel(), runId, live.owner, now, via);
     this.durableOwners.set(runId, { ...live, owner });
     return owner;
   }
@@ -390,7 +391,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   }
 
   async parkDurable(runId: string, input: DurableParkInput = {}, expected?: RunHandle): Promise<void> {
-    if (expected && this.handlesByRunId.get(runId) !== expected) throw new Error(`Durable Run park fenced by stale handle: ${runId}`);
+    assertCurrentDurableHandle('park', runId, expected, this.handlesByRunId.get(runId), this.durableOwners.get(runId));
     clearEnvResumeWaiter(runId);
     if (input.reason === 'env_blocked') { clearQuotaWaitTimer(runId); await parkEnvBlockedRun(this, runId, input); return; }
     const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`); const now = input.now ?? Date.now(); const cause = input.reason ?? 'user_stop'; if (cause !== 'quota_wait') clearQuotaWaitTimer(runId); const dueAt = cause === 'quota_wait' ? input.dueAt : undefined; await this.checkpointDurable(runId, { now, status: 'waiting', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, interruptCause: cause, ...(dueAt !== undefined ? { quotaWaitDueAt: dueAt } : {}), events: [{ type: 'run_interrupted', payload: { cause, ...(dueAt !== undefined ? { dueAt } : {}) }, recordedAt: now }] }); if (dueAt !== undefined) armQuotaWaitOnPark({ runId, sessionId: envelope.sessionId, dueAt, now });
@@ -647,9 +648,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     expected?: RunHandle,
   ) {
     return this.serializeDurableMutation(runId, async () => {
-      if (expected && this.handlesByRunId.get(runId) !== expected) {
-        throw new Error(`Durable Run terminal fenced by stale handle: ${runId}`);
-      }
+      assertCurrentDurableHandle('terminal', runId, expected, this.handlesByRunId.get(runId), this.durableOwners.get(runId));
       const live = this.requireDurableOwner(runId);
       if (input.status === 'completed') await settleDetachedToolOperations(this.durableEnvelopes.get(runId), (cp) => this.checkpointDurable(runId, { ...cp, state: this.durableCheckpointStates.get(runId) }));
       const envelope = await this.requireKernel().terminal({
@@ -781,6 +780,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   }
 
   async recoverDurable(now = Date.now()): Promise<RunRehydrationPlan[]> {
+    await renewHeartbeatedLeasesBeforeSweep([...this.heartbeatTimers.keys()], (runId) => this.heartbeatDurable(runId, now, 'sweep'), (runId) => this.standDownDurableRun(runId));
     const plans = await this.requireKernel().recoverOnStartup(now);
     for (const plan of plans) {
       const owner = plan.envelope.owner;

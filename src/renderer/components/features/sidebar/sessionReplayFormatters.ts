@@ -15,6 +15,8 @@ import type { Language, Translations } from '../../../i18n';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 import { shellBackgroundTaskFailureCopy } from '../../../utils/agentFailureCopy';
+import { formatSkillStatusText, isSkillStatusMessage } from '../chat/MessageBubble/SkillStatusMessage';
+import { filterSystemTags } from '../chat/MessageBubble/messageContentParts';
 
 type FocusedReplayOwner = { kind: 'workflow'; id: string } | { kind: 'background'; id: string };
 type SessionReplayLabels = Translations['sessionReplay'];
@@ -323,7 +325,12 @@ function formatBlockLabel(block: ReplayBlock, { dialog: d }: SessionReplayLabels
   return d.blockReply;
 }
 
-function formatBlockDetail(block: ReplayBlock, labels: SessionReplayLabels): string {
+function formatBlockDetail(
+  block: ReplayBlock,
+  labels: SessionReplayLabels,
+  t?: Pick<Translations, 'toolStepHumanize'>,
+  language?: Language,
+): string {
   const d = labels.dialog;
   if (block.type === 'tool_call' && block.toolCall) {
     const duration = formatDuration(block.toolCall.duration, labels);
@@ -338,6 +345,10 @@ function formatBlockDetail(block: ReplayBlock, labels: SessionReplayLabels): str
   if (block.type === 'tool_result'
     && /^(?:Background task|PTY session) started\.\s*<(?:task|session)-id>/.test(block.content ?? '')) {
     return labels.shellTaskStarted;
+  }
+  if (block.type === 'user' && isSkillStatusMessage({ role: 'user', content: block.content ?? '' })) {
+    const humanized = t && language ? formatSkillStatusText(block.content, t, language) : null;
+    return humanized ?? filterSystemTags(block.content ?? '');
   }
   if (block.type === 'event') {
     // 去重修复（label 收敛为「事件」）后 summary 必须落在 detail 里，

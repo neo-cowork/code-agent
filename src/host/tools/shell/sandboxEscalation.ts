@@ -113,7 +113,7 @@ function flattenLiteralRmLoop(segments: ReturnType<typeof parseShellCommand>['se
 }
 
 /** Parse approved static rm calls and read-only probes without executing their shell syntax. */
-function extractApprovedRmTargets(command: string, workingDirectory: string): {
+export function extractApprovedRmTargets(command: string, workingDirectory: string): {
   containsRm: boolean;
   targets?: string[];
   operandCount: number;

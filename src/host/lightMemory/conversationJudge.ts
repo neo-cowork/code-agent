@@ -95,27 +95,89 @@ function truncate(text: string, max: number): string {
   return trimmed.length > max ? trimmed.slice(0, max).trim() + '...' : trimmed;
 }
 
-/**
- * Heuristic judgment — mirrors the previous extractAndSaveConversationSummary
- * behavior so behavior never regresses when the quick model is unavailable.
- */
-function heuristicJudgment(rawUserMessages: string[]): ConversationJudgment {
-  // 先脱敏再截断：卡号被截成半截就认不出来了，半截数字也会进 recent-conversations
-  const userMessages = rawUserMessages.map((msg) => guardSensitiveText(msg, { surface: 'memory', mode: 'local-persist' }));
-  const latest = userMessages[userMessages.length - 1] ?? '';
-  const title = truncate(latest, MAX_TITLE_CHARS);
+const FILLER_PUNCTUATION_AND_SPACE = /[\s，。！？、,.!?~…'"]+/g;
+const FILLER_WHOLE_MESSAGE =
+  /^(?:继续(?:吧|做)?|接着(?:做)?|好(?:的|吧|滴)?|行|可以|嗯+|哦+|噢+|对(?:的)?|是(?:的)?|收到|谢谢|多谢|ok|okay|yes|yep|sure|goon|continue|keepgoing|next|thanks|thankyou)+$/;
+const RECENT_HIGHLIGHT_CANDIDATES = 5;
 
-  const worthKnowledge = userMessages
-    .slice(-5)
+function isFillerUserMessage(message: string): boolean {
+  const normalized = message.trim().toLowerCase().replace(FILLER_PUNCTUATION_AND_SPACE, '');
+  if (Array.from(normalized).length <= 1) return true;
+  return FILLER_WHOLE_MESSAGE.test(normalized);
+}
+
+function firstNonEmptyLineCollapsed(message: string): string {
+  for (const rawLine of message.split(/\r?\n/)) {
+    const collapsed = rawLine.replace(/\s+/g, ' ').trim();
+    if (collapsed.length > 0) return collapsed;
+  }
+  return '';
+}
+
+function stripTrailingEllipsis(text: string): string {
+  return text.trim().replace(/\.\.\.$/, '').trim();
+}
+
+function highlightMatchesTitle(highlight: string, title: string): boolean {
+  const highlightCore = stripTrailingEllipsis(highlight);
+  const titleCore = stripTrailingEllipsis(title);
+  if (!highlightCore || !titleCore) return false;
+  return (
+    highlightCore === titleCore
+    || titleCore.startsWith(highlightCore)
+    || highlightCore.startsWith(titleCore)
+  );
+}
+
+function guardMemoryMessages(rawUserMessages: string[]): string[] {
+  // 先脱敏再截断：卡号被截成半截就认不出来了，半截数字也会进 recent-conversations
+  return rawUserMessages.map((msg) => guardSensitiveText(msg, { surface: 'memory', mode: 'local-persist' }));
+}
+
+function buildHeuristicHighlights(guardedUserMessages: string[], title: string): string[] {
+  return guardedUserMessages
+    .filter((msg) => !isFillerUserMessage(msg))
+    .slice(-RECENT_HIGHLIGHT_CANDIDATES)
     .map((msg) => {
-      const firstLine = msg.split('\n')[0].trim();
+      const firstLine = firstNonEmptyLineCollapsed(msg);
       return firstLine.length > MAX_HIGHLIGHT_CHARS
-        ? firstLine.slice(0, MAX_HIGHLIGHT_CHARS) + '...'
+        ? firstLine.slice(0, MAX_HIGHLIGHT_CHARS).trim() + '...'
         : firstLine;
     })
     .filter((v, i, a) => v.length > 0 && a.indexOf(v) === i)
     .reverse()
+    .filter((highlight) => !highlightMatchesTitle(highlight, title))
     .slice(0, MAX_HIGHLIGHTS);
+}
+
+/**
+ * Heuristic judgment — mirrors the previous extractAndSaveConversationSummary
+ * behavior without repeating the title in highlights or promoting filler turns.
+ */
+function heuristicJudgment(rawUserMessages: string[]): ConversationJudgment {
+  const userMessages = guardMemoryMessages(rawUserMessages);
+  const substantiveMessages = userMessages.filter((msg) => !isFillerUserMessage(msg));
+  const latestSubstantive = substantiveMessages[substantiveMessages.length - 1];
+  const title = latestSubstantive
+    ? truncate(firstNonEmptyLineCollapsed(latestSubstantive), MAX_TITLE_CHARS)
+    : '';
+
+  if (!title) {
+    logger.info('Heuristic summary skipped: no substantive user message', {
+      reason: 'heuristic_no_substantive_message',
+      userMessageCount: rawUserMessages.length,
+    });
+    return {
+      worth: false,
+      isMeeting: false,
+      title: '',
+      worthKnowledge: [],
+      durableFacts: [],
+      source: 'heuristic',
+    };
+  }
+
+  const worthKnowledge = buildHeuristicHighlights(userMessages, title);
 
   return { worth: true, isMeeting: false, title, worthKnowledge, durableFacts: [], source: 'heuristic' };
 }
@@ -349,9 +411,9 @@ export async function judgeConversation(input: {
           title: judgment.title.slice(0, 30),
         });
         // If the LLM judges it worth keeping but extracted no knowledge points,
-        // backfill from the heuristic so the summary still carries highlights.
+        // backfill from substantive user messages under the LLM title.
         if (judgment.worth && judgment.worthKnowledge.length === 0) {
-          judgment.worthKnowledge = heuristicJudgment(userMessages).worthKnowledge;
+          judgment.worthKnowledge = buildHeuristicHighlights(guardMemoryMessages(userMessages), judgment.title);
         }
         return judgment;
       }

@@ -1320,6 +1320,7 @@ export class TaskManager extends EventEmitter {
       backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
       messageDeltaAccumulator: this.messageDeltaAccumulator,
       primaryRunId: executingBackgroundPrimaryRunId(sessionId) ?? this.runRegistry?.getBySessionId(sessionId)?.context.runId,
+      getRunContext: (runId) => this.runRegistry?.get(runId)?.context,
       isPrimaryRunActive: () => this.getSessionState(sessionId).status === 'running' || this.hasActivePrimaryRun(sessionId),
     }, sessionId, event, snapshot, eventKey);
   }

@@ -111,9 +111,9 @@ export const f06: FlowDef = {
         if (!card) throw new Error('拒绝前审批卡已离开页面');
         env.scratch.preview = await cardPreview(card);
         await denyCard(env.page);
-        await driveTurn(env.page, {
-          onPermissionCard: async () => { throw new Error('拒绝后又弹出审批卡（重试了动作）'); },
-        }, TURN_TIMEOUT_MS);
+        const onPermissionCard = async () => { throw new Error('拒绝后又弹出审批卡（重试了动作）'); };
+        await driveTurn(env.page, { mayBeIdle: true, onPermissionCard }, TURN_TIMEOUT_MS);
+        await settleBackground(env.page, onPermissionCard, TURN_TIMEOUT_MS);
         if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「暂不」后审批卡还在');
       },
     },
@@ -124,6 +124,12 @@ export const f06: FlowDef = {
         const mine = inSessions(d.permissionDecisions, ids);
         const deny = mine.find((r) => r.final_outcome === 'deny');
         if (!deny) return `没有 deny 审批记录：\n${describeRows(mine, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+        const reAsked = mine.filter((r) =>
+          r.tool_name === deny.tool_name
+          && Number(r.recorded_at) > Number(deny.recorded_at)
+          && String(r.history_outcome ?? '').startsWith('ask'),
+        );
+        if (reAsked.length) return `拒绝后 ${String(deny.tool_name)} 又发起了需确认的审批：\n${describeRows(reAsked, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
         const executed = inSessions(d.toolEvents, ids)
           .some((e) => e.tool_name === deny.tool_name && e.phase === 'complete' && e.status === 'success');
         if (executed) return `拒绝后 ${String(deny.tool_name)} 仍有 complete success 事件`;
