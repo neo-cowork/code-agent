@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
+import { ConfirmPromptHost } from '../../../src/renderer/components/ConfirmPromptHost';
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectTrustConfirmCard } from '../../../src/renderer/components/features/chat/ProjectTrustConfirmCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -120,8 +121,7 @@ describe('ProjectTrustConfirmCard rejection recovery', () => {
 
   it('does not retry after closing settings or deleting the project', async () => {
     mocks.confirm.mockResolvedValue({ confirmed: false, reason: 'source_missing' });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<ProjectTrustConfirmCard node={node} />);
+    render(<><ProjectTrustConfirmCard node={node} /><ConfirmPromptHost /></>);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm and resend' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Re-select folder' }));
     await screen.findByText('/repo/notes');
@@ -129,10 +129,11 @@ describe('ProjectTrustConfirmCard rejection recovery', () => {
     expect(mocks.confirm).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Re-select folder' }));
     await screen.findByText('/repo/notes');
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: languages.en.sidebarProject.settings.deleteProject })));
+    fireEvent.click(screen.getByRole('button', { name: languages.en.sidebarProject.settings.deleteProject }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete project' });
+    await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' })));
     expect(mocks.confirm).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('project-trust-confirm')).toBeTruthy();
-    vi.restoreAllMocks();
   });
 
   it.each([undefined, { confirmed: false, reason: 'unknown' }])('keeps unknown failures generic: %j', async (response) => {

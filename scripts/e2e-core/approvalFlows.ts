@@ -1,6 +1,7 @@
+import type { Locator } from 'playwright';
 import { describeRows, expectDb, family, inSessions, lastAssistantText } from './db';
 import type { AttemptEnv, FlowDef } from './types';
-import { approveCard, denyCard, driveTurn, expandCard, openNewSession, sendMessage, settleBackground } from './ui';
+import { approveCard, currentPermissionCard, denyCard, driveTurn, expandCard, openNewSession, RealHomeWriteError, sendMessage, settleBackground } from './ui';
 
 // 用户会说的话：让 Neo 用 curl 抓网页。命令走网络、需要审批（实测会弹「允许执行这条命令？」）。
 const PROMPT_ONCE = '用 curl 帮我把 https://example.com 的网页抓下来，存成 example.html';
@@ -20,13 +21,20 @@ async function askAndWaitForCard(env: AttemptEnv, prompt: string): Promise<void>
 }
 
 // 命令正文：有 permission-args-preview 就用它，Bash 卡把命令放在「命令」下的等宽块里（RequestDetails），没有 testid
-async function cardPreview(env: AttemptEnv): Promise<string> {
+async function cardPreview(card: Locator): Promise<string> {
   // 命令正文在「更多选项与详情」里，先展开再读
-  await expandCard(env.page);
-  const card = env.page.getByTestId('permission-card').first();
+  await expandCard(card);
   const preview = card.getByTestId('permission-args-preview');
   const block = (await preview.count()) > 0 ? preview : card.locator('div.font-mono').first();
   return (await block.innerText({ timeout: 10_000 })).trim();
+}
+
+async function checkedPreview(card: Locator): Promise<string> {
+  const preview = await cardPreview(card);
+  if (!preview) throw new Error('审批卡里没有命令正文');
+  const times = (await card.innerText({ timeout: 10_000 })).split(preview).length - 1;
+  if (times !== 1) throw new Error(`命令正文在审批卡里出现了 ${times} 次，应为 1 次`);
+  return preview;
 }
 
 export const f05: FlowDef = {
@@ -37,25 +45,43 @@ export const f05: FlowDef = {
     {
       text: '审批卡出现，核对命令正文只出现一次。',
       run: async (env) => {
-        const card = env.page.getByTestId('permission-card').first();
-        const preview = await cardPreview(env);
-        if (!preview) throw new Error('审批卡里没有命令正文');
-        const times = (await card.innerText()).split(preview).length - 1;
-        if (times !== 1) throw new Error(`命令正文在审批卡里出现了 ${times} 次，应为 1 次`);
-        env.scratch.preview = preview;
+        const card = await currentPermissionCard(env.page);
+        if (!card) throw new Error('核对命令前审批卡已离开页面');
+        await checkedPreview(card);
       },
     },
     {
       text: '点「允许」。',
       run: async (env) => {
-        await approveCard(env.page);
-        const onSecondCard = async (page: typeof env.page) => {
-          if ((await cardPreview(env)) === env.scratch.preview) throw new Error('同一条命令点了允许后又问了第二次');
-          await approveCard(page);
+        const attemptedPreviews = new Set<string>();
+        let clickedApproval = false;
+        const onPermissionCard = async (page: typeof env.page) => {
+          const card = await currentPermissionCard(page);
+          if (!card) return;
+          let preview: string;
+          try {
+            preview = await cardPreview(card);
+          } catch (error) {
+            if (await card.count() === 0) return;
+            throw error;
+          }
+          if (attemptedPreviews.has(preview)) throw new Error('同一条命令点了允许后又问了第二次');
+          if (!preview) throw new Error('审批卡里没有命令正文');
+          // 卡片离开时点击可能已经送达，后续同命令仍走重复询问断言。
+          attemptedPreviews.add(preview);
+          try {
+            await approveCard(page, card);
+            clickedApproval = true;
+          } catch (error) {
+            if (!(error instanceof RealHomeWriteError) && await card.count() === 0) return;
+            throw error;
+          }
         };
-        await driveTurn(env.page, { mayBeIdle: true, onPermissionCard: onSecondCard }, TURN_TIMEOUT_MS);
-        await settleBackground(env.page, onSecondCard, TURN_TIMEOUT_MS);
+        await onPermissionCard(env.page);
+        await driveTurn(env.page, { mayBeIdle: true, onPermissionCard }, TURN_TIMEOUT_MS);
+        await settleBackground(env.page, onPermissionCard, TURN_TIMEOUT_MS);
         if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「允许」后审批卡还在');
+        if (!clickedApproval) throw new Error('没有在审批卡上点到「允许」');
       },
     },
     {
@@ -81,11 +107,13 @@ export const f06: FlowDef = {
     {
       text: '点「暂不」。',
       run: async (env) => {
-        env.scratch.preview = await cardPreview(env);
+        const card = await currentPermissionCard(env.page);
+        if (!card) throw new Error('拒绝前审批卡已离开页面');
+        env.scratch.preview = await cardPreview(card);
         await denyCard(env.page);
-        await driveTurn(env.page, {
-          onPermissionCard: async () => { throw new Error('拒绝后又弹出审批卡（重试了动作）'); },
-        }, TURN_TIMEOUT_MS);
+        const onPermissionCard = async () => { throw new Error('拒绝后又弹出审批卡（重试了动作）'); };
+        await driveTurn(env.page, { mayBeIdle: true, onPermissionCard }, TURN_TIMEOUT_MS);
+        await settleBackground(env.page, onPermissionCard, TURN_TIMEOUT_MS);
         if (await env.page.getByTestId('permission-card').count() > 0) throw new Error('点「暂不」后审批卡还在');
       },
     },
@@ -96,6 +124,12 @@ export const f06: FlowDef = {
         const mine = inSessions(d.permissionDecisions, ids);
         const deny = mine.find((r) => r.final_outcome === 'deny');
         if (!deny) return `没有 deny 审批记录：\n${describeRows(mine, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+        const reAsked = mine.filter((r) =>
+          r.tool_name === deny.tool_name
+          && Number(r.recorded_at) > Number(deny.recorded_at)
+          && String(r.history_outcome ?? '').startsWith('ask'),
+        );
+        if (reAsked.length) return `拒绝后 ${String(deny.tool_name)} 又发起了需确认的审批：\n${describeRows(reAsked, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
         const executed = inSessions(d.toolEvents, ids)
           .some((e) => e.tool_name === deny.tool_name && e.phase === 'complete' && e.status === 'success');
         if (executed) return `拒绝后 ${String(deny.tool_name)} 仍有 complete success 事件`;

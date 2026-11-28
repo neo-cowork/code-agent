@@ -40,9 +40,10 @@ export function registerAgentContinueRoute(
     notifySettled(sessionId, result);
     return result;
   });
-  registerEnvResumeContinuer(async ({ sessionId, runId }) => {
+  registerEnvResumeContinuer(async ({ sessionId, runId, onResumeStarted }) => {
     const result = await continueParkedDurableRun({
       sessionId, expectedRunId: runId, runRegistry, taskManager: getTaskManager(),
+      onResumeStarted,
       ...(getMessages ? { getMessages } : {}),
     });
     notifySettled(sessionId, result);

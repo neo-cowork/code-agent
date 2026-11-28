@@ -50,6 +50,7 @@ import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog } from './components/FolderTrustDialog';
 import { SkillCautionPromptHost } from './components/SkillCautionPromptHost';
 import { useFolderTrustPrompt } from './hooks/useFolderTrustPrompt';
+import { hasSkippedModelOnboarding, skipModelOnboarding } from './components/onboarding/modelOnboardingSkip';
 import { ModelSetupPendingBanner } from './components/onboarding/ModelSetupPendingBanner';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -93,6 +94,7 @@ import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { isSecondaryPageActive } from './utils/secondaryPageActive';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
+import { ConfirmPromptHost } from './components/ConfirmPromptHost';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -227,10 +229,8 @@ export const App: React.FC = () => {
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
   const [mcpOAuthConsent, setMcpOAuthConsent] = useState<MCPOAuthConsentRequest | null>(null);
 
-  // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
 
-  // 新手模型配置引导
   const [showModelOnboarding, setShowModelOnboarding] = useState(false);
   // 首启引导被「跳过」后的降级提示条（N-FIRSTRUN-SKIP）：不再把设置页糊在脸上。
   const [modelSetupPending, setModelSetupPending] = useState(false);
@@ -241,10 +241,8 @@ export const App: React.FC = () => {
     setModelSetupPending(false);
   }, []);
 
-  // 工具创建确认弹窗
   const [toolCreateRequest, setToolCreateRequest] = useState<ToolCreateRequest | null>(null);
 
-  // confirm_action 弹窗确认
   const [confirmActionRequest, setConfirmActionRequest] = useState<ConfirmActionRequest | null>(null);
 
   // Auth store
@@ -392,6 +390,11 @@ export const App: React.FC = () => {
         return;
       }
 
+      if (hasSkippedModelOnboarding()) {
+        modelOnboardingCompletedRef.current = true;
+        setModelSetupPending(true);
+        return;
+      }
       const authState = useAuthStore.getState();
       if (!authState.isAuthenticated) {
         setAuthInitialMode(preferSignup ? 'signup' : 'signin');
@@ -435,7 +438,6 @@ export const App: React.FC = () => {
       clearInterval(timer);
     };
   }, [showModelOnboarding, loadActiveModelConfig]);
-
 
   // 窄屏自动收起 ↔ 回宽屏自动还原：进窄屏时若侧栏开着就帮忙收起，并记住「是我们收的」；
   // 回宽屏时只有仍处在我们自动收的状态才展开还原。期间用户手动 toggle 过（无论收还是放）
@@ -803,10 +805,10 @@ export const App: React.FC = () => {
                             通顶、tab 条贴窗口最顶（WorkBuddy）；右栏开关仍在顶栏右端那组，
                             两态同一行同一槽位（2026-07-27 房规：纵向不跳、顶栏单点可达）。 */}
                         <TitleBar />
-                        {modelSetupPending && (
+                        {modelSetupPending && !showSettings && (
                           <ModelSetupPendingBanner
                             settingsOpen={showSettings}
-                            onOpenSettings={() => setShowSettings(true)}
+                            onOpenSettings={() => useAppStore.getState().openSettingsTab('model')}
                             onDismiss={() => setModelSetupPending(false)}
                             onConfigured={onModelConfiguredLater}
                           />
@@ -908,10 +910,9 @@ export const App: React.FC = () => {
             setShowSettings(false);
           }}
           onSkip={() => {
-            // 跳过不算完成：不置 completedRef，下次冷启动仍会提示，避免用户忘配后续无入口。
-            // 「跳过」= 用户要先进主界面（爸 09-04 真机连撞三次），不再直接甩到设置页（原 #193 做法）；
-            // "稍后配置"的入口降级成聊天列顶部一条可关闭提示条（VS Code 新版 Workspace Trust 也是
-            // 「进受限模式 + 横幅」而不是先弹窗拦住；Claude Code 文档里没有「跳过后甩到设置页」的先例）。
+            // Remember the skip in this client; the composer and settings retain an entry point.
+            modelOnboardingCompletedRef.current = true;
+            skipModelOnboarding();
             setShowModelOnboarding(false);
             setModelSetupPending(true);
           }}
@@ -964,6 +965,7 @@ export const App: React.FC = () => {
       {/* skill 安装 caution 确认面（拖拽 ZIP / /plugins install 共用）与 shell overlay
           同属全局宿主，同行只为守住 App.tsx 的 max-lines 预算 */}
       <ShellOverlaySlotHost /><SkillCautionPromptHost />
+      <ConfirmPromptHost />
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && (

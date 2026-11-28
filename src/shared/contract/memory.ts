@@ -191,10 +191,23 @@ export interface MemoryEntryBatchReviewResult {
 /** /init-memory 产出的固定草稿主题（id = hash(projectDir + topic)，重跑稳定） */
 export type ProjectMemoryDraftTopic = 'purpose' | 'key-files' | 'conventions';
 
-/** 已退出自动注入的原因（N-MEM-EVICT-NEVER-READ）：从没被用过 / 用过但很久没再用；since = 开始暂停的时刻。 */
+/** 回复下方记忆来源行的用户负反馈类型（N-MEM-SOURCE-WRONG-FEEDBACK）：不对 / 过时了。 */
+export type MemoryInjectionUserFlagKind = 'wrong' | 'outdated';
+
+/**
+ * 已退出自动注入的原因（N-MEM-EVICT-NEVER-READ）：从没被用过 / 用过但很久没再用 /
+ * 用户在回复下标记了不对或过时（user_* 优先于用量原因）；since = 开始暂停的时刻。
+ */
 export interface MemoryEntryInjectionPause {
-  reason: 'never_used' | 'stale_used';
+  reason: 'never_used' | 'stale_used' | 'user_wrong' | 'user_outdated';
   since: number;
+}
+
+/** DB 行 metadata.injectionFeedback 的形状：kind 缺失 = 当前无标记（count 保留累计次数，撤销不清零）。 */
+export interface MemoryInjectionFeedbackMetadata {
+  kind?: MemoryInjectionUserFlagKind;
+  at?: number;
+  count?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +291,8 @@ export interface MemoryEntry {
   lastAccessedAt?: number | null;
   /** 仅列表接口附带：该条当前不进自动注入（库里仍在，MemoryRead/搜索照常可取）。 */
   injectionPaused?: MemoryEntryInjectionPause;
+  /** 仅列表接口附带：被用户标记「不对/过时了」的累计次数（撤销标记不清零；>0 才带）。 */
+  userFlagCount?: number;
   /** 仅列表接口附带：最近一次变更日志（有则给「后台写入」标记；无日志/读失败不带）。 */
   lastChange?: MemoryEntryLastChange;
 }

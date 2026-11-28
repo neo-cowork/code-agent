@@ -401,6 +401,35 @@ interface DangerousPattern {
   suggestion?: string;
 }
 
+const SINGLE_FILE_DELETE: Omit<DangerousPattern, 'pattern'> = {
+  riskLevel: 'medium',
+  flag: 'single_file_delete',
+  reason: 'Deletes one specific file',
+  suggestion: 'Confirm the file; consider moving it to Trash instead of rm',
+};
+
+function isPlainSingleFileDelete(command: string): boolean {
+  // The parser can discard input plumbing and unescape words. Keep those forms and
+  // shell expansions (apart from an exit status) out of the compact approval card.
+  if (/[<`\\]|\$(?!\?)/.test(command)) return false;
+  const parsed = parseShellCommand(command);
+  if (parsed.parsingFailed || parsed.trailingOperator) return false;
+  const rmSegments = parsed.segments.filter(({ words }) => words[0] === 'rm');
+  if (rmSegments.length !== 1) return false;
+  const [rm] = rmSegments;
+  const [, ...options] = rm.words;
+  const operand = options.pop() ?? '';
+  // -v only prints the removed path. Any other option, `--` or a second operand keeps the high card.
+  if (options.length > 1 || options.some((option) => option !== '-v' && option !== '--verbose')) return false;
+  if (!/^~?\//.test(operand)) return false;
+  if (/[*?[\]{}$`\\]/.test(operand) || operand.slice(1).includes('~')) return false;
+  if (operand.slice(operand.indexOf('/') + 1).split('/').some((part) => !part || part.startsWith('.'))) return false;
+
+  return parsed.segments.every((segment) => segment.terminator !== '&'
+    && segment.redirects.every(({ path, uncertain }) => path === '/dev/null' && !uncertain)
+    && (segment === rm || ['echo', 'true', ':'].includes(segment.words[0])));
+}
+
 // 绝对拦截的命令（永远不允许执行）
 const BLOCKED_PATTERNS: DangerousPattern[] = [
   { pattern: /rm\s+-rf\s+\/\s*$/, riskLevel: 'critical', flag: 'root_delete', reason: 'Attempting to delete root filesystem' },
@@ -523,8 +552,13 @@ export function validateCommand(
   let suggestion: string | undefined;
   const riskOrder: RiskLevel[] = ['safe', 'low', 'medium', 'high', 'critical'];
 
-  for (const p of DANGEROUS_PATTERNS) {
-    if (!p.pattern.test(normalized)) continue;
+  for (const rule of DANGEROUS_PATTERNS) {
+    if (!rule.pattern.test(normalized)) continue;
+    const p = rule.flag === 'recursive_delete_targeted' && shell === 'posix' && isPlainSingleFileDelete(command)
+      ? SINGLE_FILE_DELETE
+      : rule;
+    // Both targeted-delete rules can match one `rm -v` (a hyphenated path); report the file once.
+    if (p === SINGLE_FILE_DELETE && securityFlags.includes(p.flag)) continue;
     const workspaceContainedSystemDelete = pathContext
       && (p.flag === 'system_dir_delete' || p.flag === 'container_dir_delete')
       && rmIsContainedInWorkspace(normalized, pathContext);

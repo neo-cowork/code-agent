@@ -297,8 +297,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
         </>
       )}
 
-      {/* Result section */}
-      {result && (
+      {/* Result section。已交给后台任务的步骤没有自己的结果：行上显示的是那个任务的真实结局，
+          这里不再摆「未完成 / 不需要处理」之类的占位结果和重试。 */}
+      {result && result.metadata?.code !== 'HANDED_OFF_TO_BACKGROUND' && (
         <div className="animate-fadeIn">
           {!imageResult && !videoResult && !genericMediaAsset && !generatedFileResult && !createdFilePath && (
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">

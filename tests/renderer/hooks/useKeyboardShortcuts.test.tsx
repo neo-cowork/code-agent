@@ -44,6 +44,7 @@ const appState = vi.hoisted(() => ({
   openWorkspacePreview: vi.fn(),
   showSettings: false,
   isProcessing: false,
+  language: 'en',
 }));
 const authState = vi.hoisted(() => ({ isAuthenticated: false, showAuthModal: false, setShowAuthModal: vi.fn() }));
 vi.mock('../../../src/renderer/stores/authStore', () => ({
@@ -63,7 +64,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: Object.assign(() => appState, { getState: () => appState }),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: () => sessionState,
+  useSessionStore: Object.assign(() => sessionState, { getState: () => sessionState }),
 }));
 vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   useMessageActionStore: { getState: () => ({ regenerateLast: vi.fn() }) },
@@ -89,6 +90,9 @@ vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
 
 import { useKeyboardShortcuts } from '../../../src/renderer/hooks/useKeyboardShortcuts';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
+import { requestConfirm } from '../../../src/renderer/services/confirmPrompt';
+
+vi.mock('../../../src/renderer/services/confirmPrompt', () => ({ requestConfirm: vi.fn() }));
 
 const request: PermissionRequest = {
   id: 'permission-escape',
@@ -322,5 +326,46 @@ describe('useKeyboardShortcuts session search', () => {
     } finally {
       window.removeEventListener('app:openSessionSearch', openSearch);
     }
+  });
+});
+
+
+describe('clear conversation shortcut', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    keybindingsRuntime.keybindings.bindings['session.clear'] = { enabled: true, accelerator: 'Cmd+Shift+K' };
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete keybindingsRuntime.keybindings.bindings['session.clear'];
+    sessionState.currentSessionId = 'session-current';
+  });
+
+  it.each([
+    { confirmed: false, sessionId: 'session-current', clears: false },
+    { confirmed: true, sessionId: 'session-current', clears: true },
+    { confirmed: true, sessionId: 'another-session', clears: false },
+  ])('resolves confirmed=$confirmed in $sessionId after consuming the keydown', async ({ confirmed, sessionId, clears }) => {
+    let resolve!: (value: boolean) => void;
+    vi.mocked(requestConfirm).mockReturnValueOnce(new Promise<boolean>((settle) => { resolve = settle; }));
+    renderHook(() => useKeyboardShortcuts());
+    const event = new KeyboardEvent('keydown', {
+      key: 'K', metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+    });
+    act(() => { document.dispatchEvent(event); });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(requestConfirm).toHaveBeenCalledExactlyOnceWith({
+      title: 'Clear conversation messages',
+      message: 'Clear all messages in the current conversation?',
+      confirmText: 'Clear',
+      variant: 'danger',
+    });
+    expect(sessionState.clearCurrentSession).not.toHaveBeenCalled();
+
+    sessionState.currentSessionId = sessionId;
+    await act(async () => { resolve(confirmed); });
+    expect(sessionState.clearCurrentSession).toHaveBeenCalledTimes(clears ? 1 : 0);
   });
 });

@@ -24,6 +24,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type {
   MemoryEntrySourceOfTruth,
+  MemoryEntryStatus,
   MemoryExportV2Bundle,
   MemoryImportV2ApplyResult,
   MemoryImportV2DiffStatus,
@@ -54,6 +55,7 @@ export interface LightMemoryFile {
   type: string;
   content: string;
   updatedAt: string;
+  status?: MemoryEntryStatus;
 }
 
 export interface LightMemoryStats {
@@ -304,7 +306,7 @@ export function buildMemoryManagementSummary({
   const weekAgoStr = weekAgo.toISOString().split('T')[0];
 
   return {
-    totalFiles: stats?.totalFiles ?? files.length,
+    totalFiles: files.length,
     matchedFiles: filteredFiles.length,
     typeCount: new Set(files.map((file) => file.type || 'unknown')).size,
     totalSessions: stats?.sessionStats?.totalSessions ?? 0,
@@ -384,6 +386,7 @@ export const MemoryTab: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<LightMemoryFile | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [archiveMessage, setArchiveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [importBundle, setImportBundle] = useState<MemoryExportV2Bundle | null>(null);
   const [importFileName, setImportFileName] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<MemoryImportV2DryRunResult | null>(null);
@@ -408,7 +411,9 @@ export const MemoryTab: React.FC = () => {
         invokeLightMemory<LightMemoryStats>({ action: 'lightStats' }),
       ]);
       if (filesResult?.success && filesResult.data) {
-        setFiles(filesResult.data);
+        const visibleFiles = filesResult.data.filter((file) => file.status !== 'archived');
+        setFiles(visibleFiles);
+        setSelectedFile((prev) => (prev ? visibleFiles.find((file) => file.filename === prev.filename) ?? null : null));
       }
       if (statsResult?.success && statsResult.data) {
         setStats(statsResult.data);
@@ -512,15 +517,15 @@ export const MemoryTab: React.FC = () => {
         filename,
       });
       if (result?.success && result.data !== false) {
-        setMessage({ type: 'success', text: deletedName ? `${memoryText.files.deleteSuccessPrefix}${deletedName}` : memoryText.files.deleteSuccessPrefix.trim() });
+        setArchiveMessage({ type: 'success', text: deletedName ? `${memoryText.files.deleteSuccessPrefix}${deletedName}` : memoryText.files.deleteSuccessPrefix.trim() });
         if (selectedFile?.filename === filename) setSelectedFile(null);
         setEntriesRefreshKey((key) => key + 1);
         await loadData();
       } else {
-        setMessage({ type: 'error', text: memoryText.files.deleteFailed });
+        setArchiveMessage({ type: 'error', text: memoryText.files.deleteFailed });
       }
     } catch {
-      setMessage({ type: 'error', text: memoryText.files.deleteFailed });
+      setArchiveMessage({ type: 'error', text: memoryText.files.deleteFailed });
     }
     setDeletingFile(null);
   };
@@ -842,6 +847,20 @@ export const MemoryTab: React.FC = () => {
               </div>
             ))}
           </div>
+
+          {archiveMessage && (
+            <div
+              role="status"
+              data-testid="memory-file-archive-message"
+              className={`border-b px-3 py-2 text-xs ${
+                archiveMessage.type === 'success'
+                  ? 'border-badge-success/20 bg-emerald-500/10 text-badge-success'
+                  : 'border-red-500/20 bg-red-500/10 text-badge-danger'
+              }`}
+            >
+              <span>{archiveMessage.text}</span>
+            </div>
+          )}
 
           <div className="border-b border-zinc-800 px-3 py-3">
             <div className="relative">

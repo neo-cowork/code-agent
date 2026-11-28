@@ -82,6 +82,13 @@ function isInferenceHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
 }
 
+function isBackgroundApprovalDetached(sessionId: string): boolean {
+  if (hasInteractiveUi()) return false;
+  const modes = getPermissionModeManager();
+  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
+    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
+}
+
 // ============================================================================
 // TaskManager Class
 // ============================================================================
@@ -111,13 +118,6 @@ function isInferenceHistoryMessage(message: Message): boolean {
  * });
  * ```
  */
-function isBackgroundApprovalDetached(sessionId: string): boolean {
-  if (hasInteractiveUi()) return false;
-  const modes = getPermissionModeManager();
-  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
-    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
-}
-
 export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
@@ -262,7 +262,17 @@ export class TaskManager extends EventEmitter {
    * history is installed verbatim and the existing runId is adopted by the live
    * orchestrator; this path never creates a new user turn.
    */
-  async resumeExistingDurableRun(sessionId: string, runId: string, messages: Message[], options?: AgentRunOptions, messageMetadata?: MessageMetadata, clientMessageId?: string): Promise<void> {
+  async resumeExistingDurableRun(
+    sessionId: string,
+    runId: string,
+    messages: Message[],
+    options?: AgentRunOptions & {
+      recoveredWorkingDirectory?: string;
+      onRecoveredRunStart?: () => Promise<void>;
+    },
+    messageMetadata?: MessageMetadata,
+    clientMessageId?: string,
+  ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) throw new Error('TaskManager not initialized. Call initialize() first.');
     if (!this.runRegistry?.hasDurableOwner(runId)) throw new Error(`Durable run ${runId} is not claimed for resume`);
     const existingHandle = this.runRegistry.get(runId);
@@ -277,11 +287,18 @@ export class TaskManager extends EventEmitter {
     const wrapper = this.getOrCreateOrchestrator(sessionId);
     wrapper.orchestrator.setMessages(inferenceMessages);
     try {
+      const { recoveredWorkingDirectory, onRecoveredRunStart, ...runOptions } = options ?? {};
+      if (recoveredWorkingDirectory) {
+        // Native recovery has revalidated this directory. Keep the same cwd while
+        // the live orchestrator re-evaluates the session's current authority.
+        wrapper.orchestrator.setWorkingDirectory(recoveredWorkingDirectory, { syncWorkspaceServices: false });
+      }
+      await onRecoveredRunStart?.();
       await withBackgroundPrimaryRun(sessionId, runId, () => wrapper.orchestrator.resumeExistingDurableRun(
         source.content,
         source.attachments,
         {
-          ...options,
+          ...runOptions,
           mode: options?.mode ?? 'normal',
           runId,
           resumeExistingDurableRun: true,
@@ -1303,6 +1320,7 @@ export class TaskManager extends EventEmitter {
       backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
       messageDeltaAccumulator: this.messageDeltaAccumulator,
       primaryRunId: executingBackgroundPrimaryRunId(sessionId) ?? this.runRegistry?.getBySessionId(sessionId)?.context.runId,
+      getRunContext: (runId) => this.runRegistry?.get(runId)?.context,
       isPrimaryRunActive: () => this.getSessionState(sessionId).status === 'running' || this.hasActivePrimaryRun(sessionId),
     }, sessionId, event, snapshot, eventKey);
   }

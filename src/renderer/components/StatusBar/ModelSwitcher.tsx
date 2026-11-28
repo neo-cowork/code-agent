@@ -29,6 +29,7 @@ import {
   resolveModelPrice,
 } from '@shared/pricing/resolveModelPrice';
 import { toast } from '../../hooks/useToast';
+import { Button } from '../primitives/Button';
 import { BadgeCheck, Sparkles, Code2, Settings, Star } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
@@ -161,7 +162,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [hasLoadedPickerSettings, setHasLoadedPickerSettings] = useState(false);
   const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const panelText = modelText.switcherPanel;
@@ -215,7 +215,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   );
   const showModelSettingsPrompt = shouldShowModelSettingsPrompt(
     engine.kind,
-    hasLoadedPickerSettings ? modelSettings : null,
+    modelSettings,
     nativeHasConfiguredModels,
   );
   const displayModel = overrideModel || hostModel?.model || currentModel;
@@ -265,6 +265,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     window.addEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
     return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
   }, []);
+  const settingsOpen = useAppStore((state) => state.showSettings);
   useEffect(() => {
     setSettingsLoaded(false);
     const api = window.domainAPI;
@@ -277,13 +278,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .then((res) => {
         if (active && res?.success && res.data) {
           setModelSettings(res.data);
-          if (open) setHasLoadedPickerSettings(true);
         }
       })
       .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
       .finally(() => { if (active) setSettingsLoaded(true); });
     return () => { active = false; };
-  }, [open]);
+  }, [open, settingsOpen]);
   useEffect(() => {
     const domainAPI = window.domainAPI;
     if (!open || !domainAPI) return;
@@ -821,13 +821,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">
                       {panelText.noModelBody}
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleOpenModelSettings}
-                      className="mt-3 inline-flex h-7 items-center justify-center rounded bg-zinc-700 px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-zinc-600"
-                    >
+                    <Button size="sm" variant="secondary" className="mt-3" onClick={handleOpenModelSettings}>
                       {panelText.openModelSettings}
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <>
@@ -997,7 +993,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         ref={triggerRef}
         type="button"
         onClick={handleTriggerClick}
-        aria-label={panelText.triggerAria}
+        aria-label={showModelSettingsPrompt ? panelText.configureModel : panelText.triggerAria}
         aria-expanded={open}
         className={`
           group cursor-pointer truncate max-w-[200px] text-xs
