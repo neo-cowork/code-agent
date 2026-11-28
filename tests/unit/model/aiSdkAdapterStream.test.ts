@@ -70,6 +70,61 @@ beforeEach(() => {
   vi.mocked(generateText).mockReset();
 });
 
+describe('AI SDK think markup exits', () => {
+  const cases = [
+    {
+      label: 'orphan close without a reasoning channel',
+      raw: 'Hidden</think>Answer', reasoning: '', content: 'Answer', thinking: 'Hidden',
+    },
+    {
+      label: 'literal close and unclosed open in an answer',
+      raw: 'Before </think> and <think> after', reasoning: 'Thinking',
+      content: 'Before  and  after', thinking: 'Thinking',
+    },
+    {
+      label: 'reasoning spill ending in a close',
+      raw: 'Spill </think>more</think>\n', reasoning: 'Thinking',
+      content: '', thinking: 'Thinking\nSpill more',
+    },
+  ];
+
+  it.each(cases)('sanitizes streaming final and snapshot: $label', async ({ raw, reasoning, content, thinking }) => {
+    vi.mocked(streamText).mockReturnValue(fakeStream([
+      { type: 'reasoning-delta', id: 'r', text: reasoning },
+      { type: 'text-delta', id: 't', text: raw },
+      { type: 'tool-call', toolCallId: 'call_1', toolName: 'Read', input: { path: 'a.ts' } },
+      { type: 'finish', finishReason: 'tool-calls', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+    ]));
+    const snapshots: StreamSnapshot[] = [];
+    const collector = makeCollector();
+    const result = await inferenceViaAiSdk(
+      [{ role: 'user', content: 'Read the file' }], [READ_TOOL], CONFIG, collector.onStream, undefined,
+      { onSnapshot: (snapshot) => snapshots.push(snapshot) },
+    );
+
+    expect(collector.texts()).toBe(raw);
+    expect(snapshots.at(-1)).toMatchObject({ content, reasoning: thinking, isFinal: true });
+    expect(result.content).toBe(content || undefined);
+    expect(result.thinking).toBe(thinking);
+    expect(result.contentParts).toEqual([
+      ...(content ? [{ type: 'text', text: content }] : []),
+      { type: 'tool_call', toolCallId: 'call_1' },
+    ]);
+  });
+
+  it.each(cases)('sanitizes non-streaming final: $label', async ({ raw, reasoning, content, thinking }) => {
+    vi.mocked(generateText).mockResolvedValue({
+      text: raw, reasoningText: reasoning, toolCalls: [], finishReason: 'stop',
+    } as unknown as Awaited<ReturnType<typeof generateText>>);
+
+    const result = await inferenceViaAiSdk([{ role: 'user', content: 'Explain the tag' }], [], CONFIG);
+
+    expect(result.content).toBe(content);
+    expect(result.thinking).toBe(thinking);
+    expect(result.contentParts).toEqual(content ? [{ type: 'text', text: content }] : undefined);
+  });
+});
+
 describe('inferenceViaAiSdk —— 流式映射', () => {
   it.each([
     {
