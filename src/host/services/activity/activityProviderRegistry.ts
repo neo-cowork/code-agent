@@ -20,8 +20,9 @@ function normalizeOpenchronicleState(state?: ActivityProviderState): ActivityPro
 export async function listActivityProviders(): Promise<ActivityProviderListResult> {
   const generatedAtMs = Date.now();
 
-  const openchronicle: OpenchronicleStatus = await getOpenchronicleStatus().catch((error) => ({
-    installed: false,
+  // 状态读失败时装没装未知（null）：页面按「出了问题」显示，不误报「未安装」。
+  const openchronicle: Omit<OpenchronicleStatus, 'installed'> & { installed: boolean | null } = await getOpenchronicleStatus().catch((error) => ({
+    installed: null,
     state: 'error',
     mcpHealthy: false,
     bufferFiles: 0,

@@ -11,6 +11,7 @@ export const zhSettingsScreenMemory = {
     refresh: '刷新',
     notInstalled: '这台电脑还没有安装屏幕记忆需要的配套程序 OpenChronicle，下面的开关暂时不能用。装好后点「刷新」即可。',
     runError: '屏幕记忆没有正常运行。请点「刷新」重新检查，还不行就把开关关掉再打开。',
+    statusUnavailable: '暂时读不到屏幕记忆的状态，下面的开关先锁住。请点「刷新」重试。',
     stateLabels: {
       running: '运行中',
       starting: '启动中…',

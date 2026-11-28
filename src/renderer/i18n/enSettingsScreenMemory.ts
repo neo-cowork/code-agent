@@ -10,6 +10,7 @@ export const enSettingsScreenMemory = {
     refresh: 'Refresh',
     notInstalled: 'This computer does not have OpenChronicle, the companion program screen memory needs, so the switches below cannot be used yet. After installing it, press Refresh.',
     runError: 'Screen memory is not running properly. Press Refresh to check again; if that does not help, turn the switch off and on.',
+    statusUnavailable: 'Screen memory status cannot be read right now, so the switches below stay locked. Press Refresh to try again.',
     stateLabels: {
       running: 'Running',
       starting: 'Starting...',

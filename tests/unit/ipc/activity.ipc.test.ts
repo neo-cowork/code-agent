@@ -113,7 +113,7 @@ describe('activity provider IPC', () => {
     });
   });
 
-  it('falls back to an error, not-installed OpenChronicle provider when the status read throws', async () => {
+  it('falls back to an error provider with unknown install state (not "not installed") when the status read throws', async () => {
     mocks.getOpenchronicleStatus.mockRejectedValueOnce(new Error('status read failed'));
     const ipc = createMockIpcMain();
     registerActivityHandlers(ipc.ipcHost as any);
@@ -127,7 +127,7 @@ describe('activity provider IPC', () => {
       id: 'openchronicle',
       state: 'error',
       lastError: 'status read failed',
-      metadata: expect.objectContaining({ installed: false }),
+      metadata: expect.objectContaining({ installed: null }),
     });
   });
 

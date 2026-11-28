@@ -44,6 +44,8 @@ const COPY = {
   zh: {
     notInstalled: '这台电脑还没有安装屏幕记忆需要的配套程序 OpenChronicle，下面的开关暂时不能用。装好后点「刷新」即可。',
     runError: '屏幕记忆没有正常运行。请点「刷新」重新检查，还不行就把开关关掉再打开。',
+    statusUnavailable: '暂时读不到屏幕记忆的状态，下面的开关先锁住。请点「刷新」重试。',
+    refresh: /刷新/,
     toggle: '启用屏幕记忆',
     autoInject: /新对话自动带上刚才在做的事/,
     apps: '应用（每行一个）',
@@ -55,6 +57,8 @@ const COPY = {
   en: {
     notInstalled: 'This computer does not have OpenChronicle, the companion program screen memory needs, so the switches below cannot be used yet. After installing it, press Refresh.',
     runError: 'Screen memory is not running properly. Press Refresh to check again; if that does not help, turn the switch off and on.',
+    statusUnavailable: 'Screen memory status cannot be read right now, so the switches below stay locked. Press Refresh to try again.',
+    refresh: /Refresh/,
     toggle: 'Enable screen memory',
     autoInject: /Start new chats with what you were just doing/,
     apps: 'Apps (one per line)',
@@ -93,6 +97,7 @@ interface HostState {
   settings: OpenchronicleSettings;
   status: OpenchronicleStatus;
   activityContext: unknown;
+  statusReadFails?: boolean;
   setEnabledResult: { ok: boolean; error?: string };
   statusAfterSetEnabled?: OpenchronicleStatus;
 }
@@ -168,7 +173,10 @@ async function fakeInvokeDomain(domain: string, action: string, payload?: unknow
   calls.push([domain, action, payload]);
   if (domain === IPC_DOMAINS.OPENCHRONICLE) {
     if (action === 'getSettings') return host.settings;
-    if (action === 'getStatus') return host.status;
+    if (action === 'getStatus') {
+      if (host.statusReadFails) throw new Error('domain:openchronicle getStatus failed');
+      return host.status;
+    }
     if (action === 'updateSettings') return { success: true };
     if (action === 'setEnabled') {
       host.settings = { ...host.settings, enabled: (payload as { enabled: boolean }).enabled };
@@ -375,6 +383,25 @@ describe('③ after installing, Refresh unlocks the section and the page status 
     await waitFor(() => expect(screen.queryAllByText(COPY.zh.tileNotInstalled)).toEqual([]), { timeout: WAIT_MS });
     expect(container.textContent).not.toContain(COPY.zh.notInstalled);
     expect(calls.filter(([domain, action]) => domain === IPC_DOMAINS.ACTIVITY && action === 'listProviders')).toHaveLength(2);
+  });
+});
+
+describe('③ status cannot be read: still locked, but with one sentence instead of silence', () => {
+  it.each(['zh', 'en'] as const)('%s', async (lang) => {
+    host.statusReadFails = true;
+    host.settings = { ...DEFAULT_OPENCHRONICLE_SETTINGS, enabled: true };
+    const { container } = await renderPage(lang);
+
+    await screen.findByText(COPY[lang].statusUnavailable, {}, { timeout: WAIT_MS });
+    const toggle = screen.getByRole('switch', { name: COPY[lang].toggle }) as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+    expect(pageStrings(container).join('\n')).not.toContain('getStatus failed');
+
+    host.statusReadFails = false;
+    host.status = { installed: true, state: 'stopped', mcpHealthy: false, bufferFiles: 0, memoryEntries: 0 };
+    fireEvent.click(within(toggle.closest('section')!).getByRole('button', { name: COPY[lang].refresh }));
+    await waitFor(() => expect(toggle.disabled).toBe(false), { timeout: WAIT_MS });
+    expect(container.textContent).not.toContain(COPY[lang].statusUnavailable);
   });
 });
 

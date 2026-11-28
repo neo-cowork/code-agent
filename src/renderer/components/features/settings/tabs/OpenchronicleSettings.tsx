@@ -80,6 +80,7 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
   const [status, setStatus] = useState<OpenchronicleStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusReadFailed, setStatusReadFailed] = useState(false);
 
   // 没拿到状态前不知道装没装，同样锁住；宿主明确说没装时显示未安装说明。
   const notInstalled = status?.installed === false;
@@ -107,8 +108,10 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
       ]);
       if (s) setSettings(s);
       if (st) setStatus(st);
+      setStatusReadFailed(false);
     } catch (e) {
       logger.error('refresh failed', e);
+      setStatusReadFailed(true);
     }
   }, []);
 
@@ -230,9 +233,9 @@ export const OpenchronicleSettings: React.FC<OpenchronicleSettingsProps> = ({ em
           </div>
         </div>
 
-        {rawError && (
+        {(rawError || (status === null && statusReadFailed)) && (
           <div className="mt-3 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-badge-danger">
-            {openchronicleText.runError}
+            {rawError ? openchronicleText.runError : openchronicleText.statusUnavailable}
           </div>
         )}
 
