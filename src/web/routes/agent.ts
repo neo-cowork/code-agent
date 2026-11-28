@@ -1604,10 +1604,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
       // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
       if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_session_title');
+      let titleAlreadyBroadcast = false;
       if (isNewSession && body.historyVisibility !== 'meta') {
         const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
           broadcastSSE('session:updated', { sessionId, updates: { title: draftTitle } });
+          titleAlreadyBroadcast = true;
           broadcastSSE('session:list-updated', undefined);
         }
       }
@@ -1622,6 +1624,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
         title: draftTitle,
+        titleAlreadyBroadcast,
         // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
         // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
         // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）
