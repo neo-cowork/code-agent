@@ -183,6 +183,11 @@ export function usePendingStopReplay(input: {
   const taskStatus = useTaskStore((state) => (
     currentSessionId ? state.sessionStates[currentSessionId]?.status : undefined
   ));
+  const durableInterruptCause = useSessionStore((state) => (
+    currentSessionId
+      ? state.sessions.find((session) => session.id === currentSessionId)?.durableResume?.interruptCause
+      : undefined
+  ));
 
   const [onlineTick, setOnlineTick] = useState(0);
   const inFlightRef = useRef(false);
@@ -194,10 +199,13 @@ export function usePendingStopReplay(input: {
     usePendingStopStore.getState().hydrateFromStorage();
   }, []);
 
-  // 短暂断网（未达横幅阈值、不刷新页面）恢复时，浏览器派发 online 事件立即触发补发。
+  // 短暂断网（未达横幅阈值、status 仍为 ok、不刷新页面）恢复时，浏览器派发 online 立即补发；
+  // 横幅已出现（recovering / unavailable）时监视器会在恢复探测后整页 reload，留给刷新后补发，
+  // 避免抢在卸载前发出的 /api/cancel 被导航掐断。
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleOnline = () => {
+      if (useServerConnectionStore.getState().status !== 'ok') return;
       setOnlineTick((tick) => tick + 1);
     };
     window.addEventListener('online', handleOnline);
@@ -219,14 +227,14 @@ export function usePendingStopReplay(input: {
     }
 
     if (entry.phase !== 'pending') return;
-    if (taskStatus === 'cancelled') {
+    if (taskStatus === 'cancelled' || durableInterruptCause === 'user_stop') {
       usePendingStopStore.getState().clear(currentSessionId);
       return;
     }
     if (!isTurnActive) {
       usePendingStopStore.getState().markAlreadyFinished(currentSessionId);
     }
-  }, [currentSessionId, entry, isHydratingSession, isLoading, isTurnActive, messages, taskStatus]);
+  }, [currentSessionId, durableInterruptCause, entry, isHydratingSession, isLoading, isTurnActive, messages, taskStatus]);
 
   // 连接恢复（eventStreamRevision 推进、刷新后首次连通、或浏览器 online）时自动补发一次停止。
   useEffect(() => {

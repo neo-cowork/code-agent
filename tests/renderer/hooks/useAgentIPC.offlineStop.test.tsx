@@ -80,6 +80,7 @@ describe('offline stop feedback and reconnect replay via useAgentIPC().cancel', 
     });
     useSessionStore.setState({
       currentSessionId: SESSION_ID,
+      sessions: [],
       messages: [makeUserMessage('user-turn-1', '写 36 条社区阅读角活动点子')],
       streamSnapshot: null,
       isHydratingSession: false,
@@ -365,6 +366,42 @@ describe('offline stop feedback and reconnect replay via useAgentIPC().cancel', 
     });
     expect(cancelCalls()[1]).toEqual(['agent:cancel', { sessionId: SESSION_ID, runId: 'run-known-42' }]);
     expect(useTaskStore.getState().sessionStates[SESSION_ID]?.status).toBe('cancelled');
+  });
+
+  it('clears silently without already-finished notice if session already settled with user_stop', async () => {
+    window.sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        [SESSION_ID]: { sessionId: SESSION_ID, userMessageId: 'user-turn-1', at: Date.now() },
+      }),
+    );
+    useTaskStore.setState({ sessionStates: { [SESSION_ID]: { status: 'idle' } } });
+    useAppStore.setState({ processingSessionIds: new Set() });
+    useSessionStore.setState({
+      sessions: [{
+        id: SESSION_ID,
+        title: 't',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        durableResume: {
+          runId: 'run-stopped-1',
+          mode: 'continue',
+          interruptCause: 'user_stop',
+          autoResumeCount: 0,
+          maxAutoResumeCount: 3,
+          canContinue: true,
+        },
+      }] as ReturnType<typeof useSessionStore.getState>['sessions'],
+    });
+
+    render(<ComposerHarness sessionId={SESSION_ID} />);
+    await act(async () => {
+      useServerConnectionStore.getState().markEventStreamConnected();
+    });
+
+    expect(cancelCalls()).toHaveLength(0);
+    expect(screen.queryByTestId('pending-stop-notice')).toBeNull();
+    expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('renders plain English copy in en UI', async () => {
