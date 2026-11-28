@@ -36,6 +36,18 @@ export const backgroundPanelZh = {
     durationSeconds: '{n}秒',
     durationMinutes: '{n}分钟',
     durationHours: '{n}小时{m}分钟',
+    failureNextStepLine: '下一步：{step}',
+    failureNextStep: {
+      network: '检查网络后，让我再试一次',
+      rate_limit: '等几分钟再让我重试',
+      permission: '先确认已登录或已授权，再让我重试',
+      resource: '确认文件或网址还在，或换一个给我',
+      tool: '可以让我换个方式再做一次',
+      model: '稍后再试；一直不行就到「设置 → 模型」检查账号余额或换个模型',
+      logic: '补上缺少的信息或文件后，再让我做一次',
+      handback: '不用操作，主助手核实后会接着做',
+      unknown: '处理好上面说的问题后，可以让我再试一次',
+    },
   },
 };
 
@@ -71,5 +83,17 @@ export const backgroundPanelEn: typeof backgroundPanelZh = {
     durationSeconds: '{n}s',
     durationMinutes: '{n}m',
     durationHours: '{n}h {m}m',
+    failureNextStepLine: 'Next step: {step}',
+    failureNextStep: {
+      network: 'Check your network, then ask me to try again',
+      rate_limit: 'Wait a few minutes, then ask me to try again',
+      permission: 'Make sure you are signed in or have granted access, then ask me to try again',
+      resource: 'Check that the file or link still exists, or give me another one',
+      tool: 'Ask me to try a different way',
+      model: 'Try again later; if it keeps failing, check the account balance or switch models in Settings → Models',
+      logic: 'Add the missing information or files, then ask me again',
+      handback: 'Nothing to do: the main assistant will check and continue',
+      unknown: 'Once the problem above is sorted, ask me to try again',
+    },
   },
 };
