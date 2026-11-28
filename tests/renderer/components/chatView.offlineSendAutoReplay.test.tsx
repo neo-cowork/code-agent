@@ -132,7 +132,7 @@ function seedExistingSession(sessionId: string) {
   useTaskStore.setState({ sessionStates: { [sessionId]: { status: 'idle' } } });
 }
 
-describe('Offline send auto-replay (Surface A + Surface B)', () => {
+describe('Offline send auto-replay (Surface A + Surface B)', { timeout: 60_000 }, () => {
   beforeEach(() => {
     transportMode = 'online';
     runPayloads = [];

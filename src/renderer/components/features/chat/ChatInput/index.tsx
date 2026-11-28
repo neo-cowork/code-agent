@@ -1118,7 +1118,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
   useScheduleDraftRequest(currentSessionId, creatingSchedule, { pendingScheduleDraft, storePendingScheduleDraft, clearRequestDraft }, formRef);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
-  const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
+  const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit: async (e, opts) => { await handleSubmit(e, opts); } });
 
   // FB-579：上传中的提交不丢——先挂起（提示「正在上传，完成后自动发送」），
   // 上传结束自动重放；失败 / 等待期间改草稿则作废并告知（见 usePendingUploadSend）。
