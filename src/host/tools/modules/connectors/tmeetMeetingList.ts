@@ -9,6 +9,7 @@ import type {
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { formatTmeetMeetingReceipt } from './tmeetMeetingReceipt';
 import { executeTmeetCommand } from './tmeetToolCli';
+import { isCliNotLoggedInError } from '../../../connectors/cli/cliLoginError';
 import { tmeetMeetingListSchema as schema } from './tmeetMeetingList.schema';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -116,12 +117,15 @@ async function executeTmeetMeetingList(
     };
   } catch (error) {
     const failure = `Tencent Meeting ${scope === 'ended' ? 'list-ended' : 'list'} failed: ${error instanceof Error ? error.message : String(error)}`;
+    const notLoggedIn = isCliNotLoggedInError('tmeet', error);
     return {
       ok: false,
       error: failure,
+      ...(notLoggedIn ? { code: 'cli_not_logged_in' } : {}),
       meta: {
         action,
         connector: 'tmeet',
+        ...(notLoggedIn ? { lostCode: 'cli_not_logged_in' } : {}),
         scope,
         effectiveStart,
         artifact: createFailedReceiptArtifact({

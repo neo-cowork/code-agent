@@ -176,11 +176,16 @@ export async function executeMcpInvoke(
         };
       }
       const status = mcpClient.getStatus();
+      const serverError = mcpClient.getServerState(server)?.error;
+      const authRequired = typeof serverError === 'string' && serverError.startsWith('oauth-authorization-required');
       return {
         ok: false,
         error: `MCP 服务器 '${server}' 未连接。已连接的服务器: ${status.connectedServers.join(', ') || '无'}`,
         code: 'NOT_INITIALIZED',
-        meta: buildMcpInvokeMeta({ server, tool, errorCode: 'NOT_INITIALIZED' }),
+        meta: {
+          ...buildMcpInvokeMeta({ server, tool, errorCode: 'NOT_INITIALIZED' }),
+          ...(authRequired ? { [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true } : {}),
+        },
       };
     }
   }

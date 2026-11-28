@@ -9,6 +9,9 @@ export const durableStoppedZh = {
     otherStop: '任务停在这里 · 点「继续」接着做',
     envWaiting: '等你允许{target} · 允许后自动继续',
     envWaitingStep: '等你允许{target}',
+    loginWaiting: '等你重新登录「{target}」 · 登录后自动继续',
+    loginWaitingStep: '等你重新登录「{target}」',
+    loginTargetFallback: '该账号',
     envTargetFallback: '所需权限',
   },
 };
@@ -21,6 +24,9 @@ export const durableStoppedEn: typeof durableStoppedZh = {
     otherStop: 'The task paused here · press Continue to pick it up',
     envWaiting: 'Waiting for you to allow {target} · it continues by itself once allowed',
     envWaitingStep: 'Waiting for you to allow {target}',
+    loginWaiting: 'Waiting for you to sign in to {target} · it continues by itself once signed in',
+    loginWaitingStep: 'Waiting for you to sign in to {target}',
+    loginTargetFallback: 'the account',
     envTargetFallback: 'the needed access',
   },
 };

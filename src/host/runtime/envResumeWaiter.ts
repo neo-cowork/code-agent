@@ -2,6 +2,7 @@ import type { Message } from '../../shared/contract';
 import type { RunEnvelope } from '../../shared/contract/durableRun';
 import { getRunInterruptCause } from '../../shared/contract/durableRun';
 import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_TIMEOUT_MS, OFFLINE_RESUME_POLL_INTERVAL_MS } from '../../shared/constants/envResume';
+import { OAUTH_FLOW_TIMEOUT_MS } from '../connectors/oauth/oauthCoordinator';
 import { probeOfflineNetwork } from '../permissions/envAssist/probes/offlineProbe';
 import { createLogger } from '../services/infra/logger';
 import type { RunRegistry } from './runRegistry';
@@ -47,7 +48,10 @@ export function armEnvResumeOnPark(input: { runId: string; sessionId: string; en
     });
   };
   const offline = input.envBlocked.class === 'offline' ? input.envBlocked : undefined;
-  const remaining = offline ? offline.deadlineAt - Date.now() : ENV_RESUME_TIMEOUT_MS;
+  // login_expired must cover the whole OAuth flow (up to OAUTH_FLOW_TIMEOUT_MS), not the 120 s default (S7).
+  const remaining = offline
+    ? offline.deadlineAt - Date.now()
+    : input.envBlocked.class === 'login_expired' ? OAUTH_FLOW_TIMEOUT_MS : ENV_RESUME_TIMEOUT_MS;
   const interval = offline ? OFFLINE_RESUME_POLL_INTERVAL_MS : ENV_RESUME_POLL_INTERVAL_MS;
   if (remaining <= 0) { stop('timeout'); return; }
   loop.deadline = setTimeout(() => stop('timeout'), remaining);

@@ -38,7 +38,7 @@ import { findPendingPlanApproval, getPlanApprovalRecord } from '../../../utils/p
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
 import { isDelegationTool } from '../../../utils/agentActivity';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
-import { buildToolStatusLineCopy } from '../../../utils/toolStatusLinePresentation';
+import { buildToolStatusLineCopy, envWaitingStepText } from '../../../utils/toolStatusLinePresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -127,6 +127,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               stepLabel: tc.stepLabel,
             },
             envWaitingTarget: envParkedStep?.toolCallId === tc.id ? envParkedStep.target : undefined,
+            envWaitingLogin: envParkedStep?.toolCallId === tc.id ? envParkedStep.login : undefined,
           }, t).line;
         }
         const stepStatus = terminal.stepStatus;
@@ -165,7 +166,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     let skippedBash = 0;
     let staleUnfinished = 0;
     const notRunNames: string[] = [];
-    let envWaiting: string | undefined;
+    let envWaiting: { target: string; login: boolean } | undefined;
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
       if (!tc) continue;
@@ -187,7 +188,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       // 陈旧未完成（会话已离线）：不进进行时/未成功词表，统一用展开行同源的
       // 中断结局词收口（多步组没有逐条人话行，只报结局词，明细展开可看）。
       if (terminalById.get(tc.id)?.state === 'interrupted') {
-        if (envParkedStep?.toolCallId === tc.id) envWaiting = envParkedStep.target;
+        if (envParkedStep?.toolCallId === tc.id) envWaiting = { target: envParkedStep.target, login: envParkedStep.login };
         else staleUnfinished += 1;
         continue;
       }
@@ -212,7 +213,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           .filter(Boolean).join(t.deliveryExperience.labelSeparator);
       }),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
-      envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
+      envWaiting ? envWaitingStepText(t, envWaiting.target, envWaiting.login) : '',
       blockedCommands ? interpolatePlural(t.deliveryExperience.blockedCommands, blockedCommands) : '',
       blockedSteps ? interpolatePlural(t.deliveryExperience.blockedSteps, blockedSteps) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);

@@ -31,6 +31,10 @@ import type { TurnCostEstimateInput } from '../../shared/contract/turnCost';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 import { INTERRUPTED_TOOL_CALL_PLACEHOLDER } from '../agent/runtime/cancelledToolCallClosure';
 import {
+  consumeSkippedLoginToolCall,
+  isSkippedLoginToolCall,
+} from '../permissions/envAssist/loginRecovery';
+import {
   buildRecoveredToolMessage,
   dispatchLedgerToolApproval,
   persistedToolCall,
@@ -41,6 +45,14 @@ import {
 const MAIL_PERMISSION_REFUSED_NOT_RUN =
   'not run: Mail automation permission was missing when this call was made, so nothing was saved or sent. '
   + 'The permission is now granted. Call this tool again once with the same arguments.';
+/** Model-visible text for a skipped login call (S7): honest "not run", no user copy. */
+const LOGIN_SKIPPED_NOT_RUN = (target: string) =>
+  `skipped: The user chose to skip signing in to ${target} for now, so this call did not run. `
+  + 'Continue with whatever you can do without it, and briefly note what was skipped.';
+/** Model-visible text after the same run re-authorized (S7): the parked call replays once. */
+const LOGIN_RECOVERED_NOT_RUN = (target: string) =>
+  `not run: Sign-in for ${target} had expired when this call was made, so nothing ran. `
+  + 'Sign-in is now complete. Call this tool again once with the same arguments.';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -495,6 +507,9 @@ export function createApplicationNativeRecoveryPorts(
         const messages = await sessions.getMessages(input.plan.envelope.sessionId, MODEL_RECOVERY_MESSAGE_LIMIT);
         const persisted = persistedToolCall(messages, input.descriptor.logicalOperationId);
         const toolName = persisted?.toolCall.name ?? input.descriptor.model;
+        if (persisted && isSkippedLoginToolCall(input.plan.envelope.runId, persisted.toolCall.id)) {
+          return { stored: 'forbidden', current: 'forbidden' };
+        }
         return {
           stored: storedToolReplaySafety(
             input.plan.envelope.sessionId,
@@ -574,11 +589,20 @@ export function createApplicationNativeRecoveryPorts(
         const envNote = input.plan.envelope.envBlocked;
         const refusedMail = envNote?.toolCallId === persisted.toolCall.id && persisted.toolCall.name === 'mail_draft'
           && envNote.class === 'perm_automation' && envNote.target === 'mail';
+        const loginBlocked = envNote?.toolCallId === persisted.toolCall.id && envNote.class === 'login_expired';
+        const loginSkipped = loginBlocked && consumeSkippedLoginToolCall(input.plan.envelope.runId, persisted.toolCall.id);
+        const errorText = refusedMail
+          ? MAIL_PERMISSION_REFUSED_NOT_RUN
+          : loginSkipped
+            ? LOGIN_SKIPPED_NOT_RUN(envNote.target)
+            : loginBlocked
+              ? LOGIN_RECOVERED_NOT_RUN(envNote.target)
+              : INTERRUPTED_TOOL_CALL_PLACEHOLDER;
         const toolResult: ToolResult = {
           toolCallId: persisted.toolCall.id,
           success: false,
           // 存储型自动操作来自账本，必然有 begin 事件 → 恒为 OUTCOME_UNKNOWN 档
-          error: refusedMail ? MAIL_PERMISSION_REFUSED_NOT_RUN : INTERRUPTED_TOOL_CALL_PLACEHOLDER,
+          error: errorText,
           duration: 0,
         };
         const message = buildRecoveredToolMessage({
