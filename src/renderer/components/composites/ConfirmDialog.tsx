@@ -67,6 +67,8 @@ export interface ConfirmDialogProps {
   cancelDisabled?: boolean;
   /** Give the primary confirm action initial keyboard focus. */
   confirmAutoFocus?: boolean;
+  zIndex?: number;
+  portal?: boolean;
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -84,6 +86,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmDisabled = false,
   cancelDisabled = false,
   confirmAutoFocus = false,
+  zIndex,
+  portal,
 }) => {
   const config = variantConfig[variant];
   const displayIcon = icon || config.icon;
@@ -94,6 +98,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       onClose={singleAction ? undefined : (onDismiss ?? onCancel)}
       title={title}
       size="md"
+      zIndex={zIndex}
+      portal={portal}
       closeOnBackdropClick={!singleAction}
       closeOnEsc={!singleAction}
       showCloseButton={!singleAction}

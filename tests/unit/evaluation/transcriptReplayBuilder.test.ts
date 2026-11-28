@@ -163,4 +163,44 @@ describe('buildMemoryAuditBlock', () => {
     expect(block.memoryAudit?.agentScorecard?.agentId).toBe('coder');
     expect(block.content).toContain('deepseek/deepseek-v4-pro');
   });
+
+  it('不计入每轮常驻的 user-directives', () => {
+    const summary: TurnQualitySummary = {
+      memory: {
+        mode: 'auto',
+        blocks: [
+          {
+            blockType: 'user-directives',
+            trigger: 'session_start',
+            source: 'directive-memory-packer',
+            injected: true,
+            chars: 200,
+            count: 1,
+            items: [
+              { entryId: 'dir-1', title: 'Always give the conclusion first', kind: 'directive', scope: 'global', status: 'active' },
+            ],
+          },
+          {
+            blockType: 'user-memory',
+            trigger: 'session_start',
+            source: 'memory-packer',
+            injected: true,
+            chars: 300,
+            count: 2,
+            items: [
+              { entryId: 'mem-1', title: '周报结构', kind: 'user', scope: 'global', status: 'active' },
+              { entryId: 'mem-2', title: '受众是团队', kind: 'user', scope: 'global', status: 'active' },
+            ],
+          },
+        ],
+      },
+      strategy: { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      score: { score: 86, max: 100, grade: 'good', breakdown: [] },
+    };
+
+    const block = buildMemoryAuditBlock(summary, 123);
+
+    expect(block.content).toContain('2 memories');
+    expect(block.content).not.toContain('3 memories');
+  });
 });

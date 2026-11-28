@@ -76,6 +76,7 @@ import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessi
 import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { takeApprovedRmLeftovers } from '../../host/session/approvedRmSettlementTargets';
+import { recordUnfinishedRmSettlementTargets } from '../../host/tools/modules/shell/unfinishedRmSettlementTargets';
 import { hasInFlightBackgroundChildren, settleOrHoldBackgroundRun } from '../../host/session/backgroundSettlementHold';
 import { getProjectSourceTrustFailureMarker, ProjectSourceTrustError } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
@@ -1580,6 +1581,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const agentLoop = createAgentLoop(config, (event) => {
         const emitted = runController.emitAgentEvent(event);
         runEventCollector.observe(event, emitted);
+        if (event.type === 'tool_call_end') recordUnfinishedRmSettlementTargets(sessionId, runContext.runId, messages, event.data, runContext.cwd);
         // 终态（完成/取消/失败）只由本路由收尾处发一次：引擎失败时 runFinalizer 先发 error 再抛出，
         // 这里再转一遍手机就收到两条 error ⇒ 两条「任务失败」推送（FB-193，爸 build 51 真机）。
         if (event.type !== 'agent_complete' && event.type !== 'agent_cancelled' && event.type !== 'error') {
@@ -1604,10 +1606,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）。
       // 只覆盖占位标题：手机/用户起过名的会话不能被首条 prompt 改写。
       if (firstRunNoFolderSession) noteFirstModelRequestPhase('web_session_title');
+      let titleAlreadyBroadcast = false;
       if (isNewSession && body.historyVisibility !== 'meta') {
         const current = await (await deps.tryGetSessionManager())?.getSession?.(sessionId, 1);
         if (isPlaceholderSessionTitle(current?.title)) {
           broadcastSSE('session:updated', { sessionId, updates: { title: draftTitle } });
+          titleAlreadyBroadcast = true;
           broadcastSSE('session:list-updated', undefined);
         }
       }
@@ -1622,6 +1626,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
         title: draftTitle,
+        titleAlreadyBroadcast,
         // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
         // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
         // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）

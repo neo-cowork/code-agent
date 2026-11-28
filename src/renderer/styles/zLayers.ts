@@ -40,6 +40,7 @@ export const Z_LAYERS = {
   undoToast: 1900,
   /** Project Settings 从侧栏或项目头部打开，必须压过项目抽屉。 */
   projectSettingsModal: 1950,
+  confirmPrompt: 1975,
   /** SessionContextMenu 右键菜单。 */
   contextMenu: 2000,
   /** Toast 全局提示。 */
