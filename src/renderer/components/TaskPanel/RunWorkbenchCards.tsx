@@ -485,7 +485,7 @@ const TaskRecordRow = ({
           </Button>
           {rawErrorOpen && (
             <pre
-              className="mt-1 max-h-48 select-text overflow-auto whitespace-pre-wrap break-words rounded-md border border-white/[0.07] bg-white/[0.03] p-2 text-[11px] text-zinc-300"
+              className="mt-1 max-h-48 select-text overflow-auto whitespace-pre-wrap break-words rounded-md border border-zinc-600 bg-zinc-800 p-2 text-[11px] text-zinc-200"
               data-testid="task-record-raw-error"
             >
               {task.failureDetail}
