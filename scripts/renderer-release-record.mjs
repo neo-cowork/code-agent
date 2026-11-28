@@ -42,9 +42,28 @@ function readJsonFile(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function normalizePublishBlocked(publishGate, fallbackMinShellVersion) {
+  if (!publishGate || publishGate.blocked !== true) {
+    return null;
+  }
+  const minShellVersion = String(publishGate.minShellVersion ?? fallbackMinShellVersion ?? '');
+  const normalizedMin = minShellVersion.replace(/^v/, '');
+  return {
+    reason: String(publishGate.reason ?? ''),
+    message: String(publishGate.message ?? ''),
+    minShellVersion,
+    baselineTag: String(publishGate.baselineTag || (normalizedMin ? `v${normalizedMin}` : '')),
+    missingShellCapabilitiesCount: typeof publishGate.missingShellCapabilitiesCount === 'number'
+      ? publishGate.missingShellCapabilitiesCount
+      : null,
+    missingShellCapabilities: sortedStringArray(publishGate.missingShellCapabilities),
+  };
+}
+
 export function buildRendererReleaseRecord({
   manifest,
   manifestDiff = null,
+  publishGate = null,
   createdAt = new Date().toISOString(),
   channel = 'latest',
   cohort,
@@ -62,6 +81,7 @@ export function buildRendererReleaseRecord({
   const requiredShellCapabilitiesByLayer = countShellCapabilitiesByLayer(requiredShellCapabilities);
   const normalizedCohort = normalizeOptionalString(cohort);
   const normalizedRolloutPercent = normalizeRolloutPercent(rolloutPercent);
+  const publishBlocked = normalizePublishBlocked(publishGate, manifest.minShellVersion);
   return {
     schemaVersion: 1,
     kind: 'renderer_bundle_release_record',
@@ -107,6 +127,7 @@ export function buildRendererReleaseRecord({
       runAttempt: git.runAttempt ?? '',
     },
     ...(manifestDiff ? { manifestDiff } : {}),
+    ...(publishBlocked ? { publishBlocked } : {}),
   };
 }
 
@@ -151,6 +172,18 @@ export function formatRendererReleaseRecordMarkdown(record) {
     `Required runtime assets: ${record.requiredRuntimeAssetsCount ?? 0}`,
     `Required resources: ${record.requiredResourcesCount ?? 0}`,
     '',
+    ...(record.publishBlocked ? [
+      '## Publish Blocked',
+      '',
+      `Reason: ${formatValue(record.publishBlocked.reason)}`,
+      `Message: ${formatValue(record.publishBlocked.message)}`,
+      `Min shell version: ${formatValue(record.publishBlocked.minShellVersion)}`,
+      `Baseline tag: ${formatValue(record.publishBlocked.baselineTag)}`,
+      `Missing shell capabilities count: ${record.publishBlocked.missingShellCapabilitiesCount ?? 'unknown'}`,
+      '',
+      formatList(record.publishBlocked.missingShellCapabilities),
+      '',
+    ] : []),
     '## Git',
     '',
     `Repository: ${record.git.repository || '(empty)'}`,
@@ -197,9 +230,12 @@ function main() {
   const manifest = extractRendererManifestPayload(readJsonFile(path.resolve(manifestPath)));
   const manifestDiffPath = readArg('--manifest-diff-json');
   const manifestDiff = manifestDiffPath ? readJsonFile(path.resolve(manifestDiffPath)) : null;
+  const publishGatePath = readArg('--publish-gate-json');
+  const publishGate = publishGatePath ? readJsonFile(path.resolve(publishGatePath)) : null;
   const record = buildRendererReleaseRecord({
     manifest,
     manifestDiff,
+    publishGate,
     createdAt: readArg('--created-at') || process.env.RENDERER_RELEASE_CREATED_AT || new Date().toISOString(),
     channel: readArg('--channel') || process.env.RENDERER_RELEASE_CHANNEL || 'latest',
     cohort: readArg('--cohort') || process.env.RENDERER_RELEASE_COHORT,

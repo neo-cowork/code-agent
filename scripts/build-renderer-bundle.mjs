@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createControlPlaneEnvelopeFromEnv } from '../vercel-api/lib/controlPlaneEnvelope.ts';
 import { getShellCapabilityIds } from '../src/host/shellCapabilities.ts';
 import { collectRendererShellCapabilities } from './renderer-capability-scanner.mjs';
@@ -114,6 +114,109 @@ function normalizeRequiredShellCapabilities(requiredShellCapabilities) {
 function validateRequiredShellCapabilities(requiredShellCapabilities, supportedShellCapabilities) {
   const supported = new Set(supportedShellCapabilities);
   return requiredShellCapabilities.filter((id) => !supported.has(id));
+}
+
+function formatShellBaselineWarningLine(gate) {
+  const missing = gate.missingShellCapabilitiesCount ?? 'unknown';
+  const first = gate.missingShellCapabilities.slice(0, 5).join(',');
+  return `::warning title=renderer-hot-update-blocked::reason=${gate.reason} missing=${missing} minShellVersion=${gate.minShellVersion} first=${first}`;
+}
+
+function formatShellBaselineSummaryLine(gate) {
+  if (gate.reason === 'missing-shell-capability') {
+    return `Renderer hot-update publish blocked: ${gate.reason}, ${gate.missingShellCapabilitiesCount} shell capabilities missing in ${gate.baselineTag}`;
+  }
+  return `Renderer hot-update publish blocked: ${gate.reason}, ${gate.message}`;
+}
+
+export async function evaluateShellBaselineGate({
+  shellBaselineRoot,
+  minShellVersion,
+  requiredShellCapabilities = [],
+  outputDir,
+  stepSummaryPath,
+  onWarning,
+}) {
+  if (!shellBaselineRoot) {
+    throw new Error('evaluateShellBaselineGate: shellBaselineRoot is required');
+  }
+  if (!minShellVersion) {
+    throw new Error('evaluateShellBaselineGate: minShellVersion is required');
+  }
+  const normalizedMin = String(minShellVersion).replace(/^v/, '');
+  const baselineTag = `v${normalizedMin}`;
+  const required = normalizeRequiredShellCapabilities(requiredShellCapabilities);
+  const baselineCapabilitiesPath = path.join(
+    path.resolve(shellBaselineRoot),
+    'src/host/shellCapabilities.ts',
+  );
+
+  let gate;
+  if (!fs.existsSync(baselineCapabilitiesPath)) {
+    gate = {
+      blocked: true,
+      reason: 'baseline-tag-missing',
+      message: `尚无已发布的 ${baselineTag} 壳`,
+      minShellVersion: normalizedMin,
+      baselineTag,
+      missingShellCapabilitiesCount: null,
+      missingShellCapabilities: [],
+    };
+  } else {
+    const baselineModule = await import(pathToFileURL(baselineCapabilitiesPath).href);
+    const getBaselineCapabilityIds = baselineModule.getShellCapabilityIds
+      ?? baselineModule.default?.getShellCapabilityIds;
+    if (typeof getBaselineCapabilityIds !== 'function') {
+      throw new Error(
+        `evaluateShellBaselineGate: getShellCapabilityIds export not found in ${baselineCapabilitiesPath}`,
+      );
+    }
+    const missing = validateRequiredShellCapabilities(
+      required,
+      getBaselineCapabilityIds(),
+    ).sort((left, right) => left.localeCompare(right));
+    if (missing.length > 0) {
+      gate = {
+        blocked: true,
+        reason: 'missing-shell-capability',
+        message: `已发布的 ${baselineTag} 壳缺少 ${missing.length} 项所需能力`,
+        minShellVersion: normalizedMin,
+        baselineTag,
+        missingShellCapabilitiesCount: missing.length,
+        missingShellCapabilities: missing,
+      };
+    } else {
+      gate = {
+        blocked: false,
+        reason: null,
+        message: null,
+        minShellVersion: normalizedMin,
+        baselineTag,
+        missingShellCapabilitiesCount: 0,
+        missingShellCapabilities: [],
+      };
+    }
+  }
+
+  if (outputDir) {
+    const resolvedOutputDir = path.resolve(outputDir);
+    fs.mkdirSync(resolvedOutputDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(resolvedOutputDir, 'publish-gate.json'),
+      `${JSON.stringify(gate, null, 2)}\n`,
+    );
+  }
+
+  if (gate.blocked) {
+    if (typeof onWarning === 'function') {
+      onWarning(formatShellBaselineWarningLine(gate));
+    }
+    if (typeof stepSummaryPath === 'string' && stepSummaryPath.trim().length > 0) {
+      fs.appendFileSync(stepSummaryPath, `${formatShellBaselineSummaryLine(gate)}\n`, 'utf8');
+    }
+  }
+
+  return gate;
 }
 
 function compareShellVersions(v1, v2) {
@@ -254,9 +357,10 @@ export function resolveRendererBundleSigningOptions({
   };
 }
 
-function main() {
+async function main() {
   const version = readArg('--version') || process.env.VERSION || readPackageVersion();
   const minShellVersion = readArg('--min-shell-version') || version;
+  const shellBaselineRoot = readArg('--shell-baseline-root');
   const rendererDir = path.resolve(readArg('--renderer-dir') || path.join(repoRoot, 'dist/renderer'));
   const rendererSourceDir = path.resolve(readArg('--renderer-source-dir') || path.join(repoRoot, 'src/renderer'));
   const outputDir = path.resolve(readArg('--output-dir') || path.join(repoRoot, 'dist/renderer-bundle'));
@@ -396,9 +500,20 @@ function main() {
   console.log(`[build-renderer-bundle] contentHash=${manifest.contentHash}`);
   console.log(`[build-renderer-bundle] archive: ${path.relative(repoRoot, archivePath)}`);
   console.log(`[build-renderer-bundle] manifest: ${path.relative(repoRoot, manifestPath)} (signed=${hasKey})`);
+
+  if (shellBaselineRoot) {
+    await evaluateShellBaselineGate({
+      shellBaselineRoot,
+      minShellVersion: manifest.minShellVersion,
+      requiredShellCapabilities: manifest.requiredShellCapabilities ?? [],
+      outputDir,
+      stepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
+      onWarning: (line) => console.log(line),
+    });
+  }
 }
 
 // 仅作为脚本直接运行时执行 main，被 import（测试）时不执行
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+  await main();
 }
