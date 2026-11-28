@@ -186,6 +186,24 @@ describe('EnvAssistCard', () => {
     });
 
     it.each([
+      ['zh', '「飞书」登录过期了，重新登录后再试一次。'],
+      ['en', 'Feishu sign-in expired — sign in again and try again.'],
+    ] as const)('non-parkable run card (loginExpiredRetry) says sign in and try again, never the auto-continue promise (%s)', async (language, expectedSentence) => {
+      mocks.language = language;
+      mocks.invoke.mockImplementation(async (_domain, action) => (
+        action === 'getAvailability' ? { available: false } : { status: 'checked', outcome: { status: 'denied' } }
+      ));
+      const { container } = render(<EnvAssistCard notice={loginNotice({ sentenceKey: 'env.sentence.loginExpiredRetry', resume: { mode: 'manual' } })} />);
+      const buttons = await screen.findAllByRole('button');
+      expect(buttons).toHaveLength(1);
+      expect(container.querySelector('p')!.textContent).toBe(expectedSentence);
+      expect(container.textContent).not.toContain('重新登录后我会继续');
+      expect(container.textContent).not.toContain('I will continue');
+      expect(container.textContent).not.toContain('自动接着做');
+      expect(container.textContent).not.toContain('picks the task back up');
+    });
+
+    it.each([
       ['zh', '「飞书」还没登录成功。你可以再试一次，或者这次先不用它。', '再试一次', '这次先跳过', '好的，这次先不用「飞书」。'],
       ['en', 'Feishu is not signed in yet. You can try again, or skip it this time.', 'Try again', 'Skip this time', 'Okay, skipping Feishu this time.'],
     ] as const)('cancel/abandon renders honest copy with Retry and secondary Skip, no internal words (%s)', async (language, expectedSentence, expectedRetry, expectedSkip, expectedDeclined) => {

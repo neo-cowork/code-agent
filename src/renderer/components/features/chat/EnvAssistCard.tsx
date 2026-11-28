@@ -77,13 +77,16 @@ function PermissionEnvAssistCard({ notice }: { notice: EnvAssistNotice }): React
             ? interpolate(t.env.login.verifying, { name: loginName })
             : notice.phase === 'unconfirmed'
               ? (notice.sentenceKey === 'env.sentence.loginUnconfirmed' ? interpolate(t.env.login.unconfirmed, { name: loginName }) : '')
-              : notice.sentenceKey === 'env.sentence.loginExpired' ? interpolate(t.env.login.expired, { name: loginName }) : ''
+              : notice.sentenceKey === 'env.sentence.loginExpired' ? interpolate(t.env.login.expired, { name: loginName })
+              : notice.sentenceKey === 'env.sentence.loginExpiredRetry' ? interpolate(t.env.login.expiredRetry, { name: loginName }) : ''
     : notice.phase === 'resolved' && notice.sentenceKey === 'env.reused.mail' ? t.env.reused
     : notice.phase === 'resolved'
     ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
     : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
   // 停车等授权的那一轮：允许后同一任务自动续做，卡上一并说清（输入框上方不再另起一行重复）。
-  const autoResumes = !isLogin && useEnvCardResumesAutomatically(notice) && notice.phase !== 'resolved' && Boolean(sentence);
+  // Hook must run unconditionally (Rules of Hooks); login cards just never append the auto-resume line.
+  const resumesAutomatically = useEnvCardResumesAutomatically(notice);
+  const autoResumes = !isLogin && resumesAutomatically && notice.phase !== 'resolved' && Boolean(sentence);
   const label = isLogin
     ? notice.phase === 'unconfirmed' && notice.action?.labelKey === 'env.retry.loginExpired'
       ? t.env.login.tryAgain

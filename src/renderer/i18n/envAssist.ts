@@ -23,6 +23,7 @@ export const envAssistZh = {
   target: { calendar: '日历', mail: '邮件', reminders: '提醒事项', screen: '屏幕', computer: '电脑', files: '文件和文件夹', helperScreen: '屏幕', helperComputer: '电脑', feishu: '飞书', tmeet: '腾讯会议' },
   login: {
     expired: '「{name}」登录过期了，重新登录后我会继续。',
+    expiredRetry: '「{name}」登录过期了，重新登录后再试一次。',
     verifying: '正在等待「{name}」完成登录…',
     done: '已重新登录「{name}」。',
     unconfirmed: '「{name}」还没登录成功。你可以再试一次，或者这次先不用它。',
@@ -58,6 +59,7 @@ export const envAssistEn: typeof envAssistZh = {
   target: { calendar: 'Calendar', mail: 'Mail', reminders: 'Reminders', screen: 'Screen', computer: 'Computer', files: 'Files and Folders', helperScreen: 'Screen', helperComputer: 'Computer', feishu: 'Feishu', tmeet: 'Tencent Meeting' },
   login: {
     expired: '{name} sign-in expired — sign in and I will continue.',
+    expiredRetry: '{name} sign-in expired — sign in again and try again.',
     verifying: 'Waiting for {name} sign-in…',
     done: 'Signed in to {name} again.',
     unconfirmed: '{name} is not signed in yet. You can try again, or skip it this time.',

@@ -192,7 +192,8 @@ export async function resolveOpenLoginNoticesForTarget(target: string, now = Dat
   const manager = getSessionManager();
   for (const row of rows) {
     const notice = (await manager.getMessages(row.session_id)).find((m) => m.id === row.id)?.metadata?.envAssist;
-    if (notice && (notice.phase === 'needs_user' || notice.phase === 'unconfirmed')) {
+    // target equality guards against LIKE wildcards (_/%) inside a user-chosen server name.
+    if (notice?.class === 'login_expired' && notice.target?.id === target && (notice.phase === 'needs_user' || notice.phase === 'unconfirmed')) {
       await resolveEnvAssistNotice(notice, now);
     }
   }

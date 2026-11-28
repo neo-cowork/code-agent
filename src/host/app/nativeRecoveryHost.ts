@@ -45,6 +45,14 @@ import {
 const MAIL_PERMISSION_REFUSED_NOT_RUN =
   'not run: Mail automation permission was missing when this call was made, so nothing was saved or sent. '
   + 'The permission is now granted. Call this tool again once with the same arguments.';
+/** Model-visible text for a skipped login call (S7): honest "not run", no user copy. */
+const LOGIN_SKIPPED_NOT_RUN = (target: string) =>
+  `skipped: The user chose to skip signing in to ${target} for now, so this call did not run. `
+  + 'Continue with whatever you can do without it, and briefly note what was skipped.';
+/** Model-visible text after the same run re-authorized (S7): the parked call replays once. */
+const LOGIN_RECOVERED_NOT_RUN = (target: string) =>
+  `not run: Sign-in for ${target} had expired when this call was made, so nothing ran. `
+  + 'Sign-in is now complete. Call this tool again once with the same arguments.';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -586,9 +594,9 @@ export function createApplicationNativeRecoveryPorts(
         const errorText = refusedMail
           ? MAIL_PERMISSION_REFUSED_NOT_RUN
           : loginSkipped
-            ? `skipped: The user chose to skip signing in to ${envNote.target} for now, so this call did not run. Continue with whatever you can do without it, and briefly note what was skipped.`
+            ? LOGIN_SKIPPED_NOT_RUN(envNote.target)
             : loginBlocked
-              ? `not run: Sign-in for ${envNote.target} had expired when this call was made, so nothing ran. Sign-in is now complete. Call this tool again once with the same arguments.`
+              ? LOGIN_RECOVERED_NOT_RUN(envNote.target)
               : INTERRUPTED_TOOL_CALL_PLACEHOLDER;
         const toolResult: ToolResult = {
           toolCallId: persisted.toolCall.id,

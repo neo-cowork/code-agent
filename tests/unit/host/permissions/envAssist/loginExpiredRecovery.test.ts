@@ -583,6 +583,34 @@ describe('N-ENV-ASSIST-S7-RELOGIN layered recovery (ToolExecutionEngine -> toolR
     expect(f.messages().filter((m) => m.role === 'user')).toHaveLength(1);
   }, 30_000);
 
+  it('non-parkable run (no durable owner): 401 surfaces the manual retry card, never the auto-continue promise', async () => {
+    const f = await setupDurableHarness();
+    const { publishEnvAssistToolNotice } = await import('../../../../../src/host/permissions/envAssist/toolNotice');
+    const { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY } = await import('../../../../../src/host/mcp/mcpErrors');
+    const { peekEnvBlockedNote } = await import('../../../../../src/host/agent/runtime/envBlockedTurn');
+    // No durable owner for this runId (only f.runId is registered): envBlockForToolFailure parks nothing,
+    // so the production executors reach publishEnvAssistToolNotice without a parkedToolCallId — the classify
+    // path. The card must not promise "I will continue" because nothing resumes this run.
+    const result = {
+      success: false, error: 'Unauthorized', output: undefined as string | undefined,
+      metadata: { [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true, serverName: 'notes' },
+    };
+    await publishEnvAssistToolNotice({
+      toolName: 'mcp__notes__list_notes', result, sessionId: f.sessionId, runId: 'run-nonparkable',
+      onEvent: () => {},
+    });
+    const notice = result.metadata?.envAssist as EnvAssistNotice;
+    expect(notice).toMatchObject({
+      class: 'login_expired',
+      sentenceKey: 'env.sentence.loginExpiredRetry',
+      resume: { mode: 'manual' },
+      phase: 'needs_user',
+    });
+    expect(peekEnvBlockedNote('run-nonparkable')).toBeUndefined();
+    const persisted = mocks.messages.find((m) => m.id === 'env-assist:run-nonparkable|login_expired|notes');
+    expect(persisted).toBeDefined();
+  });
+
   it('login_expired waiter window covers OAUTH_FLOW_TIMEOUT_MS (300s), not 120s default', async () => {
     vi.useFakeTimers();
     const continues = vi.fn(async () => undefined);
