@@ -15,7 +15,7 @@ import { parseRmTargets } from '../../shared/rmCommandTargets';
 const COMMAND_FILE_COUNT_LIMIT = 10_000;
 
 /** 命中任一前缀才做删除盘点——其余命令不为审批请求做文件系统扫描。 */
-const DELETE_FLAG_PREFIXES = ['recursive_delete', 'root_delete', 'home_delete', 'system_dir_delete', 'container_dir_delete', 'wildcard_delete', 'current_dir_delete', 'sudo_rm'];
+const DELETE_FLAG_PREFIXES = ['single_file_delete', 'recursive_delete', 'root_delete', 'home_delete', 'system_dir_delete', 'container_dir_delete', 'wildcard_delete', 'current_dir_delete', 'sudo_rm'];
 
 async function countAffectedFiles(targetPath: string): Promise<number | undefined> {
   try {
