@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
+import { requestConfirm } from '../../../src/renderer/services/confirmPrompt';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
+
+vi.mock('../../../src/renderer/services/confirmPrompt', () => ({ requestConfirm: vi.fn() }));
 
 const invoke = vi.hoisted(() => vi.fn());
 const platform = vi.hoisted(() => ({ tauri: false }));
@@ -135,7 +138,7 @@ describe('PluginsSettings access boundaries', () => {
 
   it('keeps first-party uninstall and local import available to regular users', async () => {
     useAuthStore.setState({ user: { id: 'user', email: 'user@example.com', isAdmin: false } });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(requestConfirm).mockResolvedValue(true);
     invoke.mockImplementation((channel: string) => {
       if (
         channel === IPC_CHANNELS.MARKETPLACE_LIST

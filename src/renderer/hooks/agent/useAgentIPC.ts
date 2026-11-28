@@ -17,6 +17,7 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { usePendingStopStore } from '../../stores/pendingStopStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore } from '../../stores/taskStore';
 import {
@@ -51,12 +52,14 @@ import {
   isRuntimeBusyStatus,
   isRuntimeCancellingStatus,
   isSessionBusyRunConflict,
-  markLatestUserMessageRunCancelled,
-  requestCancelUntilSettled,
   resolveEffectiveSessionIdForSend,
   waitForDurableRunReady,
-  type CancelSettlementResponse,
 } from './agentRuntimeFollowup';
+import {
+  deliverAgentCancel,
+  invokeAgentCancel,
+  usePendingStopReplay,
+} from './usePendingStopReplay';
 import {
   chatSendInflightKey,
   claimSendInflight,
@@ -265,6 +268,7 @@ export function useAgentIPC({
   setSessionProcessing,
 }: UseAgentIPCArgs) {
   const { t } = useI18n();
+  usePendingStopReplay({ currentSessionId, setSessionProcessing });
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   // 运行中继续发送时，直接交给前台 brain；短暂拒收由 host 输入投递层缓冲重投。
@@ -656,6 +660,9 @@ export function useAgentIPC({
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
       // 按会话设置处理状态（允许多会话并发）
+      if (effectiveSessionId) {
+        usePendingStopStore.getState().clear(effectiveSessionId);
+      }
       const previousTaskState = effectiveSessionId
         ? useTaskStore.getState().sessionStates[effectiveSessionId]
         : undefined;
@@ -817,33 +824,14 @@ export function useAgentIPC({
     const targetSessionId = currentSessionId;
     try {
       if (targetSessionId) {
-        const currentState = useTaskStore.getState().sessionStates[targetSessionId];
-        useTaskStore.getState().updateSessionState(targetSessionId, {
-          ...currentState,
-          status: 'cancelling',
+        await deliverAgentCancel({
+          sessionId: targetSessionId,
+          setSessionProcessing,
         });
-        markLatestUserMessageRunCancelled(Date.now());
+        return;
       }
-      const confirmed = targetSessionId
-        ? await requestCancelUntilSettled({
-            sessionId: targetSessionId,
-            requestCancel: async (selector) => ipcService.invoke('agent:cancel', selector) as Promise<CancelSettlementResponse | undefined>,
-            isCancellationActive: () => (
-              useTaskStore.getState().sessionStates[targetSessionId]?.status === 'cancelling'
-            ),
-            wait: () => new Promise((resolve) => setTimeout(resolve, 250)),
-          })
-        : (await ipcService.invoke('agent:cancel', undefined), true);
-      // Honest settle: only mark cancelled when the route confirmed terminal.
-      // If SSE settled first, its event handler already owns the final state.
-      if (targetSessionId) {
-        if (confirmed) {
-          useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });
-          setSessionProcessing(targetSessionId, false);
-        }
-      } else if (confirmed) {
-        setIsProcessing(false);
-      }
+      await invokeAgentCancel(undefined);
+      setIsProcessing(false);
     } catch (error) {
       logger.error('Cancel error', error);
       if (targetSessionId) {

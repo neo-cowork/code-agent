@@ -2981,7 +2981,7 @@ export class ToolExecutor {
       case 'bash':
       case 'Bash':
         return {
-          type: isDangerousCommand(params.command as string)
+          type: isDangerousCommand(params.command as string, commandValidation?.riskLevel === 'medium' && commandValidation.securityFlags.includes('single_file_delete'))
             ? 'dangerous_command'
             : 'command',
           tool: tool.name,

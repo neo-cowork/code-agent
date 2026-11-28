@@ -104,6 +104,7 @@ import { useQuestionCardPlaceholder } from './questionCardAnswer';
 import { readComposerRoundtripText, useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { ComposerDraftNotices } from './OfflinePendingSendNotice';
 import { useOfflinePendingSend, type OfflinePendingSendController } from './useOfflinePendingSend';
+import { PendingStopNotice } from './PendingStopNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
 import { useScheduleDraftRequest } from './useScheduleDraftRequest';
 import { useScheduleDraft } from './useScheduleDraft';
@@ -1526,6 +1527,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
+        <PendingStopNotice sessionId={currentSessionId} onRetryStop={onStop} />
         <ComposerDraftNotices visible={!currentSessionReadOnly || cronRunFollowUpMode} offlineStatus={offlineSend.status} suppressGenericDraftNotice={offlineSend.suppressGenericDraftNotice} onCancelAutoSend={offlineSend.cancelAutoSend} draftNotice={composerDraft.notice} onPutBackDraft={() => { composerDraft.putBack(); inputAreaRef.current?.focus(); }} onDiscardDraft={offlineSend.discardWithDraft} />
         {!currentSessionReadOnly && importedSessionNotice && (
           <ImportedSessionNotice state={importedSessionNotice} />

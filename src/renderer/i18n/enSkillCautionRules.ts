@@ -14,6 +14,7 @@ export const enSkillCautionRules: { rules: Record<string, string>; embeddedSecre
     fork_bomb: 'Endlessly copies its own process until the whole machine runs out of resources within seconds',
     disk_wipe: 'Wipes all data on the entire disk',
     recursive_delete_targeted: 'Deletes a specific folder and everything inside it (common when cleaning build output or caches; the wrong target cannot be recovered)',
+    single_file_delete: 'Deletes one specific file (not a folder); it does not go to the Trash',
     home_delete: 'Deletes your entire home folder — all personal files go with it',
     system_dir_delete: 'Deletes a system directory, so the operating system stops working',
     container_dir_delete: 'Deletes an entire top-level directory such as /Applications or /Users',

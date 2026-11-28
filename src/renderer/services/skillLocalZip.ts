@@ -3,6 +3,9 @@ import type { SkillCautionConfirmationRequired } from '@shared/contract/skillIns
 import { toast } from '../hooks/useToast';
 import { invokeSkillIPC, invokeSkillIPCOrThrow } from './invokeSkillIPC';
 import { installWithSkillCautionConfirm } from './skillCautionPrompt';
+import { languages } from '../i18n';
+import { useAppStore } from '../stores/appStore';
+import { requestConfirm } from './confirmPrompt';
 
 export function isSkillZipFileName(name: string): boolean {
   return name.toLowerCase().endsWith('.zip');
@@ -92,7 +95,13 @@ export async function divertDroppedSkillZips(
   const leftover: File[] = [];
   for (const file of files) {
     try {
-      const confirmed = window.confirm(args.confirmPrompt.replace('{name}', file.name));
+      const copy = languages[useAppStore.getState().language].confirmPrompts;
+      const confirmed = await requestConfirm({
+        title: copy.installSkill,
+        message: args.confirmPrompt.replace('{name}', file.name),
+        confirmText: copy.install,
+        variant: 'info',
+      });
       if (!confirmed) {
         leftover.push(file);
         continue;

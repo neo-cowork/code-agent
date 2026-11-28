@@ -202,6 +202,25 @@ describe('RoleRoutinesSection', () => {
     expect(row.textContent).not.toContain('undefined');
   });
 
+  it('mail event row: system mailbox is Chinese in the zh UI, raw in the en UI; own folders stay as named', () => {
+    const mailJobs = (['Sent Messages', 'Receipts'] as const).map((mailbox, index): RoleBoundCronJob => ({
+      id: `mail-${index}`,
+      name: '新邮件整理',
+      schedule: { type: 'event', source: 'connector', connector: 'mail', accountId: '163', mailbox, eventName: 'message' },
+      enabled: true,
+      actionType: 'agent',
+    }));
+    const { unmount } = renderSection(mailJobs);
+    expect(screen.getByTestId('role-bound-automation-mail-0').textContent).toContain('事件触发 · 163 · 已发送 ·');
+    expect(screen.getByTestId('role-bound-automation-mail-0').textContent).not.toContain('Sent Messages');
+    expect(screen.getByTestId('role-bound-automation-mail-1').textContent).toContain('事件触发 · 163 · Receipts ·');
+    unmount();
+
+    useAppStore.setState({ language: 'en' });
+    renderSection(mailJobs);
+    expect(screen.getByTestId('role-bound-automation-mail-0').textContent).toContain('· 163 · Sent Messages ·');
+  });
+
   it('shows Run now on a role-wake row and does not show Pause', () => {
     renderSection();
     const wake = screen.getByTestId('role-bound-automation-wake');
