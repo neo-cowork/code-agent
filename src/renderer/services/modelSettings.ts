@@ -25,7 +25,10 @@ export function applyModelSettings(settings: AppSettings | undefined): void {
       });
     }
   }
-  useAppStore.setState({ settingsLoaded: true });
+  const hostHomeDir = typeof settings?.hostHomeDir === 'string' && settings.hostHomeDir.trim()
+    ? settings.hostHomeDir.trim()
+    : undefined;
+  useAppStore.setState(hostHomeDir ? { settingsLoaded: true, hostHomeDir } : { settingsLoaded: true });
 }
 
 /** User initiated recovery; reject on failure and keep the unconfirmed placeholder. */

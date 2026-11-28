@@ -89,9 +89,13 @@ export function resolveToolCallTerminalState(input: {
     : state === 'failed' ? 'error' as const : state === 'interrupted' ? 'interrupted' as const : 'success' as const;
   const stepStatus: ToolStepStatus = awaitingApproval && !result ? 'pending-approval'
     : state === 'running' ? 'running' : state === 'failed' ? 'failed' : 'completed';
-  // 停车审批被自动收口：命令从未执行，标题不能说「未成功」。
+  // 停车审批被自动收口，或派发/委托步骤被系统关卡拦下从未执行：命令/委托从未运行，标题不能说「未成功」。
+  const bouncedDelegationNotRun = result?.metadata?.bounced === true
+    && result.metadata.executed !== true
+    && !handedOff
+    && Boolean(toolCall && isDelegationTool(toolCall.name));
   const notRun = result?.success === false && result.metadata?.recovered !== true
-    && isParkedApprovalClosureSentence(result.error);
+    && (isParkedApprovalClosureSentence(result.error) || bouncedDelegationNotRun);
   // 主机封存、从未执行的 Bash（metadata.skipped）：即使被降级为 recovered（state 仍是 completed、
   // 不变色），标题也不能说「运行了」。executed===true 是命令跑完后才被读循环封口替换的结果，不算没执行。只改措辞，不改 state。
   const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !handedOff && !!toolCall && classifyToolName(toolCall.name) === 'bash';

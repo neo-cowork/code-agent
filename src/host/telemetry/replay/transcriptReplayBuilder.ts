@@ -339,7 +339,7 @@ function buildTranscriptToolCallBlock(
 
 export function buildMemoryAuditBlock(summary: TurnQualitySummary, timestamp: number): ReplayBlock {
   const memoryCount = summary.memory.blocks.reduce((sum, block) => (
-    sum + (block.items?.length || block.count || 0)
+    block.blockType === 'user-directives' ? sum : sum + (block.items?.length || block.count || 0)
   ), 0);
   const model = `${summary.strategy.provider}/${summary.strategy.model}`;
   return {

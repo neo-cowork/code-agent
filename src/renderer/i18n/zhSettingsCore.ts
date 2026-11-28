@@ -70,6 +70,7 @@ export const zhSettingsCore = {
     },
     searchIndex: {
       permissionMode: '安全模式',
+      osSandbox: '操作系统沙箱',
       modelRoutingStrategy: '模型路由策略',
       voiceInput: '语音输入',
       voiceLive: '实时语音',
@@ -260,7 +261,7 @@ export const zhSettingsCore = {
           },
           bypassPermissions: {
             title: permissionVocabularyZh.fullAccess,
-            description: '跳过所有权限检查，只适合完全可信的隔离环境。',
+            description: 'Neo 修改或删除文件、运行命令、联网都不再先问你，也能改动工作文件夹以外的文件；出错时没有确认这一步帮你拦下。只在你完全信任当前任务、文件有备份时使用。',
             operationScope: '跳过权限检查',
             riskLabel: '高风险',
           },
@@ -268,36 +269,44 @@ export const zhSettingsCore = {
         inheritanceModes: {
           strictInherit: {
             title: '严格继承',
-            description: '子 Agent = 父真子集；tools 取交集、deny 取并集、mode 取更严。',
+            description: '子 Agent 的权限不会超过主对话：主对话不能做的它也不能做，任何一边说「禁止」都算数。',
             statusLabel: '推荐',
             exposureLabel: '永不扩张',
           },
           childNarrow: {
             title: '子可窄化',
-            description: '父 mode 宽松时允许子在父集合内窄化 allow，其余等同严格继承。',
+            description: '和「严格继承」一样不会超过主对话；主对话权限较宽时，子 Agent 还可以在这个范围内给自己收得更紧。',
             statusLabel: '受控放宽',
             exposureLabel: '父集合内调整',
           },
           independent: {
             title: '独立模式',
-            description: '子 Agent 自管 ask/allow，仅强制 deny 并集、topology 和用户 deny。',
+            description: '子 Agent 自己决定哪些操作不用问你，权限可能比主对话更宽；你写的「禁止」规则对它仍然有效。',
             statusLabel: '谨慎使用',
             exposureLabel: '可能扩张',
-            warning: '建议只给 e2e 测试或老 CLI grandfathering 使用。',
+            warning: '打开后子 Agent 可能不经你确认就修改文件或运行命令，只建议排查问题时短暂使用。',
           },
         },
         migration: {
           title: '安全模型升级提示',
-          description: '子 Agent 默认启用「严格继承」，防止 plan → coder、reviewer → coder 等工作流绕过权限。如需保留旧行为请选择「独立模式」。',
+          description: '现在 Neo 派出去帮忙的子 Agent 默认「严格继承」你的权限，不会借着分工绕过确认。如需旧的做法，可以改选「独立模式」。',
           acknowledge: '知道了',
-          releaseNotes: '查看 release notes',
+          releaseNotes: '查看更新说明',
         },
         sandbox: {
           title: '操作系统沙箱',
-          available: 'Bash 在「默认」和「自动接受编辑」档下默认在操作系统沙箱中执行。',
-          unavailable: '这台机器的操作系统沙箱不可用。Bash 会标记为降级后执行，不会静默裸跑。',
-          disabled: '操作系统沙箱已关闭。设置 OS_SANDBOX_ENABLED=false 仅作紧急关闭。',
-          installHint: 'Linux 请安装 bubblewrap（bwrap）。macOS 使用系统自带的 sandbox-exec。',
+          available: {
+            description: '已开启。在沙箱里运行的命令只能改动当前工作文件夹和临时文件夹里的文件。默认不允许联网，少数需要联网的命令可以例外。',
+            hint: '这是额外的一层保护，不需要你做任何设置。',
+          },
+          disabled: {
+            description: '已关闭。Neo 运行的命令可能改动工作文件夹以外的文件。需要你确认的操作会在确认卡上注明「将在无隔离环境下执行」。',
+            hint: '沙箱是在 Neo 的启动配置里被关掉的，只适合临时排查问题。如果不是你有意关闭的，请联系帮你安装 Neo 的人恢复默认设置。',
+          },
+          unavailable: {
+            description: '这台电脑上的沙箱用不了。Neo 仍可能运行命令，并改动工作文件夹以外的文件。需要你确认时，确认卡上会注明「将在无隔离环境下执行」。',
+            hint: 'macOS 自带沙箱，出现这条通常是系统组件异常，重启电脑后再打开这一页看看；Linux 需要先安装 bubblewrap。',
+          },
         },
         controlPlane: {
           title: '权限控制面',
@@ -316,13 +325,13 @@ export const zhSettingsCore = {
         },
         bypassWarning: {
           title: `已开启${permissionVocabularyZh.fullAccess}`,
-          description: '权限检查已跳过。Agent 可以直接执行文件写入、命令执行等操作，请只在可信隔离环境中使用。',
+          description: '已跳过所有确认：Neo 会直接修改或删除文件、运行命令、联网，包括工作文件夹以外的文件。用完请切回「每次先问我」。',
           confirmTitle: `开启${permissionVocabularyZh.fullAccess}？`,
           confirmAction: `开启${permissionVocabularyZh.fullAccess}`,
         },
         inheritanceSection: {
           title: '子 Agent 权限继承',
-          description: '控制 plan → coder、reviewer → coder、CI subagent 等场景下，子 Agent 是否继承父权限约束。',
+          description: 'Neo 有时会把一项任务分给子 Agent 去做（比如一个先规划、一个再动手）。这里决定子 Agent 能不能拥有比主对话更多的权限。',
           strategy: '继承策略',
           status: '状态',
           exposure: '暴露面',
@@ -330,16 +339,18 @@ export const zhSettingsCore = {
           recommended: '推荐',
         },
         userRules: {
+          kindLabels: { deny: '禁止', ask: '先问我', allow: '直接允许' },
+          savedKindLabels: { deny: '禁止', ask: '先问我', allow: '直接允许' },
           title: '用户级权限规则',
-          description: '每行一条 Tool(glob) 规则，同时影响主 Agent 和所有子 Agent。',
+          description: '每行一条规则，写法是「工具名(要匹配的内容)」，见下方示例。对主对话和所有子 Agent 都生效。',
           denyCaption: '拒绝，最高优先级',
           askCaption: '需要确认',
           allowCaption: '允许，最低优先级',
           examplePrefix: '示例：',
           autoSaveHint: '焦点离开输入框时自动保存，保存后立即生效。',
-          denyLabel: 'Deny（拒绝，最高优先级）',
-          askLabel: 'Ask（询问）',
-          allowLabel: 'Allow（允许，最低优先级）',
+          denyLabel: '禁止（优先级最高）',
+          askLabel: '先问我',
+          allowLabel: '直接允许（优先级最低）',
           invalid: {
             empty: '规则是空的。',
             malformed: '规则格式不对。请写成工具名，或 Tool(匹配)。',
@@ -351,7 +362,7 @@ export const zhSettingsCore = {
           title: '权限语义说明',
           description: `${permissionVocabularyZh.approvalEffectBoundary} ${permissionVocabularyZh.uncertainActionWarning}`,
           priorityTitle: '权限优先级',
-          priorityDescription: 'Deny 优先于 Ask，Ask 优先于 Allow；用户 deny 会覆盖 Agent 与子 Agent 的局部配置。',
+          priorityDescription: '「禁止」优先于「先问我」，「先问我」优先于「直接允许」；同一个操作命中多条规则时听更严的那条。你写的「禁止」规则对主对话和子 Agent 都生效。',
           boundaryTitle: '子 Agent 安全边界',
           boundaryDescription: '默认严格继承，适合生活和工作助手场景；独立模式只保留给迁移、测试或强控制环境。',
         },
@@ -670,7 +681,7 @@ export const zhSettingsCore = {
           description: '打开 Computer Use 工作台',
         },
         'replay.open': {
-          label: '打开 Replay',
+          label: '回放过程',
           description: '打开当前会话回放',
         },
         'reviewQueue.open': {

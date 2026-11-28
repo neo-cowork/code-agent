@@ -7,7 +7,8 @@ import type { CronJobDefinition } from '@shared/contract';
 import { cronSourceSessionIdFromDefinition, cronWriteScopeFolder } from '@shared/cronWriteScope';
 import { useI18n } from '../../../hooks/useI18n';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { cronFolderDisplayName, foldHomePrefixForDisplay } from './CronWorkingFolderRow';
+import { cronFolderDisplayName } from './CronWorkingFolderRow';
+import { foldHomePrefixForDisplay } from '../../../utils/formatPathForDisplay';
 
 const FolderLine: React.FC<{ folder: string | undefined; showHint?: boolean; testId: string }> = ({ folder, showHint, testId }) => {
   const copy = useI18n().t.cronWorkingFolder;

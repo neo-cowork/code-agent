@@ -32,4 +32,13 @@ describe('newly registered tool error codes', () => {
     const humanized = humanizeToolError(RAW, 'Read', zh, { code: 'BINARY_FILE_NOT_TEXT' });
     expect(humanized?.summary).toBe('这类文件不能当纯文本直接读取');
   });
+
+  it('a failed notebook_edit with BINARY_FILE_NOT_TEXT resolves to the shared zh/en copy', () => {
+    const raw = 'Cannot read .png file as text. This is an image, not text.\nPath: /tmp/analysis.ipynb';
+    for (const [t, bundle] of [[zh, toolErrorCodesZh], [en, toolErrorCodesEn]] as const) {
+      const humanized = humanizeToolError(raw, 'notebook_edit', t, { code: 'BINARY_FILE_NOT_TEXT' });
+      expect(humanized?.summary).toBe(bundle.BINARY_FILE_NOT_TEXT.summary);
+      expect(humanized?.detail).toBe(bundle.BINARY_FILE_NOT_TEXT.detail);
+    }
+  });
 });

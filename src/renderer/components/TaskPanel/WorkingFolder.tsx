@@ -9,6 +9,7 @@ import { useComposerStore } from '../../stores/composerStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { isWebMode, isTauriMode } from '../../utils/platform';
+import { formatPathForDisplay } from '../../utils/formatPathForDisplay';
 import { pickNativeDirectory, revealNativePath } from '../../services/tauriPluginFacade';
 
 interface FileInfo {
@@ -143,7 +144,7 @@ export const WorkingFolder: React.FC = () => {
                 <button
                   type="button"
                   className="block w-full text-left text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-400 transition-colors"
-                  title={workingDirectory}
+                  title={formatPathForDisplay(workingDirectory)}
                   onClick={() => handleOpenInFinder(workingDirectory)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -152,19 +153,19 @@ export const WorkingFolder: React.FC = () => {
                     }
                   }}
                 >
-                  {workingDirectory.split('/').slice(-3).join('/')}
+                  {formatPathForDisplay(workingDirectory)}
                 </button>
               ) : (
                 <div
                   className="text-xs text-zinc-500 mb-2 truncate"
-                  title={workingDirectory}
+                  title={formatPathForDisplay(workingDirectory)}
                 >
-                  {workingDirectory.split('/').slice(-3).join('/')}
+                  {formatPathForDisplay(workingDirectory)}
                 </div>
               )}
               {composerWorkingDirectory && composerWorkingDirectory !== workingDirectory && (
                 <div className="mb-2 rounded-md border border-badge-info/20 bg-cyan-500/5 px-2 py-1 text-[11px] text-badge-info">
-                  {t.taskPanel.nextMessageWillUse.replace('{path}', composerWorkingDirectory)}
+                  {t.taskPanel.nextMessageWillUse.replace('{path}', formatPathForDisplay(composerWorkingDirectory))}
                 </div>
               )}
             </>
@@ -189,7 +190,7 @@ export const WorkingFolder: React.FC = () => {
                 key={file.path}
                 type="button"
                 className="flex w-full items-center gap-2 py-1 px-2 rounded text-left hover:bg-zinc-800 transition-colors cursor-pointer"
-                title={file.path}
+                title={formatPathForDisplay(file.path, { workspaceRoot: workingDirectory })}
                 onClick={() => handleOpenInFinder(file.path)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -205,7 +206,7 @@ export const WorkingFolder: React.FC = () => {
               <div
                 key={file.path}
                 className="flex items-center gap-2 py-1 px-2 rounded"
-                title={file.path}
+                title={formatPathForDisplay(file.path, { workspaceRoot: workingDirectory })}
               >
                 <FileText className="w-3.5 h-3.5 text-zinc-500" />
                 <span className="text-sm text-zinc-400 truncate">{file.name}</span>
