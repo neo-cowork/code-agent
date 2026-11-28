@@ -94,6 +94,7 @@ import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { isSecondaryPageActive } from './utils/secondaryPageActive';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
+import { ConfirmPromptHost } from './components/ConfirmPromptHost';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -964,6 +965,7 @@ export const App: React.FC = () => {
       {/* skill 安装 caution 确认面（拖拽 ZIP / /plugins install 共用）与 shell overlay
           同属全局宿主，同行只为守住 App.tsx 的 max-lines 预算 */}
       <ShellOverlaySlotHost /><SkillCautionPromptHost />
+      <ConfirmPromptHost />
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && (

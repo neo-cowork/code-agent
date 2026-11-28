@@ -188,6 +188,74 @@ describe('TurnQualityStrip', () => {
     expect(container.textContent || '').toContain('glm-5');
   });
 
+  it('(a) 开发者模式：只注入常驻 user-directives 的轮次显示「记忆 0」', () => {
+    useAppStore.setState({ developerMode: true });
+    const directivesOnly: TurnQualitySummary = {
+      ...summary,
+      memory: {
+        mode: 'auto',
+        blocks: [
+          {
+            blockType: 'user-directives',
+            trigger: 'session_start',
+            source: 'directive-memory-packer',
+            injected: true,
+            chars: 200,
+            count: 1,
+            items: [
+              { entryId: 'dir-1', title: 'Always give the conclusion first', kind: 'directive', scope: 'global', status: 'active' },
+            ],
+          },
+        ],
+      },
+    } as TurnQualitySummary;
+    const { container } = render(<TurnQualityStrip summary={directivesOnly} />);
+    fireEvent.click(container.querySelector('[aria-expanded]')!);
+    const text = container.textContent || '';
+    expect(text).toContain('记忆 0');
+    expect(text).not.toMatch(/记忆 [1-9]/);
+  });
+
+  it('(b) 开发者模式：user-directives + 2 条 user-memory 显示「记忆 2」', () => {
+    useAppStore.setState({ developerMode: true });
+    const mixed: TurnQualitySummary = {
+      ...summary,
+      memory: {
+        mode: 'auto',
+        blocks: [
+          {
+            blockType: 'user-directives',
+            trigger: 'session_start',
+            source: 'directive-memory-packer',
+            injected: true,
+            chars: 200,
+            count: 1,
+            items: [
+              { entryId: 'dir-1', title: 'Always give the conclusion first', kind: 'directive', scope: 'global', status: 'active' },
+            ],
+          },
+          {
+            blockType: 'user-memory',
+            trigger: 'session_start',
+            source: 'memory-packer',
+            injected: true,
+            chars: 300,
+            count: 2,
+            items: [
+              { entryId: 'mem-1', title: '周报结构', kind: 'user', scope: 'global', status: 'active' },
+              { entryId: 'mem-2', title: '受众是团队', kind: 'user', scope: 'global', status: 'active' },
+            ],
+          },
+        ],
+      },
+    } as TurnQualitySummary;
+    const { container } = render(<TurnQualityStrip summary={mixed} />);
+    fireEvent.click(container.querySelector('[aria-expanded]')!);
+    const text = container.textContent || '';
+    expect(text).toContain('记忆 2');
+    expect(text).not.toContain('记忆 3');
+  });
+
   it('本轮发生重路由/fallback（model ≠ requestedModel）时即使单模型会话也显示', () => {
     const rerouted: TurnQualitySummary = {
       ...summary,

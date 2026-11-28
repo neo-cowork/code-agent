@@ -66,6 +66,6 @@ describe.each([['zh', zh], ['en', en]] as const)('HooksSettings load failure (%s
     await screen.findByText('PreToolUse');
     expect(screen.queryByText(h.forbidden)).toBeNull();
     expect(container.textContent).toContain(`${h.enabledTitle} (1)`);
-    expect(container.textContent).toContain('/home/u/.code-agent/hooks/hooks.json');
+    expect(container.textContent).toContain('~/.code-agent/hooks/hooks.json');
   });
 });
