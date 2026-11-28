@@ -74,6 +74,18 @@ export const SESSION_JUDGE = {
   DURABLE_FACT_SUPERSEDES_LIST_MAX: 60,
 } as const;
 
+/** 自动全局记忆写入前对照手写记忆的语义分类（manualMemoryClassifier） */
+export const MANUAL_RECONCILE = {
+  /** quick model max_tokens：只返回一个小 JSON */
+  MAX_TOKENS: 128,
+  /** 参与对照的手写记忆条数上限（最新优先） */
+  MAX_ENTRIES: 40,
+  /** 每条手写记忆正文截断字符数 */
+  ENTRY_CONTENT_CHARS: 400,
+  /** 待写入新内容截断字符数 */
+  CANDIDATE_CONTENT_CHARS: 1200,
+} as const;
+
 /**
  * SKILL_REVIEW — 运行时 skill 自沉淀的 LLM 语义复盘链（借鉴 Hermes background_review）。
  * 与 telemetry n-gram 蒸馏并联：n-gram 只看工具序列，这条链让 quick model 读对话内容，
