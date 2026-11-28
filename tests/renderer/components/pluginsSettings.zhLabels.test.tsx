@@ -221,3 +221,79 @@ describe('PluginsSettings Pill 无裸英文源码门', () => {
     expect(offenders, `Pill 里出现未 i18n 的英文字面量:\n${offenders.join('\n')}`).toEqual([]);
   });
 });
+
+describe('PluginsSettings 中文文案无中英混杂', () => {
+  it('zh.settings.plugins 与 searchIndex.marketplaceSource 字符串叶节点不残留英文术语或能力包', () => {
+    const offenders: string[] = [];
+    const skippedPaths = new Set(['plugins.marketplaceSources.placeholder']);
+    const walkLeaves = (node: unknown, keyPath: string): void => {
+      if (skippedPaths.has(keyPath) || /^plugins\.completeness\.rows\[\d+\]\.status$/.test(keyPath)) {
+        return;
+      }
+      if (typeof node === 'string') {
+        if (node.includes('能力包')) {
+          offenders.push(`${keyPath}: forbidden term 能力包 (${JSON.stringify(node)})`);
+        }
+        const stripped = node
+          .replace(/\{[A-Za-z_]\w*\}/g, '')
+          .replace(/(?<![A-Za-z])(Neo|GitHub|npm)(?![A-Za-z])/g, '');
+        const words = stripped.match(/[A-Za-z]{2,}/g);
+        if (words) {
+          offenders.push(`${keyPath}: ${words.join(', ')} (${JSON.stringify(node)})`);
+        }
+        return;
+      }
+      if (Array.isArray(node)) {
+        node.forEach((item, idx) => walkLeaves(item, `${keyPath}[${idx}]`));
+        return;
+      }
+      if (node && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node)) {
+          walkLeaves(value, `${keyPath}.${key}`);
+        }
+      }
+    };
+
+    walkLeaves(zh.settings.plugins, 'plugins');
+    walkLeaves(zh.settings.searchIndex.marketplaceSource, 'searchIndex.marketplaceSource');
+
+    expect(offenders, `zh 插件文案仍残留英文术语:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('空目录渲染 PluginsSettings（zh/admin）时，空态文案、搜索框占位符与两个下拉框 aria-label 均不含英文术语', async () => {
+    useAuthStore.setState({ user: { id: 'admin', email: 'a@example.com', isAdmin: true } });
+    invoke.mockImplementation((channel: string) => {
+      if (
+        channel === IPC_CHANNELS.MARKETPLACE_LIST
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+        || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+        || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST
+      ) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) {
+        return Promise.resolve({ status: 'fallback' });
+      }
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+
+    const { container } = render(<PluginsSettings />);
+    await screen.findByText(zh.settings.plugins.installed.empty);
+
+    const forbidden = /marketplace|skill|command|scope/i;
+    const emptyCatalogEl = screen.getByText(zh.settings.plugins.marketplace.emptyCatalog);
+    expect(emptyCatalogEl.textContent ?? '').not.toMatch(forbidden);
+
+    const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null;
+    expect(searchInput).toBeTruthy();
+    expect(searchInput?.placeholder ?? '').not.toMatch(forbidden);
+
+    const selects = Array.from(container.querySelectorAll('select'));
+    expect(selects).toHaveLength(2);
+    for (const select of selects) {
+      const ariaLabel = select.getAttribute('aria-label') ?? '';
+      expect(ariaLabel.length).toBeGreaterThan(0);
+      expect(ariaLabel).not.toMatch(forbidden);
+    }
+  });
+});

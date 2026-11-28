@@ -35,6 +35,7 @@ import {
   archiveMemoryFile,
   updateLightMemoryIndexPointers,
 } from '../../../src/host/lightMemory/lightMemoryIpc';
+import * as recentConversationsModule from '../../../src/host/lightMemory/recentConversations';
 
 describe('lightMemoryIpc', () => {
   let tmpDir: string;
@@ -442,6 +443,60 @@ ${body}
       expect(stats.recentConversations.length).toBe(2);
       expect(stats.recentConversations[0]).toContain('Chatbot dev');
       expect(stats.recentConversations[1]).toContain('Testing');
+    });
+
+    it('preserves canonical and project-scoped recent conversation rows with exact equality', async () => {
+      const conversations = `# Recent Conversations
+
+- **2026-03-18**: "Chatbot dev" — prompt engineering, tool use
+- **2026-03-19** [project:proj_abc]: "Testing" — vitest, coverage
+`;
+      await fs.writeFile(path.join(memDir, 'recent-conversations.md'), conversations, 'utf-8');
+
+      const stats = await getLightMemoryStats();
+      expect(stats.recentConversations).toEqual([
+        '- **2026-03-18**: "Chatbot dev" — prompt engineering, tool use',
+        '- **2026-03-19** [project:proj_abc]: "Testing" — vitest, coverage',
+      ]);
+    });
+
+    it('cleans legacy recovery-notice residue and drops empty, loop-automation, and non-canonical rows without append', async () => {
+      const summaryFile = path.join(memDir, 'recent-conversations.md');
+      const dirtyPrefix =
+        '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话...';
+      const fixture = [
+        '# Recent Conversations',
+        '',
+        '- **2026-03-18**: "整理季度周报" — 汇总指标, 导出表格',
+        '- **2026-03-19** [project:proj_abc]: "核对预算表" — 对比差异, 生成摘要',
+        `- **2026-03-20**: "${dirtyPrefix}" — 梳理客户访谈纪要, 提炼行动项`,
+        `- **2026-03-21**: "${dirtyPrefix}" — `,
+        '- **2026-03-22**: "【循环模式 · 第 2 轮】巡检任务队列" — 检查状态',
+        '- **x** note',
+        '',
+      ].join('\n');
+      await fs.writeFile(summaryFile, fixture, 'utf-8');
+
+      const appendSpy = vi.spyOn(recentConversationsModule, 'appendConversationSummary');
+      try {
+        const stats = await getLightMemoryStats();
+
+        expect(appendSpy).not.toHaveBeenCalled();
+        expect(stats.recentConversations).toEqual([
+          '- **2026-03-18**: "整理季度周报" — 汇总指标, 导出表格',
+          '- **2026-03-19** [project:proj_abc]: "核对预算表" — 对比差异, 生成摘要',
+          '- **2026-03-20**: "梳理客户访谈纪要" — 提炼行动项',
+        ]);
+        for (const entry of stats.recentConversations) {
+          expect(entry).not.toMatch(/历史恢复提示|telemetry|循环模式/);
+        }
+        expect(stats.recentConversations.some((entry) => entry.includes('2026-03-21'))).toBe(false);
+        expect(stats.recentConversations.some((entry) => entry.includes('2026-03-22'))).toBe(false);
+        expect(stats.recentConversations.some((entry) => entry.includes('- **x** note'))).toBe(false);
+        expect(await fs.readFile(summaryFile, 'utf-8')).toBe(fixture);
+      } finally {
+        appendSpy.mockRestore();
+      }
     });
   });
 
