@@ -6,7 +6,7 @@
 
 const RECENT_SKILL_OPS = 16;
 
-export interface SkillWatcherOpRecord {
+interface SkillWatcherOpRecord {
   op: string;
   startedAt: number;
   /** 未结束的操作为 null（同步卡死时就是这样） */
