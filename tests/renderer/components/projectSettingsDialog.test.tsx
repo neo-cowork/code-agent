@@ -239,4 +239,19 @@ describe('ProjectSettingsDialog', () => {
       workingDirectory: '/repo/web-docs',
     }));
   });
+
+  it.each(['en', 'zh'] as const)('localizes the primary source badge (%s)', async (lang) => {
+    mocks.language.value = lang;
+    mocks.getProjectDetail.mockResolvedValue(detail());
+    render(<ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} />);
+
+    const rows = await screen.findAllByTestId('project-source-row');
+    expect(rows).toHaveLength(1);
+    const copy = (lang === 'zh' ? zh : en).sidebarProject.settings;
+    const badge = within(rows[0]).getByText(copy.primaryBadge);
+    expect(badge.textContent).toBe(copy.primaryBadge);
+    if (lang === 'zh') {
+      expect(rows[0].textContent).not.toContain('Primary');
+    }
+  });
 });

@@ -20,6 +20,14 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { usePendingStopStore } from '../../stores/pendingStopStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore } from '../../stores/taskStore';
+import {
+  finishOfflineAutoReplayAttempt,
+  getOfflineAutoReplaySurface,
+  isOfflineSendFailureCode,
+  recordOfflineOutboxPendingRevisionIfNeeded,
+  resolveOfflineSendFailureCode,
+  stripStaleOfflineErrorMessages,
+} from '../../utils/offlineSend';
 import { readInstalledVoiceCall } from '../useVoiceLiveRuntime';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import ipcService from '../../services/ipcService';
@@ -104,6 +112,10 @@ export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
 
 export interface SendMessageOptions {
   silentFailure?: boolean;
+  /** Record an unsuccessful preflight through the failure card without sending to the host. */
+  preflightError?: Error;
+  /** Recheck the original session's send eligibility before retrying a preflight failure. */
+  validateRetry?: (sessionId: string | null) => Promise<Error | undefined>;
 }
 
 export function resolveDirectRouting(
@@ -307,6 +319,13 @@ export function useAgentIPC({
         async (): Promise<ChatSendDelivery> => {
       const envelope = outboundEnvelope;
       const { content, attachments, context } = envelope;
+      let preflightError = options?.preflightError;
+      if (options?.validateRetry) {
+        preflightError = await options.validateRetry(effectiveSessionId);
+      }
+      if ((preflightError || options?.validateRetry) && useSessionStore.getState().currentSessionId !== effectiveSessionId) {
+        return { outcome: 'failed' };
+      }
       const swarmState = useSwarmStore.getState();
       const sessionSnapshot = swarmState.activeSessionId === effectiveSessionId && swarmState.activeRunId
         ? {
@@ -337,7 +356,7 @@ export function useAgentIPC({
         effectiveSessionId,
       );
 
-      if (directRouting.kind === 'error') {
+      if (!preflightError && directRouting.kind === 'error') {
         const errorContent =
           directRouting.reason === 'attachments-not-supported'
             ? 'Direct 路由暂不支持附件，先去掉附件，或切回 Auto / Parallel。'
@@ -354,7 +373,7 @@ export function useAgentIPC({
         return { outcome: 'failed' as const };
       }
 
-      if (directRouting.kind === 'send') {
+      if (!preflightError && directRouting.kind === 'send') {
         const directRunId = sessionSnapshot!.runId;
         const isDirectScopeActive = () => {
           const sessionState = useSessionStore.getState();
@@ -577,7 +596,7 @@ export function useAgentIPC({
         }
       };
 
-      if (isCurrentSessionProcessing) {
+      if (!preflightError && isCurrentSessionProcessing) {
         const voiceCall = await readInstalledVoiceCall();
         // 收成一个「可注入的会话 id」而不是布尔量：后面 payload 直接用它，
         // 类型自然收窄，不必在调用点写非空断言。
@@ -664,7 +683,9 @@ export function useAgentIPC({
         sessionId: effectiveSessionId,
       };
 
+      const replaySurface = getOfflineAutoReplaySurface(userMessage.id);
       try {
+        if (preflightError) throw preflightError;
         // Send to main process
         // Note: Don't set isProcessing to false here, it will be set by agent_complete event
         logger.debug('Calling invoke agent:send-message');
@@ -674,6 +695,11 @@ export function useAgentIPC({
         }
         await ipcService.invoke('agent:send-message', messagePayload);
         if (effectiveSessionId) clearFailedSend(effectiveSessionId, userMessage.id);
+        if (useSessionStore.getState().currentSessionId === effectiveSessionId) {
+          const live = useSessionStore.getState().messages;
+          const cleaned = stripStaleOfflineErrorMessages(live, userMessage.id);
+          if (cleaned.length !== live.length) useSessionStore.getState().setMessages(cleaned);
+        }
         logger.debug('invoke returned');
       } catch (error) {
         logger.error('Agent error', error);
@@ -715,6 +741,17 @@ export function useAgentIPC({
           }
           throw sendFailure;
         }
+        // Surface A 自动重放失败：撤回乐观气泡，交回 composer 展示「连接恢复后仍未发出去」提示。
+        if (replaySurface === 'composer') {
+          if (useSessionStore.getState().currentSessionId === effectiveSessionId) {
+            useSessionStore.getState().setMessages(useSessionStore.getState().messages.filter((m) => m.id !== userMessage.id));
+          }
+          if (effectiveSessionId) {
+            setSessionProcessing(effectiveSessionId, false);
+            useTaskStore.getState().updateSessionState(effectiveSessionId, previousTaskState ?? { status: 'idle' });
+          }
+          return { outcome: 'failed' as const };
+        }
         markOptimisticUserSendFailed(userMessage.id);
         const retryAnchor = buildSendFailureRetryAnchor(userMessage, effectiveSessionId);
         // 所有未进 host 运行期的被拒发送都打稳定标记供轮头/红色恢复条让位；
@@ -724,14 +761,21 @@ export function useAgentIPC({
           ? 'PROJECT_SOURCE_TRUST'
           : isSessionConflictFailure(sendFailure)
             ? 'RUN_SESSION_CONFLICT'
-            : SEND_REJECTED_FAILURE_CODE;
+            : resolveOfflineSendFailureCode({
+                error: sendFailure,
+                hasAttachments: Boolean(userMessage.attachments?.length),
+                replaySurface,
+                fallbackCode: SEND_REJECTED_FAILURE_CODE,
+              });
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
           role: 'assistant',
-          content: isDurableRunRolloutUnavailable(sendFailure)
-            ? t.common.durableRunStartupTimeout
-            : getAgentSendFailureMessage(sendFailure),
+          content: isOfflineSendFailureCode(sendFailureCode)
+            ? ''
+            : isDurableRunRolloutUnavailable(sendFailure)
+              ? t.common.durableRunStartupTimeout
+              : getAgentSendFailureMessage(sendFailure),
           timestamp: Date.now(),
           // 失败用户气泡留在时间线上；错误卡「重试」仍锚到失败那条并带原
           // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
@@ -742,8 +786,16 @@ export function useAgentIPC({
             ...(trustFields?.folderName ? { sendFailureFolderName: trustFields.folderName } : {}),
           },
         };
-        if (effectiveSessionId) recordFailedSend(effectiveSessionId, userMessage, errorMessage);
-        if (useSessionStore.getState().currentSessionId === effectiveSessionId) addMessage(errorMessage);
+        if (effectiveSessionId) {
+          recordFailedSend(effectiveSessionId, userMessage, errorMessage);
+          recordOfflineOutboxPendingRevisionIfNeeded(effectiveSessionId, userMessage.id, sendFailureCode);
+        }
+        if (useSessionStore.getState().currentSessionId === effectiveSessionId) {
+          const state = useSessionStore.getState();
+          const cleaned = stripStaleOfflineErrorMessages(state.messages, userMessage.id);
+          if (cleaned.length !== state.messages.length) state.setMessages(cleaned);
+          addMessage(errorMessage);
+        }
         // 按会话清除处理状态
         setSessionProcessing(effectiveSessionId!, false);
         // taskStore 也必须重置，否则会话永远卡在 'running'：
@@ -756,6 +808,10 @@ export function useAgentIPC({
             : { status: 'error', error: String(sendFailure) },
         );
         return { outcome: 'failed' as const };
+      } finally {
+        if (replaySurface === 'outbox') {
+          finishOfflineAutoReplayAttempt(userMessage.id);
+        }
       }
       return { outcome: 'sent' as const };
         });

@@ -1,7 +1,8 @@
 // ============================================================================
 // ProviderListPanel - Master-Detail 布局的左侧 Provider 列表
 //
-//   已可用（有 Key 或无需 Key）：完整行（名称 + Key 状态 + 模型数 + 当前徽章）
+//   已可用（有 Key，或无需 Key 且探测已运行）：完整行（名称 + Key/本地状态 + 模型数 + 当前徽章）
+//   暂不可用（无需 Key 且探测中/未运行）：常展开分组，保留同款行状态与提示
 //   待添加 Key：折叠分组，精简行（点击 = 选中进入连接配置）
 //   顶部：搜索 + Provider 范围诊断；新增 Provider 是 section 级主操作，不放进列表工具条
 //   （全量诊断已迁设置独立「诊断」菜单项，不在本页提供入口）
@@ -172,9 +173,25 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   const [unconfiguredExpanded, setUnconfiguredExpanded] = useState(selectedInUnconfigured);
 
   const query = search.trim().toLowerCase();
-  const filteredConfigured = useMemo(
-    () => (query ? configuredRows.filter((row) => matchRow(row, query)) : configuredRows),
-    [configuredRows, query],
+  const { availableRows, notReadyRows } = useMemo(() => {
+    const available: ProviderManagementRow[] = [];
+    const notReady: ProviderManagementRow[] = [];
+    for (const row of configuredRows) {
+      if (!row.keyless || describeKeylessReadiness(keylessReachability?.[row.id]).state === 'running') {
+        available.push(row);
+      } else {
+        notReady.push(row);
+      }
+    }
+    return { availableRows: available, notReadyRows: notReady };
+  }, [configuredRows, keylessReachability]);
+  const filteredAvailable = useMemo(
+    () => (query ? availableRows.filter((row) => matchRow(row, query)) : availableRows),
+    [availableRows, query],
+  );
+  const filteredNotReady = useMemo(
+    () => (query ? notReadyRows.filter((row) => matchRow(row, query)) : notReadyRows),
+    [notReadyRows, query],
   );
   const filteredUnconfigured = useMemo(
     () => (query ? unconfiguredRows.filter((row) => matchRow(row, query)) : unconfiguredRows),
@@ -207,21 +224,43 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
       </div>
 
       <div className="max-h-[560px] space-y-0.5 overflow-y-auto p-2">
-        <div className="px-1.5 pb-1 pt-1.5 text-[11px] text-zinc-500">
-          {listText.configuredPrefix}{filteredConfigured.length}
+        <div data-provider-group="available" className="space-y-0.5">
+          <div className="px-1.5 pb-1 pt-1.5 text-[11px] text-zinc-500">
+            {listText.configuredPrefix}{filteredAvailable.length}
+          </div>
+          {filteredAvailable.map((row) => (
+            <ConfiguredRow
+              key={row.id}
+              row={row}
+              selected={!isAddingProvider && row.id === selectedProviderId}
+              isDefault={row.id === defaultProviderId}
+              reachable={row.keyless ? keylessReachability?.[row.id] : undefined}
+              onSelect={() => onSelect(row.id)}
+            />
+          ))}
+          {filteredAvailable.length === 0 && (
+            <div className="px-1.5 py-2 text-xs text-zinc-600">
+              {query ? listText.noMatch : listText.configuredEmpty}
+            </div>
+          )}
         </div>
-        {filteredConfigured.map((row) => (
-          <ConfiguredRow
-            key={row.id}
-            row={row}
-            selected={!isAddingProvider && row.id === selectedProviderId}
-            isDefault={row.id === defaultProviderId}
-            reachable={row.keyless ? keylessReachability?.[row.id] : undefined}
-            onSelect={() => onSelect(row.id)}
-          />
-        ))}
-        {filteredConfigured.length === 0 && (
-          <div className="px-1.5 py-2 text-xs text-zinc-600">{listText.noMatch}</div>
+
+        {filteredNotReady.length > 0 && (
+          <div data-provider-group="not-ready" className="space-y-0.5">
+            <div className="px-1.5 pb-1 pt-3 text-[11px] text-zinc-500">
+              {listText.notReadyPrefix}{filteredNotReady.length}
+            </div>
+            {filteredNotReady.map((row) => (
+              <ConfiguredRow
+                key={row.id}
+                row={row}
+                selected={!isAddingProvider && row.id === selectedProviderId}
+                isDefault={row.id === defaultProviderId}
+                reachable={keylessReachability?.[row.id]}
+                onSelect={() => onSelect(row.id)}
+              />
+            ))}
+          </div>
         )}
 
         {filteredUnconfigured.length > 0 && (

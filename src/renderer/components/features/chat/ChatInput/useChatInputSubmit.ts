@@ -68,6 +68,8 @@ import type { ComposerDraftSendOutcome } from './composerDraftStore';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 import { dismissAttachmentLimitToast } from './attachmentMergeToast';
 import { useStepLimitContinue } from '../StepLimitContinue';
+import { consumeLastSendOfflineFailure, isOfflineTransportError } from '../../../../utils/offlineSend';
+import type { OfflineSendFailurePayload } from './useOfflinePendingSend';
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -122,6 +124,8 @@ export interface UseChatInputSubmitParams {
   onComposerDraftOptimisticClear?: () => void;
   /** Drop the stored draft only after success (onSend true or a queued row persisted). */
   onComposerDraftSendSettled?: (outcome: ComposerDraftSendOutcome) => void;
+  /** Surface A 离线发送回滚后登记挂起自动重放或附件未发送提示。 */
+  onOfflineSendFailed?: (info: OfflineSendFailurePayload) => void;
   /** 草稿被提交清空的瞬间回调（FB-586：@ 面板借它随手关闭，别盖住后面的确认卡）。 */
   onDraftCleared?: () => void;
   onQueuedInputChanged?: () => void;
@@ -432,7 +436,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   // 运行中允许提交，把新输入排到当前回复结束后发送。
   // toBackground：「转后台继续聊」——草稿发去新前台会话，按空闲发送处理（不排队不改道）。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string; toBackground?: boolean }) => {
+  const handleSubmit = async (
+    e?: React.FormEvent,
+    opts?: { steer?: boolean; content?: string; toBackground?: boolean; clientMessageId?: string },
+  ): Promise<boolean | void> => {
     e?.preventDefault();
     discardPendingScheduleDraft();
     const trimmedValue = (opts?.content ?? value).trim();
@@ -693,12 +700,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       selectedAgentOverride,
     );
     // XML 在 envelope 构建后注入 content，避开 buildEnvelope 内的 @mention 解析。
-    const nextEnvelope = appshotXml
-      ? {
-          ...baseEnvelope,
-          content: appshotXml + (baseEnvelope.content.trim() ? `\n\n${baseEnvelope.content}` : ''),
-        }
-      : baseEnvelope;
+    const nextEnvelope = {
+      ...(appshotXml
+        ? {
+            ...baseEnvelope,
+            content: appshotXml + (baseEnvelope.content.trim() ? `\n\n${baseEnvelope.content}` : ''),
+          }
+        : baseEnvelope),
+      ...(opts?.clientMessageId ? { clientMessageId: opts.clientMessageId } : {}),
+    };
     const canSubmit = ((nextEnvelope.content.trim().length > 0) || effectiveAttachments.length > 0) && (!disabled || isProcessing) && !isUploading;
     if (canSubmit) {
       const draftSnapshot = {
@@ -868,8 +878,23 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       };
 
       const settleComposerSend = async (envelope: ConversationEnvelope): Promise<boolean> => {
+        const stampedId = consumePendingClientMessageId(
+          envelope.clientMessageId,
+          pendingResendClientMessageIdRef ?? { current: null },
+          generateMessageId,
+        );
+        const stampedEnvelope: ConversationEnvelope = { ...envelope, clientMessageId: stampedId };
+        const notifyIfOffline = (caughtError?: unknown): void => {
+          if (consumeLastSendOfflineFailure(stampedId) || isOfflineTransportError(caughtError)) {
+            params.onOfflineSendFailed?.({
+              text: opts?.content ?? draftSnapshot.value,
+              clientMessageId: stampedId,
+              hasAttachments: effectiveAttachments.length > 0,
+            });
+          }
+        };
         try {
-          const sent = await submitEnvelope(envelope);
+          const sent = await submitEnvelope(stampedEnvelope);
           if (sent === SEND_TIMED_OUT) {
             onComposerDraftSendSettled?.('timeout');
             rollback(true);
@@ -878,13 +903,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           if (!shouldClearComposerAfterSend(sent)) {
             onComposerDraftSendSettled?.('failure');
             rollback(false);
+            notifyIfOffline();
             return false;
           }
           onComposerDraftSendSettled?.('success');
           return true;
-        } catch {
+        } catch (err) {
           onComposerDraftSendSettled?.('failure');
           rollback(false);
+          notifyIfOffline(err);
           return false;
         }
       };
@@ -897,6 +924,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           sentOk = await settleComposerSend({
             content: `Execute this shell command and show the output: \`${shellCmd}\``,
             context: nextEnvelope.context,
+            ...(nextEnvelope.clientMessageId ? { clientMessageId: nextEnvelope.clientMessageId } : {}),
           });
         } else {
           // Box already cleared and nothing is in flight to roll back. Drop the hold.
@@ -905,8 +933,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       } else {
         sentOk = await settleComposerSend(nextEnvelope);
       }
-      if (!sentOk) return;
+      if (!sentOk) return false;
       resetSentSelection();
+      return true;
     }
   };
 
