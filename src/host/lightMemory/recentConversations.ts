@@ -80,6 +80,11 @@ async function loadSummaries(): Promise<ConversationSummary[]> {
   }
 }
 
+async function loadCleanedSummaries(): Promise<ConversationSummary[]> {
+  const summaries = await loadSummaries();
+  return summaries.filter((item) => !isLoopAutomationSummary(item));
+}
+
 /**
  * Parse markdown summaries back into structured data.
  * Format:
@@ -151,8 +156,7 @@ export async function appendConversationSummary(
 
   try {
     await ensureMemoryDir();
-    let summaries = await loadSummaries();
-    summaries = summaries.filter((item) => !isLoopAutomationSummary(item));
+    let summaries = await loadCleanedSummaries();
 
     const cleanedSummary = dropRecoveryNoticeResidue(summary);
     if (!cleanedSummary) {
@@ -192,6 +196,16 @@ export async function appendConversationSummary(
 }
 
 /**
+ * List stored recent conversation lines through the same parse, clean, and
+ * format pipeline as the writer, without rewriting the file or applying prompt
+ * injection filters (14-day window / project scope).
+ */
+export async function listRecentConversationLines(): Promise<string[]> {
+  const summaries = await loadCleanedSummaries();
+  return summaries.map((summary) => formatSummaries([summary]));
+}
+
+/**
  * Build recent conversations block for system prompt injection.
  * Returns null if no summaries exist.
  */
@@ -202,8 +216,7 @@ export async function buildRecentConversationsBlock(options: {
 } = {}): Promise<string | null> {
   if (options.enabled === false) return null;
   try {
-    const recentSummaries = (await loadSummaries())
-      .filter((item) => !isLoopAutomationSummary(item))
+    const recentSummaries = (await loadCleanedSummaries())
       .filter((item) => isWithinRecentWindow(item, options.now ?? new Date()));
     const projectId = normalizeProjectId(options.projectId);
     const projectSummaries = projectId

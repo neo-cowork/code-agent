@@ -161,7 +161,7 @@ describe('PermissionCard quiet face', () => {
       renderRequest({ ...externalWrite, details: { path: '/Users/example/Documents/contract-notes.md', targetKind: 'absent' } });
       expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
       // 工作区外的目标留完整位置（路径显示口径由 N-FIX-ABS-PATH-DISPLAY-SYSTEMIC 统一，本单不改）。
-      expect(screen.getByTestId('permission-consequence').textContent).toContain('/Users/example/Documents/contract-notes.md');
+      expect(screen.getByTestId('permission-consequence').textContent).toBe('将在工作区外新建 /Users/example/Documents/contract-notes.md（约 1 个文件）。');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

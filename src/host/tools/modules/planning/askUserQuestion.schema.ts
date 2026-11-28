@@ -7,7 +7,7 @@ import type { ToolSchema } from '../../../protocol/tools';
 
 export const askUserQuestionSchema: ToolSchema = {
   name: 'AskUserQuestion',
-  description: `Ask branching decisions only (A/B/proceed). Never collect approval-gated writeback fields. Call the write tool with values/defaults; the approval card is the edit point. “Create meeting now” means tmeetMeetingCreate directly.`,
+  description: `Ask branching decisions only. Never collect approval-gated writeback fields. Call writes with values/defaults; the approval card is the edit point. For clear tasks, choose foreground/background, tool and wait time, then act without asking.`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
