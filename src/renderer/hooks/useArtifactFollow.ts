@@ -14,6 +14,7 @@ import {
   resolveFollowableArtifactPath,
   type TrailingThrottle,
 } from '../utils/artifactFollow';
+import { getToolPreflightKind } from '../utils/toolPreflightPresentation';
 
 const COMPLETE_SETTLE_MS = 1_100;
 
@@ -21,6 +22,17 @@ interface FollowedCall {
   sessionId: string;
   toolName: string;
   path: string | null;
+  openedPreviewTab: boolean;
+}
+
+function hasPreviewTabForPath(
+  appState: Pick<ReturnType<typeof useAppStore.getState>, 'workbenchTabs' | 'previewTabs'>,
+  path: string,
+): boolean {
+  return Boolean(
+    appState.workbenchTabs?.includes(`preview:${path}`)
+    || appState.previewTabs?.some((tab) => tab.kind !== 'liveDev' && tab.path === path),
+  );
 }
 
 function workbenchInteractionRoot(): HTMLElement | null {
@@ -57,13 +69,17 @@ export function useArtifactFollow(): void {
 
     const beginFollow = (sessionId: string, toolCallId: string, toolName: string, path: string) => {
       if (sessionId !== useSessionStore.getState().currentSessionId) return;
-      followedCallsRef.current.set(toolCallId, { sessionId, toolName, path });
+      const appState = useAppStore.getState();
+      const priorCall = followedCallsRef.current.get(toolCallId);
+      const openedPreviewTab = priorCall?.path === path && priorCall.openedPreviewTab
+        ? true
+        : !hasPreviewTabForPath(appState, path);
+      followedCallsRef.current.set(toolCallId, { sessionId, toolName, path, openedPreviewTab });
       const key = artifactFollowKey(sessionId, path);
       const priorTimer = completionTimersRef.current.get(key);
       if (priorTimer) clearTimeout(priorTimer);
       completionTimersRef.current.delete(key);
 
-      const appState = useAppStore.getState();
       const root = workbenchInteractionRoot();
       const focusInOtherWorkbenchView = Boolean(
         root?.contains(document.activeElement)
@@ -96,6 +112,30 @@ export function useArtifactFollow(): void {
       const resultPath = artifactPathFromToolResult(result, workingDirectory);
       const path = resultPath ?? call.path;
       if (!path || call.sessionId !== useSessionStore.getState().currentSessionId) return;
+
+      const dropFollowForPath = (targetPath: string) => {
+        const targetKey = artifactFollowKey(call.sessionId, targetPath);
+        const prior = completionTimersRef.current.get(targetKey);
+        if (prior) clearTimeout(prior);
+        completionTimersRef.current.delete(targetKey);
+        refreshersRef.current.get(targetKey)?.cancel();
+        refreshersRef.current.delete(targetKey);
+        useArtifactFollowStore.getState().drop(call.sessionId, targetPath);
+      };
+
+      if (getToolPreflightKind({ name: call.toolName, result }) !== null) {
+        dropFollowForPath(path);
+        if (call.path && call.path !== path) dropFollowForPath(call.path);
+        if (call.openedPreviewTab && call.path) {
+          const currentAppState = useAppStore.getState();
+          const tab = currentAppState.previewTabs?.find(
+            (item) => item.kind !== 'liveDev' && item.path === call.path,
+          );
+          if (tab) currentAppState.closePreviewTab(tab.id);
+        }
+        return;
+      }
+
       if (!call.path) beginFollow(call.sessionId, result.toolCallId, call.toolName, path);
 
       const refresher = getRefresher(call.sessionId, path);
@@ -119,7 +159,12 @@ export function useArtifactFollow(): void {
       if (event.type === 'tool_call_start') {
         const toolCall = event.data as ToolCall;
         const path = artifactPathFromToolStart(toolCall, useAppStore.getState().workingDirectory);
-        followedCallsRef.current.set(toolCall.id, { sessionId, toolName: toolCall.name, path });
+        followedCallsRef.current.set(toolCall.id, {
+          sessionId,
+          toolName: toolCall.name,
+          path,
+          openedPreviewTab: false,
+        });
         if (path) beginFollow(sessionId, toolCall.id, toolCall.name, path);
         return;
       }

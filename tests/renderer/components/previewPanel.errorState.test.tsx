@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PreviewErrorState } from '../../../src/renderer/components/PreviewPanel';
 import { toPreviewErrorState } from '../../../src/renderer/components/previewPanelModel';
+import { previewWorkspaceEn, previewWorkspaceZh } from '../../../src/renderer/i18n/previewWorkspace';
 import { ArtifactStandingRefresh } from '../../../src/renderer/components/ArtifactStandingRefresh';
 import { buildStandingRefreshJobInput } from '@shared/artifactStandingRefresh';
 import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
@@ -78,6 +79,31 @@ describe('toPreviewErrorState — message 永远人话，detail 才装原始异�
     expect(result.message).toBe('保存失败');
     expect(result.detail).toBe('raw string rejection');
   });
+
+  it('文件不存在（ENOENT 消息或 code）返回未生成提示，其它读取失败保留 loadFileFailedNamed（zh / en）', () => {
+    const zhFallback = previewWorkspaceZh.previewWorkspace.preview.loadFileFailedNamed.replace('{name}', 'summary-zh.md');
+    const zhNotFound = previewWorkspaceZh.previewWorkspace.preview.fileNotFoundNamed.replace('{name}', 'summary-zh.md');
+    const enFallback = previewWorkspaceEn.previewWorkspace.preview.loadFileFailedNamed.replace('{name}', 'summary-en.md');
+    const enNotFound = previewWorkspaceEn.previewWorkspace.preview.fileNotFoundNamed.replace('{name}', 'summary-en.md');
+
+    const ipcMissing = new Error("ENOENT: no such file or directory, open '/tmp/summary-zh.md'");
+    expect(toPreviewErrorState(ipcMissing, zhFallback, zhNotFound)).toEqual({
+      message: 'summary-zh.md 还没有生成，或已被移动、删除',
+      detail: "ENOENT: no such file or directory, open '/tmp/summary-zh.md'",
+    });
+
+    const codedMissing = Object.assign(new Error('missing file'), { code: 'ENOENT' });
+    expect(toPreviewErrorState(codedMissing, enFallback, enNotFound)).toEqual({
+      message: 'summary-en.md has not been created yet, or it was moved or deleted',
+      detail: 'missing file',
+    });
+
+    const permissionErr = new Error("EACCES: permission denied, open '/tmp/summary-zh.md'");
+    expect(toPreviewErrorState(permissionErr, zhFallback, zhNotFound)).toEqual({
+      message: '加载文件失败：summary-zh.md',
+      detail: "EACCES: permission denied, open '/tmp/summary-zh.md'",
+    });
+  });
 });
 
 // PreviewPanel 加载/保存失败此前把 IPC 原始报错（invokeWorkspace 抛出的
@@ -117,7 +143,7 @@ describe('PreviewPanel 接线钉子 — catch 块真的走 toPreviewErrorState',
   it('loadContent/handleSave 的 catch 调用 toPreviewErrorState，不退回把 err.message 直接当主文案的旧形状', () => {
     const source = readSource('src/renderer/components/PreviewPanel.tsx');
 
-    expect(source).toContain("toPreviewErrorState(err, pv.loadFileFailedNamed.replace('{name}', basename(filePath)))");
+    expect(source).toContain("toPreviewErrorState(err, pv.loadFileFailedNamed.replace('{name}', basename(filePath)), pv.fileNotFoundNamed.replace('{name}', basename(filePath)))");
     expect(source).toContain('toPreviewErrorState(err, pv.saveFailed)');
     expect(source).not.toContain('err instanceof Error ? err.message : pv.loadFileFailed');
     expect(source).not.toContain('err instanceof Error ? err.message : pv.saveFailed');

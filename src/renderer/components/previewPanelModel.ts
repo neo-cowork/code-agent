@@ -116,11 +116,23 @@ export function buildExcelPreviewSpec(filePath: string, result: ExcelPreviewResu
   });
 }
 
+function isFileNotFoundError(err: unknown, detail: string): boolean {
+  if (err && typeof err === 'object' && 'code' in err && (err as { code?: unknown }).code === 'ENOENT') {
+    return true;
+  }
+  return /\bENOENT\b/.test(detail);
+}
+
 export function toPreviewErrorState(
   err: unknown,
   fallbackMessage: string,
+  notFoundMessage?: string,
 ): { message: string; detail: string } {
-  return { message: fallbackMessage, detail: err instanceof Error ? err.message : String(err) };
+  const detail = err instanceof Error ? err.message : String(err);
+  const message = notFoundMessage && isFileNotFoundError(err, detail)
+    ? notFoundMessage
+    : fallbackMessage;
+  return { message, detail };
 }
 
 export function parseArchiveInspection(content: string): ArchiveInspection | null {
