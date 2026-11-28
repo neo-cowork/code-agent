@@ -41,6 +41,7 @@ export interface SearchSettingsOptions extends AccessSubject {
 export const SETTINGS_INDEX: SettingsEntry[] = [
   // General
   { tab: 'general', labelKey: 'permissionMode', keywords: ['permission', 'permissions', 'safety', 'safe mode', 'yolo', 'auto edit', 'auto-edit', 'bypassPermissions'] },
+  { tab: 'general', labelKey: 'osSandbox', keywords: ['sandbox', 'os sandbox', 'seatbelt', 'bubblewrap', 'bwrap'] },
 
   // Conversation
   { tab: 'conversation', labelKey: 'modelRoutingStrategy', keywords: ['routing', 'route', 'model routing', 'auto', 'direct', 'parallel'] },

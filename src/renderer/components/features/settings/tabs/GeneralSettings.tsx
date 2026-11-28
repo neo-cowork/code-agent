@@ -230,7 +230,7 @@ export function buildInheritanceRows(
 
 export function buildPermissionRuleSummary(
   input: PermissionRuleInput,
-  noRulesLabel: string = DEFAULT_GENERAL_SETTINGS_TEXT.noRules,
+  text: GeneralSettingsText = DEFAULT_GENERAL_SETTINGS_TEXT,
 ): PermissionRuleSummary {
   const denyCount = parsePermissionRules(input.denyRules)
     .filter((line) => validateUserPermissionRule(line, 'deny').ok).length;
@@ -239,12 +239,13 @@ export function buildPermissionRuleSummary(
   const allowCount = parsePermissionRules(input.allowRules)
     .filter((line) => validateUserPermissionRule(line, 'allow').ok).length;
 
+  const { deny, ask, allow } = text.userRules.kindLabels;
   return {
     denyCount,
     askCount,
     allowCount,
     totalCount: denyCount + askCount + allowCount,
-    highestPriority: denyCount > 0 ? 'Deny' : askCount > 0 ? 'Ask' : allowCount > 0 ? 'Allow' : noRulesLabel,
+    highestPriority: denyCount > 0 ? deny : askCount > 0 ? ask : allowCount > 0 ? allow : text.noRules,
   };
 }
 
@@ -276,19 +277,19 @@ function getErrorMessage(error: unknown, fallback: string): string {
 function getRuleRows(ruleSummary: PermissionRuleSummary, text: GeneralSettingsText) {
   return [
     {
-      label: 'Deny',
+      label: text.userRules.kindLabels.deny,
       caption: text.userRules.denyCaption,
       value: ruleSummary.denyCount,
       color: 'text-badge-danger',
     },
     {
-      label: 'Ask',
+      label: text.userRules.kindLabels.ask,
       caption: text.userRules.askCaption,
       value: ruleSummary.askCount,
       color: 'text-badge-warning',
     },
     {
-      label: 'Allow',
+      label: text.userRules.kindLabels.allow,
       caption: text.userRules.allowCaption,
       value: ruleSummary.allowCount,
       color: 'text-badge-success',
@@ -302,6 +303,9 @@ export const GeneralSettings: React.FC = () => {
   const sandboxDoctor = useDoctorStore((state) =>
     state.report?.items.find((item) => item.name === OS_SANDBOX_DOCTOR_ITEM_NAME),
   );
+  const sandboxWarning = sandboxDoctor?.status === 'warn' || sandboxDoctor?.status === 'fail';
+  const sandboxCopy = !sandboxWarning ? generalText.sandbox.available
+    : sandboxDoctor.message.includes('disabled') ? generalText.sandbox.disabled : generalText.sandbox.unavailable;
   const budgetText = t.settings.general.budget;
   const isAdmin = useAuthStore((state) => state.user?.isAdmin === true);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
@@ -328,8 +332,8 @@ export const GeneralSettings: React.FC = () => {
     [generalText, inheritance],
   );
   const ruleSummary = useMemo(
-    () => buildPermissionRuleSummary({ denyRules, askRules, allowRules }, generalText.noRules),
-    [allowRules, askRules, denyRules, generalText.noRules],
+    () => buildPermissionRuleSummary({ denyRules, askRules, allowRules }, generalText),
+    [allowRules, askRules, denyRules, generalText],
   );
   const activeModeRow = permissionModeRows.find((row) => row.selected) ?? permissionModeRows[0];
   const activeInheritanceRow = inheritanceRows.find((row) => row.selected) ?? inheritanceRows[0];
@@ -456,7 +460,7 @@ export const GeneralSettings: React.FC = () => {
     }
     setRuleErrors((current) => ({ ...current, [kind]: undefined }));
     await persistPermissions({ [kind]: decision.rules });
-    toast.success(`${kind}${generalText.ruleSavedPrefix}${decision.rules.length}${generalText.ruleSavedSuffix}`);
+    toast.success(`${generalText.userRules.savedKindLabels[kind]}${generalText.ruleSavedPrefix}${decision.rules.length}${generalText.ruleSavedSuffix}`);
   };
 
   const handleAckMigration = async () => {
@@ -514,19 +518,13 @@ export const GeneralSettings: React.FC = () => {
 
       <SettingsSection
         title={generalText.sandbox.title}
-        description={
-          sandboxDoctor?.status === 'warn' || sandboxDoctor?.status === 'fail'
-            ? (sandboxDoctor.message.includes('disabled')
-              ? generalText.sandbox.disabled
-              : generalText.sandbox.unavailable)
-            : generalText.sandbox.available
-        }
+        description={sandboxCopy.description}
       >
         <p
-          className={`text-xs leading-5 ${sandboxDoctor?.status === 'warn' || sandboxDoctor?.status === 'fail' ? 'text-badge-warning' : 'text-zinc-500'}`}
+          className={`text-xs leading-5 ${sandboxWarning ? 'text-badge-warning' : 'text-zinc-500'}`}
           data-testid="os-sandbox-settings-hint"
         >
-          {sandboxDoctor?.suggestion || sandboxDoctor?.details || generalText.sandbox.installHint}
+          {sandboxCopy.hint}
         </p>
       </SettingsSection>
 
