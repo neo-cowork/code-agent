@@ -21,6 +21,7 @@ export async function listActivityProviders(): Promise<ActivityProviderListResul
   const generatedAtMs = Date.now();
 
   const openchronicle: OpenchronicleStatus = await getOpenchronicleStatus().catch((error) => ({
+    installed: false,
     state: 'error',
     mcpHealthy: false,
     bufferFiles: 0,
@@ -53,6 +54,7 @@ export async function listActivityProviders(): Promise<ActivityProviderListResul
       detail: '外部 daemon 独立运行，code-agent 在注入 agent prompt 前做黑名单过滤。',
       lastError: openchronicle.lastError || null,
       metadata: {
+        installed: openchronicle.installed,
         pid: openchronicle.pid || null,
         mcpHealthy: openchronicle.mcpHealthy || false,
         bufferFiles: openchronicle.bufferFiles || 0,
