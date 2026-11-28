@@ -28,6 +28,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 import type { MessageAttachment } from '../../../src/shared/contract/message';
 
 afterEach(() => {
@@ -109,7 +110,7 @@ describe('ChatInput @ popover folder selection', () => {
     };
 
     try {
-      const onSend = vi.fn(async () => true);
+      const onSend = vi.fn(async (_envelope: ConversationEnvelope) => true);
       const { container, getByTestId } = render(<ChatInput onSend={onSend} />);
       const editor = getByTestId('chat-composer-textarea');
 
