@@ -417,8 +417,11 @@ function isPlainSingleFileDelete(command: string): boolean {
   const rmSegments = parsed.segments.filter(({ words }) => words[0] === 'rm');
   if (rmSegments.length !== 1) return false;
   const [rm] = rmSegments;
-  const [, operand] = rm.words;
-  if (rm.words.length !== 2 || !/^~?\//.test(operand)) return false;
+  const [, ...options] = rm.words;
+  const operand = options.pop() ?? '';
+  // -v only prints the removed path. Any other option, `--` or a second operand keeps the high card.
+  if (options.length > 1 || options.some((option) => option !== '-v' && option !== '--verbose')) return false;
+  if (!/^~?\//.test(operand)) return false;
   if (/[*?[\]{}$`\\]/.test(operand) || operand.slice(1).includes('~')) return false;
   if (operand.slice(operand.indexOf('/') + 1).split('/').some((part) => !part || part.startsWith('.'))) return false;
 
@@ -554,6 +557,8 @@ export function validateCommand(
     const p = rule.flag === 'recursive_delete_targeted' && shell === 'posix' && isPlainSingleFileDelete(command)
       ? SINGLE_FILE_DELETE
       : rule;
+    // Both targeted-delete rules can match one `rm -v` (a hyphenated path); report the file once.
+    if (p === SINGLE_FILE_DELETE && securityFlags.includes(p.flag)) continue;
     const workspaceContainedSystemDelete = pathContext
       && (p.flag === 'system_dir_delete' || p.flag === 'container_dir_delete')
       && rmIsContainedInWorkspace(normalized, pathContext);

@@ -785,3 +785,40 @@ describe('plain single-file rm', () => {
     expect(validateCommand(command, 'posix')).toMatchObject({ allowed: false, riskLevel: 'critical' });
   });
 });
+
+describe('plain single-file rm with the verbose option', () => {
+  it.each([
+    'rm -v "/Users/u/outside/old-notes.txt"',
+    'rm --verbose ~/Desktop/old-notes.txt',
+    'rm -v "/Users/u/a.txt"; echo "exit=$?"',
+    'rm -v /Users/u/first-draft.txt',
+  ])('marks one explicit file as medium: %s', (command) => {
+    expect(validateCommand(command, 'posix')).toMatchObject({
+      allowed: true,
+      riskLevel: 'medium',
+      securityFlags: ['single_file_delete'],
+    });
+  });
+
+  it.each([
+    'rm -rv /Users/u/dir',
+    'rm -fv /Users/u/a.txt',
+    'rm -vf /Users/u/a.txt',
+    'rm -rfv /Users/u/dir',
+    'rm -v -f /Users/u/a.txt',
+    'rm -v -- /Users/u/a.txt',
+    'rm -vi /Users/u/a.txt',
+    'rm /Users/u/a.txt -v',
+    'rm -v /Users/u/a.txt /Users/u/b.txt',
+    'rm -v /Users/u/*.txt',
+  ])('keeps the targeted delete high: %s', (command) => {
+    const result = validateCommand(command, 'posix');
+    expect(result.riskLevel).toBe('high');
+    expect(result.securityFlags).toContain('recursive_delete_targeted');
+    expect(result.securityFlags).not.toContain('single_file_delete');
+  });
+
+  it('still blocks a verbose delete of a system file', () => {
+    expect(validateCommand('rm -v /etc/hosts', 'posix')).toMatchObject({ allowed: false, riskLevel: 'critical' });
+  });
+});

@@ -75,6 +75,7 @@ beforeEach(() => {
 describe('ToolExecutor rm approval requests', () => {
   it.each([
     ['', 'old-notes.txt', 'command', 'medium', 'single_file_delete', 1],
+    ['-v ', 'old-notes.txt', 'command', 'medium', 'single_file_delete', 1],
     ['-r ', 'old-drafts', 'dangerous_command', 'high', 'recursive_delete_targeted', 2],
     ['-rf ', 'old-drafts', 'dangerous_command', 'high', 'recursive_delete_targeted', 2],
     ['-f ', 'old-notes.txt', 'dangerous_command', 'high', 'recursive_delete_targeted', 1],
