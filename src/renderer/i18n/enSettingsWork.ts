@@ -3,6 +3,7 @@ import { hooksLoadStateEn } from './hooksLoadState';
 import { enAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsEn } from './permissionGrants';
 import { memoryInjectionPauseEn } from './memoryInjectionPause';
+import { enSettingsScreenMemory } from './enSettingsScreenMemory';
 export const enSettingsWork = {
     workspace: {
       description: 'Manage the current working directory, recent directories, local bridge status, and default browser-tool behavior.',
@@ -736,107 +737,7 @@ export const enSettingsWork = {
         },
       },
     },
-    openchronicle: {
-      operationFailed: 'Operation failed',
-      webUnavailable: 'Screen memory is only available in the macOS desktop app because it needs a local background daemon to monitor system activity.',
-      refresh: 'Refresh',
-      stateLabels: {
-        running: 'Running',
-        starting: 'Starting...',
-        stopping: 'Stopping...',
-        stopped: 'Stopped',
-        error: 'Error',
-      },
-      header: {
-        introPrefix: 'Use the external ',
-        introMiddle: ' daemon to ',
-        introSuffix: 'capture cross-app work activity (macOS AX Tree), so Agent Neo knows what you were just doing when a new chat starts.',
-        warning: 'Once enabled, OpenChronicle runs in the background 24/7, even after Agent Neo closes, until you turn it off here.',
-      },
-      control: {
-        enableScreenMemory: 'Enable screen memory',
-        description: 'ON: start the OC daemon + register the MCP server · OFF: fully quit the daemon',
-      },
-      status: {
-        daemon: 'Daemon status',
-        mcpEndpoint: 'MCP endpoint',
-        connected: '✓ Connected',
-        disconnected: '— Not connected',
-        dataDirPrefix: 'Data directory: ',
-      },
-      autoInject: {
-        title: 'Automatically inject context into chats',
-        description: 'On the first turn of a new session, inject "which app you were just using and what you were viewing" as a system message (limited to 500 tokens).',
-      },
-      blacklist: {
-        title: 'Privacy blacklist',
-        description: 'Blacklisted apps or URLs are not injected into chat context. The OC daemon may still capture them, but Agent Neo filters them out.',
-        appsLabel: 'Blacklisted apps (one per line)',
-        appsPlaceholder: '1Password\nBitwarden\nWeChat',
-        urlPatternsLabel: 'Blacklisted URL patterns (glob, one per line)',
-      },
-      screenMemory: {
-        refresh: 'Refresh',
-        webDescription: 'Web mode cannot directly control local screen memory. Configure it in the desktop app.',
-        webBody: 'The unified entry remains available, but the OpenChronicle daemon and Native Desktop provider both require desktop shell capabilities.',
-        pageDescription: 'Configure screen memory capture, injection, and privacy boundaries. Preview and desktop activity controls stay in the diagnostics area by default.',
-        providerStateLabels: {
-          running: 'Running',
-          starting: 'Starting',
-          stopping: 'Stopping',
-          stopped: 'Stopped',
-          available: 'Available',
-          unavailable: 'Unavailable',
-          error: 'Error',
-        },
-        status: {
-          currentRuntime: 'Current runtime',
-          webFallback: 'Web fallback',
-          automaticScreenMemory: 'Automatic screen memory',
-          openchronicleConfigurable: 'OpenChronicle configurable',
-          desktopAvailable: 'Desktop app available',
-          manualDesktopActivity: 'Manual desktop activity',
-          nativeDesktopAvailable: 'Native Desktop available',
-          tauriOnly: 'Tauri only',
-        },
-        activityContext: {
-          empty: {
-            recentContextSummary: 'Reading recent screen context.',
-            agentInjectionPreview: 'Reading the content that will be injected into the agent.',
-          },
-          error: {
-            recentContextUnavailable: 'ActivityContext is temporarily unavailable.',
-            agentInjectionUnavailable: 'This turn will not inject extra context from screen memory.',
-          },
-          capturedAt: {
-            none: 'No time yet',
-          },
-          title: 'ActivityContext preview',
-          degraded: 'Degraded',
-          noSources: 'No sources yet',
-          recentContextPreview: 'Recent context preview',
-          agentInjectionPreview: 'Agent injection preview',
-          evidenceFallback: 'Evidence preview only shows summaries. Local screenshot paths and file paths are not expanded here.',
-        },
-        nativeUnavailable: {
-          title: 'This desktop shell has no Tauri Native Desktop provider',
-          description: 'The entry point and capability notes remain visible; manual desktop activity capture, screenshots, and recording controls only run in the Tauri desktop app.',
-        },
-        captureSection: {
-          title: 'Capture and injection settings',
-          openchronicleTitle: 'Automatic screen memory / external OpenChronicle provider',
-          openchronicleDescription: 'Configure the OpenChronicle daemon through the Agent Neo bridge without changing the capture core or background lifecycle.',
-        },
-        diagnostics: {
-          title: 'Diagnostics and preview',
-          description: 'ActivityContext preview and manual desktop activity controls help troubleshoot the capture path and are collapsed by default.',
-          activityTitle: 'Unified ActivityContext preview',
-          activityDescription: 'Preview recent screen context and the summary that will be injected into the agent, without showing local screenshot paths.',
-          nativeDesktopTitle: 'Manual desktop activity / Tauri Native Desktop provider',
-          nativeDesktopDescription: 'The Tauri desktop app can directly view and control local desktop activity capture; other desktop shells only show capability boundaries.',
-        },
-      },
-    },
+    openchronicle: enSettingsScreenMemory,
     privacy: {
       webDescription: 'The local PII guard redacts named entities such as names, addresses, and medical IDs before collaboration content goes to a cloud LLM.',
       pageDescription: 'Overview of permissions and data boundaries. Local-first by default; cloud paths, channel credentials, and diagnostic packages are shown separately.',

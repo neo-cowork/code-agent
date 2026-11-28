@@ -1,12 +1,19 @@
 /**
  * 模型输出里的 think / 工具协议裸标记：宿主提取与所有用户可见出口共用的单一实现。
  *
- * 孤儿 `</think>`（没有前置 `<think>`）：部分模型的推理模板把开标签放进 prompt，流里只剩闭标签
- * （vLLM deepseek_r1_reasoning_parser 同款场景）。此时闭标签之前是推理、之后是正文。
- * 已知损失：围栏代码块里字面出现的 `</think>` 也会被当成孤儿闭标签。
+ * 完整 think 块归入推理。vLLM 兼容流可能把推理尾段放进正文，以孤儿 `</think>` 收尾；
+ * 此时最后一个闭标签前的文字也归入推理。正文中间的孤儿闭标签仅在没有独立推理、
+ * 也没有开标签时充当分隔符。已有独立推理时，未闭合的开标签只剥标记。
  */
 
-const COMPLETE_THINK_BLOCK = /<think>[\s\S]*?<\/think>/g;
+const OPEN_THINK = '<think>';
+const CLOSE_THINK = '</think>';
+const THINK_TAGS = /<\/?think>/g;
+
+export function containsThinkTag(text: string): boolean {
+  return text.includes(OPEN_THINK) || text.includes(CLOSE_THINK);
+}
+
 const LONGCAT_PATTERNS = [
   /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
   /<longcat_tool_call>[\s\S]*$/gi,
@@ -19,32 +26,50 @@ function appendReasoning(reasoning: string, extra: string): string {
   return extra ? reasoning + (reasoning ? '\n' : '') + extra : reasoning;
 }
 
-/** 把 content 里的 think 内容并入 reasoning：完整块、孤儿 `</think>`（前→推理、后→正文）、未闭合 `<think>`（到串尾）。 */
+/** 从模型正文提取推理并剥除残留的 think 标签。 */
 export function splitThinkTags(
   content: string,
   reasoning: string,
 ): { content: string; reasoning: string } {
+  const hasOpen = content.includes(OPEN_THINK);
+  const lastClose = content.lastIndexOf(CLOSE_THINK);
+  if (!hasOpen && lastClose === -1) return { content, reasoning };
+
   let nextReasoning = reasoning;
-  const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
-  let thinkMatch;
-  while ((thinkMatch = thinkRegex.exec(content)) !== null) {
+  let lastCompleteEnd = -1;
+  let nextContent = content.replace(/<think>([\s\S]*?)<\/think>/g, (block, inner: string, offset: number) => {
     // 与旧实现逐字节一致：空块也沿用旧的拼接（含换行）
-    nextReasoning += (nextReasoning ? '\n' : '') + thinkMatch[1].trim();
-  }
-  let nextContent = content.replace(COMPLETE_THINK_BLOCK, '');
+    nextReasoning += (nextReasoning ? '\n' : '') + inner.trim();
+    lastCompleteEnd = offset + block.length;
+    return '';
+  });
 
-  // 完整块已移除，剩下的 </think> 必然没有前置 <think>
-  const orphanIndex = nextContent.indexOf('</think>');
+  const closeEnd = lastClose + CLOSE_THINK.length;
+  if (lastClose !== -1 && closeEnd !== lastCompleteEnd && closeEnd === content.trimEnd().length) {
+    const extra = content.slice(0, lastClose).replace(THINK_TAGS, '').trim();
+    return { content: '', reasoning: appendReasoning(reasoning, extra) };
+  }
+
+  const orphanIndex = nextContent.indexOf(CLOSE_THINK);
   if (orphanIndex !== -1) {
-    nextReasoning = appendReasoning(nextReasoning, nextContent.slice(0, orphanIndex).trim());
-    nextContent = nextContent.slice(orphanIndex + '</think>'.length).replace(/<\/think>/g, '');
+    if (reasoning || hasOpen) {
+      nextContent = nextContent.replaceAll(CLOSE_THINK, '');
+    } else {
+      nextReasoning = appendReasoning(nextReasoning, nextContent.slice(0, orphanIndex).trim());
+      nextContent = nextContent.slice(orphanIndex + CLOSE_THINK.length).replaceAll(CLOSE_THINK, '');
+    }
   }
 
-  const unclosedIndex = nextContent.indexOf('<think>');
+  if (reasoning) {
+    nextContent = nextContent.replaceAll(OPEN_THINK, '');
+    return { content: lastCompleteEnd === -1 ? nextContent : nextContent.trim(), reasoning: nextReasoning };
+  }
+
+  const unclosedIndex = nextContent.indexOf(OPEN_THINK);
   if (unclosedIndex !== -1) {
     nextReasoning = appendReasoning(
       nextReasoning,
-      nextContent.slice(unclosedIndex + '<think>'.length).trim(),
+      nextContent.slice(unclosedIndex + OPEN_THINK.length).trim(),
     );
     nextContent = nextContent.slice(0, unclosedIndex);
   }
