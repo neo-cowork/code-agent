@@ -1,7 +1,7 @@
 // 2b：把一次「出视频」请求落到画布视频节点。与表单态 generateVideo 共用同一出图原语
 // （generateDesignVideo IPC + addNode + save），抽成无 React 依赖的纯过程（全经 store getState），
 // 供表单 hook 与 agent 路径（useCanvasVideoRequest 订阅 ProposeVideoOps 的 CANVAS_VIDEO_ASK）共用。
-// 不含成本确认 / 模型解析（调用方负责）：表单走 window.confirm，agent 走会话区成本卡。
+// 不含成本确认 / 模型解析（调用方负责）：表单走应用内确认弹窗，agent 走会话区成本卡。
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DESIGN_WORKSPACE } from '@shared/constants';
 import {

@@ -462,6 +462,7 @@ const SYSTEM_TAG_PATTERNS = [
   // 过滤 skill 加载状态标签（应由 SkillStatusMessage 组件渲染，此处作为兜底）
   /<command-message>[\s\S]*?<\/command-message>/g,
   /<command-name>[\s\S]*?<\/command-name>/g,
+  /<command-content-hash>[\s\S]*?<\/command-content-hash>/g,
 ];
 
 /**

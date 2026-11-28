@@ -23,6 +23,7 @@ import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
+import { isAgentFailureCode } from '@shared/contract/agentFailure';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useSwarmStore } from '../../../stores/swarmStore';
@@ -233,6 +234,16 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const firstWorking = working[0];
   const outcomeRow = firstWorking ?? waiting[0] ?? failed[0] ?? cancelled[0] ?? rows.find((row) => row.status === 'done');
   const outcome = outcomeRow?.outcomeKey;
+  const failedCodeOf = (row: AgentRow) => row.failureCode
+    ?? (isAgentFailureCode(row.task?.failure?.reason) ? row.task.failure.reason : undefined);
+  const failedCodes = failed.map(failedCodeOf);
+  const sharedFailedCode = failedCodes.length > 0 && failedCodes.every((code) => code && code === failedCodes[0])
+    ? failedCodes[0]
+    : undefined;
+  const collapsedFailedReasonEntry = outcomeRow?.status === 'failed' && outcome !== 'delete-incomplete'
+    && sharedFailedCode && sharedFailedCode in text.collapsedFailedReason
+    ? text.collapsedFailedReason[sharedFailedCode as keyof typeof text.collapsedFailedReason]
+    : undefined;
   const outcomeSummary = outcome
     ? interpolatePlural(text.collapsedOutcome, rows.filter((row) => row.outcomeKey
       ? row.outcomeKey === outcome
@@ -241,17 +252,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     : null;
   const summary = standby
     ? interpolatePlural(text.collapsedStandby, rows.length)
-    : outcomeSummary
-      ? `${outcomeSummary} · ${outcomeRow ? outcomeRow.displayName ?? outcomeRow.name : ''}`
-      : firstWorking
-        ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.displayName ?? firstWorking.name}`
-        : waiting.length > 0
-          ? interpolatePlural(text.collapsedWaiting, waiting.length)
-          : failed.length > 0
-            ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].displayName ?? failed[0].name}`
-            : cancelled.length > 0
-              ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].displayName ?? cancelled[0].name}`
-              : interpolatePlural(text.collapsedDone, rows.length);
+    : collapsedFailedReasonEntry
+      ? `${interpolatePlural(collapsedFailedReasonEntry, failed.length)} · ${failed[0].displayName ?? failed[0].name}`
+      : outcomeSummary
+        ? `${outcomeSummary} · ${outcomeRow ? outcomeRow.displayName ?? outcomeRow.name : ''}`
+        : firstWorking
+          ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.displayName ?? firstWorking.name}`
+          : waiting.length > 0
+            ? interpolatePlural(text.collapsedWaiting, waiting.length)
+            : failed.length > 0
+              ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].displayName ?? failed[0].name}`
+              : cancelled.length > 0
+                ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].displayName ?? cancelled[0].name}`
+                : interpolatePlural(text.collapsedDone, rows.length);
   const visibleSummary = outcome === 'delete-incomplete' && outcomeRow?.failureReason
     ? t.chat.delegationReceipt.failureDetail.replace('{status}', outcomeSummary ?? summary).replace('{reason}', outcomeRow.failureReason)
     : summary;

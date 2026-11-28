@@ -125,7 +125,7 @@ describe('MemoryTab management helpers', () => {
       stats,
       now,
     })).toEqual({
-      totalFiles: 4,
+      totalFiles: 2,
       matchedFiles: 1,
       typeCount: 2,
       totalSessions: 12,

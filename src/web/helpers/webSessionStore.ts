@@ -136,7 +136,11 @@ export const inMemorySessionsProjection = {
 interface WebCLISessionManagerLike {
   getMessages?(sessionId: string, limit?: number): Promise<Message[]>;
   getSession?(sessionId: string, messageLimit?: number): Promise<{ title?: string } | null>;
-  updateSession?(sessionId: string, updates: Partial<Session>): Promise<void> | void;
+  updateSession?(
+    sessionId: string,
+    updates: Partial<Session>,
+    options?: { broadcastTitle?: boolean },
+  ): Promise<void> | void;
   addMessageToSession?(
     sessionId: string,
     message: Message,
@@ -172,6 +176,7 @@ interface WebSessionStoreDeps {
 interface PrePersistUserMessageInput {
   sessionId: string;
   title: string;
+  titleAlreadyBroadcast?: boolean;
   modelConfig: Pick<ModelConfig, 'provider' | 'model'>;
   /**
    * 会话行在本轮才创建（preflight 时行还不存在：服务端生成 sessionId、渲染端建行失败等）
@@ -389,13 +394,19 @@ async function prepareCliSessionForWrite(
   sessionManager: Required<Pick<WebCLISessionManagerLike, 'getSession' | 'updateSession'>>,
   sessionId: string,
   title: string,
+  titleAlreadyBroadcast?: boolean,
 ): Promise<boolean> {
   const existing = await sessionManager.getSession(sessionId, 1);
   if (!existing) return false;
 
   if (isPlaceholderSessionTitle(existing.title) && title && title !== existing.title) {
     try {
-      await sessionManager.updateSession(sessionId, { title, updatedAt: Date.now() });
+      const updates = { title, updatedAt: Date.now() };
+      if (titleAlreadyBroadcast) {
+        await sessionManager.updateSession(sessionId, updates, { broadcastTitle: false });
+      } else {
+        await sessionManager.updateSession(sessionId, updates);
+      }
     } catch {
       // 标题升级失败不阻塞主流程，commitTurn 的元数据更新还会再试。
     }
@@ -641,7 +652,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         );
         const cliSessionManager = hasCliSessionLifecycle(sm) ? sm : null;
         const sessionExists = cliSessionManager
-          ? await prepareCliSessionForWrite(cliSessionManager, input.sessionId, input.title)
+          ? await prepareCliSessionForWrite(cliSessionManager, input.sessionId, input.title, input.titleAlreadyBroadcast)
           : false;
         const willCreateRow = cliSessionManager ? !sessionExists : true;
         const projectId = willCreateRow

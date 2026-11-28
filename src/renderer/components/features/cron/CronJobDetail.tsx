@@ -38,6 +38,7 @@ import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
 import { CronJobWorkingFolderStatus } from './CronWorkingFolderStatus';
 import { formatDetailDuration } from './formatDetailDuration';
+import { requestConfirm } from '../../../services/confirmPrompt';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -131,7 +132,12 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(cc.confirmDelete.replace('{name}', displayName))) return;
+    if (!await requestConfirm({
+      title: t.confirmPrompts.deleteCronTask,
+      message: cc.confirmDelete.replace('{name}', displayName),
+      confirmText: t.common.delete,
+      variant: 'danger',
+    })) return;
     await deleteJob(job.id);
   };
 
