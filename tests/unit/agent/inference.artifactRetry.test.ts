@@ -743,7 +743,7 @@ describe('contextAssembly inference artifact retry', () => {
     );
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '模型流中断，正在用非流式方式重试 artifact 生成...',
+      '模型连接中断，正在换一种方式重新生成产物…',
     );
     expect(ctx.inferenceRecovery._artifactNonStreamingRetried).toBe(false);
   });

@@ -35,7 +35,7 @@
 ## 流程卡
 
 ### F01 — 新建日程（自然语言 + 写入审批）
-- **Preconditions**: surface shell；已授权系统日历；已配置模型；新会话。
+- **Preconditions**: surface shell；已授权系统日历；挂靠脚本模式（`--slot`）另需专属日历（环境变量 `NEO_E2E_CALENDAR`）且完全访问授权，事件标题带本次运行标记（`E2E-<6 hex>`）；已配置模型；新会话。
 - **Steps**: 1. 在输入框说「明天下午三点帮我约个评审会」并发送。2. 出现审批卡，核对时间 / 标题。3. 点「创建」。
 - **Selectors**: `testid:chat-composer-textarea` @ `src/renderer/components/features/chat/ChatInput/InputArea.tsx`；`testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；按钮文案「创建」「取消」见 `src/renderer/i18n/decisionCard.ts`（`optionCreateItem` / `optionDenyCreate`）。
 - **Expected UI**: 审批卡标题是日程语义（不是「执行工具」），点「创建」后卡片收起，回复里说明已创建及时间。
@@ -44,7 +44,7 @@
 - **Proof**: 原生 EventKit 只在壳里，Web 构建跑不了；靠 hermetic 审批卡形状测试 + 真机批。
 
 ### F02 — 修改日程
-- **Preconditions**: surface shell；日历里已有 F01 创建的事件。
+- **Preconditions**: surface shell；专属日历（`NEO_E2E_CALENDAR`）已完全访问授权，事件标题带本次运行标记（`E2E-<6 hex>`）；日历里已有带本次标记的评审会事件（挂靠脚本经同一聊天 + 审批路径先创建）。
 - **Steps**: 1. 说「把评审会改到四点」。2. 审批卡点「更新」。
 - **Selectors**: `testid:permission-card` @ `src/renderer/components/PermissionDialog/PermissionCard.tsx`；按钮文案见 `src/renderer/i18n/decisionCard.ts`（`optionUpdate`）。
 - **Expected UI**: 卡片展示改前 / 改后时间；确认后回复写明新时间。
@@ -53,7 +53,7 @@
 - **Proof**: 真机批（EventKit）。
 
 ### F03 — 删除日程并撤销
-- **Preconditions**: surface shell；日历里有一个事件。
+- **Preconditions**: surface shell；专属日历（`NEO_E2E_CALENDAR`）已完全访问授权；日历里有一个带本次运行标记（`E2E-<6 hex>`）的事件（挂靠脚本经同一聊天 + 审批路径先创建）。
 - **Steps**: 1. 说「把明天的评审会删了」。2. 审批卡点「删除」。3. 回复里出现「撤销」按钮，点它。
 - **Selectors**: `testid:calendar-delete-undo` @ `src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/CalendarDeleteUndo.tsx`；`testid:calendar-delete-undone` @ `src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/CalendarDeleteUndo.tsx`；`testid:calendar-delete-undo-failed` @ `src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/CalendarDeleteUndo.tsx`。
 - **Expected UI**: 删除后出现撤销入口；点后变为已撤销状态；日历里事件回来。
@@ -62,7 +62,7 @@
 - **Proof**: 撤销组件单测（hermetic）+ 真机批。
 
 ### F04 — 查看日程
-- **Preconditions**: surface shell；已授权日历；本周有若干事件。
+- **Preconditions**: surface shell；专属日历（`NEO_E2E_CALENDAR`）已完全访问授权；已配置模型；本周有若干事件。
 - **Steps**: 1. 说「我这周日程怎么样」。
 - **Selectors**: `testid:chat-composer-textarea` @ `src/renderer/components/features/chat/ChatInput/InputArea.tsx`；`testid:turn-run-header` @ `src/renderer/components/features/chat/TurnCard.tsx`。
 - **Expected UI**: 不弹审批（只读）；回复按天列出事件，数量与系统日历一致。

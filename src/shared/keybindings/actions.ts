@@ -374,7 +374,7 @@ export const KEYBINDING_DEFINITIONS = [
   },
   {
     id: 'replay.open',
-    label: '打开 Replay',
+    label: '回放过程',
     description: '打开当前会话回放',
     category: 'workbench',
     scope: 'workbench',

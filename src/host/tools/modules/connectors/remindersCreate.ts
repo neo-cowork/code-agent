@@ -21,7 +21,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { appleScriptFailureForDisplay } from './appleScriptWriteFailure';
+import { appleScriptFailureForDisplay, connectorNotFoundCode } from './appleScriptWriteFailure';
 import type { AppleScriptFailureCode } from '../../../connectors/native/appleScriptFailure';
 import { remindersCreateSchema as schema } from './remindersCreate.schema';
 import { formatConnectorTime } from './connectorTime';
@@ -250,7 +250,7 @@ async function executeRemindersCreate(
   } catch (error) {
     if (!isAppleScriptFailure(error)) {
       const failure = `Reminders create failed: ${error instanceof Error ? error.message : String(error)}`;
-      return buildRemindersCreateFailureResult(failure, args, ctx);
+      return buildRemindersCreateFailureResult(failure, args, ctx, connectorNotFoundCode(error));
     }
 
     const described = describeAppleScriptFailure('Reminders', error);
