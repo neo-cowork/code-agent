@@ -727,6 +727,8 @@ describe('plain single-file rm', () => {
     'rm ~/Desktop/old-notes.txt',
     'rm "/Users/u/My Notes/old.txt" 2>&1; echo "rm_exit=$?"',
     'rm /Users/u/a.txt 2>/dev/null || true',
+    'rm "/Users/u/a.txt"; echo "rm exit: $?"',
+    'rm /Users/u/a.txt && echo "removed rm target"',
   ])('marks one explicit file as medium: %s', (command) => {
     expect(validateCommand(command, 'posix')).toMatchObject({
       allowed: true,
@@ -738,6 +740,7 @@ describe('plain single-file rm', () => {
   it.each([
     'rm /Users/u/a.txt /Users/u/b.txt',
     'rm /Users/u/a.txt && rm /Users/u/b.txt',
+    'rm /Users/u/a.txt; rm /Users/u/b.txt',
     'rm -r /Users/u/dir',
     'rm -R /Users/u/dir',
     'rm --recursive /Users/u/dir',

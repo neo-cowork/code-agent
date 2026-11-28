@@ -401,8 +401,7 @@ interface DangerousPattern {
   suggestion?: string;
 }
 
-const SINGLE_FILE_DELETE: DangerousPattern = {
-  pattern: new RegExp(RM_HEAD),
+const SINGLE_FILE_DELETE: Omit<DangerousPattern, 'pattern'> = {
   riskLevel: 'medium',
   flag: 'single_file_delete',
   reason: 'Deletes one specific file',
@@ -415,11 +414,11 @@ function isPlainSingleFileDelete(command: string): boolean {
   if (/[<`\\]|\$(?!\?)/.test(command)) return false;
   const parsed = parseShellCommand(command);
   if (parsed.parsingFailed || parsed.trailingOperator) return false;
-  const rmSegments = parsed.segments.filter(({ words }) => SINGLE_FILE_DELETE.pattern.test(words.join(' ')));
+  const rmSegments = parsed.segments.filter(({ words }) => words[0] === 'rm');
   if (rmSegments.length !== 1) return false;
   const [rm] = rmSegments;
-  const [program, operand] = rm.words;
-  if (program !== 'rm' || rm.words.length !== 2 || !/^~?\//.test(operand)) return false;
+  const [, operand] = rm.words;
+  if (rm.words.length !== 2 || !/^~?\//.test(operand)) return false;
   if (/[*?[\]{}$`\\]/.test(operand) || operand.slice(1).includes('~')) return false;
   if (operand.slice(operand.indexOf('/') + 1).split('/').some((part) => !part || part.startsWith('.'))) return false;
 
