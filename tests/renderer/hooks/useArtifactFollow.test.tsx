@@ -192,14 +192,14 @@ describe('useArtifactFollow', () => {
       streamEpoch: 'native:artifact-follow-test',
       sessionId: 'session-1',
       seq: 2,
-      data: { toolCallId: 'write-1', stage: 'running', progress: 10 },
+      data: { toolCallId: 'write-1', toolName: 'Write', elapsedMs: 100 },
     });
     emit({
       type: 'tool_progress',
       streamEpoch: 'native:artifact-follow-test',
       sessionId: 'session-1',
       seq: 3,
-      data: { toolCallId: 'write-1', stage: 'running', progress: 20 },
+      data: { toolCallId: 'write-1', toolName: 'Write', elapsedMs: 200 },
     });
 
     emit(writeEnd({
