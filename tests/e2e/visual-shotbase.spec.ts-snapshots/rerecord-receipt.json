@@ -1,0 +1,8 @@
+{
+  "contractSha256": "e67c71723c9051d374ed50b5563d6610b5c0c6bc994c5a3f7a5f2e9cd92494d7",
+  "baselineSha256": {
+    "tests/e2e/visual-shotbase.spec.ts-snapshots/dangerous-command-approval-light-chromium-linux.png": "0f274da56bb267c9bf08233ee3047dfaafad524f35d2864217bb50127dabe1fc",
+    "tests/e2e/visual-shotbase.spec.ts-snapshots/dangerous-command-approval-dark-chromium-linux.png": "d84f5b62264968bdb3a92af5ec326f362d8bdc3c9fa6ebab0ee83358c93d7dc9"
+  },
+  "ciRunUrl": "https://github.com/neo-cowork/code-agent/actions/runs/45463430701"
+}

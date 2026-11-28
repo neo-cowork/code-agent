@@ -7,6 +7,7 @@ import { localizeCronSessionTitle } from '../../../../shared/cronSessionTitle';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { CrossSessionSearchProjectScope } from '../../../../shared/ipc/types';
 import { pushProjectScopeCondition } from './sessionProjectScope';
+import { visibleHistoryMessageWhere } from './sessionRepositoryParsers';
 
 export interface SessionSearchMetaRow {
   sessionId: string;
@@ -78,7 +79,7 @@ export function searchSessionTitles(
   limit: number,
   projectScope?: CrossSessionSearchProjectScope,
   includeArchived = false,
-): SessionSearchMetaRow[] {
+): Array<SessionSearchMetaRow & { messageCount: number }> {
   const needle = query.trim();
   if (!needle) return [];
   if (!localizedSearchDatabases.has(db)) {
@@ -93,7 +94,9 @@ export function searchSessionTitles(
   params.push(limit);
   const rows = db
     .prepare(
-      `SELECT s.id, s.title, s.updated_at, s.created_at, s.status FROM sessions s
+      `SELECT s.id, s.title, s.updated_at, s.created_at, s.status,
+         (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND ${visibleHistoryMessageWhere('m')}) AS message_count
+       FROM sessions s
        WHERE (s.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR cron_title_display(s.title, 'zh') LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR cron_title_display(s.title, 'en') LIKE ? ESCAPE '\\' COLLATE NOCASE)
@@ -101,5 +104,5 @@ export function searchSessionTitles(
        ORDER BY s.updated_at DESC LIMIT ?`,
     )
     .all(...params) as Record<string, unknown>[];
-  return rows.map(toRow);
+  return rows.map((row) => ({ ...toRow(row), messageCount: Number(row.message_count) }));
 }

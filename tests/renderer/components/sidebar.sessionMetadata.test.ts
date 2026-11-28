@@ -161,7 +161,8 @@ const backgroundTaskState = {
   tasks: [] as any[],
 };
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/renderer/stores/sessionStore')>(),
   useSessionStore: (selector?: (state: typeof sessionState) => unknown) => selector ? selector(sessionState) : sessionState,
   initializeSessionStore: vi.fn(async () => {}),
 }));

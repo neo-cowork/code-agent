@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState, type Dispatch, type SetStateAction } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentTrajectorySessionQualitySummary } from '@shared/contract/agentTrajectory';
 import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import type { CrossSessionSearchProjectScope, CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
-import { useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
+import { isBlankNewSession, useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
 import { useSessionUIStore, type TrajectoryReviewFilter } from '../../../stores/sessionUIStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
@@ -39,6 +39,11 @@ import {
   overlaySpaceCatalogMeta,
 } from '../../../utils/emptyCollaborationSpaces';
 import { useEmptyCollaborationSpaces } from './useEmptyCollaborationSpaces';
+import {
+  composerDraftStorageKey,
+  readComposerDraft,
+  subscribeComposerDraftChanges,
+} from '../chat/ChatInput/composerDraftStore';
 
 const logger = createLogger('Sidebar');
 
@@ -56,14 +61,19 @@ export function matchesTrajectoryReviewFilter(
 }
 
 /** 用主机返回的元数据合成一个最小会话行（会话不在侧栏已加载的那一页里）。 */
-function synthesizeSearchSession(sessionId: string, title: string, updatedAt: number): SessionWithMeta {
+function synthesizeSearchSession(
+  sessionId: string,
+  title: string,
+  updatedAt: number,
+  messageCount: number,
+): SessionWithMeta {
   return {
     id: sessionId,
     title,
     modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
     createdAt: updatedAt,
     updatedAt,
-    messageCount: 0,
+    messageCount,
     turnCount: 0,
   };
 }
@@ -91,6 +101,7 @@ export interface SidebarDerivedSessions {
   reviewItemsBySessionId: Record<string, AdminReviewQueueItem[]>;
   trajectoryQualityBySessionId: Record<string, AgentTrajectorySessionQualitySummary>;
   mergeTrajectoryQualitySummary: (sessionId: string, summary: AgentTrajectorySessionQualitySummary) => void;
+  hasAnySessions: boolean;
   filteredSessions: SessionWithMeta[];
   workspaceGroupedSessions: ReturnType<typeof groupByWorkspace>;
   visibleProjectIds: string[];
@@ -177,22 +188,6 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   // 想收窄仍可在弹窗里点「本项目」。
   const [searchScope, setSearchScope] = useState<SidebarSearchScope>('all');
   const effectiveSearchScope = resolveSidebarSearchScope(searchScope, currentProjectSearchSessionIds);
-  const searchableSessions = useMemo(
-    () => sessions.filter((session) => session.status !== 'archived'),
-    [sessions],
-  );
-  const allowedSearchSessionIds = useMemo(
-    () =>
-      effectiveSearchScope === 'current-project'
-        ? new Set(
-            searchableSessions
-              .filter((session) => currentProjectSearchSessionIds.has(session.id))
-              .map((session) => session.id),
-          )
-        : new Set(searchableSessions.map((session) => session.id)),
-    [currentProjectSearchSessionIds, effectiveSearchScope, searchableSessions],
-  );
-
   const [messageSearchHitsBySessionId, setMessageSearchHitsBySessionId] = useState<
     Record<string, SidebarMessageSearchHitGroup>
   >({});
@@ -207,6 +202,53 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const [messageSearchFailed, setMessageSearchFailed] = useState(false);
   // 全库搜索命中、但不在侧栏已加载列表里的会话（主机返回的元数据合成，已排除归档）
   const [remoteSearchSessions, setRemoteSearchSessions] = useState<SessionWithMeta[]>([]);
+  const [draftRevision, refreshDrafts] = useReducer((revision: number) => revision + 1, 0);
+
+  useEffect(() => subscribeComposerDraftChanges(refreshDrafts), []);
+
+  const { sidebarSessions, remoteSidebarSessions, hiddenSessionCountsByProjectId } = useMemo(() => {
+    const shouldShow = (session: SessionWithMeta) => {
+      const taskState = sessionStates[session.id];
+      return !isBlankNewSession(session, language)
+        || sessionRuntimes.has(session.id)
+        || (taskState !== undefined && taskState.status !== 'idle')
+        || readComposerDraft(composerDraftStorageKey(session.id, false)) !== null;
+    };
+    const hiddenSessionCountsByProjectId = new Map<string, number>();
+    const sidebarSessions = sessions.filter((session) => {
+      if (shouldShow(session)) return true;
+      const projectId = session.projectId?.trim();
+      if (projectId) {
+        const count = hiddenSessionCountsByProjectId.get(projectId) ?? 0;
+        hiddenSessionCountsByProjectId.set(projectId, count + 1);
+      }
+      return false;
+    });
+    // A host hit for a loaded row must use the local row's visibility and status.
+    const loadedIds = new Set(sessions.map((session) => session.id));
+    return {
+      sidebarSessions,
+      hiddenSessionCountsByProjectId,
+      remoteSidebarSessions: remoteSearchSessions.filter((session) => !loadedIds.has(session.id) && shouldShow(session)),
+    };
+  }, [draftRevision, language, remoteSearchSessions, sessionRuntimes, sessions, sessionStates]);
+
+  const searchableSessions = useMemo(
+    () => sidebarSessions.filter((session) => session.status !== 'archived'),
+    [sidebarSessions],
+  );
+  const allowedSearchSessionIds = useMemo(
+    () =>
+      effectiveSearchScope === 'current-project'
+        ? new Set(
+            searchableSessions
+              .filter((session) => currentProjectSearchSessionIds.has(session.id))
+              .map((session) => session.id),
+          )
+        : new Set(searchableSessions.map((session) => session.id)),
+    [currentProjectSearchSessionIds, effectiveSearchScope, searchableSessions],
+  );
+
   const mergeTrajectoryQualitySummary = useCallback(
     (sessionId: string, summary: AgentTrajectorySessionQualitySummary) => {
       setTrajectoryQualityBySessionId((current) => ({
@@ -265,12 +307,13 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             if (item.sessionTitle === undefined || remote.has(item.sessionId)) continue;
             remote.set(
               item.sessionId,
-              synthesizeSearchSession(item.sessionId, item.sessionTitle, item.sessionUpdatedAt ?? item.timestamp),
+              synthesizeSearchSession(item.sessionId, item.sessionTitle, item.sessionUpdatedAt ?? item.timestamp, 1),
             );
           }
           for (const match of typedResults.titleMatches ?? []) {
-            if (!remote.has(match.sessionId)) {
-              remote.set(match.sessionId, synthesizeSearchSession(match.sessionId, match.title, match.updatedAt));
+            if (!match.archived && !remote.has(match.sessionId)) {
+              // Older hosts omit the count; preserve their title-only hits when content is unknown.
+              remote.set(match.sessionId, synthesizeSearchSession(match.sessionId, match.title, match.updatedAt, match.messageCount ?? 1));
             }
           }
           setRemoteSearchSessions(Array.from(remote.values()));
@@ -304,7 +347,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   // Apply local metadata search, message-content hits, and session-native status filter.
   const baseFilteredSessions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return sessions.filter((session) => {
+    return sidebarSessions.filter((session) => {
       const status = getSessionStatusPresentation({
         backgroundSession: backgroundSessionMap.get(session.id),
         runtime: sessionRuntimes.get(session.id),
@@ -359,7 +402,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     searchQuery,
     sessionRuntimes,
     sessionStatusFilter,
-    sessions,
+    sidebarSessions,
     sessionStates,
   ]);
 
@@ -393,8 +436,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
 
   const searchResultSessions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const loadedIds = new Set(sessions.map((session) => session.id));
-    const remoteRows = query ? remoteSearchSessions.filter((session) => !loadedIds.has(session.id)) : [];
+    const remoteRows = query ? remoteSidebarSessions : [];
     return [...searchableSessions
       .filter((session) => allowedSearchSessionIds.has(session.id))
       .filter((session) => {
@@ -421,8 +463,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   }, [
     allowedSearchSessionIds,
     language,
-    remoteSearchSessions,
-    sessions,
+    remoteSidebarSessions,
     backgroundSessionMap,
     hasNeedsInputForSession,
     messageSearchHitsBySessionId,
@@ -522,8 +563,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       sessionGroupedWorkspaces,
       collaborationSpaces,
       searchQuery.trim() !== '' || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter,
+      hiddenSessionCountsByProjectId,
     ),
-    [collaborationSpaces, hasActiveTrajectoryFilter, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
+    [collaborationSpaces, hasActiveTrajectoryFilter, hiddenSessionCountsByProjectId, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
   );
   // 归档过滤之前取 id：详情回来把空间标成 archived 后组会从展示列表消失，
   // 若这里跟着消失，effect 会清掉 meta，组又出现，来回闪。
@@ -693,6 +735,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
     mergeTrajectoryQualitySummary,
+    hasAnySessions: sidebarSessions.length > 0,
     filteredSessions,
     workspaceGroupedSessions,
     visibleProjectIds,

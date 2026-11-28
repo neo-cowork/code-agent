@@ -12,6 +12,22 @@ const COMPOSER_DRAFT_HOME_KEY = `${COMPOSER_DRAFT_KEY_PREFIX}home`;
 
 /** Fired after a draft is written from outside the composer (boot adopting the home draft). */
 export const COMPOSER_DRAFT_ADOPTED_EVENT = 'neo:composer-draft-adopted';
+const COMPOSER_DRAFT_CHANGED_EVENT = 'neo:composer-draft-changed';
+
+export function subscribeComposerDraftChanges(listener: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.storageArea === window.localStorage
+      && (event.key === null || event.key.startsWith(COMPOSER_DRAFT_KEY_PREFIX))) {
+      listener();
+    }
+  };
+  window.addEventListener(COMPOSER_DRAFT_CHANGED_EVENT, listener);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    window.removeEventListener(COMPOSER_DRAFT_CHANGED_EVENT, listener);
+    window.removeEventListener('storage', onStorage);
+  };
+}
 
 /**
  * 「选择文件夹」入口建新任务时，输入框里已敲的字要带到新任务：入口在选完目录后、建会话前
@@ -300,8 +316,10 @@ function writeComposerDraft(
     }
   }
 
+  const hadDraft = readComposerDraftEntry(key, storage) !== null;
   try {
     storage.setItem(key, JSON.stringify(buildStoredDraftV2(text, kept, dropped)));
+    if (!hadDraft) globalThis.window?.dispatchEvent(new Event(COMPOSER_DRAFT_CHANGED_EVENT));
     return { text, attachments: kept, dropped };
   } catch {
     if (kept.length === 0) return null;
@@ -311,6 +329,7 @@ function writeComposerDraft(
     ];
     try {
       storage.setItem(key, JSON.stringify(buildStoredDraftV2(text, [], allDropped)));
+      if (!hadDraft) globalThis.window?.dispatchEvent(new Event(COMPOSER_DRAFT_CHANGED_EVENT));
       return { text, attachments: [], dropped: allDropped };
     } catch {
       return null;
@@ -337,7 +356,9 @@ export function removeComposerDraft(
   try {
     // Session delete also runs where localStorage does not exist (node tests, SSR).
     const target = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+    const hadDraft = target === globalThis.localStorage && readComposerDraftEntry(key) !== null;
     target?.removeItem(key);
+    if (hadDraft) globalThis.window?.dispatchEvent(new Event(COMPOSER_DRAFT_CHANGED_EVENT));
   } catch {
     // Private mode and quota failures leave the in-memory composer as the source of truth.
   }

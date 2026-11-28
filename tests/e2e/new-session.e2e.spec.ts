@@ -4,7 +4,7 @@
 //
 // 目标: 验证创建会话的完整 wiring 路径
 //   click 新会话 → domain:session create handler → SessionManager
-//   → DB write → renderer sessionStore → DOM [data-session-id][aria-current="true"]
+//   → DB write → renderer sessionStore → DOM [data-current-session-id]
 //
 // 拦截能力:
 //   - 拦 wiring bug #1 (aebaa4e0 session flush via activeAgentLoops) 的前置
@@ -45,14 +45,14 @@ async function getAuthToken(page: Page): Promise<string> {
 }
 
 async function ensureActiveSession(page: Page): Promise<string> {
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   if (!(await activeSession.isVisible())) {
     const newSessionBtn = page.getByRole('button', { name: '新任务' });
     await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
     await newSessionBtn.click();
   }
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing after creating probe session').toBeTruthy();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
   return sessionId!;
@@ -69,10 +69,10 @@ test('PoC: 点击新会话按钮, 出现 active session 和 chat 输入框', asy
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
 
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing after click').toBeTruthy();
 
   // ChatView 已挂到新 session
@@ -166,10 +166,10 @@ test('PoC: 应用 ready 后 token 已注入, SSE 通道接收 dev 事件', async
 });
 
 // ----------------------------------------------------------------------------
-// Test 3: 点击「新会话」后, 当前 session 出现在侧边栏列表 (data-session-id locator)
-// 验证: session 创建后 renderer store 更新 + DOM 渲染
+// Test 3: 点击「新任务」后, 空白新会话是当前会话但没有侧栏行；发出第一条消息后行才出现
+// 验证: 侧栏只列有内容的会话（blank 占位会话不进列表），且空白会话仍可选中、可发送
 // ----------------------------------------------------------------------------
-test('PoC: 创建后新 session 出现在侧边栏', async ({ page }) => {
+test('PoC: 空白新会话是当前会话但无侧栏行，有消息后才出现', async ({ page }) => {
   await waitForAppReady(page);
 
   const newSessionBtn = page.getByRole('button', { name: '新任务' });
@@ -177,14 +177,26 @@ test('PoC: 创建后新 session 出现在侧边栏', async ({ page }) => {
   await newSessionBtn.click();
 
   // 拿到 active session id
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId).toBeTruthy();
+  await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 
-  // 这个 id 在侧边栏 session 列表里能找到 (不只是 aria-current=true 的)
-  const sidebarItem = page.locator(`[data-session-id="${sessionId}"]`).first();
-  await expect(sidebarItem).toBeVisible({ timeout: 5_000 });
+  // 空白占位会话不进侧栏
+  await expect(page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0);
+
+  // 在这个当前会话里落一条消息（e2e 环境没配模型，走 dev seed 通道写库），重载后行出现
+  const token = await getAuthToken(page);
+  const seed = await page.request.post(`/api/dev/seed-messages?token=${encodeURIComponent(token)}`, {
+    data: {
+      sessionId,
+      messages: [{ id: `ns-${Date.now()}`, role: 'user', content: '把这三行笔记总结成一句话', timestamp: Date.now() }],
+    },
+  });
+  expect(seed.status(), await seed.text()).toBe(200);
+  await waitForAppReady(page);
+  await expect(page.locator(`[data-session-id="${sessionId}"]`).first()).toBeVisible({ timeout: 10_000 });
 });
 
 // ----------------------------------------------------------------------------

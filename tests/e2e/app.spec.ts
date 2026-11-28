@@ -65,43 +65,42 @@ test('可以新建会话', async ({ page }) => {
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
-  // 新建后侧边栏应该出现会话条目（至少有一个会话元素）
-  // 会话标题默认是「新对话」或「未命名会话」
-  const sessionItem = page.getByText(/新对话|未命名会话/);
-  await expect(sessionItem.first()).toBeVisible({ timeout: 10_000 });
+  // 空白新会话不进侧栏（只列有内容的会话），但它是当前会话、可直接输入
+  await expect(page.locator('[data-current-session-id]').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 });
 
 test('可以从侧边栏切换会话', async ({ page, request }) => {
   await page.goto('/');
+  await expect(page.locator('[data-current-session-id]').first()).toBeVisible({ timeout: 15_000 });
 
   const sessionItems = page.locator('[data-session-id]');
-  await expect(sessionItems.first()).toBeVisible({ timeout: 15_000 });
-
-  let sessionIds = await sessionItems.evaluateAll((items) =>
+  const collectIds = () => sessionItems.evaluateAll((items) =>
     Array.from(new Set(items.map((item) => item.getAttribute('data-session-id')).filter(Boolean))),
   );
+  let sessionIds = await collectIds();
 
   if (sessionIds.length < 2) {
-    // 不能靠再点一次「新任务」：全新数据目录上第一条本来就是空的「新对话」，
-    // 产品行为是复用它而不是再开一条（2026-08-18 实测连点两次仍然只有 1 行）。
-    // 用 REST 建第二条（new-session.e2e.spec.ts 已验证过的同一条路），SSE 会把它推进侧栏。
+    // 全新数据目录上启动时那条空白「新对话」不进侧栏（只列有内容的会话），
+    // 所以侧栏可能是空的。用 REST 建带标题的会话（new-session.e2e.spec.ts 已验证过的同一条路），
+    // SSE 会把它们推进侧栏。
     const token = await page.evaluate(() =>
       (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined,
     );
     expect(token, 'window.__CODE_AGENT_TOKEN__ missing — static.ts token injection broke').toBeTruthy();
-    const response = await request.post('/api/sessions', {
-      data: { title: `切会话用第二条 ${Date.now()}` },
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(response.ok(), `POST /api/sessions failed: ${response.status()}`).toBe(true);
+    for (let i = sessionIds.length; i < 2; i += 1) {
+      const response = await request.post('/api/sessions', {
+        data: { title: `切会话用第 ${i + 1} 条 ${Date.now()}` },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.ok(), `POST /api/sessions failed: ${response.status()}`).toBe(true);
+    }
     await expect(sessionItems.nth(1)).toBeVisible({ timeout: 10_000 });
-    sessionIds = await sessionItems.evaluateAll((items) =>
-      Array.from(new Set(items.map((item) => item.getAttribute('data-session-id')).filter(Boolean))),
-    );
+    sessionIds = await collectIds();
   }
 
   expect(sessionIds.length).toBeGreaterThanOrEqual(2);
-  const currentSessionId = await page.locator('[data-session-id][aria-current="true"]').first().getAttribute('data-session-id');
+  const currentSessionId = await page.locator('[data-current-session-id]').first().getAttribute('data-current-session-id');
   const targetSessionId = sessionIds.find((id) => id !== currentSessionId);
   expect(targetSessionId).toBeTruthy();
 

@@ -83,9 +83,9 @@ async function createCleanSession(page: Page): Promise<string> {
   await expect(newTask).toBeVisible({ timeout: 15_000 });
   await newTask.click();
 
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 15_000 });
-  const sessionId = await activeSession.getAttribute('data-session-id');
+  const sessionId = await activeSession.getAttribute('data-current-session-id');
   expect(sessionId, 'active session id missing after creating visual fixture session').toBeTruthy();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
   return sessionId!;
@@ -169,8 +169,8 @@ for (const theme of ['light', 'dark'] as const) {
     await seedCompletedMemberRun(request, token, sessionId);
     // swarm:started 会顺手打开右侧任务面板；重新打开应用回到默认收起的右栏，再回到这个会话
     await openAppWithTheme(page, theme);
-    await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).first().click();
-    await expect(page.locator(`[data-session-id=${JSON.stringify(sessionId)}][aria-current="true"]`).first()).toBeVisible({ timeout: 10_000 });
+    // 空白会话没有侧栏行，重开应用后靠「上次查看」回到它；以当前会话 id 为准
+    await expect(page.locator(`[data-current-session-id=${JSON.stringify(sessionId)}]`).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
     // 点完侧栏把指针移开，侧栏条目不留悬停态（归档按钮）
     await page.mouse.move(720, 300);

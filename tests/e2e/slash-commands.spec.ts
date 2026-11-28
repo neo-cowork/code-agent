@@ -219,7 +219,7 @@ async function openAppWithCleanSession(page: Page, baseUrl: string) {
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
-  await expect(page.locator('[data-session-id][aria-current="true"]').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('[data-current-session-id]').first()).toBeVisible({ timeout: 10_000 });
   const chatInput = page.locator('[data-chat-input]');
   await expect(chatInput).toBeVisible({ timeout: 10_000 });
   return chatInput;
@@ -274,9 +274,9 @@ async function pollDomain<T>(
 
 async function currentSessionId(page: Page): Promise<string> {
   const id = await page
-    .locator('[data-session-id][aria-current="true"]')
+    .locator('[data-current-session-id]')
     .first()
-    .getAttribute('data-session-id');
+    .getAttribute('data-current-session-id');
   if (!id) throw new Error('拿不到当前 sessionId');
   return id;
 }

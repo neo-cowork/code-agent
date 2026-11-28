@@ -1,5 +1,5 @@
 // 没有可见会话的协作空间仍要出现在侧栏。可见数来自 SQL 全量计数：
-// 已有会话但没落在已加载的那一页上时 visibleSessionCount !== 0，这里不合成空组。
+// 全量计数为零，或已加载页里有被隐藏的空白会话（页外会话到达后空组自然被真组取代），才合成空组。
 
 import { UNSORTED_PROJECT_ID, type ProjectWithActivity } from '@shared/contract/project';
 import type { SidebarProjectMeta } from './sidebarProjectSummary';
@@ -10,6 +10,7 @@ export function mergeEmptyCollaborationSpaces(
   spaces: readonly ProjectWithActivity[],
   /** 搜索/状态/轨迹筛选生效时，没有会话的空间不可能命中，不并入。 */
   isFiltering = false,
+  hiddenSessionCountsByProjectId?: ReadonlyMap<string, number>,
 ): WorkspaceGroup[] {
   if (isFiltering) return groups as WorkspaceGroup[];
   const occupied = new Set(
@@ -21,7 +22,8 @@ export function mergeEmptyCollaborationSpaces(
   for (const space of spaces) {
     const projectId = space.id?.trim();
     if (!projectId || projectId === UNSORTED_PROJECT_ID) continue;
-    if (space.visibleSessionCount !== 0) continue;
+    const hiddenCount = hiddenSessionCountsByProjectId?.get(projectId) ?? 0;
+    if (space.visibleSessionCount !== 0 && hiddenCount === 0) continue;
     if (occupied.has(projectId)) continue;
     const path = space.workspacePath?.trim() || undefined;
     extras.push({

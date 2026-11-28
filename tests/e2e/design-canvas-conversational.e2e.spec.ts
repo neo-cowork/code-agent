@@ -71,7 +71,7 @@ async function enterSessionState(page: Page): Promise<void> {
   await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
   await newSessionBtn.click();
 
-  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  const activeSession = page.locator('[data-current-session-id]').first();
   await expect(activeSession).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 }

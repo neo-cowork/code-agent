@@ -53,7 +53,8 @@ const projectClient = vi.hoisted(() => ({
   getProjectArtifacts: vi.fn(async () => []),
 }));
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/renderer/stores/sessionStore')>(),
   useSessionStore: (sel: (s: unknown) => unknown) => sel(state.session),
 }));
 vi.mock('../../../src/renderer/stores/sessionUIStore', () => ({
