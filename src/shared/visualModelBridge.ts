@@ -2,7 +2,7 @@ import type { AppSettings } from './contract';
 import {
   GEN_CAPABILITIES,
   buildProviderInfoFromSettings, getProviderRuntimeModels,
-  isRuntimeProviderConfigured, mediaTypeForGenCapability,
+  isRuntimeProviderConfigured, mediaTypeForGenCapability, resolveProviderDisplayName,
 } from './modelRuntime';
 
 export type BridgedMediaType = 'image' | 'video' | 'music';
@@ -31,7 +31,7 @@ export function deriveBridgedVisualModels(settings: AppSettings | null | undefin
 
     const info = buildProviderInfoFromSettings(providerId, providerConfig);
     const runtimeModels = getProviderRuntimeModels(info, providerConfig);
-    const sourceLabel = providerConfig.displayName || providerId;
+    const sourceLabel = resolveProviderDisplayName(providerId, providerConfig.displayName);
 
     for (const model of runtimeModels) {
       const genCap = model.capabilities.find((c) => GEN_CAPABILITIES.includes(c));

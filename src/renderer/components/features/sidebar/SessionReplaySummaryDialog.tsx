@@ -691,7 +691,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                   <div className="mt-2 grid gap-1">
                     {turn.blocks.slice(0, 6).map((block, index) => {
                       const label = formatBlockLabel(block, labels);
-                      const detail = formatBlockDetail(block, labels);
+                      const detail = formatBlockDetail(block, labels, t, language);
                       return (
                         <div
                           key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}

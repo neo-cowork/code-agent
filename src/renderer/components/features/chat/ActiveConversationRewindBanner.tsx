@@ -11,6 +11,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import ipcService, { DomainInvokeError } from '../../../services/ipcService';
 import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
+import { isSkillStatusMessage } from './MessageBubble/SkillStatusMessage';
 
 interface ActiveConversationRewindBannerProps {
   sessionId: string | null;
@@ -67,7 +68,9 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
     const rewindId = latestOpenRewindId(replay);
     if (!rewindId) return { rewindId: null, excerpt: null };
 
-    const anchor = [...replay.messages].reverse().find((entry) => entry.message.role === 'user');
+    const anchor = [...replay.messages].reverse().find(
+      (entry) => entry.message.role === 'user' && !isSkillStatusMessage(entry.message),
+    );
     const projected = formatEditRoleUserPrompt(
       stripLegacyTeamRecipeSeed(extractUserRequest(anchor?.message.content ?? '')),
       t.roleEditReceipt.userPrompt,

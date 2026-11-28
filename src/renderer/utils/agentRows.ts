@@ -3,7 +3,7 @@ import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
 import { agentFailureCopy, backgroundTaskFailureCopy, deleteIncompleteFileNames } from './agentFailureCopy';
-import { languages, type Translations } from '../i18n';
+import { languages } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
 import { useAppStore } from '../stores/appStore';
@@ -73,6 +73,7 @@ export interface AgentRow {
    */
   hold?: 'approval';
   failureReason?: string;
+  failureCode?: AgentFailureCode;
   stoppable: boolean;
   tokens?: number;
   /** Swarm 账本记录的改动文件；只读 explore 为 []。 */
@@ -144,12 +145,11 @@ function inferPersistedMemberFailureCode(rawError: string, rawCategory: string):
   });
 }
 
-function memberFailureReason(member: MemberRowSource, t: Translations): string | undefined {
+function memberFailureCode(member: MemberRowSource): AgentFailureCode | undefined {
   if (member.status !== 'failed' && member.status !== 'cancelled') return undefined;
   const rawError = (member.error ?? member.record?.error ?? member.agent?.error ?? '').trim();
   const rawCategory = (member.failureCategory ?? member.record?.failureCategory ?? '').trim();
-  const code = inferPersistedMemberFailureCode(rawError, rawCategory);
-  return code ? agentFailureCopy(code, t) ?? undefined : undefined;
+  return inferPersistedMemberFailureCode(rawError, rawCategory);
 }
 
 /** delegate_task 后台任务与 agentTree 节点的关联键：id / runId / metadata.childRunId 任一相等即同一个代理。 */
@@ -177,6 +177,7 @@ export function buildAgentRows(input: {
   for (const member of members) {
     const name = member.status !== 'standby' && member.name === member.roleId
       ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name;
+    const failureCode = memberFailureCode(member);
     rows.push({
       key: member.key,
       kind: 'expert',
@@ -188,7 +189,8 @@ export function buildAgentRows(input: {
       icon: member.icon,
       isLead: member.isLead,
       status: memberRowStatus(member.status),
-      failureReason: memberFailureReason(member, t),
+      failureReason: failureCode ? agentFailureCopy(failureCode, t) ?? undefined : undefined,
+      failureCode,
       stoppable: member.status === 'running',
       filesChanged: member.filesChanged,
       member,
@@ -220,6 +222,7 @@ export function buildAgentRows(input: {
         if (typeof node.budgetSummary.tokensUsed === 'number') row.tokens = node.budgetSummary.tokensUsed;
         if (row.status !== 'failed' && row.status !== 'cancelled') {
           row.failureReason = undefined;
+          row.failureCode = undefined;
         } else {
           const liveFailureReason = node.failureCode || node.failureReason
             ? agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined
@@ -227,6 +230,7 @@ export function buildAgentRows(input: {
           row.failureReason = liveFailureReason
             ?? row.failureReason
             ?? (agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined);
+          row.failureCode = node.failureCode ?? row.failureCode;
         }
       }
       continue;
@@ -241,6 +245,7 @@ export function buildAgentRows(input: {
       isLead: false,
       status,
       failureReason: agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined,
+      failureCode: status === 'failed' || status === 'cancelled' ? node.failureCode : undefined,
       stoppable: status === 'working',
       tokens: node.budgetSummary.tokensUsed,
       node: candidate,

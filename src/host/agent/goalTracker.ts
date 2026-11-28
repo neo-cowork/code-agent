@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 
 const logger = createLogger('GoalTracker');
 
@@ -35,16 +36,23 @@ export class GoalTracker {
    * 从用户消息提取目标：取第一句话（支持中英文句号），截断到 100 字
    */
   initialize(userMessage: string): void {
-    if (!userMessage?.trim()) return;
+    // 由运行记录还原的消息可能整段以恢复提示开头：先剥掉完整前缀留下用户原话，
+    // 剥完仍以提示开头的是截断残留（空串 = 视为没有正文）——否则 goal 会被记成
+    // 免责声明本身，checkpoint / max-steps 收尾把它当用户目标回显。
+    const cleaned = stripTelemetryRecoveryNoticeOrResidue(userMessage ?? '');
+    if (!cleaned.trim()) {
+      this.reset();
+      return;
+    }
 
     // 提取第一句话（中英文句号、问号、感叹号、换行）
     // 半角 `.` 必须后接空白或字符串结尾才算句尾，避免把 URL 的 `.` 当句号截断
     // （历史 Bug：`https://www.xiaohongshu.com/...` 被截到 `https://www.`，
     // 每 3 轮 checkpoint 注入残缺 URL 误导模型）
-    const sentenceEnd = userMessage.search(/[。!！?？\n]|\.(?=\s|$)/);
+    const sentenceEnd = cleaned.search(/[。!！?？\n]|\.(?=\s|$)/);
     const firstSentence = sentenceEnd >= 0
-      ? userMessage.substring(0, sentenceEnd + 1)
-      : userMessage;
+      ? cleaned.substring(0, sentenceEnd + 1)
+      : cleaned;
 
     // 截断到 100 字
     this.goal = firstSentence.length > 100
