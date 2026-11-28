@@ -364,8 +364,9 @@ export function useSessionEntryScroll({
 }: SessionEntryScrollOptions): SessionEntryScroll {
   // 长会话首帧由 Virtuoso 按预估高度（defaultItemHeight）定位，真实行高测出后才收敛到底部，
   // 期间用户会看到中段内容再滑到底。入场结算收敛前把列表隐藏（仍参与布局与测量），收敛/取消后揭示。
+  // 单轮会话（例如新会话刚发出第一条消息或刚点停止）只有 1 项，不存在多轮高度估算跳动，不得隐藏。
   const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
-  const entryHidden = turns.length > 0 && revealedSessionId !== sessionId;
+  const entryHidden = turns.length > 1 && revealedSessionId !== sessionId;
   const reveal = useCallback(() => setRevealedSessionId(sessionId), [sessionId]);
   useEffect(() => {
     if (!entryHidden) return;
